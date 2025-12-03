@@ -39,7 +39,7 @@ type FrameMaskState = {
     opacity: number; // 0.0 - 1.0
 };
 
-type CameraFramesState = {
+export type CameraFramesState = {
     enabled: boolean;
     renderBox: RenderBoxState;
     frames: FrameState[];
@@ -121,7 +121,7 @@ const cloneFrame = (f: FrameState): FrameState => ({
     anchor: f.anchor ? { ...f.anchor } : undefined
 });
 
-class CameraFramesController {
+export class CameraFramesController {
     private events: Events;
     private scene: Scene;
     private overlay: HTMLCanvasElement;
@@ -166,6 +166,14 @@ class CameraFramesController {
     private baseFovRad: number = 60 * DEG2RAD;
     private pendingNearClipGuard = 0;
     private nearClipGuardSeed: number | null = null;
+    private history: {
+        begin(label: string): void;
+        commit(label?: string): void;
+        record(label: string, fn: () => void): void;
+        debounced(label: string, fn: () => void): void;
+        isApplying(): boolean;
+    } | null = null;
+    private applyingHistory = false;
 
     constructor(events: Events, scene: Scene, canvasContainer: HTMLElement) {
         this.events = events;
@@ -227,6 +235,46 @@ class CameraFramesController {
         // 初期化は有効化時に行う
     }
 
+    setHistory(history: {
+        begin(label: string): void;
+        commit(label?: string): void;
+        record(label: string, fn: () => void): void;
+        debounced(label: string, fn: () => void): void;
+        isApplying(): boolean;
+    } | null) {
+        this.history = history;
+    }
+
+    private historyBegin(label: string) {
+        if (!this.history || this.history.isApplying() || this.applyingHistory) {
+            return;
+        }
+        this.history.begin(label);
+    }
+
+    private historyCommit(label: string) {
+        if (!this.history || this.history.isApplying() || this.applyingHistory) {
+            return;
+        }
+        this.history.commit(label);
+    }
+
+    private historyRecord(label: string, fn: () => void) {
+        if (!this.history || this.history.isApplying() || this.applyingHistory) {
+            fn();
+            return;
+        }
+        this.history.record(label, fn);
+    }
+
+    private historyDebounced(label: string, fn: () => void) {
+        if (!this.history || this.history.isApplying() || this.applyingHistory) {
+            fn();
+            return;
+        }
+        this.history.debounced(label, fn);
+    }
+
     private registerEvents() {
         this.events.on('scene.elementAdded', (element: any) => {
             if (element?.type === ElementType.splat) {
@@ -286,11 +334,13 @@ class CameraFramesController {
                 return;
             }
 
-            rb.anchor = anchor;
-            // アンカー変更は「次の拡縮用の基準点」を差し替えるだけとし、
-            // 現在のフラスタム／表示を変えない（v4: 構図維持）
-            this.requestRender(); // UI/オーバーレイだけ更新
-            this.events.fire('cameraFrames.stateChanged', this.snapshot());
+            this.historyRecord('cameraFrames.anchor', () => {
+                rb.anchor = anchor;
+                // アンカー変更は「次の拡縮用の基準点」を差し替えるだけとし、
+                // 現在のフラスタム／表示を変えない（v4: 構図維持）
+                this.requestRender(); // UI/オーバーレイだけ更新
+                this.events.fire('cameraFrames.stateChanged', this.snapshot());
+            });
         });
 
         // view zoom
@@ -311,9 +361,11 @@ class CameraFramesController {
 
         // mask
         this.events.on('cameraFrames.setMask', (mask: Partial<FrameMaskState>) => {
-            this.state.mask = { ...this.state.mask, ...mask };
-            this.requestRender();
-            this.events.fire('cameraFrames.stateChanged', this.snapshot());
+            this.historyRecord('cameraFrames.mask', () => {
+                this.state.mask = { ...this.state.mask, ...mask };
+                this.requestRender();
+                this.events.fire('cameraFrames.stateChanged', this.snapshot());
+            });
         });
 
         // export settings
@@ -383,6 +435,20 @@ class CameraFramesController {
             this.updateViewportFromContainer();
             this.requestRender();
         });
+
+        // Undo / Redo 適用後に UI を最新状態へ同期
+        this.events.on('edit.apply', (op: any) => {
+            if (!op?.name || typeof op.name !== 'string') {
+                return;
+            }
+            if (!op.name.startsWith('cameraFrames')) {
+                return;
+            }
+            // 履歴適用直後の状態を通知してパネル数値を更新
+            this.events.fire('cameraFrames.stateChanged', this.snapshot());
+            this.updatePointerFromLast();
+            this.updateFovInfo();
+        });
     }
 
     private normalizeFormat(format?: ExportFormat): ExportFormat {
@@ -451,36 +517,38 @@ class CameraFramesController {
     }
 
     private setEnabled(value: boolean) {
-        if (value === this.state.enabled) return;
-        this.state.enabled = value;
-        // CAMERA FRAMES 有効時はカメラフレーミングと水平画角をロック
-        this.events.fire('camera.setLockFraming', value);
-        this.events.fire('camera.setLockFovAxis', value ? (this.lockFovAxis ?? 'horizontal') : undefined);
-        this.overlay.style.pointerEvents = 'none';
-        if (value) {
-            // ニアクリップの初期値を現在のカメラから引き継ぎ、固定値として適用
-            const baseNear = (this.state.nearClip === null || this.state.nearClip === undefined) ?
-                this.events.invoke('camera.near') :
-                this.state.nearClip;
-            this.state.nearClip = this.computeSafeNearClip(baseNear);
-            this.applyNearClipOverride();
-            this.initDefaultsIfNeeded();
-            // 有効化時は現ビューポートに合わせてフィットを再計算
-            this.computeViewportMapping(true);
-            this.rebuildBaseFrustum();
-            this.syncCameraFrustum();
-            this.requestRender();
-            this.scheduleNearClipGuard();
-        } else {
-            // 無効化時はニアクリップ固定を解除
-            this.events.fire('camera.setNearOverride', null);
-            this.events.fire('camera.setCustomFrustum', null);
-            // 無効化中は追従ロジックを停止するが状態は保持
-            this.requestRender();
-        }
-        this.events.fire('cameraFrames.enabled', this.state.enabled);
-        this.events.fire('cameraFrames.stateChanged', this.snapshot());
-        this.updateFovInfo();
+        this.historyRecord('cameraFrames.enabled', () => {
+            if (value === this.state.enabled) return;
+            this.state.enabled = value;
+            // CAMERA FRAMES 有効時はカメラフレーミングと水平画角をロック
+            this.events.fire('camera.setLockFraming', value);
+            this.events.fire('camera.setLockFovAxis', value ? (this.lockFovAxis ?? 'horizontal') : undefined);
+            this.overlay.style.pointerEvents = 'none';
+            if (value) {
+                // ニアクリップの初期値を現在のカメラから引き継ぎ、固定値として適用
+                const baseNear = (this.state.nearClip === null || this.state.nearClip === undefined) ?
+                    this.events.invoke('camera.near') :
+                    this.state.nearClip;
+                this.state.nearClip = this.computeSafeNearClip(baseNear);
+                this.applyNearClipOverride();
+                this.initDefaultsIfNeeded();
+                // 有効化時は現ビューポートに合わせてフィットを再計算
+                this.computeViewportMapping(true);
+                this.rebuildBaseFrustum();
+                this.syncCameraFrustum();
+                this.requestRender();
+                this.scheduleNearClipGuard();
+            } else {
+                // 無効化時はニアクリップ固定を解除
+                this.events.fire('camera.setNearOverride', null);
+                this.events.fire('camera.setCustomFrustum', null);
+                // 無効化中は追従ロジックを停止するが状態は保持
+                this.requestRender();
+            }
+            this.events.fire('cameraFrames.enabled', this.state.enabled);
+            this.events.fire('cameraFrames.stateChanged', this.snapshot());
+            this.updateFovInfo();
+        });
     }
 
     private applyNearClipOverride() {
@@ -495,17 +563,25 @@ class CameraFramesController {
         }
     }
 
-    private setNearClip(value: number | null) {
-        const sanitized = (typeof value === 'number' && isFinite(value)) ? Math.max(1e-6, value) : null;
-        if (this.state.nearClip === sanitized) return;
-        this.state.nearClip = sanitized;
-        if (this.state.enabled) {
-            this.applyNearClipOverride();
-            this.rebuildBaseFrustum();
-            this.syncCameraFrustum();
+    private setNearClip(value: number | null, suppressHistory = false) {
+        const apply = () => {
+            const sanitized = (typeof value === 'number' && isFinite(value)) ? Math.max(1e-6, value) : null;
+            if (this.state.nearClip === sanitized) return;
+            this.state.nearClip = sanitized;
+            if (this.state.enabled) {
+                this.applyNearClipOverride();
+                this.rebuildBaseFrustum();
+                this.syncCameraFrustum();
+            }
+            this.requestRender();
+            this.events.fire('cameraFrames.stateChanged', this.snapshot());
+        };
+
+        if (suppressHistory) {
+            apply();
+        } else {
+            this.historyDebounced('cameraFrames.nearClip', apply);
         }
-        this.requestRender();
-        this.events.fire('cameraFrames.stateChanged', this.snapshot());
     }
 
     private computeSafeNearClip(value: number | null | undefined) {
@@ -543,7 +619,7 @@ class CameraFramesController {
         const currentNear = this.state.nearClip ?? this.events.invoke('camera.near');
         const safeNear = this.computeSafeNearClip(currentNear);
         if (this.state.nearClip !== safeNear) {
-            this.setNearClip(safeNear);
+            this.setNearClip(safeNear, true);
         }
     }
 
@@ -563,183 +639,197 @@ class CameraFramesController {
     }
 
     private setRenderBoxScale(xPct: number, yPct: number) {
-        const rb = this.state.renderBox;
-        const baseW = rb.baseSize.w;
-        const baseH = rb.baseSize.h;
+        this.historyDebounced('cameraFrames.renderBoxScale', () => {
+            const rb = this.state.renderBox;
+            const baseW = rb.baseSize.w;
+            const baseH = rb.baseSize.h;
 
-        const oldKx = rb.scale.kx;
-        const oldKy = rb.scale.ky;
+            const oldKx = rb.scale.kx;
+            const oldKy = rb.scale.ky;
 
-        // 元の論理サイズと center（仮想スクリーン座標）
-        const logicalW0 = baseW * oldKx;
-        const logicalH0 = baseH * oldKy;
-        const cx0 = rb.center.cx;
-        const cy0 = rb.center.cy;
+            // 元の論理サイズと center（仮想スクリーン座標）
+            const logicalW0 = baseW * oldKx;
+            const logicalH0 = baseH * oldKy;
+            const cx0 = rb.center.cx;
+            const cy0 = rb.center.cy;
 
-        // スケール変更前のフレーム中心（仮想スクリーン上の論理座標）を保存
-        const frameCentersLogical = new Map<string, { x: number; y: number }>();
-        for (const f of this.state.frames) {
-            const gx = cx0 + (f.pos.x - 0.5) * logicalW0;
-            const gy = cy0 + (f.pos.y - 0.5) * logicalH0;
-            frameCentersLogical.set(f.id, { x: gx, y: gy });
-        }
+            // スケール変更前のフレーム中心（仮想スクリーン上の論理座標）を保存
+            const frameCentersLogical = new Map<string, { x: number; y: number }>();
+            for (const f of this.state.frames) {
+                const gx = cx0 + (f.pos.x - 0.5) * logicalW0;
+                const gy = cy0 + (f.pos.y - 0.5) * logicalH0;
+                frameCentersLogical.set(f.id, { x: gx, y: gy });
+            }
 
-        // --- スケール値のクランプ（100%以上 ＆ 各軸16000px以下） ---
-        const MIN_PCT = 100;
-        const MAX_DIM = 16000;
+            // --- スケール値のクランプ（100%以上 ＆ 各軸16000px以下） ---
+            const MIN_PCT = 100;
+            const MAX_DIM = 16000;
 
-        const maxPctX = baseW > 0 ? Math.floor((MAX_DIM / baseW) * 100) : MIN_PCT;
-        const maxPctY = baseH > 0 ? Math.floor((MAX_DIM / baseH) * 100) : MIN_PCT;
+            const maxPctX = baseW > 0 ? Math.floor((MAX_DIM / baseW) * 100) : MIN_PCT;
+            const maxPctY = baseH > 0 ? Math.floor((MAX_DIM / baseH) * 100) : MIN_PCT;
 
-        const newPctX = Math.min(maxPctX, Math.max(MIN_PCT, xPct));
-        const newPctY = Math.min(maxPctY, Math.max(MIN_PCT, yPct));
+            const newPctX = Math.min(maxPctX, Math.max(MIN_PCT, xPct));
+            const newPctY = Math.min(maxPctY, Math.max(MIN_PCT, yPct));
 
-        const newKx = newPctX / 100;
-        const newKy = newPctY / 100;
+            const newKx = newPctX / 100;
+            const newKy = newPctY / 100;
 
-        if (Math.abs(newKx - oldKx) < 1e-6 && Math.abs(newKy - oldKy) < 1e-6) {
-            return;
-        }
+            if (Math.abs(newKx - oldKx) < 1e-6 && Math.abs(newKy - oldKy) < 1e-6) {
+                return;
+            }
 
-        // --- 新しいレンダーボックス矩形をアンカー基準で計算 ---
-        const logicalW1 = baseW * newKx;
-        const logicalH1 = baseH * newKy;
+            // --- 新しいレンダーボックス矩形をアンカー基準で計算 ---
+            const logicalW1 = baseW * newKx;
+            const logicalH1 = baseH * newKy;
 
-        const { ax, ay } = rb.anchor;
+            const { ax, ay } = rb.anchor;
 
-        const left0 = cx0 - logicalW0 * 0.5;
-        const top0 = cy0 - logicalH0 * 0.5;
-        const anchorX = left0 + ax * logicalW0;
-        const anchorY = top0 + ay * logicalH0;
+            const left0 = cx0 - logicalW0 * 0.5;
+            const top0 = cy0 - logicalH0 * 0.5;
+            const anchorX = left0 + ax * logicalW0;
+            const anchorY = top0 + ay * logicalH0;
 
-        const left1 = anchorX - ax * logicalW1;
-        const top1 = anchorY - ay * logicalH1;
-        const cx1 = left1 + logicalW1 * 0.5;
-        const cy1 = top1 + logicalH1 * 0.5;
+            const left1 = anchorX - ax * logicalW1;
+            const top1 = anchorY - ay * logicalH1;
+            const cx1 = left1 + logicalW1 * 0.5;
+            const cy1 = top1 + logicalH1 * 0.5;
 
-        rb.scalePct = { x: newPctX, y: newPctY };
-        rb.scale = { kx: newKx, ky: newKy };
-        rb.center = { cx: cx1, cy: cy1 };
+            rb.scalePct = { x: newPctX, y: newPctY };
+            rb.scale = { kx: newKx, ky: newKy };
+            rb.center = { cx: cx1, cy: cy1 };
 
-        // 変更中: アンカー基準で変形しつつ、fitScale は維持する
-        // これにより、ドラッグ中はアンカー位置が固定され、そこを中心に拡大縮小する自然な挙動になる
-        this.computeViewportMapping(true);
-        this.syncCameraFrustum();
+            // 変更中: アンカー基準で変形しつつ、fitScale は維持する
+            // これにより、ドラッグ中はアンカー位置が固定され、そこを中心に拡大縮小する自然な挙動になる
+            this.computeViewportMapping(true);
+            this.syncCameraFrustum();
 
-        // --- フレームの pos を更新して、論理中心を元と同じに保つ ---
-        for (const f of this.state.frames) {
-            const c = frameCentersLogical.get(f.id);
-            if (!c) continue;
-            // 更新された rb.center (cx1, cy1) を使用する
-            f.pos = {
-                x: 0.5 + (c.x - cx1) / logicalW1,
-                y: 0.5 + (c.y - cy1) / logicalH1
-            };
-        }
+            // --- フレームの pos を更新して、論理中心を元と同じに保つ ---
+            for (const f of this.state.frames) {
+                const c = frameCentersLogical.get(f.id);
+                if (!c) continue;
+                // 更新された rb.center (cx1, cy1) を使用する
+                f.pos = {
+                    x: 0.5 + (c.x - cx1) / logicalW1,
+                    y: 0.5 + (c.y - cy1) / logicalH1
+                };
+            }
 
-        if (this.state.enabled) {
-            // 現在のレンダーボックス比率でカメラのアスペクトを再適用
-            this.events.fire('camera.setLockFraming', true);
-        }
+            if (this.state.enabled) {
+                // 現在のレンダーボックス比率でカメラのアスペクトを再適用
+                this.events.fire('camera.setLockFraming', true);
+            }
 
-        this.requestRender();
-        this.events.fire('cameraFrames.stateChanged', this.snapshot());
-        this.updateFovInfo();
+            this.requestRender();
+            this.events.fire('cameraFrames.stateChanged', this.snapshot());
+            this.updateFovInfo();
+        });
     }
 
     private setViewZoomPct(viewZoomPct: number) {
-        const rb = this.state.renderBox;
-        const clamped = this.normalizeViewZoomPct(viewZoomPct);
-        if (rb.viewZoomPct === clamped) {
-            return;
-        }
-        rb.viewZoomPct = clamped;
-        this.computeViewportMapping(false);
-        this.syncCameraFrustum();
-        this.requestRender();
-        this.events.fire('cameraFrames.stateChanged', this.snapshot());
+        this.historyDebounced('cameraFrames.viewZoom', () => {
+            const rb = this.state.renderBox;
+            const clamped = this.normalizeViewZoomPct(viewZoomPct);
+            if (rb.viewZoomPct === clamped) {
+                return;
+            }
+            rb.viewZoomPct = clamped;
+            this.computeViewportMapping(false);
+            this.syncCameraFrustum();
+            this.requestRender();
+            this.events.fire('cameraFrames.stateChanged', this.snapshot());
+        });
     }
 
     private setEqFovMm(eqMm: number) {
-        const info = this.calcFovInfo();
-        const crop = info.crop;
-        const minMm = info.minEqMm;
-        const maxMm = info.maxEqMm;
-        const clampedMm = Math.min(maxMm, Math.max(minMm, eqMm));
-        const targetHfovDeg = this.clampFov(this.eqMmToHfov(clampedMm, crop));
-        const targetHfovRad = targetHfovDeg * DEG2RAD;
-        const axisFovDeg = this.horizontalRadToAxisDeg(targetHfovRad);
-        const projection = this.state.renderBox.projection ?? { type: 'perspective' as const };
-        projection.baseFov = axisFovDeg;
-        this.state.renderBox.projection = projection;
-        this.rebuildBaseFrustum();
-        this.syncCameraFrustum();
-        this.requestRender();
-        this.events.fire('cameraFrames.stateChanged', this.snapshot());
-        this.updateFovInfo();
+        this.historyDebounced('cameraFrames.fov', () => {
+            const info = this.calcFovInfo();
+            const crop = info.crop;
+            const minMm = info.minEqMm;
+            const maxMm = info.maxEqMm;
+            const clampedMm = Math.min(maxMm, Math.max(minMm, eqMm));
+            const targetHfovDeg = this.clampFov(this.eqMmToHfov(clampedMm, crop));
+            const targetHfovRad = targetHfovDeg * DEG2RAD;
+            const axisFovDeg = this.horizontalRadToAxisDeg(targetHfovRad);
+            const projection = this.state.renderBox.projection ?? { type: 'perspective' as const };
+            projection.baseFov = axisFovDeg;
+            this.state.renderBox.projection = projection;
+            this.rebuildBaseFrustum();
+            this.syncCameraFrustum();
+            this.requestRender();
+            this.events.fire('cameraFrames.stateChanged', this.snapshot());
+            this.updateFovInfo();
+        });
     }
 
     private addFrame() {
-        const frames = this.state.frames;
-        if (frames.length >= 20) {
-            console.warn('cameraFrames: maximum 20 frames reached');
-            return;
-        }
-        const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-        const id = letters[this.addedCount % letters.length] ?? `Frame ${this.addedCount + 1}`;
-        this.addedCount++;
-        const order = frames.reduce((m, f) => Math.max(m, f.order), -1) + 1;
-        const pos = { x: 0.5, y: 0.5 };
-        const frame: FrameState = {
-            id,
-            pos,
-            scalePct: 100,
-            scaleK: 1,
-            baseSize: { ...DEFAULT_FRAME_BASE },
-            order,
-            rotationDeg: 0,
-            anchor: { ...pos }
-        };
-        frames.push(frame);
-        this.selectFrame(id);
-        this.requestRender();
-        this.events.fire('cameraFrames.stateChanged', this.snapshot());
-        this.updatePointerFromLast();
+        this.historyRecord('cameraFrames.addFrame', () => {
+            const frames = this.state.frames;
+            if (frames.length >= 20) {
+                console.warn('cameraFrames: maximum 20 frames reached');
+                return;
+            }
+            const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+            const id = letters[this.addedCount % letters.length] ?? `Frame ${this.addedCount + 1}`;
+            this.addedCount++;
+            const order = frames.reduce((m, f) => Math.max(m, f.order), -1) + 1;
+            const pos = { x: 0.5, y: 0.5 };
+            const frame: FrameState = {
+                id,
+                pos,
+                scalePct: 100,
+                scaleK: 1,
+                baseSize: { ...DEFAULT_FRAME_BASE },
+                order,
+                rotationDeg: 0,
+                anchor: { ...pos }
+            };
+            frames.push(frame);
+            this.selectFrame(id);
+            this.requestRender();
+            this.events.fire('cameraFrames.stateChanged', this.snapshot());
+            this.updatePointerFromLast();
+        });
     }
 
     private deleteSelectedFrame() {
-        if (!this.selectedId) return;
-        this.state.frames = this.state.frames.filter(f => f.id !== this.selectedId);
-        this.selectedId = this.state.frames.length ? this.state.frames[this.state.frames.length - 1].id : null;
-        this.requestRender();
-        this.events.fire('cameraFrames.stateChanged', this.snapshot());
-        this.updatePointerFromLast();
-        this.updateFovInfo();
+        this.historyRecord('cameraFrames.deleteFrame', () => {
+            if (!this.selectedId) return;
+            this.state.frames = this.state.frames.filter(f => f.id !== this.selectedId);
+            this.selectedId = this.state.frames.length ? this.state.frames[this.state.frames.length - 1].id : null;
+            this.requestRender();
+            this.events.fire('cameraFrames.stateChanged', this.snapshot());
+            this.updatePointerFromLast();
+            this.updateFovInfo();
+        });
     }
 
     private selectFrame(id: string) {
-        this.selectedId = id;
-        this.state.frames.forEach((f) => {
-            f.selected = f.id === id;
+        this.historyRecord('cameraFrames.selectFrame', () => {
+            this.selectedId = id;
+            this.state.frames.forEach((f) => {
+                f.selected = f.id === id;
+            });
+            this.requestRender();
+            this.events.fire('cameraFrames.stateChanged', this.snapshot());
+            this.updatePointerFromLast();
+            this.updateFovInfo();
         });
-        this.requestRender();
-        this.events.fire('cameraFrames.stateChanged', this.snapshot());
-        this.updatePointerFromLast();
-        this.updateFovInfo();
     }
 
     private setFrameScale(id: string, scalePct: number) {
-        const frame = this.state.frames.find(f => f.id === id);
-        if (!frame) return;
-        const MIN_PCT = 10;
-        const MAX_PCT = 400;
-        const clamped = Math.min(MAX_PCT, Math.max(MIN_PCT, scalePct));
-        frame.scalePct = clamped;
-        frame.scaleK = frame.scalePct / 100;
-        this.requestRender();
-        this.events.fire('cameraFrames.stateChanged', this.snapshot());
-        this.updatePointerFromLast();
-        this.updateFovInfo();
+        this.historyRecord('cameraFrames.frameScale', () => {
+            const frame = this.state.frames.find(f => f.id === id);
+            if (!frame) return;
+            const MIN_PCT = 10;
+            const MAX_PCT = 400;
+            const clamped = Math.min(MAX_PCT, Math.max(MIN_PCT, scalePct));
+            frame.scalePct = clamped;
+            frame.scaleK = frame.scalePct / 100;
+            this.requestRender();
+            this.events.fire('cameraFrames.stateChanged', this.snapshot());
+            this.updatePointerFromLast();
+            this.updateFovInfo();
+        });
     }
 
     private requestRender() {
@@ -1507,6 +1597,7 @@ class CameraFramesController {
         this.overlay.addEventListener('pointercancel', e => this.onPointerUp(e));
         this.overlay.addEventListener('dblclick', e => this.onDoubleClick(e));
         this.overlay.addEventListener('lostpointercapture', () => {
+            this.historyCommit('cameraFrames.drag');
             this.dragState = null;
         });
     }
@@ -1546,6 +1637,7 @@ class CameraFramesController {
                 mode: 'pan',
                 startCenterScreen: { x: this.state.renderBox.center.cx, y: this.state.renderBox.center.cy }
             };
+            this.historyBegin('cameraFrames.renderBoxPan');
             this.overlay.style.cursor = 'grabbing';
             e.stopPropagation();
             e.preventDefault();
@@ -1596,6 +1688,7 @@ class CameraFramesController {
             startRotationRad: mode === 'rotate' ? rotationRad : undefined,
             startAngle
         };
+        this.historyBegin(`cameraFrames.${mode}`);
         this.overlay.style.cursor = mode === 'rotate' ? 'grabbing' : this.getCursorForHit(handleId, true);
 
         e.stopPropagation();
@@ -1760,6 +1853,7 @@ class CameraFramesController {
 
     private onPointerUp(e: PointerEvent) {
         if (this.dragState && e.pointerId === this.dragState.pointerId) {
+            this.historyCommit('cameraFrames.drag');
             this.overlay.releasePointerCapture(e.pointerId);
             this.dragState = null;
             this.lastPointer = { x: e.clientX, y: e.clientY };
@@ -1785,31 +1879,35 @@ class CameraFramesController {
     }
 
     private resetFrameRotation(frame: FrameState | null) {
-        if (!frame) {
-            return;
-        }
-        const rb = this.state.renderBox;
-        const logicalW = rb.baseSize.w * rb.scale.kx;
-        const logicalH = rb.baseSize.h * rb.scale.ky;
-        const start = {
-            startCenterLogical: this.frameCenterLogical(frame, logicalW, logicalH),
-            startAnchorLogical: this.frameAnchorLogical(frame, logicalW, logicalH),
-            startRotationRad: this.frameRotationRad(frame)
-        };
-        this.applyFrameRotationFromStart(frame, start, 0, logicalW, logicalH);
-        this.requestRender();
-        this.events.fire('cameraFrames.stateChanged', this.snapshot());
-        this.updatePointerFromLast();
+        this.historyRecord('cameraFrames.resetRotation', () => {
+            if (!frame) {
+                return;
+            }
+            const rb = this.state.renderBox;
+            const logicalW = rb.baseSize.w * rb.scale.kx;
+            const logicalH = rb.baseSize.h * rb.scale.ky;
+            const start = {
+                startCenterLogical: this.frameCenterLogical(frame, logicalW, logicalH),
+                startAnchorLogical: this.frameAnchorLogical(frame, logicalW, logicalH),
+                startRotationRad: this.frameRotationRad(frame)
+            };
+            this.applyFrameRotationFromStart(frame, start, 0, logicalW, logicalH);
+            this.requestRender();
+            this.events.fire('cameraFrames.stateChanged', this.snapshot());
+            this.updatePointerFromLast();
+        });
     }
 
     private resetAnchorToCenter(frame: FrameState | null) {
-        if (!frame) {
-            return;
-        }
-        frame.anchor = { x: frame.pos.x, y: frame.pos.y };
-        this.requestRender();
-        this.events.fire('cameraFrames.stateChanged', this.snapshot());
-        this.updatePointerFromLast();
+        this.historyRecord('cameraFrames.resetAnchor', () => {
+            if (!frame) {
+                return;
+            }
+            frame.anchor = { x: frame.pos.x, y: frame.pos.y };
+            this.requestRender();
+            this.events.fire('cameraFrames.stateChanged', this.snapshot());
+            this.updatePointerFromLast();
+        });
     }
 
     // rendering to image ---------------------------------------------------
@@ -2094,7 +2192,7 @@ class CameraFramesController {
 
     // serialization --------------------------------------------------------
 
-    private snapshot(): CameraFramesState {
+    public snapshot(): CameraFramesState {
         return {
             enabled: this.state.enabled,
             renderBox: JSON.parse(JSON.stringify(this.state.renderBox)),
@@ -2104,6 +2202,32 @@ class CameraFramesController {
             exportName: this.state.exportName,
             exportFormat: this.normalizeFormat(this.state.exportFormat)
         };
+    }
+
+    public applySnapshot(snapshot: CameraFramesState) {
+        this.applyingHistory = true;
+        try {
+            this.state = JSON.parse(JSON.stringify(snapshot));
+            this.selectedId = this.state.frames.find(f => f.selected)?.id ?? null;
+            this.state.nearClip = this.computeSafeNearClip(this.state.nearClip);
+            this.overlay.style.pointerEvents = 'none';
+            this.rebuildBaseFrustum();
+            if (this.state.enabled) {
+                this.applyNearClipOverride();
+                this.computeViewportMapping(true);
+                this.syncCameraFrustum();
+                this.scheduleNearClipGuard();
+            } else {
+                this.events.fire('camera.setNearOverride', null);
+                this.events.fire('camera.setCustomFrustum', null);
+            }
+            this.requestRender();
+            this.events.fire('cameraFrames.stateChanged', this.snapshot());
+            this.updatePointerFromLast();
+            this.updateFovInfo();
+        } finally {
+            this.applyingHistory = false;
+        }
     }
 
     private serialize() {
@@ -2258,6 +2382,7 @@ class CameraFramesController {
 const registerCameraFrames = (events: Events, scene: Scene, canvasContainer: HTMLElement) => {
     const controller = new CameraFramesController(events, scene, canvasContainer);
     controller.attachPointerHandlers();
+    return controller;
 };
 
 export { registerCameraFrames };

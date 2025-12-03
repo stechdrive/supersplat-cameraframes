@@ -1,6 +1,8 @@
 import { Color, createGraphicsDevice } from 'playcanvas';
 
 import { registerCameraFrames } from './camera-frames';
+import { CameraFramesHistory } from './camera-frames-history';
+import { registerCameraHistory } from './camera-history';
 import { registerCameraPosesEvents } from './camera-poses';
 import { registerDocEvents } from './doc';
 import { EditHistory } from './edit-history';
@@ -248,6 +250,8 @@ const main = async () => {
 
     window.scene = scene;
 
+    registerCameraHistory(events, scene.camera);
+
     registerEditorEvents(events, editHistory, scene);
     registerSelectionEvents(events, scene);
     registerTimelineEvents(events);
@@ -255,7 +259,13 @@ const main = async () => {
     registerTransformHandlerEvents(events);
     registerPlySequenceEvents(events);
     registerPublishEvents(events);
-    registerCameraFrames(events, scene, editorUI.canvasContainer.dom);
+    const cameraFramesController = registerCameraFrames(events, scene, editorUI.canvasContainer.dom);
+    const cameraFramesHistory = new CameraFramesHistory(
+        events,
+        () => cameraFramesController.snapshot(),
+        (snapshot) => cameraFramesController.applySnapshot(snapshot)
+    );
+    cameraFramesController.setHistory(cameraFramesHistory);
     registerDocEvents(scene, events);
     registerRenderEvents(scene, events);
     initShortcuts(events);
