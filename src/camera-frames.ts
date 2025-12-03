@@ -1405,7 +1405,7 @@ class CameraFramesController {
         const borderHit = !handleHit && this.hitTestFrameBorder(px, py);
 
         this.overlay.style.pointerEvents = (handleHit || borderHit) ? 'auto' : 'none';
-        this.overlay.style.cursor = '';
+        this.overlay.style.cursor = this.getCursorForHit(handleHit?.handleId, borderHit);
     }
 
     private updatePointerFromLast() {
@@ -1419,6 +1419,7 @@ class CameraFramesController {
         const handleHit = this.hitTestHandle(px, py);
         const borderHit = !handleHit && this.hitTestFrameBorder(px, py);
         this.overlay.style.pointerEvents = (handleHit || borderHit) && this.state.enabled ? 'auto' : 'none';
+        this.overlay.style.cursor = this.getCursorForHit(handleHit?.handleId, borderHit);
     }
 
     private isPointInRect(px: number, py: number, r: { x: number; y: number; w: number; h: number; }) {
@@ -1440,6 +1441,35 @@ class CameraFramesController {
             }
         }
         return null;
+    }
+
+    private getCursorForHit(handleId: string | undefined, borderHit: any) {
+        if (handleId) {
+            switch (handleId) {
+                case 'nw':
+                case 'se':
+                    return 'nwse-resize';
+                case 'ne':
+                case 'sw':
+                    return 'nesw-resize';
+                case 'n':
+                case 's':
+                    return 'ns-resize';
+                case 'e':
+                case 'w':
+                    return 'ew-resize';
+                case 'anchor':
+                    return 'move';
+                case 'rotate':
+                    return 'grab';
+                default:
+                    return 'default';
+            }
+        }
+        if (borderHit) {
+            return 'move';
+        }
+        return '';
     }
 
     attachPointerHandlers() {
@@ -1538,6 +1568,7 @@ class CameraFramesController {
             startRotationRad: mode === 'rotate' ? rotationRad : undefined,
             startAngle
         };
+        this.overlay.style.cursor = mode === 'rotate' ? 'grabbing' : this.getCursorForHit(handleId, true);
 
         e.stopPropagation();
         e.preventDefault();
@@ -1608,6 +1639,7 @@ class CameraFramesController {
             frame.pos.x = 0.5 + (newCenter.x - rb.center.cx) / logicalW;
             frame.pos.y = 0.5 + (newCenter.y - rb.center.cy) / logicalH;
         } else if (this.dragState.mode === 'rotate') {
+            this.overlay.style.cursor = 'grabbing';
             const start = this.dragState;
             if (!start.startAnchorLogical || !start.startCenterLogical || start.startRotationRad === undefined || start.startAngle === undefined) {
                 return;
