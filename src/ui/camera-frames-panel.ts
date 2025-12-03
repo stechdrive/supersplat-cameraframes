@@ -1,7 +1,7 @@
 import { BooleanInput, Button, Container, Label, NumericInput, Panel, SelectInput, SliderInput, TextInput } from '@playcanvas/pcui';
 
 import { Events } from '../events';
-import { formatInteger } from './localization';
+import { formatInteger, localize } from './localization';
 import cameraPanelSvg from './svg/camera-panel.svg';
 import collapseSvg from './svg/collapse.svg';
 import deleteSvg from './svg/delete.svg';
@@ -73,7 +73,7 @@ class CameraFramesPanel extends Panel {
         args = {
             ...args,
             id: 'camera-frames-panel',
-            headerText: 'CAMERA FRAMES',
+            headerText: localize('panel.camera-frames.header'),
             resizable: 'top',
             collapsed: false,
             collapsible: false,
@@ -172,7 +172,7 @@ class CameraFramesPanel extends Panel {
             compact = value;
             collapseButton.dom.innerHTML = '';
             collapseButton.dom.appendChild(createSvg(compact ? cameraPanelSvg : collapseSvg));
-            collapseButton.dom.title = compact ? 'パネルを開く' : 'パネルを折りたたむ';
+            collapseButton.dom.title = compact ? localize('panel.camera-frames.expand') : localize('panel.camera-frames.collapse');
             this.class[compact ? 'add' : 'remove']('compact');
             this.content.hidden = compact;
             this.dom.setAttribute('aria-expanded', (!compact).toString());
@@ -186,7 +186,7 @@ class CameraFramesPanel extends Panel {
         // enable toggle (header)
         const enableToggle = new BooleanInput({ type: 'toggle', class: ['panel-header-toggle'], value: false });
         enableToggle.dom.classList.add('panel-header-button');
-        enableToggle.dom.title = 'CAMERA FRAMES 有効化';
+        enableToggle.dom.title = localize('panel.camera-frames.toggle');
         ['pointerdown', 'pointerup', 'click'].forEach((evt) => {
             enableToggle.dom.addEventListener(evt, (e: Event) => e.stopPropagation());
         });
@@ -198,7 +198,7 @@ class CameraFramesPanel extends Panel {
         const layoutGroup = new Container({ class: ['layout-group'] });
         const layoutHeader = new Container({ class: ['layout-header', 'collapsible-header'] });
         const layoutArrow = new Label({ class: 'collapsible-arrow', text: '▶' });
-        const layoutTitle = new Label({ class: 'control-label', text: '大判指定' });
+        const layoutTitle = new Label({ class: 'control-label', text: localize('panel.camera-frames.layout.title') });
         layoutHeader.append(layoutArrow);
         layoutHeader.append(layoutTitle);
         layoutGroup.append(layoutHeader);
@@ -210,7 +210,7 @@ class CameraFramesPanel extends Panel {
 
         // anchor grid
         const anchorContainer = new Container({ id: 'camera-frames-anchor', class: 'anchor-wrapper' });
-        anchorContainer.append(new Label({ class: 'control-label', text: '基準点' }));
+        anchorContainer.append(new Label({ class: 'control-label', text: localize('panel.camera-frames.layout.anchor') }));
         const anchorGrid = new Container({ class: 'anchor-grid' });
         const anchorButtons = new Map<string, Button>();
         [0, 0.5, 1].forEach((ay) => {
@@ -242,8 +242,8 @@ class CameraFramesPanel extends Panel {
             return { row, input };
         };
 
-        const widthScale = scaleRow('幅(%)');
-        const heightScale = scaleRow('高さ(%)');
+        const widthScale = scaleRow(localize('panel.camera-frames.layout.width'));
+        const heightScale = scaleRow(localize('panel.camera-frames.layout.height'));
 
         // layout group assembly (2-column feel)
         const sizeContainer = new Container({ class: 'layout-size' });
@@ -270,14 +270,14 @@ class CameraFramesPanel extends Panel {
 
         // output resolution
         const outputRow = new Container({ class: 'control-parent' });
-        const outputLabel = new Label({ class: 'control-label', text: '出力解像度' });
+        const outputLabel = new Label({ class: 'control-label', text: localize('panel.camera-frames.output.label') });
         const outputValue = new Label({ class: 'control-element-expand', text: '-' });
         outputRow.append(outputLabel);
         outputRow.append(outputValue);
 
         // FOV (35mm換算)
         const fovRow = new Container({ class: 'control-parent' });
-        const fovLabel = new Label({ class: 'control-label', text: 'レンズ(mm)' });
+        const fovLabel = new Label({ class: 'control-label', text: localize('panel.camera-frames.fov') });
         const fovSlider = new SliderInput({
             class: 'control-element',
             min: 10,
@@ -290,7 +290,7 @@ class CameraFramesPanel extends Panel {
 
         // canvas zoom
         const canvasZoomRow = new Container({ class: 'control-parent' });
-        const canvasZoomLabel = new Label({ class: 'control-label', text: '表示倍率' });
+        const canvasZoomLabel = new Label({ class: 'control-label', text: localize('panel.camera-frames.canvas-zoom') });
         const canvasZoomInput = new NumericInput({
             class: 'control-element',
             precision: 0,
@@ -307,7 +307,7 @@ class CameraFramesPanel extends Panel {
 
         // export options
         const filenameRow = new Container({ class: 'control-parent' });
-        const filenameLabel = new Label({ class: 'control-label', text: 'ファイル名' });
+        const filenameLabel = new Label({ class: 'control-label', text: localize('panel.camera-frames.export.filename') });
         const filenameInput = new TextInput({
             class: ['control-element-expand', 'text-input'],
             value: 'yc4_00_000_CGLO'
@@ -316,7 +316,7 @@ class CameraFramesPanel extends Panel {
         filenameRow.append(filenameInput);
 
         const formatRow = new Container({ class: 'control-parent' });
-        const formatLabel = new Label({ class: 'control-label', text: 'PSD/PNG' });
+        const formatLabel = new Label({ class: 'control-label', text: localize('panel.camera-frames.export.format') });
         const formatSelect = new SelectInput({
             class: 'control-element',
             defaultValue: 'psd',
@@ -327,7 +327,7 @@ class CameraFramesPanel extends Panel {
         });
         const renderButton = new Button({ class: ['icon-button'], text: '' });
         renderButton.dom.appendChild(createSvg(exportSvg));
-        renderButton.dom.title = 'レンダリング';
+        renderButton.dom.title = localize('panel.camera-frames.export.render');
         const formatGroup = new Container({ class: 'format-row' });
         formatGroup.append(formatLabel);
         formatGroup.append(formatSelect);
@@ -336,14 +336,14 @@ class CameraFramesPanel extends Panel {
         formatGroup.append(renderSpinner);
 
         // frame list
-        const frameListLabel = new Label({ class: 'control-label', text: 'フレーム一覧' });
+        const frameListLabel = new Label({ class: 'control-label', text: localize('panel.camera-frames.frames') });
         const frameActions = new Container({ class: 'frame-actions' });
         const addButton = new Button({ class: ['icon-button'], text: '' });
         addButton.dom.appendChild(createSvg(newSvg));
-        addButton.dom.title = 'フレーム追加';
+        addButton.dom.title = localize('panel.camera-frames.frames.add');
         const deleteBtn = new Button({ class: ['icon-button', 'danger-icon'], text: '' });
         deleteBtn.dom.appendChild(createSvg(deleteSvg));
-        deleteBtn.dom.title = 'フレーム削除';
+        deleteBtn.dom.title = localize('panel.camera-frames.frames.delete');
         frameActions.append(addButton);
         frameActions.append(deleteBtn);
         const frameListHeader = new Container({ class: 'frame-list-header' });
@@ -352,7 +352,7 @@ class CameraFramesPanel extends Panel {
         const frameList = new Container({ id: 'camera-frames-list', class: 'list-container' });
 
         const frameScaleRow = new Container({ class: 'control-parent' });
-        frameScaleRow.append(new Label({ class: 'control-label', text: 'フレーム拡縮(%)' }));
+        frameScaleRow.append(new Label({ class: 'control-label', text: localize('panel.camera-frames.frames.scale') }));
         const frameScaleInput = new NumericInput({
             class: 'control-element',
             precision: 1,
@@ -365,9 +365,9 @@ class CameraFramesPanel extends Panel {
 
         // mask controls
         const maskRow = new Container({ class: ['control-parent', 'mask-row'] });
-        const maskLabel = new Label({ class: 'control-label', text: 'フレーム外マスク' });
+        const maskLabel = new Label({ class: 'control-label', text: localize('panel.camera-frames.mask') });
         const maskToggle = new BooleanInput({ type: 'toggle', class: 'control-element', value: false });
-        const maskOpacityLabel = new Label({ class: ['control-label', 'mask-opacity-label'], text: '不透明度(%)' });
+        const maskOpacityLabel = new Label({ class: ['control-label', 'mask-opacity-label'], text: localize('panel.camera-frames.mask.opacity') });
         const maskOpacityInput = new NumericInput({
             class: 'control-element',
             precision: 0,
@@ -508,16 +508,16 @@ class CameraFramesPanel extends Panel {
         const pitchInput = new NumericInput({ class: 'control-element', precision: 2, step: 1, value: 0, style: 'width: 60px' });
         const rollInput = new NumericInput({ class: 'control-element', precision: 2, step: 1, value: 0, style: 'width: 60px' });
         const rollLock = new Button({ class: ['control-element', 'roll-lock-btn'], text: '' });
-        rollLock.dom.title = 'Roll Lock';
+        rollLock.dom.title = localize('panel.camera-frames.transform.roll-lock');
         rotGrid.dom.style.display = 'grid';
         rotGrid.dom.style.gridTemplateColumns = '24px 70px 24px 70px 24px 70px 26px';
         rotGrid.dom.style.columnGap = '2px';
         rotGrid.dom.style.alignItems = 'center';
-        rotGrid.append(new Label({ class: 'control-label', text: 'Yw' }));
+        rotGrid.append(new Label({ class: 'control-label', text: localize('panel.camera-frames.transform.yaw') }));
         rotGrid.append(yawInput);
-        rotGrid.append(new Label({ class: 'control-label', text: 'Pt' }));
+        rotGrid.append(new Label({ class: 'control-label', text: localize('panel.camera-frames.transform.pitch') }));
         rotGrid.append(pitchInput);
-        rotGrid.append(new Label({ class: 'control-label', text: 'Rl' }));
+        rotGrid.append(new Label({ class: 'control-label', text: localize('panel.camera-frames.transform.roll') }));
         rotGrid.append(rollInput);
         rotGrid.append(rollLock);
 
@@ -526,7 +526,7 @@ class CameraFramesPanel extends Panel {
         nearClipRow.dom.style.gridTemplateColumns = '120px 1fr';
         nearClipRow.dom.style.columnGap = '6px';
         nearClipRow.dom.style.alignItems = 'center';
-        const nearClipLabel = new Label({ class: 'control-label', text: 'ニアクリップ' });
+        const nearClipLabel = new Label({ class: 'control-label', text: localize('panel.camera-frames.near-clip') });
         const nearClipInput = new NumericInput({
             class: 'control-element',
             precision: 1,
@@ -539,11 +539,11 @@ class CameraFramesPanel extends Panel {
         nearClipRow.append(nearClipInput);
 
         const localRow = new Container({ class: 'control-parent' });
-        const sliderLabelR = new Label({ class: 'control-label', text: '左右' });
+        const sliderLabelR = new Label({ class: 'control-label', text: localize('panel.camera-frames.transform.right-left') });
         const sliderR = new SliderInput({ class: 'control-element-expand', min: -1, max: 1, step: 0.01, value: 0 });
-        const sliderLabelU = new Label({ class: 'control-label', text: '上下' });
+        const sliderLabelU = new Label({ class: 'control-label', text: localize('panel.camera-frames.transform.up-down') });
         const sliderU = new SliderInput({ class: 'control-element-expand', min: -1, max: 1, step: 0.01, value: 0 });
-        const sliderLabelF = new Label({ class: 'control-label', text: '前後' });
+        const sliderLabelF = new Label({ class: 'control-label', text: localize('panel.camera-frames.transform.forward-back') });
         const sliderF = new SliderInput({ class: 'control-element-expand', min: -1, max: 1, step: 0.01, value: 0 });
         const localGrid = new Container({ class: 'control-parent' });
         localGrid.dom.style.display = 'grid';
@@ -560,12 +560,14 @@ class CameraFramesPanel extends Panel {
 
         const camTransformHeader = new Container({ class: ['control-parent', 'collapsible-header'] });
         const camTransformArrow = new Label({ class: 'collapsible-arrow', text: '▶' });
-        const camTransformLabel = new Label({ class: 'control-label', text: 'カメラ座標操作' });
+        const camTransformLabel = new Label({ class: 'control-label', text: localize('panel.camera-frames.transform.title') });
         const camNavControls = new Container({ class: 'cam-nav-controls' });
         const orbitIcon = new Container({ class: ['cam-nav-icon', 'active'] });
         orbitIcon.dom.appendChild(createSvg(orbitSvg));
+        orbitIcon.dom.title = localize('panel.camera-frames.transform.orbit');
         const fpvIcon = new Container({ class: ['cam-nav-icon'] });
         fpvIcon.dom.appendChild(createSvg(cameraPanelSvg));
+        fpvIcon.dom.title = localize('panel.camera-frames.transform.fpv');
         camNavControls.append(orbitIcon);
         camNavControls.append(fpvIcon);
         camTransformHeader.append(camTransformArrow);
@@ -859,8 +861,14 @@ class CameraFramesPanel extends Panel {
             const rectBottom = rectTop + displayH;
             const overflowX = vpW > 0 ? (rectLeft < -0.5 || rectRight > vpW + 0.5) : false;
             const overflowY = vpH > 0 ? (rectTop < -0.5 || rectBottom > vpH + 0.5) : false;
-            const overflowNote = (overflowX || overflowY) ? '（ビューポート外）' : '';
-            outputValue.text = `${formatInteger(outW)} × ${formatInteger(outH)} px（A4 × ${state.renderBox.scale.kx.toFixed(2)} × ${state.renderBox.scale.ky.toFixed(2)}）${overflowNote}`;
+            const overflowNote = (overflowX || overflowY) ? localize('panel.camera-frames.output.viewport-overflow') : '';
+            outputValue.text = localize('panel.camera-frames.output.value', {
+                outW: formatInteger(outW),
+                outH: formatInteger(outH),
+                a4x: state.renderBox.scale.kx.toFixed(2),
+                a4y: state.renderBox.scale.ky.toFixed(2),
+                overflow: overflowNote
+            });
 
             updateAnchorUI(state.renderBox.anchor.ax, state.renderBox.anchor.ay);
 

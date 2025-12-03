@@ -23,14 +23,15 @@ const localizeInit = () => {
 
 interface LocalizeOptions {
     ellipsis?: boolean;
+    // additional properties are passed to i18next for interpolation
+    [key: string]: any;
 }
 
 const localize = (key: string, options?: LocalizeOptions): string => {
-    let text = i18next.t(key);
+    const { ellipsis, ...interpolation } = options ?? {};
+    const text = i18next.t(key, interpolation) as string;
 
-    if (options?.ellipsis) text += '...';
-
-    return text;
+    return ellipsis ? `${text}...` : text;
 };
 
 const getLocale = (): string => {

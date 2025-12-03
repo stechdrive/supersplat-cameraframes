@@ -1,10 +1,10 @@
+import { cameraFramesVersion } from './camera-frames-version';
 import { ElementType } from './element';
 import { Events } from './events';
 import { PngCompressor } from './png-compressor';
 import { exportPsd } from './psd-export';
 import { Scene } from './scene';
 import { Crc } from './serialize/crc';
-import { cameraFramesVersion } from './camera-frames-version';
 
 type RenderBoxState = {
     baseSize: { w: number; h: number; };
