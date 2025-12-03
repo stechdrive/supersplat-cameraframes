@@ -1,5 +1,5 @@
 import { BufferTarget, EncodedPacket, EncodedVideoPacketSource, MkvOutputFormat, MovOutputFormat, Mp4OutputFormat, Output, StreamTarget, WebMOutputFormat } from 'mediabunny';
-import { path, Vec3 } from 'playcanvas';
+import { Layer, path, Vec3 } from 'playcanvas';
 
 import { ElementType } from './element';
 import { Events } from './events';
@@ -28,6 +28,13 @@ type VideoSettings = {
     codec: 'h264' | 'h265' | 'vp9' | 'av1';
 };
 
+type OffscreenRenderOptions = {
+    includeGrid?: boolean;
+    includeEyeLevel?: boolean;
+    overlaysOnly?: boolean;
+    unpremultiplyAlpha?: boolean;
+};
+
 const removeExtension = (filename: string) => {
     return filename.substring(0, filename.length - path.getExtension(filename).length);
 };
@@ -40,6 +47,20 @@ const downloadFile = (arrayBuffer: ArrayBuffer, filename: string) => {
     el.href = url;
     el.click();
     window.URL.revokeObjectURL(url);
+};
+
+const unpremultiplyAlpha = (pixels: Uint8Array) => {
+    const data = pixels instanceof Uint8ClampedArray ? pixels : new Uint8ClampedArray(pixels.buffer);
+    for (let i = 0; i < data.length; i += 4) {
+        const a = data[i + 3];
+        if (a === 0 || a === 255) {
+            continue;
+        }
+        const alpha = a / 255;
+        data[i + 0] = Math.min(255, Math.round(data[i + 0] / alpha));
+        data[i + 1] = Math.min(255, Math.round(data[i + 1] / alpha));
+        data[i + 2] = Math.min(255, Math.round(data[i + 2] / alpha));
+    }
 };
 
 const registerRenderEvents = (scene: Scene, events: Events) => {
@@ -59,12 +80,51 @@ const registerRenderEvents = (scene: Scene, events: Events) => {
         });
     };
 
-    events.function('render.offscreen', async (width: number, height: number): Promise<Uint8Array> => {
+    events.function('render.offscreen', async (width: number, height: number, options?: OffscreenRenderOptions): Promise<Uint8Array> => {
+        const includeGrid = !!options?.includeGrid;
+        const includeEyeLevel = !!options?.includeEyeLevel;
+        const overlaysOnly = !!options?.overlaysOnly;
+        const applyUnpremultiply = !!options?.unpremultiplyAlpha;
+
+        const restoreLayers: Array<{ layer: Layer; enabled: boolean; }> = [];
+        const rememberLayer = (layer?: Layer) => {
+            if (!layer) return;
+            restoreLayers.push({ layer, enabled: layer.enabled });
+        };
+
+        const prevRenderOverlays = scene.camera.renderOverlays;
+        const prevRenderFlags = { ...scene.renderFlags };
+
         try {
             // start rendering to offscreen buffer only
             scene.camera.startOffscreenMode(width, height);
-            scene.camera.renderOverlays = false;
-            scene.gizmoLayer.enabled = false;
+
+            const worldLayer = scene.app.scene.layers.getLayerByName('World');
+            const exportLayer = scene.exportOverlayLayer;
+
+            if (overlaysOnly) {
+                [scene.backgroundLayer, scene.shadowLayer, scene.overlayLayer, scene.gizmoLayer, worldLayer, scene.debugLayer].forEach((layer) => {
+                    if (!layer) return;
+                    rememberLayer(layer);
+                    layer.enabled = false;
+                });
+                rememberLayer(exportLayer);
+                if (exportLayer) {
+                    exportLayer.enabled = true;
+                }
+            } else {
+                rememberLayer(scene.gizmoLayer);
+                scene.gizmoLayer.enabled = false;
+            }
+
+            scene.camera.renderOverlays = includeGrid || includeEyeLevel;
+
+            scene.renderFlags.forceGridOverlay = includeGrid;
+            scene.renderFlags.forceEyeLevelOverlay = includeEyeLevel;
+            scene.renderFlags.eyeLevelLayerOverride = includeEyeLevel ? (exportLayer ?? scene.debugLayer) : null;
+            scene.renderFlags.gridLayerOverride = includeGrid ? (exportLayer ?? scene.debugLayer) : null;
+
+            scene.camera.entity.camera.clearColor.set(0, 0, 0, 0);
 
             // render the next frame
             scene.forceRender = true;
@@ -83,6 +143,10 @@ const registerRenderEvents = (scene: Scene, events: Events) => {
             // read the rendered frame
             await workRenderTarget.colorBuffer.read(0, 0, width, height, { renderTarget: workRenderTarget, data });
 
+            if (applyUnpremultiply) {
+                unpremultiplyAlpha(data);
+            }
+
             // flip y positions to have 0,0 at the top
             let line = new Uint8Array(width * 4);
             for (let y = 0; y < height / 2; y++) {
@@ -93,9 +157,17 @@ const registerRenderEvents = (scene: Scene, events: Events) => {
 
             return data;
         } finally {
+            restoreLayers.forEach(({ layer, enabled }) => {
+                if (layer) {
+                    layer.enabled = enabled;
+                }
+            });
+            scene.renderFlags.forceGridOverlay = prevRenderFlags.forceGridOverlay;
+            scene.renderFlags.forceEyeLevelOverlay = prevRenderFlags.forceEyeLevelOverlay;
+            scene.renderFlags.eyeLevelLayerOverride = prevRenderFlags.eyeLevelLayerOverride;
+            scene.renderFlags.gridLayerOverride = prevRenderFlags.gridLayerOverride;
             scene.camera.endOffscreenMode();
-            scene.camera.renderOverlays = true;
-            scene.gizmoLayer.enabled = true;
+            scene.camera.renderOverlays = prevRenderOverlays;
             scene.camera.entity.camera.clearColor.set(0, 0, 0, 0);
         }
     });
@@ -413,3 +485,4 @@ const registerRenderEvents = (scene: Scene, events: Events) => {
 };
 
 export { ImageSettings, VideoSettings, registerRenderEvents };
+export type { OffscreenRenderOptions };

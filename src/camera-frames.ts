@@ -5,6 +5,7 @@ import { PngCompressor } from './png-compressor';
 import { exportPsd } from './psd-export';
 import { Scene } from './scene';
 import { Crc } from './serialize/crc';
+import { localize } from './ui/localization';
 
 type RenderBoxState = {
     baseSize: { w: number; h: number; };
@@ -47,6 +48,7 @@ export type CameraFramesState = {
     nearClip?: number | null;
     exportName?: string;
     exportFormat?: ExportFormat;
+    exportGridOverlay?: boolean;
 };
 
 type Viewport = { vw: number; vh: number; };
@@ -135,7 +137,8 @@ export class CameraFramesController {
         mask: { ...DEFAULT_MASK },
         nearClip: null,
         exportName: 'yc4_00_000_CGLO',
-        exportFormat: 'psd'
+        exportFormat: 'psd',
+        exportGridOverlay: false
     };
     private selectedId: string = null;
     private compressor: PngCompressor | null = null;
@@ -437,6 +440,13 @@ export class CameraFramesController {
             const next = this.normalizeFormat(format);
             if (this.state.exportFormat === next) return;
             this.state.exportFormat = next;
+            this.events.fire('cameraFrames.stateChanged', this.snapshot());
+        });
+
+        this.events.on('cameraFrames.setExportGridOverlay', (value: boolean) => {
+            const next = !!value;
+            if (this.state.exportGridOverlay === next) return;
+            this.state.exportGridOverlay = next;
             this.events.fire('cameraFrames.stateChanged', this.snapshot());
         });
 
@@ -2017,12 +2027,43 @@ export class CameraFramesController {
         ctx.restore();
     }
 
+    private canvasFromPixels(pixels: Uint8Array | Uint8ClampedArray, width: number, height: number) {
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+            throw new Error('Failed to acquire 2D context for overlay render');
+        }
+        const view = pixels instanceof Uint8ClampedArray ? pixels : new Uint8ClampedArray(pixels);
+        const imgData = new ImageData(width, height);
+        imgData.data.set(view);
+        ctx.putImageData(imgData, 0, 0);
+        return canvas;
+    }
+
     private async renderBase(width: number, height: number) {
         const pixels = await this.events.invoke('render.offscreen', width, height) as Uint8Array;
         if (!pixels) {
             throw new Error('render.offscreen returned empty buffer');
         }
         return pixels;
+    }
+
+    private async renderOverlayPass(width: number, height: number) {
+        if (!this.state.exportGridOverlay) {
+            return null;
+        }
+        const pixels = await this.events.invoke('render.offscreen', width, height, {
+            includeGrid: true,
+            includeEyeLevel: true,
+            overlaysOnly: true,
+            unpremultiplyAlpha: true
+        }) as Uint8Array;
+        if (!pixels) {
+            throw new Error('render.offscreen returned empty overlay buffer');
+        }
+        return { canvas: this.canvasFromPixels(pixels, width, height) };
     }
 
     private renderFrameOverlay(width: number, height: number, frames?: FrameState[]) {
@@ -2148,8 +2189,8 @@ export class CameraFramesController {
         return result.buffer;
     }
 
-    private async renderPng(params: { basePixels: Uint8Array; overlayCanvas: HTMLCanvasElement; width: number; height: number; filename: string; }) {
-        const { basePixels, overlayCanvas, width, height, filename } = params;
+    private async renderPng(params: { basePixels: Uint8Array; frameOverlay: HTMLCanvasElement; gridOverlay?: HTMLCanvasElement | null; width: number; height: number; filename: string; }) {
+        const { basePixels, frameOverlay, gridOverlay, width, height, filename } = params;
         const canvas = document.createElement('canvas');
         canvas.width = width;
         canvas.height = height;
@@ -2160,7 +2201,10 @@ export class CameraFramesController {
 
         const imgData = new ImageData(new Uint8ClampedArray(basePixels), width, height);
         ctx.putImageData(imgData, 0, 0);
-        ctx.drawImage(overlayCanvas, 0, 0);
+        if (gridOverlay) {
+            ctx.drawImage(gridOverlay, 0, 0);
+        }
+        ctx.drawImage(frameOverlay, 0, 0);
 
         const merged = new Uint32Array(ctx.getImageData(0, 0, width, height).data.buffer);
         const flipped = this.flipForCompressor(merged, width, height);
@@ -2198,12 +2242,19 @@ export class CameraFramesController {
             // 書き出し前に明示的にエクスポート用フラスタムを適用し、副作用イベント(camera.resize)頼りを排除
             this.syncExportFrustum(width, height);
             const basePixels = await this.renderBase(width, height);
+            const gridOverlay = await this.renderOverlayPass(width, height);
 
             if (format === 'psd') {
                 const overlays = this.renderFrameOverlaysByManagement(width, height);
+                const overlayLayers = gridOverlay ?
+                    [
+                        { name: localize('panel.camera-frames.export.grid-layer'), canvas: gridOverlay.canvas },
+                        ...overlays
+                    ] :
+                    overlays;
                 await this.renderPsd({
                     basePixels: basePixels instanceof Uint8ClampedArray ? basePixels : new Uint8ClampedArray(basePixels),
-                    overlays,
+                    overlays: overlayLayers,
                     width,
                     height,
                     filename
@@ -2212,7 +2263,8 @@ export class CameraFramesController {
                 const overlay = this.renderFrameOverlay(width, height);
                 await this.renderPng({
                     basePixels,
-                    overlayCanvas: overlay.canvas,
+                    frameOverlay: overlay.canvas,
+                    gridOverlay: gridOverlay?.canvas ?? null,
                     width,
                     height,
                     filename
@@ -2257,7 +2309,8 @@ export class CameraFramesController {
             mask: { ...this.state.mask },
             nearClip: this.state.nearClip,
             exportName: this.state.exportName,
-            exportFormat: this.normalizeFormat(this.state.exportFormat)
+            exportFormat: this.normalizeFormat(this.state.exportFormat),
+            exportGridOverlay: !!this.state.exportGridOverlay
         };
     }
 
@@ -2267,6 +2320,7 @@ export class CameraFramesController {
             this.state = JSON.parse(JSON.stringify(snapshot));
             this.selectedId = this.state.frames.find(f => f.selected)?.id ?? null;
             this.state.nearClip = this.computeSafeNearClip(this.state.nearClip);
+            this.state.exportGridOverlay = !!this.state.exportGridOverlay;
             this.overlay.style.pointerEvents = 'none';
             this.rebuildBaseFrustum();
             if (this.state.enabled) {
@@ -2305,7 +2359,8 @@ export class CameraFramesController {
                 mask: { ...DEFAULT_MASK },
                 nearClip: null,
                 exportName: 'yc4_00_000_CGLO',
-                exportFormat: 'png'
+                exportFormat: 'png',
+                exportGridOverlay: false
             };
             this.selectedId = null;
             this.rebuildBaseFrustum();
@@ -2323,6 +2378,7 @@ export class CameraFramesController {
         const rb = docState.renderBox ?? DEFAULT_RENDERBOX();
         const exportName = typeof docState.exportName === 'string' ? docState.exportName : 'yc4_00_000_CGLO';
         const exportFormat = this.normalizeFormat(docState.exportFormat ?? 'psd');
+        const exportGridOverlay = !!docState.exportGridOverlay;
         const frames = (docState.frames ?? []).map((f: FrameState) => ({
             id: f.id,
             pos: { ...f.pos },
@@ -2409,7 +2465,8 @@ export class CameraFramesController {
             },
             nearClip: (typeof docState.nearClip === 'number' && isFinite(docState.nearClip)) ? Math.max(1e-6, docState.nearClip) : null,
             exportName,
-            exportFormat
+            exportFormat,
+            exportGridOverlay
         };
 
         this.state.nearClip = this.computeSafeNearClip(this.state.nearClip);

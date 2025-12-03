@@ -6,6 +6,7 @@ import cameraPanelSvg from './svg/camera-panel.svg';
 import collapseSvg from './svg/collapse.svg';
 import deleteSvg from './svg/delete.svg';
 import exportSvg from './svg/export.svg';
+import cameraResetSvg from './svg/camera-reset.svg';
 import newSvg from './svg/new.svg';
 import lockSvg from './svg/select-lock.svg';
 import orbitSvg from './svg/select-sphere.svg';
@@ -47,6 +48,7 @@ type CameraFramesState = {
     nearClip?: number | null;
     exportName?: string;
     exportFormat?: 'png' | 'psd';
+    exportGridOverlay?: boolean;
 };
 
 type FovInfo = {
@@ -152,6 +154,7 @@ class CameraFramesPanel extends Panel {
         let lastFovInfo: FovInfo | null = null;
         let framesEnabled = false;
         let rendering = false;
+        let gridOverlayEnabled = false;
         let navMode: 'orbit' | 'fpv' = 'orbit';
         let altSlow = false;
         let lastPose = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0 };
@@ -325,12 +328,22 @@ class CameraFramesPanel extends Panel {
                 { v: 'png', t: 'PNG' }
             ]
         });
+        const gridToggle = new Button({ class: ['icon-button', 'grid-toggle-button'], text: '' });
+        gridToggle.dom.appendChild(createSvg(cameraResetSvg));
+        gridToggle.dom.title = localize('panel.camera-frames.export.grid-tooltip');
+        gridToggle.dom.setAttribute('aria-pressed', 'false');
+        const gridToggleWrapper = new Container({ class: 'format-grid-toggle' });
+        gridToggleWrapper.dom.style.display = 'flex';
+        gridToggleWrapper.dom.style.alignItems = 'center';
+        gridToggleWrapper.dom.style.gap = '6px';
+        gridToggleWrapper.append(gridToggle);
         const renderButton = new Button({ class: ['icon-button'], text: '' });
         renderButton.dom.appendChild(createSvg(exportSvg));
         renderButton.dom.title = localize('panel.camera-frames.export.render');
         const formatGroup = new Container({ class: 'format-row' });
         formatGroup.append(formatLabel);
         formatGroup.append(formatSelect);
+        formatGroup.append(gridToggleWrapper);
         formatGroup.append(renderButton);
         const renderSpinner = new Container({ class: 'render-spinner', hidden: true });
         formatGroup.append(renderSpinner);
@@ -438,6 +451,10 @@ class CameraFramesPanel extends Panel {
             if (suppress) return;
             const format = value === 'psd' ? 'psd' : 'png';
             events.fire('cameraFrames.setExportFormat', format);
+        });
+        gridToggle.on('click', () => {
+            if (suppress) return;
+            events.fire('cameraFrames.setExportGridOverlay', !gridOverlayEnabled);
         });
 
         const setRenderBusy = (busy: boolean) => {
@@ -841,6 +858,9 @@ class CameraFramesPanel extends Panel {
 
             filenameInput.value = state.exportName ?? 'camera-frames';
             formatSelect.value = state.exportFormat ?? 'png';
+            gridOverlayEnabled = !!state.exportGridOverlay;
+            gridToggle.class[gridOverlayEnabled ? 'add' : 'remove']('active');
+            gridToggle.dom.setAttribute('aria-pressed', gridOverlayEnabled ? 'true' : 'false');
 
             const zoomPct = Math.round(state.renderBox.viewZoomPct ?? 100);
             canvasZoomInput.value = zoomPct;

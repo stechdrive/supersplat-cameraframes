@@ -34,6 +34,7 @@ class Scene {
     backgroundLayer: Layer;
     shadowLayer: Layer;
     debugLayer: Layer;
+    exportOverlayLayer: Layer;
     overlayLayer: Layer;
     gizmoLayer: Layer;
     sceneState = [new SceneState(), new SceneState()];
@@ -46,6 +47,18 @@ class Scene {
 
     lockedRenderMode = false;
     lockedRender = false;
+
+    renderFlags: {
+        forceGridOverlay: boolean;
+        forceEyeLevelOverlay: boolean;
+        eyeLevelLayerOverride: Layer | null;
+        gridLayerOverride: Layer | null;
+    } = {
+        forceGridOverlay: false,
+        forceEyeLevelOverlay: false,
+        eyeLevelLayerOverride: null,
+        gridLayerOverride: null
+    };
 
     canvasResize: { width: number; height: number } | null = null;
     targetSize = {
@@ -168,6 +181,14 @@ class Scene {
             name: 'Shadow Layer'
         });
 
+        this.exportOverlayLayer = new Layer({
+            enabled: false,
+            name: 'Export Overlay',
+            clearDepthBuffer: false,
+            opaqueSortMode: SORTMODE_NONE,
+            transparentSortMode: SORTMODE_NONE
+        });
+
         // debug layer
         this.debugLayer = new Layer({
             enabled: true,
@@ -198,6 +219,7 @@ class Scene {
         layers.insert(this.backgroundLayer, idx);
         layers.insert(this.shadowLayer, idx + 1);
         layers.insert(this.debugLayer, idx + 1);
+        layers.insert(this.exportOverlayLayer, idx + 2);
         layers.push(this.overlayLayer);
         layers.push(this.gizmoLayer);
 

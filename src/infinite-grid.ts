@@ -66,7 +66,9 @@ class InfiniteGrid extends Element {
 
         this.scene.camera.entity.camera.on('preRenderLayer', (layer: Layer, transparent: boolean) => {
             const { scene } = this;
-            if (this.visible && layer === scene.debugLayer && !transparent && scene.camera.renderOverlays) {
+            const overlaysEnabled = scene.camera.renderOverlays || scene.renderFlags.forceGridOverlay;
+            const targetLayer = scene.renderFlags.gridLayerOverride ?? scene.debugLayer;
+            if (this.visible && layer === targetLayer && !transparent && overlaysEnabled) {
                 const { camera } = scene;
 
                 device.setBlendState(blendState);

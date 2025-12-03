@@ -166,6 +166,23 @@
     height: 32px;
 }
 
+.format-row .grid-toggle-button {
+    width: 36px;
+    height: 36px;
+    padding: 3px;
+
+    svg {
+        width: 24px;
+        height: 24px;
+    }
+
+    &.active {
+        border-color: $clr-hilight;
+        color: $clr-hilight;
+        background-color: rgba($clr-hilight, 0.12);
+    }
+}
+
 .button-row .render-spinner {
     width: 16px;
     height: 16px;

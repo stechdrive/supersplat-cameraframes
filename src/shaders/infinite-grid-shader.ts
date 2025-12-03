@@ -119,13 +119,16 @@ const fragmentShader = /* glsl*/ `
             discard;
         }
 
+        // common falloff so axis colors don't stretch infinitely
+        float axisFalloff = 1.0 - smoothstep(200.0, 400.0, length(pos));
+
         // emphasize world origin axes (XZ plane only)
         if (plane == 1) {
-            float axisWidth = 0.02; // meters
+            float axisWidth = 0.04; // meters (4 cm)
             float axisAA = max(length(ddx), length(ddy)) * 1.5;
             float xLine = 1.0 - smoothstep(axisWidth, axisWidth + axisAA, abs(pos.x));
             float zLine = 1.0 - smoothstep(axisWidth, axisWidth + axisAA, abs(pos.y));
-            float axisAlpha = max(xLine, zLine) * fade;
+            float axisAlpha = max(xLine, zLine) * fade * axisFalloff;
             if (axisAlpha > epsilon) {
                 vec3 axisColor = vec3(0.0);
                 if (xLine > 0.0 && zLine > 0.0) {
@@ -153,6 +156,7 @@ const fragmentShader = /* glsl*/ `
         if (levelAlpha > epsilon) {
             vec3 color;
             vec2 loc = abs(levelPos);
+            float axisMask = (loc.x < levelSize || loc.y < levelSize) ? axisFalloff : 1.0;
             if (loc.x < levelSize) {
                 if (loc.y < levelSize) {
                     color = vec3(1.0);
@@ -164,7 +168,7 @@ const fragmentShader = /* glsl*/ `
             } else {
                 color = vec3(0.9);
             }
-            gl_FragColor = vec4(color, levelAlpha);
+            gl_FragColor = vec4(color, levelAlpha * axisMask);
             gl_FragDepth = writeDepth(levelAlpha) ? calcDepth(worldPos) : 1.0;
             return;
         }

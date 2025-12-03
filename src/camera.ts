@@ -353,6 +353,7 @@ class Camera extends Element {
         this.entity.camera.layers = this.entity.camera.layers.concat([
             this.scene.shadowLayer.id,
             this.scene.debugLayer.id,
+            this.scene.exportOverlayLayer.id,
             this.scene.gizmoLayer.id
         ]);
 

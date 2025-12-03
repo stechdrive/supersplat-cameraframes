@@ -60,8 +60,10 @@ class EyeLevel extends Element {
 
         this.scene.camera.entity.camera.on('preRenderLayer', (layer: Layer, transparent: boolean) => {
             const { scene } = this;
-            // 見やすさを優先し、ワールド描画の後段で必ず前面に載せるため gizmoLayer でのみ描画
-            if (!this.visible || transparent || layer !== scene.gizmoLayer || !scene.camera.renderOverlays) {
+            const targetLayer = scene.renderFlags.eyeLevelLayerOverride ?? scene.gizmoLayer;
+            const overlaysEnabled = scene.camera.renderOverlays || scene.renderFlags.forceEyeLevelOverlay;
+            // 見やすさを優先し、デフォルトではワールド描画の後段で必ず前面に載せる
+            if (!this.visible || transparent || layer !== targetLayer || !overlaysEnabled) {
                 return;
             }
 
