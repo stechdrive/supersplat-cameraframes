@@ -61,6 +61,7 @@
     "panel.view-options.centers-size": "センターサイズ",
     "panel.view-options.outline-selection": "選択のアウトライン",
     "panel.view-options.show-grid": "グリッド",
+    "panel.view-options.show-eye-level": "アイレベル",
     "panel.view-options.show-bound": "バウンディングボックス",
     "panel.view-options.fly-speed": "カメラの移動速度",
     "panel.view-options.high-precision": "高精度レンダリング",
