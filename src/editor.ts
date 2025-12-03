@@ -137,6 +137,30 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
 
     setGridVisible(scene.config.show.grid);
 
+    // eye level.visible
+
+    const setEyeLevelVisible = (visible: boolean) => {
+        const next = !!visible;
+        if (next !== scene.eyeLevel.visible) {
+            scene.eyeLevel.visible = next;
+            events.fire('eyeLevel.visible', next);
+        }
+    };
+
+    events.function('eyeLevel.visible', () => {
+        return scene.eyeLevel.visible;
+    });
+
+    events.on('eyeLevel.setVisible', (visible: boolean) => {
+        setEyeLevelVisible(visible);
+    });
+
+    events.on('eyeLevel.toggleVisible', () => {
+        setEyeLevelVisible(!scene.eyeLevel.visible);
+    });
+
+    setEyeLevelVisible(scene.config.show.eyeLevel);
+
     // camera.fov
 
     const setCameraFov = (fov: number) => {
@@ -730,6 +754,7 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
             cameraOverlay: events.invoke('camera.overlay'),
             outlineSelection: events.invoke('view.outlineSelection'),
             showGrid: events.invoke('grid.visible'),
+            showEyeLevel: events.invoke('eyeLevel.visible'),
             showBound: events.invoke('camera.bound'),
             flySpeed: events.invoke('camera.flySpeed')
         };
@@ -743,10 +768,11 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
         events.fire('view.setBands', docView.shBands);
         events.fire('camera.setSplatSize', docView.centersSize);
         if (docView.hasOwnProperty('cameraOverlay')) {
-            events.fire('camera.setOverlay', !!docView.cameraOverlay);
+        events.fire('camera.setOverlay', !!docView.cameraOverlay);
         }
         events.fire('view.setOutlineSelection', docView.outlineSelection);
         events.fire('grid.setVisible', docView.showGrid);
+        events.fire('eyeLevel.setVisible', docView.hasOwnProperty('showEyeLevel') ? docView.showEyeLevel : scene.config.show.eyeLevel);
         events.fire('camera.setBound', docView.showBound);
         events.fire('camera.setFlySpeed', docView.flySpeed);
     });

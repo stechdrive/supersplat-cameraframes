@@ -24,6 +24,7 @@ import { SceneState } from './scene-state';
 import { Splat } from './splat';
 import { SplatOverlay } from './splat-overlay';
 import { Underlay } from './underlay';
+import { EyeLevel } from './eye-level';
 
 class Scene {
     events: Events;
@@ -66,6 +67,7 @@ class Scene {
     grid: Grid;
     outline: Outline;
     underlay: Underlay;
+    eyeLevel: EyeLevel;
 
     contentRoot: Entity;
     cameraRoot: Entity;
@@ -218,6 +220,9 @@ class Scene {
 
         this.grid = new Grid();
         this.add(this.grid);
+
+        this.eyeLevel = new EyeLevel();
+        this.add(this.eyeLevel);
 
         this.outline = new Outline();
         this.add(this.outline);

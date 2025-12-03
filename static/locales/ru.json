@@ -61,6 +61,7 @@
     "panel.view-options.centers-size": "Размер центров",
     "panel.view-options.outline-selection": "Контур выделения",
     "panel.view-options.show-grid": "Показать сетку",
+    "panel.view-options.show-eye-level": "Показывать линию горизонта",
     "panel.view-options.show-bound": "Показать границы",
     "panel.view-options.fly-speed": "Скорость полёта",
     "panel.view-options.high-precision": "Высокоточный рендеринг",

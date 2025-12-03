@@ -23,6 +23,7 @@ const sceneConfig = {
     },
     show: {
         grid: true,
+        eyeLevel: true,
         bound: true,
         shBands: 3
     },

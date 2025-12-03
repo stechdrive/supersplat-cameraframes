@@ -282,6 +282,26 @@ class ViewPanel extends Container {
         showGridRow.append(showGridLabel);
         showGridRow.append(showGridToggle);
 
+        // show eye level
+
+        const showEyeLevelRow = new Container({
+            class: 'view-panel-row'
+        });
+
+        const showEyeLevelLabel = new Label({
+            text: localize('panel.view-options.show-eye-level'),
+            class: 'view-panel-row-label'
+        });
+
+        const showEyeLevelToggle = new BooleanInput({
+            type: 'toggle',
+            class: 'view-panel-row-toggle',
+            value: true
+        });
+
+        showEyeLevelRow.append(showEyeLevelLabel);
+        showEyeLevelRow.append(showEyeLevelToggle);
+
         // show bound
 
         const showBoundRow = new Container({
@@ -312,6 +332,7 @@ class ViewPanel extends Container {
         this.append(highPrecisionRow);
         this.append(outlineSelectionRow);
         this.append(showGridRow);
+        this.append(showEyeLevelRow);
         this.append(showBoundRow);
 
         // handle panel visibility
@@ -391,6 +412,16 @@ class ViewPanel extends Container {
 
         showGridToggle.on('change', () => {
             events.fire('grid.setVisible', showGridToggle.value);
+        });
+
+        // show eye level
+
+        events.on('eyeLevel.visible', (visible: boolean) => {
+            showEyeLevelToggle.value = visible;
+        });
+
+        showEyeLevelToggle.on('change', () => {
+            events.fire('eyeLevel.setVisible', showEyeLevelToggle.value);
         });
 
         // show bound

@@ -61,6 +61,7 @@
     "panel.view-options.centers-size": "Tamaño de centros",
     "panel.view-options.outline-selection": "Contorno de selección",
     "panel.view-options.show-grid": "Mostrar cuadrícula",
+    "panel.view-options.show-eye-level": "Mostrar línea de horizonte",
     "panel.view-options.show-bound": "Mostrar límites",
     "panel.view-options.fly-speed": "Velocidad de vuelo",
     "panel.view-options.high-precision": "Renderizado de alta precisión",
@@ -224,3 +225,4 @@
     "tooltip.timeline.total-frames": "Fotogramas totales",
     "tooltip.timeline.smoothness": "Suavidad"
 }
+
