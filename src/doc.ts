@@ -8,6 +8,9 @@ import { serializePly } from './splat-serialize';
 import { Transform } from './transform';
 import { localize } from './ui/localization';
 
+const DOC_VERSION = 1;
+const SUPPORTED_DOC_VERSIONS = new Set([0, 1]);
+
 // ts compiler and vscode find this type, but eslint does not
 type FilePickerAcceptType = unknown;
 
@@ -85,23 +88,46 @@ const registerDocEvents = (scene: Scene, events: Events) => {
     const loadDocument = async (file: File) => {
         events.fire('startSpinner');
         try {
-            // reset the scene
-            resetScene();
-
             // read the document
             /* global JSZip */
             // @ts-ignore
             const zip = new JSZip();
             await zip.loadAsync(file);
-            const document = JSON.parse(await zip.file('document.json').async('text'));
 
-            // run through each splat and load it
+            const documentFile = zip.file('document.json');
+            if (!documentFile) {
+                throw new Error('document.json not found in archive');
+            }
+
+            const documentText = await documentFile.async('text');
+            let document: any;
+            try {
+                document = JSON.parse(documentText);
+            } catch (parseError) {
+                throw new Error('document.json is not valid JSON');
+            }
+
+            const docVersion = (typeof document?.version === 'number' && isFinite(document.version)) ? document.version : 0;
+            if (!SUPPORTED_DOC_VERSIONS.has(docVersion)) {
+                throw new Error(`Unsupported document version: ${docVersion}`);
+            }
+
+            if (!Array.isArray(document?.splats)) {
+                throw new Error('Invalid document: splats are missing');
+            }
+
+            // stage all splats before mutating current scene, so failure keeps the previous state
+            const stagedSplats: { splat: Splat, settings: any }[] = [];
             for (let i = 0; i < document.splats.length; ++i) {
                 const filename = `splat_${i}.ply`;
                 const splatSettings = document.splats[i];
 
-                // construct the splat asset
-                const contents = await zip.file(`splat_${i}.ply`).async('blob');
+                const plyFile = zip.file(filename);
+                if (!plyFile) {
+                    throw new Error(`Missing ${filename} in archive`);
+                }
+
+                const contents = await plyFile.async('blob');
                 const url = URL.createObjectURL(contents);
                 const splat = await scene.assetLoader.load({
                     url,
@@ -109,10 +135,16 @@ const registerDocEvents = (scene: Scene, events: Events) => {
                 });
                 URL.revokeObjectURL(url);
 
-                scene.add(splat);
-
-                splat.docDeserialize(splatSettings);
+                stagedSplats.push({ splat, settings: splatSettings });
             }
+
+            // at this point staging succeeded, apply to scene
+            resetScene();
+
+            stagedSplats.forEach(({ splat, settings }) => {
+                scene.add(splat);
+                splat.docDeserialize(settings ?? {});
+            });
 
             // FIXME: trigger scene bound calc in a better way
             const tmp = scene.bound;
@@ -120,11 +152,11 @@ const registerDocEvents = (scene: Scene, events: Events) => {
                 console.error('this should never fire');
             }
 
-            events.invoke('docDeserialize.timeline', document.timeline);
-            events.invoke('docDeserialize.poseSets', document.poseSets);
-            events.invoke('docDeserialize.view', document.view);
-            events.invoke('docDeserialize.cameraFrames', document.cameraFrames);
-            scene.camera.docDeserialize(document.camera);
+            events.invoke('docDeserialize.timeline', document.timeline ?? {});
+            events.invoke('docDeserialize.poseSets', document.poseSets ?? []);
+            events.invoke('docDeserialize.view', document.view ?? {});
+            events.invoke('docDeserialize.cameraFrames', document.cameraFrames ?? null);
+            scene.camera.docDeserialize(document.camera ?? null);
 
             // refresh the pivot to reflect the loaded transform
             const currentSelection = events.invoke('selection');
@@ -155,7 +187,7 @@ const registerDocEvents = (scene: Scene, events: Events) => {
             const splats = events.invoke('scene.allSplats') as Splat[];
 
             const document = {
-                version: 0,
+                version: DOC_VERSION,
                 camera: scene.camera.docSerialize(),
                 view: events.invoke('docSerialize.view'),
                 poseSets: events.invoke('docSerialize.poseSets'),

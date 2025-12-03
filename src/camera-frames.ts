@@ -2110,7 +2110,8 @@ class CameraFramesController {
         const snap = this.snapshot();
         return {
             ...snap,
-            selectedId: this.selectedId
+            selectedId: this.selectedId,
+            version: cameraFramesVersion
         };
     }
 
@@ -2135,6 +2136,8 @@ class CameraFramesController {
             this.events.fire('cameraFrames.stateChanged', this.snapshot());
             return;
         }
+
+        const _stateVersion = docState.version ?? 0; // reserved for future migrations
 
         const rb = docState.renderBox ?? DEFAULT_RENDERBOX();
         const exportName = typeof docState.exportName === 'string' ? docState.exportName : 'yc4_00_000_CGLO';

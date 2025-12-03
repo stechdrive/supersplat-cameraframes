@@ -1074,19 +1074,75 @@ class Camera extends Element {
             distance: this.distance,
             fov: this.fov,
             tonemapping: this.tonemapping,
-            roll: this.rollTween.target.roll ?? 0
+            roll: this.rollTween.target.roll ?? 0,
+            navMode: this.navMode,
+            ortho: this.ortho,
+            nearOverride: this.getNearOverride(),
+            customFrustum: this.getCustomFrustum(),
+            renderOverlays: this.renderOverlays,
+            fpvPosition: this.navMode === 'fpv' ? pack3(this.fpvPosition) : undefined
         };
     }
 
     docDeserialize(settings: any) {
-        this.setFocalPoint(new Vec3(settings.focalPoint), 0);
-        this.setAzimElev(settings.azim, settings.elev, 0);
-        this.setDistance(settings.distance, 0);
+        if (!settings) {
+            return;
+        }
+
+        const toVec3 = (value: any, fallback: Vec3) => {
+            if (Array.isArray(value) && value.length >= 3) {
+                return new Vec3(
+                    Number(value[0]) ?? fallback.x,
+                    Number(value[1]) ?? fallback.y,
+                    Number(value[2]) ?? fallback.z
+                );
+            }
+            if (value && typeof value === 'object') {
+                return new Vec3(
+                    Number(value.x) ?? fallback.x,
+                    Number(value.y) ?? fallback.y,
+                    Number(value.z) ?? fallback.z
+                );
+            }
+            return fallback.clone();
+        };
+
+        const focalPoint = toVec3(settings.focalPoint, new Vec3(0, 0, 0));
+        const azim = settings.azim ?? this.azim;
+        const elev = settings.elev ?? this.elevation;
+        const distance = settings.distance ?? this.distance;
+
+        this.setFocalPoint(focalPoint, 0);
+        this.setAzimElev(azim, elev, 0);
+        this.setDistance(distance, 0);
         if (settings.roll !== undefined) {
             this.rollTween.goto({ roll: settings.roll }, 0);
         }
-        this.fov = settings.fov;
-        this.tonemapping = settings.tonemapping;
+        if (settings.fov !== undefined) {
+            this.fov = settings.fov;
+        }
+        if (settings.tonemapping !== undefined) {
+            this.tonemapping = settings.tonemapping;
+        }
+        if (settings.hasOwnProperty('ortho')) {
+            this.ortho = !!settings.ortho;
+        }
+        if (settings.hasOwnProperty('nearOverride')) {
+            this.setNearOverride(settings.nearOverride);
+        }
+        if (settings.hasOwnProperty('customFrustum')) {
+            this.setCustomFrustum(settings.customFrustum);
+        }
+        if (settings.hasOwnProperty('renderOverlays')) {
+            this.renderOverlays = !!settings.renderOverlays;
+        }
+        if (settings.navMode && settings.navMode !== this.navMode) {
+            this.setNavMode(settings.navMode);
+        }
+        if (this.navMode === 'fpv' && settings.fpvPosition) {
+            this.fpvPosition.copy(toVec3(settings.fpvPosition, this.fpvPosition));
+            this.entity.setLocalPosition(this.fpvPosition);
+        }
     }
 
     // offscreen render mode
