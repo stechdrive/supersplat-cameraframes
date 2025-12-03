@@ -140,7 +140,6 @@ class CameraFramesController {
     private compressor: PngCompressor | null = null;
     private resizeObserver: ResizeObserver;
     private lastPointer: { x: number; y: number } | null = null;
-    private panKeyActive = false;
     private dragState: {
         frameId: string | null;
         startPos: { x: number; y: number; };
@@ -206,7 +205,6 @@ class CameraFramesController {
 
         // events wiring
         this.registerEvents();
-        this.registerPanHotkeys();
 
         // draw each frame
         this.events.on('postrender', () => {
@@ -377,35 +375,6 @@ class CameraFramesController {
         });
     }
 
-    private registerPanHotkeys() {
-        const handleKeyDown = (e: KeyboardEvent) => {
-            if (e.code === 'Space') {
-                this.setPanKeyActive(true);
-                e.preventDefault();
-            }
-        };
-        const handleKeyUp = (e: KeyboardEvent) => {
-            if (e.code === 'Space') {
-                this.setPanKeyActive(false);
-            }
-        };
-        window.addEventListener('keydown', handleKeyDown);
-        window.addEventListener('keyup', handleKeyUp);
-        window.addEventListener('blur', () => this.setPanKeyActive(false));
-    }
-
-    private setPanKeyActive(active: boolean) {
-        if (this.panKeyActive === active) {
-            return;
-        }
-        this.panKeyActive = active;
-        if (active && this.state.enabled) {
-            this.overlay.style.pointerEvents = 'auto';
-        } else {
-            this.updatePointerFromLast();
-        }
-    }
-
     private normalizeFormat(format?: ExportFormat): ExportFormat {
         return format === 'psd' ? 'psd' : 'png';
     }
@@ -493,7 +462,6 @@ class CameraFramesController {
             this.requestRender();
             this.scheduleNearClipGuard();
         } else {
-            this.setPanKeyActive(false);
             // 無効化時はニアクリップ固定を解除
             this.events.fire('camera.setNearOverride', null);
             this.events.fire('camera.setCustomFrustum', null);
@@ -1421,7 +1389,7 @@ class CameraFramesController {
             this.overlay.style.pointerEvents = 'auto';
             return;
         }
-        if (this.panKeyActive) {
+        if (e.shiftKey) {
             this.overlay.style.pointerEvents = 'auto';
             return;
         }
@@ -1439,10 +1407,6 @@ class CameraFramesController {
     private updatePointerFromLast() {
         if (!this.lastPointer) {
             this.overlay.style.pointerEvents = 'none';
-            return;
-        }
-        if (this.panKeyActive && this.state.enabled) {
-            this.overlay.style.pointerEvents = 'auto';
             return;
         }
         const rect = this.canvasContainer.getBoundingClientRect();
@@ -1506,7 +1470,9 @@ class CameraFramesController {
 
     private onPointerDown(e: PointerEvent) {
         if (!this.state.enabled) return;
-        if (this.panKeyActive && e.button === 0) {
+        const handleHit = this.hitTestHandle(e.offsetX, e.offsetY);
+        const frame = handleHit?.frame ?? this.hitTestFrameBorder(e.offsetX, e.offsetY);
+        if (e.shiftKey && e.button === 0 && !handleHit && !frame) {
             this.overlay.setPointerCapture(e.pointerId);
             this.dragState = {
                 frameId: null,
@@ -1522,8 +1488,6 @@ class CameraFramesController {
             e.preventDefault();
             return;
         }
-        const handleHit = this.hitTestHandle(e.offsetX, e.offsetY);
-        const frame = handleHit?.frame ?? this.hitTestFrameBorder(e.offsetX, e.offsetY);
         if (!frame) {
             return;
         }
