@@ -9,6 +9,7 @@ This repository adds the Camera Frames to SuperSplat. Camera Frames is the compo
 - Camera navigation swaps between FPV and Orbit modes, with numeric controls for position/rotation, roll lock to keep the optical axis level, and near-clip tuning to protect close shots.
 - Multiple labeled frames with per-frame scale/rotation/pivot, ordering, and an optional mask that dims everything outside the union of frames for layout checks.
 - Exports use the render-box dimensions at zoom 100%, so PNG/PSD output matches the preview; PNG embeds the red strokes with 150 PPI metadata, PSD includes the base render plus outline layers grouped by frame labels.
+- Full Camera Framesrequirements: see [CAMERA_FRAMES_REQUIREMENTS.md](CAMERA_FRAMES_REQUIREMENTS.md)
 
 ### Camera Frames 日本語概要
 
@@ -18,7 +19,7 @@ This repository adds the Camera Frames to SuperSplat. Camera Frames is the compo
 - 表示倍率 25–100% で 大判時に全体をプレビューできます。
 - 複数の撮影フレームを配置し、それぞれスケール・回転・移動できます。Photoshopの変形操作と同様にAltで基点指定できます。
 - カメラをOrtbiとFPVで切り替えられます。数値入力によるカメラ制御可能、光軸ロール、ニアクリップも対応しています、
--フレーム外だけを暗くするマスクを備えたレイアウト確認。
+- フレーム外だけを暗くするマスクを備えたレイアウト確認。
 - 書き出しはA4/150dpi相当のピクセル数を用紙サイズに合わせて大判にして出力できます。出力はPNGまたはPSD。PSD時は背景画像とフレーム枠でレイヤー分離。
 
 
