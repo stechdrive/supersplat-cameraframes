@@ -122,18 +122,25 @@ const fragmentShader = /* glsl*/ `
         // common falloff so axis colors don't stretch infinitely
         float axisFalloff = 1.0 - smoothstep(200.0, 400.0, length(pos));
 
-        // emphasize world origin axes (XZ plane only)
+        // emphasize world origin axes (XZ plane only) with AA'd single lines
         if (plane == 1) {
-            float axisWidth = 0.04; // meters (4 cm)
-            float axisAA = max(length(ddx), length(ddy)) * 1.5;
-            float xLine = 1.0 - smoothstep(axisWidth, axisWidth + axisAA, abs(pos.x));
-            float zLine = 1.0 - smoothstep(axisWidth, axisWidth + axisAA, abs(pos.y));
-            float axisAlpha = max(xLine, zLine) * fade * axisFalloff;
+            float axisWidth = 0.10; // meters (10 cm)
+            float halfWidth = axisWidth * 0.5;
+            vec2 deriv = vec2(length(vec2(ddx.x, ddy.x)), length(vec2(ddx.y, ddy.y)));
+            float aaX = deriv.x * 1.5;
+            float aaZ = deriv.y * 1.5;
+
+            // X axis (blue): Z=0 line
+            float alphaXAxis = 1.0 - smoothstep(halfWidth - aaZ, halfWidth + aaZ, abs(pos.y));
+            // Z axis (red): X=0 line
+            float alphaZAxis = 1.0 - smoothstep(halfWidth - aaX, halfWidth + aaX, abs(pos.x));
+
+            float axisAlpha = max(alphaXAxis, alphaZAxis) * fade * axisFalloff * 1.2;
             if (axisAlpha > epsilon) {
                 vec3 axisColor = vec3(0.0);
-                if (xLine > 0.0 && zLine > 0.0) {
+                if (alphaXAxis > 0.0 && alphaZAxis > 0.0) {
                     axisColor = vec3(1.0); // origin cross
-                } else if (xLine >= zLine) {
+                } else if (alphaXAxis >= alphaZAxis) {
                     axisColor = vec3(0.2, 0.2, 1.0); // X axis (swap colors)
                 } else {
                     axisColor = vec3(1.0, 0.2, 0.2); // Z axis (swap colors)

@@ -100,18 +100,13 @@ const registerRenderEvents = (scene: Scene, events: Events) => {
             scene.camera.startOffscreenMode(width, height);
 
             const worldLayer = scene.app.scene.layers.getLayerByName('World');
-            const exportLayer = scene.exportOverlayLayer;
 
             if (overlaysOnly) {
-                [scene.backgroundLayer, scene.shadowLayer, scene.overlayLayer, scene.gizmoLayer, worldLayer, scene.debugLayer].forEach((layer) => {
+                [scene.backgroundLayer, scene.shadowLayer, scene.overlayLayer, scene.gizmoLayer, worldLayer].forEach((layer) => {
                     if (!layer) return;
                     rememberLayer(layer);
                     layer.enabled = false;
                 });
-                rememberLayer(exportLayer);
-                if (exportLayer) {
-                    exportLayer.enabled = true;
-                }
             } else {
                 rememberLayer(scene.gizmoLayer);
                 scene.gizmoLayer.enabled = false;
@@ -121,8 +116,8 @@ const registerRenderEvents = (scene: Scene, events: Events) => {
 
             scene.renderFlags.forceGridOverlay = includeGrid;
             scene.renderFlags.forceEyeLevelOverlay = includeEyeLevel;
-            scene.renderFlags.eyeLevelLayerOverride = includeEyeLevel ? (exportLayer ?? scene.debugLayer) : null;
-            scene.renderFlags.gridLayerOverride = includeGrid ? (exportLayer ?? scene.debugLayer) : null;
+            scene.renderFlags.eyeLevelLayerOverride = includeEyeLevel ? scene.debugLayer : null;
+            scene.renderFlags.gridLayerOverride = includeGrid ? scene.debugLayer : null;
 
             scene.camera.entity.camera.clearColor.set(0, 0, 0, 0);
 
