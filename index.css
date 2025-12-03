@@ -2309,6 +2309,13 @@
 .collapsed .menu-option {
   display: none;
 }
+.collapsed #right-toolbar,
+.collapsed #bottom-toolbar,
+.collapsed #timeline-panel,
+.collapsed #mode-toggle,
+.collapsed #data-panel {
+  display: none !important;
+}
 
 #scene-panel {
   top: 102px;
@@ -2609,6 +2616,9 @@
   transform: translate(0, -50%);
   padding: 8px 0px;
   border-radius: 8px;
+  z-index: 10;
+  max-height: 90vh;
+  overflow-y: auto;
   background-color: #282828;
   display: flex;
   flex-direction: column;
@@ -2624,7 +2634,9 @@
   width: 20px;
   height: 20px;
 }
-#right-toolbar > .right-toolbar-button, #right-toolbar .right-toolbar-tool, #right-toolbar .right-toolbar-toggle {
+#right-toolbar > .right-toolbar-button,
+#right-toolbar .right-toolbar-tool,
+#right-toolbar .right-toolbar-toggle {
   width: 38px;
   height: 38px;
   margin: 1px 1px;
@@ -2632,11 +2644,15 @@
   border: 0px;
   border-radius: 2px;
 }
-#right-toolbar > .right-toolbar-button::before, #right-toolbar .right-toolbar-tool::before, #right-toolbar .right-toolbar-toggle::before {
+#right-toolbar > .right-toolbar-button::before,
+#right-toolbar .right-toolbar-tool::before,
+#right-toolbar .right-toolbar-toggle::before {
   font-size: 16px !important;
   line-height: 100%;
 }
-#right-toolbar > .right-toolbar-button svg, #right-toolbar .right-toolbar-tool svg, #right-toolbar .right-toolbar-toggle svg {
+#right-toolbar > .right-toolbar-button svg,
+#right-toolbar .right-toolbar-tool svg,
+#right-toolbar .right-toolbar-toggle svg {
   color: #b3aaac;
 }
 #right-toolbar > .right-toolbar-separator {
@@ -3331,6 +3347,322 @@
   stroke: black;
   stroke-width: 2;
   r: 5;
+}
+
+#camera-frames-panel {
+  position: absolute;
+  right: 102px;
+  top: 50%;
+  transform: translate(0, -50%);
+  width: 360px;
+  z-index: 5;
+}
+#camera-frames-panel .pcui-panel-header {
+  cursor: move;
+  -webkit-user-select: none;
+     -moz-user-select: none;
+          user-select: none;
+  touch-action: none;
+}
+#camera-frames-panel.dragging {
+  opacity: 0.98;
+}
+#camera-frames-panel .panel-header-toggle {
+  margin-left: 6px;
+}
+#camera-frames-panel .camera-frames-collapse {
+  display: grid;
+  place-items: center;
+}
+#camera-frames-panel .camera-frames-collapse svg {
+  width: 16px;
+  height: 16px;
+  pointer-events: none;
+}
+#camera-frames-panel.compact {
+  width: 52px;
+  height: 52px;
+  right: 24px;
+}
+#camera-frames-panel.compact .pcui-panel-header {
+  justify-content: center;
+  padding: 6px;
+}
+#camera-frames-panel.compact .panel-header-label,
+#camera-frames-panel.compact .panel-header-toggle,
+#camera-frames-panel.compact .panel-header-button:not(.camera-frames-collapse) {
+  display: none;
+}
+#camera-frames-panel.compact .camera-frames-collapse {
+  width: 40px;
+  height: 40px;
+  padding: 4px;
+}
+#camera-frames-panel.compact .camera-frames-collapse svg {
+  width: 32px;
+  height: 32px;
+  color: #f60;
+}
+#camera-frames-panel.compact .pcui-panel-content,
+#camera-frames-panel.compact .panel-content {
+  display: none;
+}
+
+#camera-frames-overlay {
+  z-index: 0;
+}
+
+#camera-frames-anchor {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.layout-group {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid #555;
+  background-color: rgba(40, 40, 40, 0.6);
+  border-radius: 4px;
+  box-sizing: border-box;
+}
+
+.pcui-numeric-input.control-element {
+  width: 72px;
+}
+
+.anchor-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 16px);
+  grid-template-rows: repeat(3, 16px);
+  gap: 4px;
+}
+
+.layout-header {
+  display: flex;
+  align-items: center;
+}
+
+.layout-body {
+  display: flex;
+  flex-direction: row;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.anchor-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex-shrink: 0;
+  margin-bottom: 6px;
+}
+
+.layout-size {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.layout-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.anchor-cell {
+  width: 16px;
+  height: 16px;
+  background-color: #282828;
+  border: 1px solid #555;
+}
+.anchor-cell.active {
+  border-color: #f60;
+  background-color: rgba(255, 102, 0, 0.2);
+}
+
+.button-row .pcui-button {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.button-row {
+  align-items: center;
+  gap: 8px;
+}
+
+.format-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.format-row .icon-button {
+  width: 32px;
+  height: 32px;
+}
+
+.button-row .render-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(255, 255, 255, 0.25);
+  border-top-color: #f60;
+  border-radius: 50%;
+  animation: camera-frames-spin 0.8s linear infinite;
+  flex-shrink: 0;
+  margin-left: 6px;
+}
+
+@keyframes camera-frames-spin {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+.format-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.format-row .icon-button {
+  width: 32px;
+  height: 32px;
+}
+
+.mask-row {
+  align-items: center;
+  gap: 4px;
+}
+
+.mask-opacity-label {
+  width: 72px;
+}
+
+.collapsible-header {
+  align-items: center;
+  cursor: pointer;
+  gap: 6px;
+}
+
+.collapsible-header.active {
+  background-color: rgba(40, 40, 40, 0.4);
+}
+
+.collapsible-arrow {
+  width: 16px;
+  text-align: center;
+}
+
+.frame-list-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.frame-actions {
+  margin-left: auto;
+  display: flex;
+  gap: 6px;
+}
+
+.icon-button {
+  width: 30px;
+  height: 30px;
+  padding: 4px;
+  display: grid;
+  place-items: center;
+  background: #282828;
+  border: 1px solid #555;
+  border-radius: 4px;
+}
+.icon-button svg {
+  width: 14px;
+  height: 14px;
+  pointer-events: none;
+}
+
+.icon-button.danger-icon {
+  border-color: #a33434;
+}
+
+.cam-nav-controls {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.cam-nav-icon {
+  width: 52px;
+  height: 52px;
+  display: grid;
+  place-items: center;
+  color: #aaa;
+  cursor: pointer;
+}
+.cam-nav-icon svg {
+  width: 36px;
+  height: 36px;
+  pointer-events: none;
+}
+
+.cam-nav-icon.active {
+  color: #f60;
+}
+
+.roll-lock-btn {
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  padding: 2px;
+  background-color: #282828;
+  border: 1px solid #555;
+  border-radius: 4px;
+  color: #aaa;
+}
+.roll-lock-btn svg {
+  width: 14px;
+  height: 14px;
+  pointer-events: none;
+}
+
+.roll-lock-btn.active {
+  border-color: #f60;
+  color: #f60;
+}
+
+.list-container {
+  max-height: 180px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  background-color: #282828;
+  border: 1px solid #555;
+}
+
+.list-item {
+  width: 100%;
+  box-sizing: border-box;
+  justify-content: flex-start;
+  text-align: left;
+}
+.list-item.active {
+  background-color: rgba(255, 102, 0, 0.2);
+  border-left: 3px solid #f60;
+}
+
+.danger {
+  background-color: #a33434 !important;
+}
+
+body.collapsed #camera-frames-panel {
+  right: 24px;
 }
 
 * {

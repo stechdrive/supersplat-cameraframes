@@ -177,7 +177,7 @@
     "popup.publish.cancel": "キャンセル",
     "popup.publish.title": "タイトル",
     "popup.publish.description": "説明",
-    "popup.publish.listed": "公開一覧に表示",
+    "popup.publish.listed": "リスト",
     "popup.publish.failed": "公開に失敗",
     "popup.publish.please-try-again": "後でもう一度お試しください。",
     "popup.publish.succeeded": "公開に成功",
@@ -185,8 +185,8 @@
     "popup.publish.please-log-in": "PlayCanvasに公開するにはユーザーアカウントが必要です。ログインしてもう一度お試しください。",
     "popup.publish.converting": "変換中",
     "popup.publish.uploading": "アップロード中",
-    "popup.publish.to": "公開先",
-    "popup.publish.new-scene": "新規シーンを作成",
+    "popup.publish.to": "に公開",
+    "popup.publish.new-scene": "新しいシーン",
     "cursor.click-to-copy": "クリックしてコピー",
     "cursor.copied": "コピーしました！",
     "doc.reset": "シーンをリセット",
@@ -200,6 +200,7 @@
     "tooltip.right-toolbar.reset-camera": "カメラをリセット",
     "tooltip.right-toolbar.colors": "色",
     "tooltip.right-toolbar.view-options": "表示オプション",
+    "tooltip.right-toolbar.camera-frame": "カメラフレーム",
     "tooltip.bottom-toolbar.undo": "元に戻す ( Ctrl + Z )",
     "tooltip.bottom-toolbar.redo": "やり直し ( Ctrl + Shift + Z )",
     "tooltip.bottom-toolbar.picker": "ピッカー選択 ( R )",
@@ -224,3 +225,4 @@
     "tooltip.timeline.total-frames": "総フレーム数",
     "tooltip.timeline.smoothness": "スムーズさ"
 }
+

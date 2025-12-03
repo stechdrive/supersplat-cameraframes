@@ -1,4 +1,4 @@
-var version = "2.15.1";
+var version = "2.15.0";
 
 const cacheName = `superSplat-v${version}`;
 const cacheUrls = [
