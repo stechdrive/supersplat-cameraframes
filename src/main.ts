@@ -264,7 +264,7 @@ const main = async () => {
     // wait until the first safe render before forcing FPV navigation and camera frames
     const fpvReadyHandle = events.on('postrender', () => {
         fpvReadyHandle.off();
-        //events.fire('camera.setNavMode', 'fpv');
+        events.fire('camera.setNavMode', 'fpv');
         events.fire('cameraFrames.setEnabled', true);
     });
 

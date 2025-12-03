@@ -110,6 +110,7 @@ const DEG2RAD = Math.PI / 180;
 const RAD2DEG = 180 / Math.PI;
 const MIN_VIEW_ZOOM_PCT = 25;
 const MAX_VIEW_ZOOM_PCT = 100;
+const PAN_MARGIN_PX = 8;
 
 const cloneFrame = (f: FrameState): FrameState => ({
     ...f,
@@ -139,14 +140,15 @@ class CameraFramesController {
     private compressor: PngCompressor | null = null;
     private resizeObserver: ResizeObserver;
     private lastPointer: { x: number; y: number } | null = null;
+    private panKeyActive = false;
     private dragState: {
-        frameId: string;
+        frameId: string | null;
         startPos: { x: number; y: number; };
         startPointer: { x: number; y: number; };
         axisLock: 'x' | 'y' | null;
         shiftLock: boolean;
         pointerId: number;
-        mode: 'move' | 'resize' | 'anchor' | 'rotate';
+        mode: 'move' | 'resize' | 'anchor' | 'rotate' | 'pan';
         handleId?: string;
         startScaleK?: number;
         startCenterLogical?: { x: number; y: number; };
@@ -155,13 +157,13 @@ class CameraFramesController {
         startDistance?: number;
         startRotationRad?: number;
         startAngle?: number;
+        startCenterScreen?: { x: number; y: number; };
     } = null;
     private addedCount = 0;
     private fovInfo: FovInfo | null = null;
     private lockFovAxis: 'vertical' | 'horizontal' | undefined = 'horizontal';
     private runtimeFrustum: CameraFrustum | null = null;
     private baseFovRad: number = 60 * DEG2RAD;
-    private fitTimeout: number | undefined;
     private pendingNearClipGuard = 0;
     private nearClipGuardSeed: number | null = null;
 
@@ -186,12 +188,12 @@ class CameraFramesController {
         }
 
         // initial viewport update (forces fit & center)
-        this.updateViewportFromContainer(true);
+        this.updateViewportFromContainer();
 
         // observe canvas container resize (css pixels)
         this.resizeObserver = new ResizeObserver(() => {
             // Resize: always force fit & recenter to avoid losing the box
-            this.updateViewportFromContainer(true);
+            this.updateViewportFromContainer();
             if (!this.state.enabled) {
                 return;
             }
@@ -204,6 +206,7 @@ class CameraFramesController {
 
         // events wiring
         this.registerEvents();
+        this.registerPanHotkeys();
 
         // draw each frame
         this.events.on('postrender', () => {
@@ -362,16 +365,45 @@ class CameraFramesController {
             if (!this.state.enabled) {
                 return;
             }
-            // Scene camera resize event: update viewport (and force fit/center to be safe)
-            this.updateViewportFromContainer(true);
+            // Scene camera resize event: update viewport and refit based on the new size
+            this.updateViewportFromContainer();
             this.requestRender();
         });
 
         // モデルロード直後など、強制リフレッシュ要求に応じてビューポートを再計算する
         this.events.on('cameraFrames.forceRefreshViewport', () => {
-            this.updateViewportFromContainer(true);
+            this.updateViewportFromContainer();
             this.requestRender();
         });
+    }
+
+    private registerPanHotkeys() {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.code === 'Space') {
+                this.setPanKeyActive(true);
+                e.preventDefault();
+            }
+        };
+        const handleKeyUp = (e: KeyboardEvent) => {
+            if (e.code === 'Space') {
+                this.setPanKeyActive(false);
+            }
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        window.addEventListener('keyup', handleKeyUp);
+        window.addEventListener('blur', () => this.setPanKeyActive(false));
+    }
+
+    private setPanKeyActive(active: boolean) {
+        if (this.panKeyActive === active) {
+            return;
+        }
+        this.panKeyActive = active;
+        if (active && this.state.enabled) {
+            this.overlay.style.pointerEvents = 'auto';
+        } else {
+            this.updatePointerFromLast();
+        }
     }
 
     private normalizeFormat(format?: ExportFormat): ExportFormat {
@@ -386,7 +418,7 @@ class CameraFramesController {
         return hasExtension ? base : `${base}.${format}`;
     }
 
-    private updateViewportFromContainer(forceResetFit: boolean = false) {
+    private updateViewportFromContainer() {
         if (!this.canvasContainer) return;
         const rect = this.canvasContainer.getBoundingClientRect();
         const newVw = rect.width;
@@ -406,8 +438,7 @@ class CameraFramesController {
         }
 
         // viewport が変わったらフィットと rect を再計算
-        // forceResetFit: リサイズ時は確実に画面内に収め、中心位置もリセットする
-        this.computeViewportMapping(true, forceResetFit);
+        this.computeViewportMapping(true);
         if (this.state.enabled) {
             this.syncCameraFrustum();
         }
@@ -431,8 +462,8 @@ class CameraFramesController {
                 vh > 0 ? vh / logicalH : 1
             );
         }
-        // 初期化時は強制フィット＆センター
-        this.computeViewportMapping(true, true);
+        // 初期化時は現ビューポート基準でフィットを再計算
+        this.computeViewportMapping(true);
 
         // フレーム未生成ならデフォルト 1 枚を追加
         if (this.state.frames.length === 0) {
@@ -455,13 +486,14 @@ class CameraFramesController {
             this.state.nearClip = this.computeSafeNearClip(baseNear);
             this.applyNearClipOverride();
             this.initDefaultsIfNeeded();
-            // 有効化時は確実に画面内に表示（強制フィット＆センター）
-            this.computeViewportMapping(true, true);
+            // 有効化時は現ビューポートに合わせてフィットを再計算
+            this.computeViewportMapping(true);
             this.rebuildBaseFrustum();
             this.syncCameraFrustum();
             this.requestRender();
             this.scheduleNearClipGuard();
         } else {
+            this.setPanKeyActive(false);
             // 無効化時はニアクリップ固定を解除
             this.events.fire('camera.setNearOverride', null);
             this.events.fire('camera.setCustomFrustum', null);
@@ -611,9 +643,9 @@ class CameraFramesController {
         rb.scale = { kx: newKx, ky: newKy };
         rb.center = { cx: cx1, cy: cy1 };
 
-        // 変更中: アンカー基準で変形（forceResetFit = false）
+        // 変更中: アンカー基準で変形しつつ、fitScale は維持する
         // これにより、ドラッグ中はアンカー位置が固定され、そこを中心に拡大縮小する自然な挙動になる
-        this.computeViewportMapping(true, false);
+        this.computeViewportMapping(true);
         this.syncCameraFrustum();
 
         // --- フレームの pos を更新して、論理中心を元と同じに保つ ---
@@ -626,14 +658,6 @@ class CameraFramesController {
                 y: 0.5 + (c.y - cy1) / logicalH1
             };
         }
-
-        // デバウンス処理: 操作終了後（500ms後）に画面中央にフィットさせる
-        if (this.fitTimeout) window.clearTimeout(this.fitTimeout);
-        this.fitTimeout = window.setTimeout(() => {
-            // ここで強制フィット＆センターリセットを実行
-            this.updateViewportFromContainer(true);
-            this.requestRender();
-        }, 500);
 
         if (this.state.enabled) {
             // 現在のレンダーボックス比率でカメラのアスペクトを再適用
@@ -775,7 +799,7 @@ class CameraFramesController {
         return Math.min(MAX_VIEW_ZOOM_PCT, Math.max(MIN_VIEW_ZOOM_PCT, raw));
     }
 
-    private computeViewportMapping(updateFitScale: boolean = false, forceResetFit: boolean = false): ViewportMapping {
+    private computeViewportMapping(updateFitScale: boolean = false): ViewportMapping {
         const rb = this.state.renderBox;
 
         // 書き出しモード判定: Sceneカメラに targetSize が設定されていれば書き出し中
@@ -804,72 +828,48 @@ class CameraFramesController {
         const zoomScale = viewZoomPct / 100;
 
         let fitScale = rb.fitScale;
-        const prevFitScale = rb.fitScale;
-        const invalidFitScale = !isFinite(prevFitScale) || prevFitScale <= 0;
+        const prevFitScaleRaw = rb.fitScale;
+        const prevFitScaleSafe = (isFinite(prevFitScaleRaw) && prevFitScaleRaw > 0) ? prevFitScaleRaw : autoFit;
 
-        // プレビュー時のみ FitScale の更新やアンカー維持計算を行う
-        if (!isExporting) {
-            const anchor = rb.anchor ?? { ax: 0.5, ay: 0.5 };
-            const preserveAnchor =
-                !forceResetFit && // 強制リセット時はアンカー維持よりもフィット優先
-                updateFitScale &&
-                viewportChanged &&
-                !invalidFitScale &&
-                isFinite(anchor.ax) &&
-                isFinite(anchor.ay);
-
-            if (updateFitScale) {
-                // 強制リセット、無効値、ビューポート変更時は autoFit に更新
-                if (invalidFitScale || viewportChanged || forceResetFit) {
-                    fitScale = autoFit;
-                }
-                rb.fitScale = fitScale;
-
-                if (forceResetFit && viewportChanged) {
-                    rb.center.cx = vw / 2;
-                    rb.center.cy = vh / 2;
-                }
-            } else if (invalidFitScale) {
-                fitScale = autoFit;
-                rb.fitScale = fitScale;
-            }
-
-            // アンカー位置の維持計算 (プレビュー時のみ)
-            // リサイズ時(forceResetFit)はセンターリセットしたのでここは通らないようにする
-            if (preserveAnchor) {
-                const prevFitScaleSafe = isFinite(prevFitScale) && prevFitScale > 0 ? prevFitScale : autoFit;
-                const prevViewScale = Math.max(1e-6, prevFitScaleSafe * zoomScale);
-                const currentViewScale = Math.max(1e-6, fitScale * zoomScale);
-
-                const anchorOffsetX = (anchor.ax - 0.5) * logicalW * prevViewScale;
-                const anchorOffsetY = (anchor.ay - 0.5) * logicalH * prevViewScale;
-                const anchorPx = rb.center.cx + anchorOffsetX;
-                const anchorPy = rb.center.cy + anchorOffsetY;
-
-                const newAnchorOffsetX = (anchor.ax - 0.5) * logicalW * currentViewScale;
-                const newAnchorOffsetY = (anchor.ay - 0.5) * logicalH * currentViewScale;
-
-                rb.center = {
-                    cx: anchorPx - newAnchorOffsetX,
-                    cy: anchorPy - newAnchorOffsetY
-                };
-            }
-            rb.lastViewport = { vw, vh };
-        } else {
-            // 書き出し時は fitScale は計算には使わないが、論理幅=出力幅にするため scale=1.0 として扱うべき
-            // ただし、ここでの viewScale は「論理ピクセル -> スクリーンピクセル」の係数。
-            // Export時は 1 logical px = 1 output px なので 1.0。
+        // プレビュー時のみ FitScale を更新する。リサイズや復元時に autoFit を採用し、
+        // viewZoom 変更などでは fitScale を触らない。
+        const shouldUpdateFitScale = !isExporting && (updateFitScale || !isFinite(prevFitScaleRaw) || prevFitScaleRaw <= 0);
+        if (shouldUpdateFitScale) {
+            fitScale = autoFit;
+            rb.fitScale = fitScale;
         }
 
-        const prevFitScaleSafe = isFinite(prevFitScale) && prevFitScale > 0 ? prevFitScale : autoFit;
+        const prevViewScale = Math.max(1e-6, prevFitScaleSafe * zoomScale);
         // ViewScale
         // 書き出し時は 1.0 (1:1)
         const viewScale = isExporting ? 1.0 : Math.max(1e-6, fitScale * zoomScale);
 
         // Center
         // 書き出し時は中央、プレビュー時は設定値
-        const cx = isExporting ? vw / 2 : rb.center.cx;
-        const cy = isExporting ? vh / 2 : rb.center.cy;
+        let cx = isExporting ? vw / 2 : rb.center.cx;
+        let cy = isExporting ? vh / 2 : rb.center.cy;
+
+        // リサイズ時はアンカーのスクリーン座標を維持するために center を補正する
+        const shouldPreserveAnchor = !isExporting && updateFitScale && viewportChanged;
+        if (shouldPreserveAnchor) {
+            const anchor = rb.anchor ?? { ax: 0.5, ay: 0.5 };
+            if (isFinite(anchor.ax) && isFinite(anchor.ay)) {
+                const anchorOffsetX = (anchor.ax - 0.5) * logicalW * prevViewScale;
+                const anchorOffsetY = (anchor.ay - 0.5) * logicalH * prevViewScale;
+                const anchorPx = rb.center.cx + anchorOffsetX;
+                const anchorPy = rb.center.cy + anchorOffsetY;
+
+                const newAnchorOffsetX = (anchor.ax - 0.5) * logicalW * viewScale;
+                const newAnchorOffsetY = (anchor.ay - 0.5) * logicalH * viewScale;
+
+                cx = anchorPx - newAnchorOffsetX;
+                cy = anchorPy - newAnchorOffsetY;
+                rb.center = { cx, cy };
+            }
+        }
+        if (!isExporting && updateFitScale) {
+            rb.lastViewport = { vw, vh };
+        }
 
         const displayW = logicalW * viewScale;
         const displayH = logicalH * viewScale;
@@ -1421,6 +1421,10 @@ class CameraFramesController {
             this.overlay.style.pointerEvents = 'auto';
             return;
         }
+        if (this.panKeyActive) {
+            this.overlay.style.pointerEvents = 'auto';
+            return;
+        }
 
         const rect = this.canvasContainer.getBoundingClientRect();
         const px = e.clientX - rect.left;
@@ -1435,6 +1439,10 @@ class CameraFramesController {
     private updatePointerFromLast() {
         if (!this.lastPointer) {
             this.overlay.style.pointerEvents = 'none';
+            return;
+        }
+        if (this.panKeyActive && this.state.enabled) {
+            this.overlay.style.pointerEvents = 'auto';
             return;
         }
         const rect = this.canvasContainer.getBoundingClientRect();
@@ -1498,6 +1506,22 @@ class CameraFramesController {
 
     private onPointerDown(e: PointerEvent) {
         if (!this.state.enabled) return;
+        if (this.panKeyActive && e.button === 0) {
+            this.overlay.setPointerCapture(e.pointerId);
+            this.dragState = {
+                frameId: null,
+                startPos: { x: 0, y: 0 },
+                startPointer: { x: e.offsetX, y: e.offsetY },
+                axisLock: null,
+                shiftLock: false,
+                pointerId: e.pointerId,
+                mode: 'pan',
+                startCenterScreen: { x: this.state.renderBox.center.cx, y: this.state.renderBox.center.cy }
+            };
+            e.stopPropagation();
+            e.preventDefault();
+            return;
+        }
         const handleHit = this.hitTestHandle(e.offsetX, e.offsetY);
         const frame = handleHit?.frame ?? this.hitTestFrameBorder(e.offsetX, e.offsetY);
         if (!frame) {
@@ -1552,6 +1576,12 @@ class CameraFramesController {
 
     private onPointerMove(e: PointerEvent) {
         if (!this.dragState || e.pointerId !== this.dragState.pointerId) return;
+        if (this.dragState.mode === 'pan') {
+            this.handlePanDrag(e);
+            e.stopPropagation();
+            e.preventDefault();
+            return;
+        }
         const frame = this.state.frames.find(f => f.id === this.dragState.frameId);
         if (!frame) return;
 
@@ -1628,6 +1658,53 @@ class CameraFramesController {
 
         e.stopPropagation();
         e.preventDefault();
+    }
+
+    private clampCenterToViewport(cx: number, cy: number, rectW: number, rectH: number, vw: number, vh: number) {
+        const halfW = rectW * 0.5;
+        const halfH = rectH * 0.5;
+        let minCx = -PAN_MARGIN_PX + halfW;
+        let maxCx = vw + PAN_MARGIN_PX - halfW;
+        if (minCx > maxCx) {
+            const mid = (minCx + maxCx) * 0.5;
+            minCx = mid;
+            maxCx = mid;
+        }
+        let minCy = -PAN_MARGIN_PX + halfH;
+        let maxCy = vh + PAN_MARGIN_PX - halfH;
+        if (minCy > maxCy) {
+            const mid = (minCy + maxCy) * 0.5;
+            minCy = mid;
+            maxCy = mid;
+        }
+        return {
+            cx: Math.min(maxCx, Math.max(minCx, cx)),
+            cy: Math.min(maxCy, Math.max(minCy, cy))
+        };
+    }
+
+    private handlePanDrag(e: PointerEvent) {
+        const mapping = this.computeViewportMapping();
+        const rectW = mapping.logicalW * mapping.viewScale;
+        const rectH = mapping.logicalH * mapping.viewScale;
+        const vw = this.scene.camera.targetSize?.width ?? this.viewport.vw;
+        const vh = this.scene.camera.targetSize?.height ?? this.viewport.vh;
+        const startCenter = this.dragState.startCenterScreen ?? { x: this.state.renderBox.center.cx, y: this.state.renderBox.center.cy };
+        const dx = e.offsetX - (this.dragState.startPointer?.x ?? e.offsetX);
+        const dy = e.offsetY - (this.dragState.startPointer?.y ?? e.offsetY);
+        const nextCenter = this.clampCenterToViewport(
+            startCenter.x + dx,
+            startCenter.y + dy,
+            rectW,
+            rectH,
+            vw,
+            vh
+        );
+
+        this.state.renderBox.center = nextCenter;
+        this.syncCameraFrustum();
+        this.requestRender();
+        this.events.fire('cameraFrames.stateChanged', this.snapshot());
     }
 
     private applyFrameRotationFromStart(frame: FrameState, start: { startCenterLogical?: { x: number; y: number; }; startAnchorLogical?: { x: number; y: number; }; startRotationRad?: number; }, nextRad: number, logicalW: number, logicalH: number) {
