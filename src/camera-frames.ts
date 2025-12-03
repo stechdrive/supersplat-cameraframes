@@ -110,7 +110,7 @@ const DEG2RAD = Math.PI / 180;
 const RAD2DEG = 180 / Math.PI;
 const MIN_VIEW_ZOOM_PCT = 25;
 const MAX_VIEW_ZOOM_PCT = 100;
-const PAN_MARGIN_PX = 8;
+const PAN_MARGIN_PX = 0;
 
 const cloneFrame = (f: FrameState): FrameState => ({
     ...f,
@@ -1383,14 +1383,17 @@ class CameraFramesController {
 
         if (!this.state.enabled) {
             this.overlay.style.pointerEvents = 'none';
+            this.overlay.style.cursor = '';
             return;
         }
         if (this.dragState) {
             this.overlay.style.pointerEvents = 'auto';
+            this.overlay.style.cursor = this.dragState.mode === 'pan' ? 'grabbing' : '';
             return;
         }
         if (e.shiftKey) {
             this.overlay.style.pointerEvents = 'auto';
+            this.overlay.style.cursor = 'grab';
             return;
         }
 
@@ -1402,6 +1405,7 @@ class CameraFramesController {
         const borderHit = !handleHit && this.hitTestFrameBorder(px, py);
 
         this.overlay.style.pointerEvents = (handleHit || borderHit) ? 'auto' : 'none';
+        this.overlay.style.cursor = '';
     }
 
     private updatePointerFromLast() {
@@ -1484,6 +1488,7 @@ class CameraFramesController {
                 mode: 'pan',
                 startCenterScreen: { x: this.state.renderBox.center.cx, y: this.state.renderBox.center.cy }
             };
+            this.overlay.style.cursor = 'grabbing';
             e.stopPropagation();
             e.preventDefault();
             return;
@@ -1542,6 +1547,7 @@ class CameraFramesController {
         if (!this.dragState || e.pointerId !== this.dragState.pointerId) return;
         if (this.dragState.mode === 'pan') {
             this.handlePanDrag(e);
+            this.overlay.style.cursor = 'grabbing';
             e.stopPropagation();
             e.preventDefault();
             return;
@@ -1698,6 +1704,7 @@ class CameraFramesController {
             this.dragState = null;
             this.lastPointer = { x: e.clientX, y: e.clientY };
             this.updatePointerFromLast();
+            this.overlay.style.cursor = e.shiftKey ? 'grab' : '';
             e.stopPropagation();
             e.preventDefault();
         }
@@ -1765,15 +1772,30 @@ class CameraFramesController {
             const centerY = height * 0.5 + (frame.pos.y - 0.5) * logicalH;
             const rotationRad = this.frameRotationRad(frame);
             const lineWidth = 2;
-            ctx.fillStyle = '#ff0000';
-            ctx.beginPath();
-            // 外側だけ 2px にするため、偶奇塗りでリングを描く
             ctx.save();
-            ctx.translate(centerX, centerY);
-            ctx.rotate(rotationRad);
-            ctx.rect(-frameW * 0.5 - lineWidth, -frameH * 0.5 - lineWidth, frameW + lineWidth * 2, frameH + lineWidth * 2);
-            ctx.rect(-frameW * 0.5, -frameH * 0.5, frameW, frameH);
-            ctx.fill('evenodd');
+            ctx.strokeStyle = '#ff0000';
+            ctx.lineWidth = lineWidth;
+
+            // 回転が 90 度刻み（軸揃い）の場合はピクセルグリッドにスナップしてシャープに描く
+            const quarterTurn = Math.PI * 0.5;
+            const nearestQuarter = Math.round(rotationRad / quarterTurn);
+            const alignedRad = nearestQuarter * quarterTurn;
+            const isAxisAligned = Math.abs(rotationRad - alignedRad) < 1e-3;
+
+            if (isAxisAligned) {
+                const swap = (Math.abs(nearestQuarter) % 2) === 1;
+                const w = swap ? frameH : frameW;
+                const h = swap ? frameW : frameH;
+                const left = Math.round(centerX - w * 0.5);
+                const top = Math.round(centerY - h * 0.5);
+                const snapW = Math.round(w);
+                const snapH = Math.round(h);
+                ctx.strokeRect(left, top, snapW, snapH);
+            } else {
+                ctx.translate(centerX, centerY);
+                ctx.rotate(rotationRad);
+                ctx.strokeRect(-frameW * 0.5, -frameH * 0.5, frameW, frameH);
+            }
             ctx.restore();
         });
 
