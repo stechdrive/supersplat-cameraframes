@@ -4,6 +4,7 @@ import { PngCompressor } from './png-compressor';
 import { exportPsd } from './psd-export';
 import { Scene } from './scene';
 import { Crc } from './serialize/crc';
+import { cameraFramesVersion } from './camera-frames-version';
 
 type RenderBoxState = {
     baseSize: { w: number; h: number; };
@@ -185,6 +186,8 @@ class CameraFramesController {
         } else {
             canvasContainer.appendChild(this.overlay);
         }
+
+        this.applyCameraFramesVersionLabel();
 
         // initial viewport update (forces fit & center)
         this.updateViewportFromContainer();
@@ -1470,6 +1473,24 @@ class CameraFramesController {
             return 'move';
         }
         return '';
+    }
+
+    private applyCameraFramesVersionLabel() {
+        const appLabel = document.getElementById('app-label');
+        if (!appLabel) {
+            return;
+        }
+        const EXISTING_CLASS = 'camera-frames-version';
+        const existing = appLabel.querySelector(`.${EXISTING_CLASS}`);
+        const text = ` | CAMERA FRAMES ${cameraFramesVersion}`;
+        if (existing) {
+            existing.textContent = text;
+            return;
+        }
+        const span = document.createElement('span');
+        span.className = EXISTING_CLASS;
+        span.textContent = text;
+        appLabel.appendChild(span);
     }
 
     attachPointerHandlers() {
