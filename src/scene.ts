@@ -258,6 +258,10 @@ class Scene {
 
             // notify listeners
             this.events.fire('scene.elementAdded', element);
+
+            // 新規追加時は境界とクリップ計算をやり直す
+            this.boundDirty = true;
+            this.forceRender = true;
         }
     }
 

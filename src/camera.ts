@@ -509,6 +509,8 @@ class Camera extends Element {
         const prevDistance = this.distanceTween.value.distance * this.sceneRadius;
         this.sceneRadius = Math.max(1e-03, bound.halfExtents.length());
         this.setDistance(prevDistance / this.sceneRadius, 0);
+        // 境界更新直後にクリッピングプレーンを再計算し、以後のリスナーが正しい far を参照できるようにする
+        this.fitClippingPlanes(this.entity.getLocalPosition(), this.entity.forward);
     }
 
     serialize(serializer: Serializer) {

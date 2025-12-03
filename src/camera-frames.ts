@@ -233,6 +233,13 @@ class CameraFramesController {
                 this.scheduleNearClipGuard();
             }
         });
+        this.events.on('scene.boundChanged', () => {
+            if (!this.state.enabled) {
+                return;
+            }
+            this.syncCameraFrustum();
+            this.requestRender();
+        });
 
         // enable / disable
         this.events.function('cameraFrames.enabled', () => this.state.enabled);
