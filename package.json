@@ -20,7 +20,7 @@
         "develop": "cross-env BUILD_TYPE=debug concurrently --kill-others \"npm run watch\" \"npm run serve\"",
         "develop:auto-launch": "concurrently --kill-others \"xdg-open 'http://localhost:3000/'\" \"npm run watch\" \"npm run serve\"",
         "lint": "eslint src",
-        "deploy": "cross-env BASE_HREF=/supersplat-cameraframes/ npm run build && gh-pages -d dist -b gh-pages -t true"
+        "deploy": "cross-env BASE_HREF=/supersplat-cameraframes/ npm run build && gh-pages -d dist -b gh-pages -t"
     },
     "devDependencies": {
         "@playcanvas/eslint-config": "2.1.0",
