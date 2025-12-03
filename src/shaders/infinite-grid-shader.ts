@@ -1,23 +1,23 @@
 const vertexShader = /* glsl*/ `
-    uniform vec3 near_origin;
-    uniform vec3 near_x;
-    uniform vec3 near_y;
-
-    uniform vec3 far_origin;
-    uniform vec3 far_x;
-    uniform vec3 far_y;
-
     attribute vec2 vertex_position;
 
-    varying vec3 worldFar;
+    uniform mat4 matrix_viewProjectionInverse;
+
     varying vec3 worldNear;
+    varying vec3 worldFar;
 
     void main(void) {
-        gl_Position = vec4(vertex_position, 0.0, 1.0);
+        // full-screen quad in clip space
+        vec4 ndc = vec4(vertex_position, 0.0, 1.0);
 
-        vec2 p = vertex_position * 0.5 + 0.5;
-        worldNear = near_origin + near_x * p.x + near_y * p.y;
-        worldFar = far_origin + far_x * p.x + far_y * p.y;
+        // unproject near and far points
+        vec4 nearPoint = matrix_viewProjectionInverse * vec4(vertex_position, -1.0, 1.0);
+        vec4 farPoint = matrix_viewProjectionInverse * vec4(vertex_position, 1.0, 1.0);
+
+        worldNear = nearPoint.xyz / nearPoint.w;
+        worldFar = farPoint.xyz / farPoint.w;
+
+        gl_Position = ndc;
     }
 `;
 
@@ -100,13 +100,12 @@ const fragmentShader = /* glsl*/ `
         vec3 p = worldNear;
         vec3 v = normalize(worldFar - worldNear);
 
-        // intersect ray with the world xz plane
+        // intersect ray with selected plane
         float t;
         if (!intersectPlane(t, p, v, planes[plane])) {
             discard;
         }
 
-        // calculate grid intersection
         vec3 worldPos = p + v * t;
         vec2 pos = plane == 0 ? worldPos.yz : (plane == 1 ? worldPos.xz : worldPos.xy);
         vec2 ddx = dFdx(pos);
@@ -120,6 +119,28 @@ const fragmentShader = /* glsl*/ `
             discard;
         }
 
+        // emphasize world origin axes (XZ plane only)
+        if (plane == 1) {
+            float axisWidth = 0.02; // meters
+            float axisAA = max(length(ddx), length(ddy)) * 1.5;
+            float xLine = 1.0 - smoothstep(axisWidth, axisWidth + axisAA, abs(pos.x));
+            float zLine = 1.0 - smoothstep(axisWidth, axisWidth + axisAA, abs(pos.y));
+            float axisAlpha = max(xLine, zLine) * fade;
+            if (axisAlpha > epsilon) {
+                vec3 axisColor = vec3(0.0);
+                if (xLine > 0.0 && zLine > 0.0) {
+                    axisColor = vec3(1.0); // origin cross
+                } else if (xLine >= zLine) {
+                    axisColor = vec3(0.2, 0.2, 1.0); // X axis (swap colors)
+                } else {
+                    axisColor = vec3(1.0, 0.2, 0.2); // Z axis (swap colors)
+                }
+                gl_FragColor = vec4(axisColor, axisAlpha * 0.8);
+                gl_FragDepth = writeDepth(axisAlpha) ? calcDepth(worldPos) : 1.0;
+                return;
+            }
+        }
+
         vec2 levelPos;
         float levelSize;
         float levelAlpha;
@@ -127,7 +148,8 @@ const fragmentShader = /* glsl*/ `
         // 10m grid with colored main axes
         levelPos = pos * 0.1;
         levelSize = 2.0 / 1000.0;
-        levelAlpha = pristineGrid(levelPos, ddx * 0.1, ddy * 0.1, vec2(levelSize)) * fade;
+        levelAlpha = pristineGrid(levelPos, ddx * 0.1, ddy * 0.1, vec2(levelSize)) * fade * 1.2;
+        levelAlpha = min(levelAlpha, 1.0);
         if (levelAlpha > epsilon) {
             vec3 color;
             vec2 loc = abs(levelPos);
@@ -150,7 +172,8 @@ const fragmentShader = /* glsl*/ `
         // 1m grid
         levelPos = pos;
         levelSize = 1.0 / 100.0;
-        levelAlpha = pristineGrid(levelPos, ddx, ddy, vec2(levelSize)) * fade;
+        levelAlpha = pristineGrid(levelPos, ddx, ddy, vec2(levelSize)) * fade * 1.2;
+        levelAlpha = min(levelAlpha, 1.0);
         if (levelAlpha > epsilon) {
             gl_FragColor = vec4(vec3(0.7), levelAlpha);
             gl_FragDepth = writeDepth(levelAlpha) ? calcDepth(worldPos) : 1.0;
@@ -160,7 +183,8 @@ const fragmentShader = /* glsl*/ `
         // 0.1m grid
         levelPos = pos * 10.0;
         levelSize = 1.0 / 100.0;
-        levelAlpha = pristineGrid(levelPos, ddx * 10.0, ddy * 10.0, vec2(levelSize)) * fade;
+        levelAlpha = pristineGrid(levelPos, ddx * 10.0, ddy * 10.0, vec2(levelSize)) * fade * 1.2;
+        levelAlpha = min(levelAlpha, 1.0);
         if (levelAlpha > epsilon) {
             gl_FragColor = vec4(vec3(0.7), levelAlpha);
             gl_FragDepth = writeDepth(levelAlpha) ? calcDepth(worldPos) : 1.0;

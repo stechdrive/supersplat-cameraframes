@@ -61,6 +61,7 @@ class InfiniteGrid extends Element {
 
         const view_position = [0, 0, 0];
         const viewProjectionMatrix = new Mat4();
+        const viewProjectionInverse = new Mat4();
         let plane;
 
         this.scene.camera.entity.camera.on('preRenderLayer', (layer: Layer, transparent: boolean) => {
@@ -89,11 +90,13 @@ class InfiniteGrid extends Element {
                 view_position[2] = p.z;
 
                 viewProjectionMatrix.mul2(camera.entity.camera.projectionMatrix, camera.entity.camera.viewMatrix);
+                viewProjectionInverse.copy(viewProjectionMatrix).invert();
 
                 resolve(device.scope, {
                     plane,
                     view_position,
-                    matrix_viewProjection: viewProjectionMatrix.data
+                    matrix_viewProjection: viewProjectionMatrix.data,
+                    matrix_viewProjectionInverse: viewProjectionInverse.data
                 });
 
                 this.quadRender.render();

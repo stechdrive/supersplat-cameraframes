@@ -314,6 +314,63 @@ export class CameraFramesController {
             };
         });
 
+        // 提供: View Zoom / View Scale (CAMERA FRAMES 有効時のみ)
+        this.events.function('cameraFrames.viewZoom', () => {
+            if (!this.state.enabled) {
+                return null;
+            }
+            const mapping = this.computeViewportMapping(false);
+            const rb = this.state.renderBox;
+            const zoomPct = this.normalizeViewZoomPct(rb.viewZoomPct);
+            return {
+                viewScale: mapping.viewScale,
+                viewZoomPct: zoomPct
+            };
+        });
+
+        // 提供: グリッド用フラスタム / ビューポート情報（CAMERA FRAMES 有効時のみ）
+        this.events.function('cameraFrames.gridViewportInfo', () => {
+            if (!this.state.enabled) {
+                return null;
+            }
+            const mapping = this.computeViewportMapping(false);
+            // effective frustum (render box基準)
+            const rbFrustum = this.computeEffectiveFrustum();
+            // previewか書き出しかでviewportを切り替え
+            const targetSize = this.scene.camera.targetSize;
+            const vw = targetSize ? targetSize.width : this.viewport.vw;
+            const vh = targetSize ? targetSize.height : this.viewport.vh;
+
+            // 最終的に camera.setCustomFrustum に渡しているのは syncCameraFrustum の戻り値
+            // ここでは外挿後のフラスタム（画面全体をカバーするもの）を計算し直す
+            let finalFrustum = rbFrustum;
+            if (rbFrustum && mapping && vw > 0 && vh > 0) {
+                const rbW = rbFrustum.right - rbFrustum.left;
+                const rbH = rbFrustum.top - rbFrustum.bottom;
+                const pxToWorldX = mapping.rectPxRaw.w > 0 ? rbW / mapping.rectPxRaw.w : 0;
+                const pxToWorldY = mapping.rectPxRaw.h > 0 ? rbH / mapping.rectPxRaw.h : 0;
+                if (pxToWorldX > 0 && pxToWorldY > 0) {
+                    const left = rbFrustum.left - mapping.rectPxRaw.x * pxToWorldX;
+                    const right = left + vw * pxToWorldX;
+                    const top = rbFrustum.top + mapping.rectPxRaw.y * pxToWorldY;
+                    const bottom = top - vh * pxToWorldY;
+                    finalFrustum = {
+                        ...rbFrustum,
+                        left,
+                        right,
+                        bottom,
+                        top
+                    };
+                }
+            }
+
+            return {
+                rectPxRaw: { x: 0, y: 0, w: vw, h: vh },
+                viewport: { vw, vh },
+                frustum: finalFrustum
+            };
+        });
+
         // 提供: FOV / 35mm換算情報
         this.events.function('cameraFrames.fovInfo', () => this.fovInfo ?? this.calcFovInfo());
 
