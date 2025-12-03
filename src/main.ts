@@ -1,5 +1,6 @@
 import { Color, createGraphicsDevice } from 'playcanvas';
 
+import { registerCameraFrames } from './camera-frames';
 import { registerCameraPosesEvents } from './camera-poses';
 import { registerDocEvents } from './doc';
 import { EditHistory } from './edit-history';
@@ -254,10 +255,18 @@ const main = async () => {
     registerTransformHandlerEvents(events);
     registerPlySequenceEvents(events);
     registerPublishEvents(events);
+    registerCameraFrames(events, scene, editorUI.canvasContainer.dom);
     registerDocEvents(scene, events);
     registerRenderEvents(scene, events);
     initShortcuts(events);
     initFileHandler(scene, events, editorUI.appContainer.dom);
+
+    // wait until the first safe render before forcing FPV navigation and camera frames
+    const fpvReadyHandle = events.on('postrender', () => {
+        fpvReadyHandle.off();
+        //events.fire('camera.setNavMode', 'fpv');
+        events.fire('cameraFrames.setEnabled', true);
+    });
 
     // load async models
     scene.start();

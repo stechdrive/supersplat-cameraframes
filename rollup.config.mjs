@@ -4,6 +4,7 @@ import alias from '@rollup/plugin-alias';
 import image from '@rollup/plugin-image';
 import json from '@rollup/plugin-json';
 import resolve from '@rollup/plugin-node-resolve';
+import commonjs from '@rollup/plugin-commonjs';
 import strip from '@rollup/plugin-strip';
 import terser from '@rollup/plugin-terser';
 import typescript from '@rollup/plugin-typescript';
@@ -70,6 +71,7 @@ const application = {
                 '@playcanvas/pcui': PCUI_DIR
             }
         }),
+        commonjs(),
         typescript({
             tsconfig: './tsconfig.json'
         }),

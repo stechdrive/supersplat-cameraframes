@@ -61,9 +61,30 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
         scene.forceRender = true;
     });
 
+    // set camera position (world space)
+    events.on('camera.setPosition', (pos: { x: number, y: number, z: number }) => {
+        if (!pos) return;
+        const { x, y, z } = pos;
+        if (![x, y, z].every(v => typeof v === 'number' && isFinite(v))) return;
+        scene.camera.setPositionWorld(new Vec3(x, y, z));
+    });
+
     events.on('camera.overlay', () => {
         scene.forceRender = true;
     });
+
+    // camera.navMode (orbit / fpv)
+    let navMode: 'orbit' | 'fpv' = (scene.config.controls.navMode as ('orbit' | 'fpv')) ?? 'orbit';
+    const setNavMode = (mode: 'orbit' | 'fpv') => {
+        const next = mode ?? 'orbit';
+        if (next === navMode) return;
+        navMode = next;
+        scene.camera.setNavMode(navMode);
+        events.fire('camera.navMode', navMode);
+    };
+    events.function('camera.navMode', () => navMode);
+    events.on('camera.setNavMode', (mode: 'orbit' | 'fpv') => setNavMode(mode));
+    events.on('camera.toggleNavMode', () => setNavMode(navMode === 'orbit' ? 'fpv' : 'orbit'));
 
     events.on('camera.splatSize', () => {
         scene.forceRender = true;
@@ -554,6 +575,53 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
 
     events.on('camera.toggleOverlay', () => {
         setCameraOverlay(!events.invoke('camera.overlay'));
+    });
+
+    // nav mode initial fire for UI sync
+    setNavMode(navMode);
+
+    // camera transform (position / rotation / nudge)
+    events.on('camera.setPositionWorld', (pos: { x: number, y: number, z: number }) => {
+        scene.camera.setPositionWorld(new Vec3(pos.x, pos.y, pos.z));
+    });
+
+    events.on('camera.setRotationEuler', (rot: { yaw: number, pitch: number, roll: number, lockRoll: boolean }) => {
+        scene.camera.setRotationEuler(rot.yaw, rot.pitch, rot.roll, rot.lockRoll);
+    });
+
+    events.on('camera.nudgeLocal', (delta: { right?: number, up?: number, forward?: number, scale?: number }) => {
+        const dx = delta.right ?? 0;
+        const dy = delta.up ?? 0;
+        const dz = delta.forward ?? 0;
+        const scale = delta.scale ?? 1;
+        scene.camera.nudgeLocal(dx, dy, dz, scale);
+    });
+
+    events.function('camera.position', () => {
+        const p = scene.camera.entity.getPosition();
+        return { x: p.x, y: p.y, z: p.z };
+    });
+
+    events.function('camera.rotation', () => {
+        return scene.camera.getRotationAngles();
+    });
+
+    events.function('camera.transform', () => scene.camera.getTransform());
+    events.on('camera.transform', (t: any) => {
+        // passthrough
+    });
+
+    // camera near clip (override)
+    events.function('camera.near', () => {
+        return scene.camera.near;
+    });
+
+    events.on('camera.setNearOverride', (value: number | null) => {
+        scene.camera.setNearOverride(value);
+    });
+
+    events.on('camera.setCustomFrustum', (frustum: { left: number; right: number; bottom: number; top: number; near: number; far: number; } | null) => {
+        scene.camera.setCustomFrustum(frustum);
     });
 
     // splat size

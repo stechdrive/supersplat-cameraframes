@@ -18,7 +18,7 @@ const sceneConfig = {
         exposure: 1.0,
         toneMapping: 'linear',
         debugRender: '',
-        overlay: true,
+        overlay: false,
         highPrecision: true
     },
     show: {
@@ -36,7 +36,11 @@ const sceneConfig = {
         initialElev: -10,
         initialZoom: 1.0,
         orbitSensitivity: 0.3,
-        zoomSensitivity: 0.4
+        zoomSensitivity: 0.4,
+        navMode: 'orbit',
+        fpvSpeed: 1,
+        fpvWheelSpeed: 0.5,
+        fpvLookSensitivity: 0.002
     },
     debug: {
         showBound: false

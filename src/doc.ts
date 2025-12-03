@@ -123,6 +123,7 @@ const registerDocEvents = (scene: Scene, events: Events) => {
             events.invoke('docDeserialize.timeline', document.timeline);
             events.invoke('docDeserialize.poseSets', document.poseSets);
             events.invoke('docDeserialize.view', document.view);
+            events.invoke('docDeserialize.cameraFrames', document.cameraFrames);
             scene.camera.docDeserialize(document.camera);
 
             // refresh the pivot to reflect the loaded transform
@@ -134,6 +135,8 @@ const registerDocEvents = (scene: Scene, events: Events) => {
                 currentSelection.getPivot(pivotOrigin, false, transform);
                 pivot.place(transform);
             }
+
+            scene.scheduleViewportRefresh();
         } catch (error) {
             await events.invoke('showPopup', {
                 type: 'error',
@@ -157,6 +160,7 @@ const registerDocEvents = (scene: Scene, events: Events) => {
                 view: events.invoke('docSerialize.view'),
                 poseSets: events.invoke('docSerialize.poseSets'),
                 timeline: events.invoke('docSerialize.timeline'),
+                cameraFrames: events.invoke('docSerialize.cameraFrames'),
                 splats: splats.map(s => s.docSerialize())
             };
 

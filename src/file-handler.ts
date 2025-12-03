@@ -380,8 +380,10 @@ const initFileHandler = (scene: Scene, events: Events, dropTarget: HTMLElement) 
         return result;
     };
 
-    events.function('import', (files: ImportFile[], animationFrame = false) => {
-        return importFiles(files, animationFrame);
+    events.function('import', async (files: ImportFile[], animationFrame = false) => {
+        const result = await importFiles(files, animationFrame);
+        scene.scheduleViewportRefresh();
+        return result;
     });
 
     // create a file selector element as fallback when showOpenFilePicker isn't available

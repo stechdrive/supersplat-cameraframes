@@ -8,9 +8,12 @@
     transform: translate(0, -50%);
     padding: 8px 0px;
     border-radius: 8px;
+    z-index: 10;
+    max-height: 90vh;
+    overflow-y: auto;
 
     background-color: $bcg-dark;
- 
+
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -27,7 +30,9 @@
         }
     }
 
-    &>.right-toolbar-button, .right-toolbar-tool, .right-toolbar-toggle {
+    &>.right-toolbar-button,
+    .right-toolbar-tool,
+    .right-toolbar-toggle {
         width: 38px;
         height: 38px;
         margin: 1px 1px;
@@ -84,6 +89,7 @@
     }
 
     &>.right-toolbar-toggle.active {
+
         // highlight icon
         &::before {
             color: $clr-hilight;

@@ -100,14 +100,16 @@ class Menu extends Container {
             class: 'menu-option'
         });
 
-        const toggleCollapsed = () => {
-            document.body.classList.toggle('collapsed');
+        const setCollapsed = (collapsed: boolean) => {
+            document.body.classList[collapsed ? 'add' : 'remove']('collapsed');
         };
 
-        // collapse menu on mobile
-        if (document.body.clientWidth < 600) {
-            toggleCollapsed();
-        }
+        const toggleCollapsed = () => {
+            setCollapsed(!document.body.classList.contains('collapsed'));
+        };
+
+        // 起動時は折りたたみ状態で開始
+        setCollapsed(true);
 
         const collapse = createSvg(collapseSvg);
         collapse.dom.classList.add('menu-icon');

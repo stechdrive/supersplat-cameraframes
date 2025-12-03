@@ -40,12 +40,21 @@ class Scene {
     boundStorage = new BoundingBox();
     boundDirty = true;
     forceRender = false;
+    pendingViewportRefresh = 0;
+    viewportRefreshInFlight = false;
 
     lockedRenderMode = false;
     lockedRender = false;
 
-    canvasResize: {width: number; height: number} | null = null;
+    canvasResize: { width: number; height: number } | null = null;
     targetSize = {
+        width: 0,
+        height: 0
+    };
+    aspectViewport = {
+        enabled: false,
+        offsetX: 0,
+        offsetY: 0,
         width: 0,
         height: 0
     };
@@ -221,6 +230,13 @@ class Scene {
         this.app.start();
     }
 
+    // 初期レイアウトが確定する前に描画されることがあるため、モデル読み込み後に「リサイズ＋再描画」を複数フレーム分遅延実行する
+    scheduleViewportRefresh() {
+        // postrender 後にダブル rAF で実行する。複数フレーム続けて実施し、初期計算の取りこぼしを防ぐ。
+        this.pendingViewportRefresh = Math.max(this.pendingViewportRefresh, 3);
+        this.forceRender = true; // 少なくとも1フレームは描画させて postrender を踏む
+    }
+
     clear() {
         const splats = this.getElementsByType(ElementType.splat);
         splats.forEach((splat) => {
@@ -348,6 +364,63 @@ class Scene {
         this.targetSize.width = Math.ceil(this.app.graphicsDevice.width / this.config.camera.pixelScale);
         this.targetSize.height = Math.ceil(this.app.graphicsDevice.height / this.config.camera.pixelScale);
 
+        // aspect lock (camera frames) - letterbox/pillarbox to keep composition
+        // ※ v3: フラスタム拡張方式により Rect 適用は不要だが、情報は取得可能
+        const aspectInfo = this.events.invoke('cameraFrames.aspectLock') as {
+            aspect: number;
+            logicalW?: number;
+            logicalH?: number;
+            rectNorm?: { x: number; y: number; w: number; h: number; };
+            rectPx?: { x: number; y: number; w: number; h: number; };
+        } | null;
+
+        const targetSize = this.camera.targetSize;
+        const devW = targetSize?.width ?? this.app.graphicsDevice.width;
+        const devH = targetSize?.height ?? this.app.graphicsDevice.height;
+
+        // v3: フラスタム拡張を行うため、Rect と Scissor は常に全画面にリセットする
+        const rect = this.camera.entity.camera.rect;
+        rect.x = 0;
+        rect.y = 0;
+        rect.z = 1;
+        rect.w = 1;
+
+        const scissor = this.camera.entity.camera.scissorRect;
+        if (scissor) {
+            scissor.x = 0;
+            scissor.y = 0;
+            scissor.z = 1;
+            scissor.w = 1;
+        }
+
+        // FOV制御
+        const cam = this.camera.entity.camera;
+        const hasAspectLock = !!(aspectInfo && aspectInfo.aspect > 0 && isFinite(aspectInfo.aspect));
+        const lockedAspect = this.camera.getLockedAspectRatio ? this.camera.getLockedAspectRatio() : null;
+        const aspectForFov = lockedAspect ?? (hasAspectLock ? aspectInfo.aspect : (devH > 0 ? devW / devH : null));
+
+        if (this.camera.lockFraming) {
+            // CAMERA FRAMES 有効時は Horizontal デフォルトを強制 (アスペクト比による自動反転を防止)
+            if (this.camera.lockFovAxis === 'vertical') {
+                cam.horizontalFov = false;
+            } else if (this.camera.lockFovAxis === 'horizontal') {
+                cam.horizontalFov = true;
+            } else {
+                cam.horizontalFov = true;
+            }
+        } else {
+            // 通常時: 画面アスペクトに合わせて自動切り替え
+            cam.horizontalFov = devW > devH;
+        }
+
+        this.aspectViewport = {
+            enabled: false,
+            offsetX: 0,
+            offsetY: 0,
+            width: devW,
+            height: devH
+        };
+
         this.forEachElement(e => e.onPreRender());
 
         this.events.fire('prerender', this.camera.entity.getWorldTransform());
@@ -385,6 +458,46 @@ class Scene {
         this.forEachElement(e => e.onPostRender());
 
         this.events.fire('postrender');
+
+        // モデル読込直後の初期レイアウトずれを補正するため、postrender 後に限定してリサイズ/再計算を行う
+        if (this.pendingViewportRefresh > 0 && !this.viewportRefreshInFlight) {
+            const runs = this.pendingViewportRefresh;
+            this.pendingViewportRefresh = 0;
+            this.viewportRefreshInFlight = true;
+            const runOnce = (remaining: number) => {
+                // ダブル rAF: レイアウト/デバイスサイズが確定した後に実行
+                requestAnimationFrame(() => {
+                    requestAnimationFrame(() => {
+                        const container = window.document.getElementById('canvas-container');
+                        const pixelRatio = window.devicePixelRatio || 1;
+                        let width = this.canvas?.width ?? this.app.graphicsDevice.width;
+                        let height = this.canvas?.height ?? this.app.graphicsDevice.height;
+
+                        if (container) {
+                            const rect = container.getBoundingClientRect();
+                            const measuredW = Math.ceil(rect.width * pixelRatio);
+                            const measuredH = Math.ceil(rect.height * pixelRatio);
+                            if (measuredW > 0 && measuredH > 0) {
+                                width = measuredW;
+                                height = measuredH;
+                                this.canvasResize = { width, height };
+                            }
+                        }
+
+                        this.events.fire('camera.resize', { width, height });
+                        this.events.fire('cameraFrames.forceRefreshViewport');
+                        this.forceRender = true;
+
+                        if (remaining > 1) {
+                            runOnce(remaining - 1);
+                        } else {
+                            this.viewportRefreshInFlight = false;
+                        }
+                    });
+                });
+            };
+            runOnce(runs);
+        }
     }
 }
 

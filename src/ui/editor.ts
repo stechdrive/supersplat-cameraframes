@@ -4,6 +4,7 @@ import { Mat4, path, Vec3 } from 'playcanvas';
 import { DataPanel } from './data-panel';
 import { Events } from '../events';
 import { BottomToolbar } from './bottom-toolbar';
+import { CameraFramesPanel } from './camera-frames-panel';
 import { ColorPanel } from './color-panel';
 import { ExportPopup } from './export-popup';
 import { ImageSettingsDialog } from './image-settings-dialog';
@@ -121,6 +122,7 @@ class EditorUI {
         const scenePanel = new ScenePanel(events, tooltips);
         const viewPanel = new ViewPanel(events, tooltips);
         const colorPanel = new ColorPanel(events, tooltips);
+        const cameraFramesPanel = new CameraFramesPanel(events);
         const bottomToolbar = new BottomToolbar(events, tooltips);
         const rightToolbar = new RightToolbar(events, tooltips);
         const modeToggle = new ModeToggle(events, tooltips);
@@ -133,6 +135,7 @@ class EditorUI {
         canvasContainer.append(scenePanel);
         canvasContainer.append(viewPanel);
         canvasContainer.append(colorPanel);
+        canvasContainer.append(cameraFramesPanel);
         canvasContainer.append(bottomToolbar);
         canvasContainer.append(rightToolbar);
         canvasContainer.append(modeToggle);
@@ -325,6 +328,28 @@ class EditorUI {
         events.function('showPopup', (options: ShowOptions) => {
             return this.popup.show(options);
         });
+
+        // camera frames panel visibility
+        const setCameraFramesVisible = (visible: boolean) => {
+            const newHidden = !visible;
+            if (cameraFramesPanel.hidden !== newHidden) {
+                cameraFramesPanel.hidden = newHidden;
+            }
+            events.fire('cameraFramesPanel.visible', visible);
+        };
+
+        events.function('cameraFramesPanel.visible', () => {
+            return !cameraFramesPanel.hidden;
+        });
+
+        events.on('cameraFramesPanel.toggle', () => {
+            setCameraFramesVisible(cameraFramesPanel.hidden);
+        });
+
+        events.on('cameraFramesPanel.setVisible', (visible: boolean) => {
+            setCameraFramesVisible(visible);
+        });
+        setCameraFramesVisible(true);
 
         // spinner
 

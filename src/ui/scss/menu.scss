@@ -92,4 +92,12 @@
     .menu-option {
         display: none;
     }
+
+    #right-toolbar,
+    #bottom-toolbar,
+    #timeline-panel,
+    #mode-toggle,
+    #data-panel {
+        display: none !important;
+    }
 }

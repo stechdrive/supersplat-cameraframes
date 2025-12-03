@@ -14,6 +14,7 @@ class PointerController {
     destroy: () => void;
 
     constructor(camera: Camera, target: HTMLElement) {
+        const navMode = () => camera.navMode ?? 'orbit';
 
         const orbit = (dx: number, dy: number) => {
             const azim = camera.azim - dx * camera.scene.config.controls.orbitSensitivity;
@@ -40,9 +41,36 @@ class PointerController {
             camera.setDistance(camera.distance - (camera.distance * 0.999 + 0.001) * amount * camera.scene.config.controls.zoomSensitivity, 2);
         };
 
+        const fpvLook = (dx: number, dy: number) => {
+            const sens = camera.fpvLookSensitivity ?? 0.002;
+            const azim = camera.azim - dx * sens * 57.2957795; // rad to deg
+            const elev = camera.elevation - dy * sens * 57.2957795;
+            camera.setAzimElev(azim, elev);
+        };
+
+        const fpvMove = (forward: number, right: number, up: number, scaleMul = 1) => {
+            const base = camera.fpvSpeed ?? 1; // world units per step (scene-scale independent)
+            const scale = base * scaleMul;
+            camera.moveFpvLocal({
+                forward: forward * scale,
+                right: right * scale,
+                up: up * scale
+            });
+        };
+
+        const fpvWheelMove = (deltaY: number, slow: boolean) => {
+            const wheelScale = camera.fpvWheelSpeed ?? 1;
+            // wheel up (deltaY < 0) -> forward+, wheel down -> backward
+            const forward = deltaY * 0.0016 * wheelScale; // 10x faster
+            const mul = slow ? 0.1 : 1;
+            fpvMove(forward, 0, 0, mul);
+        };
+
         // mouse state
         let pressedButton = -1;  // no button pressed, otherwise 0, 1, or 2
         let x: number, y: number;
+        // fpv-only middle-drag tracking
+        let mmbX = 0, mmbY = 0, mmbActive = false;
 
         // touch state
         let touches: { id: number, x: number, y: number}[] = [];
@@ -58,6 +86,15 @@ class PointerController {
                 pressedButton = event.button;
                 x = event.offsetX;
                 y = event.offsetY;
+                if (navMode() === 'fpv') {
+                    mmbX = event.offsetX;
+                    mmbY = event.offsetY;
+                    mmbActive = false;
+                }
+                if (pressedButton === 0 && navMode() === 'fpv') {
+                    // request pointer lock for look
+                    target.requestPointerLock?.();
+                }
             } else if (event.pointerType === 'touch') {
                 if (touches.length === 0) {
                     target.setPointerCapture(event.pointerId);
@@ -82,6 +119,9 @@ class PointerController {
                 if (event.button === pressedButton) {
                     pressedButton = -1;
                     target.releasePointerCapture(event.pointerId);
+                    if (document.pointerLockElement === target && navMode() === 'fpv') {
+                        document.exitPointerLock?.();
+                    }
                 }
             } else {
                 touches = touches.filter(touch => touch.id !== event.pointerId);
@@ -118,12 +158,40 @@ class PointerController {
                         (event.altKey || event.metaKey ? 'zoom' : null)) :
                     null;
 
-                if (mod === 'orbit' || (mod === null && pressedButton === 0)) {
-                    orbit(dx, dy);
-                } else if (mod === 'zoom' || (mod === null && pressedButton === 1)) {
-                    zoom(dy * -0.02);
-                } else if (mod === 'pan' || (mod === null && pressedButton === 2)) {
-                    pan(x, y, dx, dy);
+                if (navMode() === 'fpv') {
+                    if (pressedButton === 0) { // LMB look
+                        const mdx = document.pointerLockElement === target ? event.movementX : dx;
+                        const mdy = document.pointerLockElement === target ? event.movementY : dy;
+                        fpvLook(mdx, mdy);
+                    } else if (pressedButton === 2) { // RMB strafe/up
+                        const sdx = event.offsetX - mmbX;
+                        const sdy = event.offsetY - mmbY;
+                        const moveMag = Math.abs(sdx) + Math.abs(sdy);
+                        mmbX = event.offsetX;
+                        mmbY = event.offsetY;
+                        if (!mmbActive) {
+                            // consume first move after press to avoid jump
+                            mmbActive = true;
+                            return;
+                        }
+                        if (moveMag < 0.5) {
+                            return;
+                        }
+                        const slow = event.altKey;
+                        const factor = 0.02; // 10x faster
+                        const maxStep = 10.0;  // cap per event
+                        const right = Math.max(-maxStep, Math.min(maxStep, -sdx * factor));
+                        const up = Math.max(-maxStep, Math.min(maxStep, sdy * factor));
+                        fpvMove(0, right, up, slow ? 0.1 : 1);
+                    }
+                } else {
+                    if (mod === 'orbit' || (mod === null && pressedButton === 0)) {
+                        orbit(dx, dy);
+                    } else if (mod === 'zoom' || (mod === null && pressedButton === 1)) {
+                        zoom(dy * -0.02);
+                    } else if (mod === 'pan' || (mod === null && pressedButton === 2)) {
+                        pan(x, y, dx, dy);
+                    }
                 }
             } else {
                 if (touches.length === 1) {
@@ -162,14 +230,18 @@ class PointerController {
         const wheel = (event: WheelEvent) => {
             const { deltaX, deltaY } = event;
 
-            if (isMouseEvent(deltaX, deltaY)) {
-                zoom(deltaY * -0.002);
-            } else if (event.ctrlKey || event.metaKey) {
-                zoom(deltaY * -0.02);
-            } else if (event.shiftKey) {
-                pan(event.offsetX, event.offsetY, deltaX, deltaY);
+            if (navMode() === 'fpv') {
+                fpvWheelMove(deltaY, event.altKey);
             } else {
-                orbit(deltaX, deltaY);
+                if (isMouseEvent(deltaX, deltaY)) {
+                    zoom(deltaY * -0.002);
+                } else if (event.ctrlKey || event.metaKey) {
+                    zoom(deltaY * -0.02);
+                } else if (event.shiftKey) {
+                    pan(event.offsetX, event.offsetY, deltaX, deltaY);
+                } else {
+                    orbit(deltaX, deltaY);
+                }
             }
 
             event.preventDefault();
@@ -179,7 +251,7 @@ class PointerController {
         const canvas = camera.scene.app.graphicsDevice.canvas;
 
         const dblclick = (event: globalThis.MouseEvent) => {
-            if (event.target === target || event.target === canvas) {
+            if (navMode() === 'orbit' && (event.target === target || event.target === canvas)) {
                 camera.pickFocalPoint(event.offsetX, event.offsetY);
             }
         };
