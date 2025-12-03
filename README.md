@@ -12,6 +12,27 @@ SuperSplat is a free and open source tool for inspecting, editing, optimizing an
 
 A live version of this tool is available at: https://superspl.at/editor
 
+## Camera Frames
+
+This repository adds the Camera Frames to SuperSplat. Camera Frames is the composition-safe camera workflow for renders. It keeps a reference render box anchored while you zoom the UI, preview extra scene area, and export matching images.
+
+- Anchor-locked render box scaling (3×3 anchors) with off-axis frustum and horizontal FOV lock so composition survives viewport or aspect changes.
+- View zoom (25–100%) shrinks the on-screen render box and extrapolates the frustum to reveal surrounding 3D content without letterboxing; viewport resize keeps the render-box center stable in screen space.
+- Camera navigation swaps between FPV and Orbit modes, with numeric controls for position/rotation, roll lock to keep the optical axis level, and near-clip tuning to protect close shots.
+- Multiple labeled frames with per-frame scale/rotation/pivot, ordering, and an optional mask that dims everything outside the union of frames for layout checks.
+- Exports use the render-box dimensions at zoom 100%, so PNG/PSD output matches the preview; PNG embeds the red strokes with 150 PPI metadata, PSD includes the base render plus outline layers grouped by frame labels.
+
+### Camera Frames 日本語概要
+
+このリポジトリは、SuperSplat に Camera Frames ワークフローを追加した派生版です。構図を崩さずにプレビューと書き出しを一致させるためのカメラ機能をまとめています。
+
+- 用紙サイズを3×3 アンカー基点で調整可能。大判の用紙サイズ設定ができます。
+- 表示倍率 25–100% で 大判時に全体をプレビューできます。
+- 複数の撮影フレームを配置し、それぞれスケール・回転・移動できます。Photoshopの変形操作と同様にAltで基点指定できます。
+- カメラをOrtbiとFPVで切り替えられます。数値入力によるカメラ制御可能、光軸ロール、ニアクリップも対応しています、
+-フレーム外だけを暗くするマスクを備えたレイアウト確認。
+- 書き出しはA4/150dpi相当のピクセル数を用紙サイズに合わせて大判にして出力できます。出力はPNGまたはPSD。PSD時は背景画像とフレーム枠でレイヤー分離。
+
 ![image](https://github.com/user-attachments/assets/b6cbb5cc-d3cc-4385-8c71-ab2807fd4fba)
 
 To learn more about using SuperSplat, please refer to the [User Guide](https://developer.playcanvas.com/user-manual/gaussian-splatting/editing/supersplat/).
