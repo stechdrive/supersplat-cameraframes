@@ -3505,6 +3505,21 @@
   height: 32px;
 }
 
+.format-row .grid-toggle-button {
+  width: 36px;
+  height: 36px;
+  padding: 3px;
+}
+.format-row .grid-toggle-button svg {
+  width: 24px;
+  height: 24px;
+}
+.format-row .grid-toggle-button.active {
+  border-color: #f60;
+  color: #f60;
+  background-color: rgba(255, 102, 0, 0.12);
+}
+
 .button-row .render-spinner {
   width: 16px;
   height: 16px;
