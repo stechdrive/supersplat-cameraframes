@@ -544,7 +544,7 @@ class SplatRenderSystem {
         let maxProps = 0;
         let baseSplat = this.sources[0];
 
-        this.sources.forEach(s => {
+        this.sources.forEach((s) => {
             const props = s.splatData.getElement('vertex').properties;
             if (props.length > maxProps) {
                 maxProps = props.length;
@@ -612,7 +612,7 @@ class SplatRenderSystem {
             mergedProperties.forEach((mergedProp, index) => {
                 const srcProp = propSrc.find(p => p.name === mergedProp.name);
                 if (!srcProp) {
-                    // This splat does not have this property (e.g. missing SH band). 
+                    // This splat does not have this property (e.g. missing SH band).
                     // Leave initialized zeros in merged storage.
                     return;
                 }
@@ -749,7 +749,7 @@ class SplatRenderSystem {
 
         // 各Splatのパラメータと状態を更新・転送
         if (this.paramsTextures && this.paramsStorage) {
-            this.sources.forEach(splat => {
+            this.sources.forEach((splat) => {
                 this.updateSplatParams(splat);
                 this.updateState(splat);
             });
