@@ -1,6 +1,6 @@
+import { Camera } from './camera';
 import { Events } from './events';
 import { SnapshotOp } from './history-ops';
-import { Camera } from './camera';
 
 type CameraSnapshot = {
     focalPoint: number[];
@@ -101,7 +101,7 @@ class CameraHistory {
             name: label ?? 'camera.transform',
             before,
             after,
-            apply: (snapshot) => this.applyWithGuard(snapshot)
+            apply: snapshot => this.applyWithGuard(snapshot)
         });
 
         // すでに適用済みの状態を履歴へ積むため suppressOp = true

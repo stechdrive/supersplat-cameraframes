@@ -16,6 +16,7 @@ import { Camera } from './camera';
 import { DataProcessor } from './data-processor';
 import { Element, ElementType, ElementTypeList } from './element';
 import { Events } from './events';
+import { EyeLevel } from './eye-level';
 import { InfiniteGrid as Grid } from './infinite-grid';
 import { Outline } from './outline';
 import { PCApp } from './pc-app';
@@ -24,7 +25,6 @@ import { SceneState } from './scene-state';
 import { Splat } from './splat';
 import { SplatOverlay } from './splat-overlay';
 import { Underlay } from './underlay';
-import { EyeLevel } from './eye-level';
 
 class Scene {
     events: Events;
@@ -54,11 +54,11 @@ class Scene {
         eyeLevelLayerOverride: Layer | null;
         gridLayerOverride: Layer | null;
     } = {
-        forceGridOverlay: false,
-        forceEyeLevelOverlay: false,
-        eyeLevelLayerOverride: null,
-        gridLayerOverride: null
-    };
+            forceGridOverlay: false,
+            forceEyeLevelOverlay: false,
+            eyeLevelLayerOverride: null,
+            gridLayerOverride: null
+        };
 
     canvasResize: { width: number; height: number } | null = null;
     targetSize = {

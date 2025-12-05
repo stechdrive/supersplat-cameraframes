@@ -768,7 +768,7 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
         events.fire('view.setBands', docView.shBands);
         events.fire('camera.setSplatSize', docView.centersSize);
         if (docView.hasOwnProperty('cameraOverlay')) {
-        events.fire('camera.setOverlay', !!docView.cameraOverlay);
+            events.fire('camera.setOverlay', !!docView.cameraOverlay);
         }
         events.fire('view.setOutlineSelection', docView.outlineSelection);
         events.fire('grid.setVisible', docView.showGrid);

@@ -1157,16 +1157,16 @@ class Camera extends Element {
         const toVec3 = (value: any, fallback: Vec3) => {
             if (Array.isArray(value) && value.length >= 3) {
                 return new Vec3(
-                    Number(value[0]) ?? fallback.x,
-                    Number(value[1]) ?? fallback.y,
-                    Number(value[2]) ?? fallback.z
+                    Number(value[0] ?? fallback.x),
+                    Number(value[1] ?? fallback.y),
+                    Number(value[2] ?? fallback.z)
                 );
             }
             if (value && typeof value === 'object') {
                 return new Vec3(
-                    Number(value.x) ?? fallback.x,
-                    Number(value.y) ?? fallback.y,
-                    Number(value.z) ?? fallback.z
+                    Number(value.x ?? fallback.x),
+                    Number(value.y ?? fallback.y),
+                    Number(value.z ?? fallback.z)
                 );
             }
             return fallback.clone();

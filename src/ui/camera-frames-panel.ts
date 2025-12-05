@@ -3,10 +3,10 @@ import { BooleanInput, Button, Container, Label, NumericInput, Panel, SelectInpu
 import { Events } from '../events';
 import { formatInteger, localize } from './localization';
 import cameraPanelSvg from './svg/camera-panel.svg';
+import cameraResetSvg from './svg/camera-reset.svg';
 import collapseSvg from './svg/collapse.svg';
 import deleteSvg from './svg/delete.svg';
 import exportSvg from './svg/export.svg';
-import cameraResetSvg from './svg/camera-reset.svg';
 import newSvg from './svg/new.svg';
 import lockSvg from './svg/select-lock.svg';
 import orbitSvg from './svg/select-sphere.svg';

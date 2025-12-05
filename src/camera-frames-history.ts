@@ -1,6 +1,6 @@
+import type { CameraFramesState } from './camera-frames';
 import { Events } from './events';
 import { SnapshotOp } from './history-ops';
-import type { CameraFramesState } from './camera-frames';
 
 const cloneState = <T>(value: T): T => JSON.parse(JSON.stringify(value));
 
@@ -50,7 +50,7 @@ class CameraFramesHistory {
             name,
             before,
             after,
-            apply: (snapshot) => this.applyWithGuard(snapshot)
+            apply: snapshot => this.applyWithGuard(snapshot)
         });
         // 既に反映済みの状態を履歴に積むため suppressOp = true
         this.events.fire('edit.add', op, true);
@@ -95,7 +95,7 @@ class CameraFramesHistory {
             name: label,
             before,
             after,
-            apply: (snapshot) => this.applyWithGuard(snapshot)
+            apply: snapshot => this.applyWithGuard(snapshot)
         });
         this.events.fire('edit.add', op, true);
     }

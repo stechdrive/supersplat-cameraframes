@@ -263,7 +263,7 @@ const main = async () => {
     const cameraFramesHistory = new CameraFramesHistory(
         events,
         () => cameraFramesController.snapshot(),
-        (snapshot) => cameraFramesController.applySnapshot(snapshot)
+        snapshot => cameraFramesController.applySnapshot(snapshot)
     );
     cameraFramesController.setHistory(cameraFramesHistory);
     registerDocEvents(scene, events);
