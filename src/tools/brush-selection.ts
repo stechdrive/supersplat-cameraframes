@@ -1,4 +1,5 @@
 import { Events } from '../events';
+import { isCtrlLike, modifiers } from '../modifier-tracker';
 
 class BrushSelection {
     activate: () => void;
@@ -91,12 +92,14 @@ class BrushSelection {
             if (e.pointerId === dragId) {
                 e.preventDefault();
                 e.stopPropagation();
+                const modState = modifiers.read(e);
+                const op = modState.shift ? 'add' : (isCtrlLike(modState) ? 'remove' : 'set');
 
                 dragEnd();
 
                 events.fire(
                     'select.byMask',
-                    e.shiftKey ? 'add' : (e.ctrlKey ? 'remove' : 'set'),
+                    op,
                     canvas,
                     context
                 );
@@ -104,7 +107,8 @@ class BrushSelection {
         };
 
         const wheel = (e: WheelEvent) => {
-            if (e.altKey || e.metaKey) {
+            const modState = modifiers.read(e);
+            if (modState.alt || modState.meta) {
                 const { deltaX, deltaY } = e;
                 events.fire((Math.abs(deltaX) > Math.abs(deltaY) ? deltaX : deltaY) > 0 ? 'tool.brushSelection.smaller' : 'tool.brushSelection.bigger');
                 e.preventDefault();

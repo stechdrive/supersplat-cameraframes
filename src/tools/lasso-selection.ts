@@ -1,4 +1,5 @@
 import { Events } from '../events';
+import { isCtrlLike, modifiers } from '../modifier-tracker';
 
 type Point = { x: number, y: number };
 
@@ -67,6 +68,8 @@ class LassoSelection {
             context.beginPath();
             context.fillStyle = '#f60';
             context.beginPath();
+            const modState = modifiers.read(e);
+            const op = modState.shift ? 'add' : (isCtrlLike(modState) ? 'remove' : 'set');
             points.forEach((p, idx) => {
                 if (idx === 0) {
                     context.moveTo(p.x, p.y);
@@ -79,7 +82,7 @@ class LassoSelection {
 
             events.fire(
                 'select.byMask',
-                e.shiftKey ? 'add' : (e.ctrlKey ? 'remove' : 'set'),
+                op,
                 canvas,
                 context
             );

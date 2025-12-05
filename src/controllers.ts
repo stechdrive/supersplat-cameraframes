@@ -1,6 +1,7 @@
 import { Vec3 } from 'playcanvas';
 
 import { Camera } from './camera';
+import { isCtrlLike, modifiers } from './modifier-tracker';
 
 const fromWorldPoint = new Vec3();
 const toWorldPoint = new Vec3();
@@ -91,12 +92,13 @@ class PointerController {
         let midx: number, midy: number, midlen: number;
 
         const pointerdown = (event: PointerEvent) => {
+            const modState = modifiers.read(event);
             if (event.pointerType === 'mouse') {
                 // If a button is already pressed, ignore this press
                 if (pressedButton !== -1) {
                     return;
                 }
-                const pivotDrag = navMode() === 'fpv' && (event.ctrlKey || event.metaKey) && event.button === 0;
+                const pivotDrag = navMode() === 'fpv' && isCtrlLike(modState) && event.button === 0;
                 target.setPointerCapture(event.pointerId);
                 pressedButton = event.button;
                 x = event.offsetX;
@@ -159,6 +161,7 @@ class PointerController {
                 if (pressedButton === -1) {
                     return;
                 }
+                const modState = modifiers.read(event);
 
                 // Verify the button we're tracking is still pressed
                 // 1 = left button, 4 = middle button, 2 = right button
@@ -175,20 +178,41 @@ class PointerController {
                 x = event.offsetX;
                 y = event.offsetY;
 
-                if (isPivoting) {
-                    const sens = camera.scene.config.controls.orbitSensitivity;
-                    camera.orbitAround(pivotPoint, dx * sens, dy * sens);
-                    return;
-                }
-
                 // right button can be used to orbit with ctrl key and to zoom with alt | meta key
                 const mod = pressedButton === 2 ?
-                    (event.shiftKey || event.ctrlKey ? 'orbit' :
-                        (event.altKey || event.metaKey ? 'zoom' : null)) :
+                    (modState.shift || modState.ctrl ? 'orbit' :
+                        (modState.alt || modState.meta ? 'zoom' : null)) :
                     null;
 
                 if (navMode() === 'fpv') {
-                    if (pressedButton === 0) { // LMB look
+                    if (pressedButton === 0) { // LMB look / pivot
+                        const wantPivot = isCtrlLike(modState);
+                        if (wantPivot) {
+                            if (!isPivoting) {
+                                setPivotPoint(event);
+                                isPivoting = true;
+                                if (document.pointerLockElement === target) {
+                                    document.exitPointerLock?.();
+                                }
+                                // avoid a jump on first pivot frame
+                                x = event.offsetX;
+                                y = event.offsetY;
+                            }
+                            const sens = camera.scene.config.controls.orbitSensitivity;
+                            camera.orbitAround(pivotPoint, dx * sens, dy * sens);
+                            return;
+                        }
+
+                        if (isPivoting && !wantPivot) {
+                            isPivoting = false;
+                            x = event.offsetX;
+                            y = event.offsetY;
+                        }
+
+                        if (document.pointerLockElement !== target) {
+                            target.requestPointerLock?.();
+                        }
+
                         const mdx = document.pointerLockElement === target ? event.movementX : dx;
                         const mdy = document.pointerLockElement === target ? event.movementY : dy;
                         fpvLook(mdx, mdy);
@@ -206,7 +230,7 @@ class PointerController {
                         if (moveMag < 0.5) {
                             return;
                         }
-                        const slow = event.altKey;
+                        const slow = modState.alt || modState.meta;
                         const factor = 0.02; // 10x faster
                         const maxStep = 10.0;  // cap per event
                         const right = Math.max(-maxStep, Math.min(maxStep, -sdx * factor));
@@ -258,15 +282,16 @@ class PointerController {
 
         const wheel = (event: WheelEvent) => {
             const { deltaX, deltaY } = event;
+            const modState = modifiers.read(event);
 
             if (navMode() === 'fpv') {
-                fpvWheelMove(deltaY, event.altKey);
+                fpvWheelMove(deltaY, modState.alt || modState.meta);
             } else {
                 if (isMouseEvent(deltaX, deltaY)) {
                     zoom(deltaY * -0.002);
-                } else if (event.ctrlKey || event.metaKey) {
+                } else if (isCtrlLike(modState)) {
                     zoom(deltaY * -0.02);
-                } else if (event.shiftKey) {
+                } else if (modState.shift) {
                     pan(event.offsetX, event.offsetY, deltaX, deltaY);
                 } else {
                     orbit(deltaX, deltaY);
@@ -295,7 +320,8 @@ class PointerController {
 
         const keydown = (event: KeyboardEvent) => {
             if (keys.hasOwnProperty(event.key) && event.target === document.body) {
-                keys[event.key] = event.shiftKey ? 10 : (event.ctrlKey || event.metaKey || event.altKey ? 0.1 : 1);
+                const modState = modifiers.read(event);
+                keys[event.key] = modState.shift ? 10 : ((isCtrlLike(modState) || modState.alt) ? 0.1 : 1);
             }
         };
 

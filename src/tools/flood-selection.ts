@@ -1,6 +1,7 @@
 import { Container, NumericInput } from '@playcanvas/pcui';
 
 import { Events } from '../events';
+import { isCtrlLike, modifiers } from '../modifier-tracker';
 
 type Pt = {x : number, y: number };
 
@@ -123,6 +124,8 @@ class FloodSelection {
         const pointerup = async (e: PointerEvent) => {
             if (clicked && isPrimary(e)) {
                 clicked = false;
+                const modState = modifiers.read(e);
+                const op = modState.shift ? 'add' : (isCtrlLike(modState) ? 'remove' : 'set');
 
                 point = {
                     x: Math.floor(e.offsetX),
@@ -131,7 +134,7 @@ class FloodSelection {
 
                 await refreshSelection();
 
-                apply(e.shiftKey ? 'add' : (e.ctrlKey ? 'remove' : 'set'));
+                apply(op);
 
                 context.clearRect(0, 0, canvas.width, canvas.height);
             }

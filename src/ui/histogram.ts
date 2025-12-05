@@ -1,4 +1,5 @@
 import { Events } from '../events';
+import { isCtrlLike, modifiers } from '../modifier-tracker';
 
 class HistogramData {
     bins: { selected: number, unselected: number }[];
@@ -155,8 +156,9 @@ class Histogram {
 
             if (dragging) {
                 this.canvas.releasePointerCapture(e.pointerId);
+                const modState = modifiers.read(e);
+                const op = modState.shift ? 'add' : (isCtrlLike(modState) ? 'remove' : 'set');
 
-                const op = e.shiftKey ? 'add' : (e.ctrlKey ? 'remove' : 'set');
                 this.events.fire('select', op, Math.min(dragStart, dragEnd), Math.max(dragStart, dragEnd));
                 dragging = false;
             }
