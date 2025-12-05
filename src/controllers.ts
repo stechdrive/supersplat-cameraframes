@@ -5,6 +5,8 @@ import { Camera } from './camera';
 const fromWorldPoint = new Vec3();
 const toWorldPoint = new Vec3();
 const worldDiff = new Vec3();
+const pivotPoint = new Vec3();
+const pivotForward = new Vec3();
 
 // calculate the distance between two 2d points
 const dist = (x0: number, y0: number, x1: number, y1: number) => Math.sqrt((x1 - x0) ** 2 + (y1 - y0) ** 2);
@@ -66,11 +68,23 @@ class PointerController {
             fpvMove(forward, 0, 0, mul);
         };
 
+        const setPivotPoint = (event: PointerEvent) => {
+            const hit = camera.intersect(event.offsetX, event.offsetY);
+            if (hit) {
+                pivotPoint.copy(hit.position);
+                return;
+            }
+            pivotPoint.copy(camera.entity.getPosition());
+            pivotForward.copy(camera.entity.forward).mulScalar(camera.sceneRadius * 2);
+            pivotPoint.add(pivotForward);
+        };
+
         // mouse state
         let pressedButton = -1;  // no button pressed, otherwise 0, 1, or 2
         let x: number, y: number;
         // fpv-only middle-drag tracking
         let mmbX = 0, mmbY = 0, mmbActive = false;
+        let isPivoting = false;
 
         // touch state
         let touches: { id: number, x: number, y: number}[] = [];
@@ -82,14 +96,21 @@ class PointerController {
                 if (pressedButton !== -1) {
                     return;
                 }
+                const pivotDrag = navMode() === 'fpv' && (event.ctrlKey || event.metaKey) && event.button === 0;
                 target.setPointerCapture(event.pointerId);
                 pressedButton = event.button;
                 x = event.offsetX;
                 y = event.offsetY;
+                isPivoting = false;
                 if (navMode() === 'fpv') {
                     mmbX = event.offsetX;
                     mmbY = event.offsetY;
                     mmbActive = false;
+                }
+                if (pivotDrag) {
+                    setPivotPoint(event);
+                    isPivoting = true;
+                    return;
                 }
                 if (pressedButton === 0 && navMode() === 'fpv') {
                     // request pointer lock for look
@@ -118,6 +139,7 @@ class PointerController {
                 // Only release if this is the button that was initially pressed
                 if (event.button === pressedButton) {
                     pressedButton = -1;
+                    isPivoting = false;
                     target.releasePointerCapture(event.pointerId);
                     if (document.pointerLockElement === target && navMode() === 'fpv') {
                         document.exitPointerLock?.();
@@ -144,6 +166,7 @@ class PointerController {
                 if ((event.buttons & buttonMask) === 0) {
                     // Button is no longer pressed, clean up
                     pressedButton = -1;
+                    isPivoting = false;
                     return;
                 }
 
@@ -151,6 +174,12 @@ class PointerController {
                 const dy = event.offsetY - y;
                 x = event.offsetX;
                 y = event.offsetY;
+
+                if (isPivoting) {
+                    const sens = camera.scene.config.controls.orbitSensitivity;
+                    camera.orbitAround(pivotPoint, dx * sens, dy * sens);
+                    return;
+                }
 
                 // right button can be used to orbit with ctrl key and to zoom with alt | meta key
                 const mod = pressedButton === 2 ?

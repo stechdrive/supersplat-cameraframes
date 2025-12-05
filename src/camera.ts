@@ -53,6 +53,8 @@ const ray = new Ray();
 const vec = new Vec3();
 const vecb = new Vec3();
 const va = new Vec3();
+const orbitOffset = new Vec3();
+const orbitForward = new Vec3();
 const m = new Mat4();
 const v4 = new Vec4();
 const rollAxis = new Vec3();
@@ -667,6 +669,37 @@ class Camera extends Element {
 
         this.far = far;
         this.near = near;
+    }
+
+    // ピボット点を中心にカメラを回転させる（FPVオービット用）
+    orbitAround(pivot: Vec3, azimDelta: number, elevDelta: number) {
+        orbitOffset.sub2(this.entity.getPosition(), pivot);
+        const radius = orbitOffset.length();
+        if (radius < 1e-6) {
+            return;
+        }
+
+        const elevSin = Math.max(-1, Math.min(1, -orbitOffset.y / radius));
+        let azim = Math.atan2(orbitOffset.x, orbitOffset.z) * math.RAD_TO_DEG;
+        let elev = Math.asin(elevSin) * math.RAD_TO_DEG;
+
+        azim -= azimDelta;
+        elev -= elevDelta;
+        elev = Math.max(this.minElev, Math.min(this.maxElev, elev));
+
+        calcForwardVec(orbitForward, azim, elev);
+        orbitForward.mulScalar(radius);
+        va.copy(pivot).add(orbitForward);
+        this.entity.setPosition(va);
+
+        this.setAzimElev(azim, elev, 0);
+
+        if (this.navMode === 'fpv') {
+            this.fpvPosition.copy(va);
+        }
+
+        this.emitTransform(true);
+        this.scene.forceRender = true;
     }
 
     moveFpvLocal(delta: { forward?: number, right?: number, up?: number }) {
