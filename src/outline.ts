@@ -38,12 +38,14 @@ class Outline extends Element {
 
         // add selected splat to outline layer
         this.scene.events.on('selection.changed', (splat: Splat, prev: Splat) => {
-            if (prev) {
-                prev.entity.gsplat.layers = prev.entity.gsplat.layers.filter(id => id !== layerId);
-            }
-            if (splat) {
-                splat.entity.gsplat.layers = splat.entity.gsplat.layers.concat([layerId]);
-            }
+            const target = this.scene.renderSystem.mergedEntity.gsplat;
+            if (!target) return;
+            const worldLayer = this.scene.app.scene.layers.getLayerByName('World');
+            const worldLayerId = worldLayer ? worldLayer.id : null;
+            const baseLayers = (target.layers ?? []).filter(id => id === worldLayerId || id === layerId);
+            const ensureWorld = worldLayerId !== null && !baseLayers.includes(worldLayerId) ? baseLayers.concat([worldLayerId]) : baseLayers;
+            const finalLayers = splat ? (ensureWorld.includes(layerId) ? ensureWorld : ensureWorld.concat([layerId])) : ensureWorld.filter(id => id !== layerId);
+            target.layers = finalLayers;
         });
 
         // render overlay layer only

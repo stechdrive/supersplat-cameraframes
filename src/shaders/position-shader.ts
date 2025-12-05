@@ -9,16 +9,24 @@ const fragmentShader = /* glsl */ `
     uniform highp usampler2D transformA;            // splat center x, y, z
     uniform highp usampler2D splatTransform;        // transform palette index
     uniform sampler2D transformPalette;             // palette of transforms
-    uniform ivec2 splat_params;                     // splat texture width, num splats
+    uniform uvec2 globalSplatParams;                // global texture width, total splats
+    uniform uvec2 output_params;                    // output width, height
+    uniform uint splatOffset;                       // start index
+    uniform uint splatCount;                        // number of splats for this pass
 
     void main(void) {
-        // calculate output id
-        ivec2 splatUV = ivec2(gl_FragCoord);
+        uint localId = uint(gl_FragCoord.x) + uint(gl_FragCoord.y) * output_params.x;
 
-        // skip if splat index is out of bounds
-        if (splatUV.x + splatUV.y * splat_params.x >= splat_params.y) {
+        if (localId >= splatCount) {
             discard;
         }
+
+        uint globalIndex = splatOffset + localId;
+
+        ivec2 splatUV = ivec2(
+            int(globalIndex % globalSplatParams.x),
+            int(globalIndex / globalSplatParams.x)
+        );
 
         // read splat center
         vec3 center = uintBitsToFloat(texelFetch(transformA, splatUV, 0).xyz);

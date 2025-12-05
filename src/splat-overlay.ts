@@ -3,7 +3,6 @@ import {
     BUFFER_STATIC,
     PRIMITIVE_POINTS,
     SEMANTIC_POSITION,
-    GSplatResource,
     ShaderMaterial,
     Mesh,
     MeshInstance,
@@ -48,7 +47,16 @@ class SplatOverlay extends Element {
                 return;
             }
 
+            const renderSystem = this.scene.renderSystem;
+
+            if (!renderSystem.mergedResource) {
+                meshInstance.node = null;
+                return;
+            }
+
             const splatData = splat.splatData;
+            const offset = renderSystem.offsets.get(splat) ?? 0;
+            const count = renderSystem.counts.get(splat) ?? splatData.numSplats;
 
             const vertexFormat = new VertexFormat(device, [{
                 semantic: SEMANTIC_POSITION,
@@ -58,12 +66,12 @@ class SplatOverlay extends Element {
             }]);
 
             // TODO: make use of Splat's mapping instead of rendering all splats
-            const vertexData = new Uint32Array(splatData.numSplats);
-            for (let i = 0; i < splatData.numSplats; ++i) {
+            const vertexData = new Uint32Array(count);
+            for (let i = 0; i < count; ++i) {
                 vertexData[i] = i;
             }
 
-            const vertexBuffer = new VertexBuffer(device, vertexFormat, splatData.numSplats, {
+            const vertexBuffer = new VertexBuffer(device, vertexFormat, count, {
                 usage: BUFFER_STATIC,
                 data: vertexData.buffer
             });
@@ -78,13 +86,17 @@ class SplatOverlay extends Element {
                 type: PRIMITIVE_POINTS,
                 base: 0,
                 baseVertex: 0,
-                count: splatData.numSplats
+                count
             };
 
-            material.setParameter('splatState', splat.stateTexture);
-            material.setParameter('splatPosition', (splat.entity.gsplat.instance.resource as GSplatResource).transformATexture);
-            material.setParameter('splatTransform', splat.transformTexture);
-            material.setParameter('texParams', [splat.stateTexture.width, splat.stateTexture.height]);
+            material.setParameter('splatState', renderSystem.stateTexture);
+            material.setParameter('splatPosition', renderSystem.mergedResource.transformATexture);
+            material.setParameter('splatTransform', renderSystem.transformTexture);
+            material.setParameter('transformPalette', renderSystem.transformPalette.texture);
+            const tex = renderSystem.mergedResource.transformATexture;
+            material.setParameter('globalParams', [tex.width, tex.width * tex.height]);
+            material.setParameter('splatOffset', offset);
+            material.setParameter('splatCount', count);
             material.update();
 
             meshInstance.node = splat.entity;
@@ -118,7 +130,7 @@ class SplatOverlay extends Element {
             material.setParameter('splatSize', splatSize * window.devicePixelRatio);
             material.setParameter('selectedClr', [selectedClr.r, selectedClr.g, selectedClr.b, selectedClr.a]);
             material.setParameter('unselectedClr', [unselectedClr.r, unselectedClr.g, unselectedClr.b, unselectedClr.a]);
-            material.setParameter('transformPalette', this.splat.transformPalette.texture);
+            material.setParameter('transformPalette', this.scene.renderSystem.transformPalette.texture);
             this.scene.app.drawMeshInstance(this.meshInstance);
         }
     }

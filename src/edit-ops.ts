@@ -241,7 +241,7 @@ class SplatsTransformOp {
     do() {
         const { splat, transform, paletteMap } = this;
         const state = splat.splatData.getProp('state') as Uint8Array;
-        const indices = splat.transformTexture.lock() as Uint16Array;
+        const indices = splat.splatData.getProp('transform') as Uint16Array;
 
         // update splat transform palette indices
         for (let i = 0; i < state.length; ++i) {
@@ -249,8 +249,6 @@ class SplatsTransformOp {
                 indices[i] = paletteMap.get(indices[i]);
             }
         }
-
-        splat.transformTexture.unlock();
 
         splat.transformPalette.alloc(paletteMap.size);
 
@@ -262,6 +260,8 @@ class SplatsTransformOp {
             transformPalette.setTransform(newIdx, mat);
         });
 
+        splat.scene.renderSystem.updateTransform(splat);
+        splat.scene.renderSystem.updateTransformIndices(splat, indices);
         splat.makeSelectionBoundDirty();
         splat.updatePositions();
     }
@@ -269,7 +269,7 @@ class SplatsTransformOp {
     undo() {
         const { splat, paletteMap } = this;
         const state = splat.splatData.getProp('state') as Uint8Array;
-        const indices = splat.transformTexture.lock() as Uint16Array;
+        const indices = splat.splatData.getProp('transform') as Uint16Array;
 
         // invert the palette map
         const inverseMap = new Map<number, number>();
@@ -284,10 +284,10 @@ class SplatsTransformOp {
             }
         }
 
-        splat.transformTexture.unlock();
-
         splat.transformPalette.free(paletteMap.size);
 
+        splat.scene.renderSystem.updateTransform(splat);
+        splat.scene.renderSystem.updateTransformIndices(splat, indices);
         splat.makeSelectionBoundDirty();
         splat.updatePositions();
     }

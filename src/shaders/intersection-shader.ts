@@ -9,7 +9,9 @@ const fragmentShader = /* glsl */ `
     uniform highp usampler2D transformA;            // splat center x, y, z
     uniform highp usampler2D splatTransform;        // transform palette index
     uniform sampler2D transformPalette;             // palette of transforms
-    uniform uvec2 splat_params;                     // splat texture width, num splats
+    uniform uvec2 globalSplatParams;                // global texture width, total splats
+    uniform uint splatOffset;                       // start index
+    uniform uint splatCount;                        // number of splats to process
 
     uniform mat4 matrix_model;
     uniform mat4 matrix_viewProjection;
@@ -43,14 +45,16 @@ const fragmentShader = /* glsl */ `
         for (uint i = 0u; i < 4u; i++) {
             uint id = outputId + i;
 
-            if (id >= splat_params.y) {
+            if (id >= splatCount) {
                 continue;
             }
 
+            uint globalIndex = splatOffset + id;
+
             // calculate splatUV
             ivec2 splatUV = ivec2(
-                int(id % splat_params.x),
-                int(id / splat_params.x)
+                int(globalIndex % globalSplatParams.x),
+                int(globalIndex / globalSplatParams.x)
             );
 
             // read splat center

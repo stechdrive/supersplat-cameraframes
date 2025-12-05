@@ -25,13 +25,7 @@ const registerPlySequenceEvents = (events: Events) => {
     };
 
     // resolves on first render frame
-    const firstRender = (splat: Splat) => {
-        return new Promise<void>((resolve) => {
-            splat.entity.gsplat.instance.sorter.on('updated', (count) => {
-                resolve();
-            });
-        });
-    };
+    const firstRender = (splat: Splat) => splat.scene.renderSystem.waitForSorter();
 
     const setFrame = async (frame: number) => {
         if (frame < 0 || frame >= sequenceFiles.length) {

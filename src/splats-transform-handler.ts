@@ -102,7 +102,7 @@ class SplatsTransformHandler implements TransformHandler {
 
         // allocate a new transform for the current selection
         const state = splat.splatData.getProp('state') as Uint8Array;
-        const indices = splat.transformTexture.lock() as Uint16Array;
+        const indices = splat.splatData.getProp('transform') as Uint16Array;
 
         const { paletteMap } = this;
         paletteMap.clear();
@@ -122,13 +122,14 @@ class SplatsTransformHandler implements TransformHandler {
             }
         }
 
-        splat.transformTexture.unlock();
-
         // initialize transforms
         this.paletteMap.forEach((newIdx, oldIdx) => {
             transformPalette.getTransform(oldIdx, mat);
             transformPalette.setTransform(newIdx, mat);
         });
+
+        splat.scene.renderSystem.updateTransformIndices(splat, indices);
+        splat.scene.renderSystem.updateTransform(splat);
 
         splat.selectionAlpha = 0;
         splat.scene.outline.enabled = false;
@@ -151,6 +152,7 @@ class SplatsTransformHandler implements TransformHandler {
             transformPalette.setTransform(newIdx, mat2);
         });
 
+        this.splat.scene.renderSystem.updateTransform(this.splat);
         this.splat.makeSelectionBoundDirty();
     }
 

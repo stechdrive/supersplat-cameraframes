@@ -9,7 +9,9 @@ const vertexShader = /* glsl */ `
     uniform highp usampler2D splatTransform;        // per-splat index into transform palette
     uniform sampler2D transformPalette;             // palette of transform matrices
 
-    uniform uvec2 texParams;
+    uniform uvec2 globalParams;                     // width, total count
+    uniform uint splatOffset;
+    uniform uint splatCount;
 
     uniform float splatSize;
     uniform vec4 selectedClr;
@@ -17,13 +19,19 @@ const vertexShader = /* glsl */ `
 
     varying vec4 varying_color;
 
-    // calculate the current splat index and uv
     ivec2 calcSplatUV(uint index, uint width) {
         return ivec2(int(index % width), int(index / width));
     }
 
     void main(void) {
-        ivec2 splatUV = calcSplatUV(vertex_id, texParams.x);
+        if (vertex_id >= splatCount) {
+            gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
+            gl_PointSize = 0.0;
+            return;
+        }
+
+        uint globalIndex = splatOffset + vertex_id;
+        ivec2 splatUV = calcSplatUV(globalIndex, globalParams.x);
         uint splatState = uint(texelFetch(splatState, splatUV, 0).r * 255.0);
 
         if ((splatState & 6u) != 0u) {

@@ -212,7 +212,7 @@ class SplatTransformCache {
 
     constructor(splat: Splat, keepWorldTransform = false) {
         const transforms = new Map<number, { transformIndex: number, mat: Mat4, rot: Quat, scale: Vec3, shRot: SHRotation }>();
-        const indices = splat.transformTexture.getSource() as unknown as Uint32Array;
+        const indices = splat.splatData.getProp('transform') as Uint32Array;
         const tmpMat = new Mat4();
         const tmpMat3 = new Mat3();
         const tmpQuat = new Quat();
@@ -760,13 +760,18 @@ const sortSplats = (splats: Splat[], indices: CompressedIndex[]) => {
         const splat = splats[i];
         const splatData = splat.splatData;
         const state = splatData.getProp('state') as Uint8Array;
-        const { centers } = splat.entity.gsplat.instance.sorter;
+        const centersInfo = splat.scene.renderSystem.getCenters(splat);
+        if (!centersInfo) {
+            continue;
+        }
+        const { centers, offset } = centersInfo;
 
         for (let i = 0; i < splatData.numSplats; ++i) {
             if ((state[i] & State.deleted) === 0) {
-                const x = centers[i * 3 + 0];
-                const y = centers[i * 3 + 1];
-                const z = centers[i * 3 + 2];
+                const base = offset + i * 3;
+                const x = centers[base + 0];
+                const y = centers[base + 1];
+                const z = centers[base + 2];
 
                 if (minx === undefined) {
                     minx = maxx = x;
@@ -791,13 +796,18 @@ const sortSplats = (splats: Splat[], indices: CompressedIndex[]) => {
         const splat = splats[i];
         const splatData = splat.splatData;
         const state = splatData.getProp('state') as Uint8Array;
-        const { centers } = splat.entity.gsplat.instance.sorter;
+        const centersInfo = splat.scene.renderSystem.getCenters(splat);
+        if (!centersInfo) {
+            continue;
+        }
+        const { centers, offset } = centersInfo;
 
         for (let i = 0; i < splatData.numSplats; ++i) {
             if ((state[i] & State.deleted) === 0) {
-                const x = centers[i * 3 + 0];
-                const y = centers[i * 3 + 1];
-                const z = centers[i * 3 + 2];
+                const base = offset + i * 3;
+                const x = centers[base + 0];
+                const y = centers[base + 1];
+                const z = centers[base + 2];
 
                 const ix = Math.min(1023, Math.floor(1024 * (x - minx) / xlen));
                 const iy = Math.min(1023, Math.floor(1024 * (y - miny) / ylen));

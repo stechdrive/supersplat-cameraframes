@@ -24,6 +24,7 @@ import { SceneConfig } from './scene-config';
 import { SceneState } from './scene-state';
 import { Splat } from './splat';
 import { SplatOverlay } from './splat-overlay';
+import { SplatRenderSystem } from './splat-render-system';
 import { Underlay } from './underlay';
 
 class Scene {
@@ -81,6 +82,7 @@ class Scene {
     outline: Outline;
     underlay: Underlay;
     eyeLevel: EyeLevel;
+    renderSystem: SplatRenderSystem;
 
     contentRoot: Entity;
     cameraRoot: Entity;
@@ -232,6 +234,8 @@ class Scene {
 
         this.cameraRoot = new Entity('cameraRoot');
         this.app.root.addChild(this.cameraRoot);
+
+        this.renderSystem = new SplatRenderSystem(this);
 
         // create elements
         this.camera = new Camera();
@@ -451,6 +455,8 @@ class Scene {
             width: devW,
             height: devH
         };
+
+        this.renderSystem.onPreRender();
 
         this.forEachElement(e => e.onPreRender());
 

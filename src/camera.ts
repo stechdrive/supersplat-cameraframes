@@ -93,6 +93,8 @@ class Camera extends Element {
 
     renderOverlays = true;
 
+    currentPickTarget: Splat | null = null;
+
     private customFrustum: { left: number, right: number, bottom: number, top: number, near: number, far: number } | null = null;
 
     // framing lock (CAMERA FRAMES 用): true のときオートフィットを抑止
@@ -1011,8 +1013,9 @@ class Camera extends Element {
             this.pickPrep(splat, 'set');
             const pickId = this.pick(sx, sy);
 
-            if (pickId !== -1) {
-                splat.calcSplatWorldPosition(pickId, vec);
+            const mapped = this.scene.renderSystem.mapPickId(pickId);
+            if (mapped && mapped.splat === splat) {
+                splat.calcSplatWorldPosition(mapped.local, vec);
 
                 // create a plane at the world position facing perpendicular to the camera
                 plane.setFromPointNormal(vec, this.entity.forward);
@@ -1067,21 +1070,12 @@ class Camera extends Element {
         const events = this.scene.events;
         const alpha = events.invoke('camera.mode') === 'rings' ? 0.0 : 0.2;
 
-        // hide non-selected elements
-        const splats = this.scene.getElementsByType(ElementType.splat);
-        splats.forEach((s: Splat) => {
-            s.entity.enabled = s === splat;
-        });
+        this.currentPickTarget = splat;
 
         device.scope.resolve('pickerAlpha').setValue(alpha);
         device.scope.resolve('pickMode').setValue(['add', 'remove', 'set'].indexOf(op));
         this.picker.resize(width, height);
         this.picker.prepare(this.entity.camera, this.scene.app.scene, [worldLayer]);
-
-        // re-enable all splats
-        splats.forEach((splat: Splat) => {
-            splat.entity.enabled = true;
-        });
     }
 
     pick(x: number, y: number) {
@@ -1100,14 +1094,21 @@ class Camera extends Element {
 
         const result: number[] = [];
         for (let i = 0; i < width * height; i++) {
-            result.push(
+            const id =
                 pixels[i * 4] |
                 (pixels[i * 4 + 1] << 8) |
                 (pixels[i * 4 + 2] << 16) |
-                (pixels[i * 4 + 3] << 24)
-            );
+                (pixels[i * 4 + 3] << 24);
+
+            const mapped = this.scene.renderSystem.mapPickId(id);
+            if (!mapped || (this.currentPickTarget && mapped.splat !== this.currentPickTarget)) {
+                result.push(-1);
+            } else {
+                result.push(mapped.local);
+            }
         }
 
+        this.currentPickTarget = null;
         return result;
     }
 

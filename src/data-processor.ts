@@ -21,7 +21,7 @@ import {
 import { vertexShader as boundVS, fragmentShader as boundFS } from './shaders/bound-shader';
 import { vertexShader as intersectionVS, fragmentShader as intersectionFS } from './shaders/intersection-shader';
 import { vertexShader as positionVS, fragmentShader as positionFS } from './shaders/position-shader';
-import { Splat } from './splat';
+import type { Splat } from './splat';
 
 type MaskOptions = {
     mask: Texture;
@@ -71,6 +71,15 @@ type PositionResources = {
     texture: Texture;
     renderTarget: RenderTarget;
     data: Float32Array;
+};
+
+type ProcessorContext = {
+    splat: Splat;
+    offset: number;
+    count: number;
+    transformTexture: Texture | null;
+    transformPalette: Texture | null;
+    stateTexture?: Texture | null;
 };
 
 // gpu processor for splat data
@@ -145,7 +154,7 @@ class DataProcessor {
                     });
                 }
 
-                const resultWidth = Math.max(1, Math.floor(width / 2));
+                const resultWidth = Math.max(1, Math.floor(Math.sqrt(Math.max(1, numSplats / 4))));
                 const resultHeight = Math.ceil(numSplats / (resultWidth * 4));
 
                 if (!texture || texture.width !== resultWidth || texture.height !== resultHeight) {
@@ -266,17 +275,17 @@ class DataProcessor {
     }
 
     // calculate the intersection of a mask canvas with splat centers
-    intersect(options: MaskOptions | RectOptions | SphereOptions | BoxOptions, splat: Splat) {
+    intersect(options: MaskOptions | RectOptions | SphereOptions | BoxOptions, ctx: ProcessorContext) {
         const { device } = this;
         const { scope } = device;
 
-        const numSplats = splat.splatData.numSplats;
-        const transformA = (splat.entity.gsplat.instance.resource as GSplatResource).transformATexture;
-        const splatTransform = splat.transformTexture;
-        const transformPalette = splat.transformPalette.texture;
+        const numSplats = ctx.count;
+        const transformA = ctx.splat.scene.renderSystem.mergedResource.transformATexture;
+        const splatTransform = ctx.transformTexture;
+        const transformPalette = ctx.transformPalette;
 
         // update view projection matrix
-        const camera = splat.scene.camera.entity.camera;
+        const camera = ctx.splat.scene.camera.entity.camera;
         this.viewProjectionMat.mul2(camera.projectionMatrix, camera.viewMatrix);
 
         // allocate resources
@@ -286,8 +295,10 @@ class DataProcessor {
             transformA,
             splatTransform,
             transformPalette,
-            splat_params: [transformA.width, numSplats],
-            matrix_model: splat.entity.getWorldTransform().data,
+            splatOffset: ctx.offset,
+            splatCount: ctx.count,
+            globalSplatParams: [transformA.width, transformA.width * transformA.height],
+            matrix_model: Mat4.IDENTITY.data,
             matrix_viewProjection: this.viewProjectionMat.data,
             output_params: [resources.texture.width, resources.texture.height]
         });
@@ -376,29 +387,27 @@ class DataProcessor {
 
     // use gpu to calculate either bound of the currently selected splats or the bound of
     // all visible splats
-    calcBound(splat: Splat, boundingBox: BoundingBox, onlySelected: boolean) {
-        const device = splat.scene.graphicsDevice;
+    calcBound(ctx: ProcessorContext, boundingBox: BoundingBox, onlySelected: boolean) {
+        const device = ctx.splat.scene.graphicsDevice;
         const { scope } = device;
 
-        const numSplats = splat.splatData.numSplats;
-        const transformA = (splat.entity.gsplat.instance.resource as GSplatResource).transformATexture;
-        const splatTransform = splat.transformTexture;
-        const transformPalette = splat.transformPalette.texture;
-        const splatState = splat.stateTexture;
-
-        this.splatParams[0] = transformA.width;
-        this.splatParams[1] = transformA.height;
-        this.splatParams[2] = numSplats;
+        const numSplats = ctx.count;
+        const transformA = ctx.splat.scene.renderSystem.mergedResource.transformATexture;
+        const splatTransform = ctx.transformTexture;
+        const transformPalette = ctx.transformPalette;
+        const splatState = ctx.stateTexture;
 
         // get resources
-        const resources = this.getBoundResources(transformA.width);
+        const resources = this.getBoundResources(1);
 
         resolve(scope, {
             transformA,
             splatTransform,
             transformPalette,
             splatState,
-            splat_params: this.splatParams,
+            splatOffset: ctx.offset,
+            splatCount: numSplats,
+            globalSplatParams: [transformA.width, transformA.width * transformA.height],
             mode: onlySelected ? 0 : 1
         });
 
@@ -406,11 +415,11 @@ class DataProcessor {
 
         device.setBlendState(BlendState.NOBLEND);
         drawQuadWithShader(device, resources.renderTarget, resources.shader);
-        glDevice.gl.readPixels(0, 0, transformA.width, 1, resources.minTexture.impl._glFormat, resources.minTexture.impl._glPixelType, resources.minData);
+        glDevice.gl.readPixels(0, 0, 1, 1, resources.minTexture.impl._glFormat, resources.minTexture.impl._glPixelType, resources.minData);
 
         glDevice.setRenderTarget(resources.maxRenderTarget);
         glDevice.updateBegin();
-        glDevice.gl.readPixels(0, 0, transformA.width, 1, resources.maxTexture.impl._glFormat, resources.maxTexture.impl._glPixelType, resources.maxData);
+        glDevice.gl.readPixels(0, 0, 1, 1, resources.maxTexture.impl._glFormat, resources.maxTexture.impl._glPixelType, resources.maxData);
         glDevice.updateEnd();
 
         // resolve mins/maxs
@@ -418,43 +427,46 @@ class DataProcessor {
         v1.set(Infinity, Infinity, Infinity);
         v2.set(-Infinity, -Infinity, -Infinity);
 
-        for (let i = 0; i < transformA.width; i++) {
-            const a = minData[i * 4];
-            const b = minData[i * 4 + 1];
-            const c = minData[i * 4 + 2];
-            if (isFinite(a)) v1.x = Math.min(v1.x, a);
-            if (isFinite(b)) v1.y = Math.min(v1.y, b);
-            if (isFinite(c)) v1.z = Math.min(v1.z, c);
+        const a = minData[0];
+        const b = minData[1];
+        const c = minData[2];
+        if (isFinite(a)) v1.x = Math.min(v1.x, a);
+        if (isFinite(b)) v1.y = Math.min(v1.y, b);
+        if (isFinite(c)) v1.z = Math.min(v1.z, c);
 
-            const d = maxData[i * 4];
-            const e = maxData[i * 4 + 1];
-            const f = maxData[i * 4 + 2];
-            if (isFinite(d)) v2.x = Math.max(v2.x, d);
-            if (isFinite(e)) v2.y = Math.max(v2.y, e);
-            if (isFinite(f)) v2.z = Math.max(v2.z, f);
-        }
+        const d = maxData[0];
+        const e = maxData[1];
+        const f = maxData[2];
+        if (isFinite(d)) v2.x = Math.max(v2.x, d);
+        if (isFinite(e)) v2.y = Math.max(v2.y, e);
+        if (isFinite(f)) v2.z = Math.max(v2.z, f);
 
         boundingBox.setMinMax(v1, v2);
     }
 
     // calculate world-space splat positions
-    calcPositions(splat: Splat) {
+    calcPositions(ctx: ProcessorContext) {
         const { device } = this;
         const { scope } = device;
 
-        const numSplats = splat.splatData.numSplats;
-        const transformA = (splat.entity.gsplat.instance.resource as GSplatResource).transformATexture;
-        const splatTransform = splat.transformTexture;
-        const transformPalette = splat.transformPalette.texture;
+        const numSplats = ctx.count;
+        const transformA = ctx.splat.scene.renderSystem.mergedResource.transformATexture;
+        const splatTransform = ctx.transformTexture;
+        const transformPalette = ctx.transformPalette;
 
         // allocate resources
-        const resources = this.getPositionResources(transformA.width, transformA.height, numSplats);
+        const width = Math.max(1, Math.ceil(Math.sqrt(numSplats)));
+        const height = Math.ceil(numSplats / width);
+        const resources = this.getPositionResources(width, height, numSplats);
 
         resolve(scope, {
             transformA,
             splatTransform,
             transformPalette,
-            splat_params: [transformA.width, numSplats]
+            splatOffset: ctx.offset,
+            splatCount: numSplats,
+            globalSplatParams: [transformA.width, transformA.width * transformA.height],
+            output_params: [width, height]
         });
 
         device.setBlendState(BlendState.NOBLEND);
@@ -470,7 +482,7 @@ class DataProcessor {
             resources.data
         );
 
-        return resources.data;
+        return resources.data.subarray(0, numSplats * 4);
     }
 
     copyRt(source: RenderTarget, dest: RenderTarget) {

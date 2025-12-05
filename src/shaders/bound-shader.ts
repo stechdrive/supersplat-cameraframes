@@ -10,7 +10,9 @@ const fragmentShader = /* glsl */ `
     uniform highp usampler2D splatTransform;            // transform palette index
     uniform sampler2D transformPalette;                 // palette of transforms
     uniform sampler2D splatState;                       // per-splat state
-    uniform highp ivec3 splat_params;                   // texture width, texture height, num splats
+    uniform highp uvec2 globalSplatParams;              // texture width, total splats
+    uniform highp uint splatOffset;
+    uniform highp uint splatCount;
     uniform highp uint mode;                            // 0: selected, 1: visible
 
     // calculate min and max for a single column of splats
@@ -19,14 +21,13 @@ const fragmentShader = /* glsl */ `
         vec3 boundMin = vec3(1e6);
         vec3 boundMax = vec3(-1e6);
 
-        for (int id = 0; id < splat_params.y; id++) {
-            // calculate splatUV
-            ivec2 splatUV = ivec2(gl_FragCoord.x, id);
+        for (uint localId = 0u; localId < splatCount; localId++) {
+            uint globalIndex = splatOffset + localId;
 
-            // skip out-of-range splats
-            if ((splatUV.x + splatUV.y * splat_params.x) >= splat_params.z) {
-                continue;
-            }
+            ivec2 splatUV = ivec2(
+                int(globalIndex % globalSplatParams.x),
+                int(globalIndex / globalSplatParams.x)
+            );
 
             // read splat state
             uint state = uint(texelFetch(splatState, splatUV, 0).r * 255.0);

@@ -2,12 +2,14 @@ const vertexShader = /* glsl*/`
 #include "gsplatCommonVS"
 
 uniform sampler2D splatState;
+uniform sampler2D splatParams0;                    // tint.rgb, temperature
+uniform sampler2D splatParams1;                    // saturation, brightness, blackPoint, whitePoint
+uniform sampler2D splatParams2;                    // transparency, selectionAlpha
+uniform uvec2 globalParams;                        // texture width, total splats
+uniform uvec2 splatParamsDim;                      // custom width, total splats for params/state
 
 uniform vec4 selectedClr;
 uniform vec4 lockedClr;
-
-uniform vec3 clrOffset;
-uniform vec4 clrScale;
 
 varying mediump vec3 texCoordIsLocked;          // store locked flat in z
 varying mediump vec4 color;
@@ -18,9 +20,7 @@ varying mediump vec4 color;
 
 mediump vec4 discardVec = vec4(0.0, 0.0, 2.0, 1.0);
 
-uniform float saturation;
-
-vec3 applySaturation(vec3 color) {
+vec3 applySaturation(vec3 color, float saturation) {
     vec3 grey = vec3(dot(color, vec3(0.299, 0.587, 0.114)));
     return grey + (color - grey) * saturation;
 }
@@ -33,8 +33,26 @@ void main(void) {
         return;
     }
 
-    // get per-gaussian edit state, discard if deleted
-    uint vertexState = uint(texelFetch(splatState, source.uv, 0).r * 255.0 + 0.5) & 7u;
+    // Calculate Custom UVs for our Parameters (independent of engine's transformA layout)
+    uint id = uint(gl_VertexID) / 4u;
+    uint paramWidth = splatParamsDim.x;
+    ivec2 customUV = ivec2(int(id % paramWidth), int(id / paramWidth));
+
+    // per-splat parameters (Using Custom UV)
+    vec4 params0 = texelFetch(splatParams0, customUV, 0);
+    vec4 params1 = texelFetch(splatParams1, customUV, 0);
+    vec4 params2 = texelFetch(splatParams2, customUV, 0);
+    float saturationVal = params1.x;
+    float brightness = params1.y;
+    float blackPoint = params1.z;
+    float whitePoint = params1.w;
+    vec3 tint = params0.rgb;
+    float temperature = params0.a;
+    float transparency = params2.x;
+    float selectionAlpha = params2.y;
+
+    // get per-gaussian edit state (Using Custom UV)
+    uint vertexState = uint(texelFetch(splatState, customUV, 0).r * 255.0 + 0.5) & 7u;
 
     #if OUTLINE_PASS
         if (vertexState != 1u) {
@@ -119,26 +137,34 @@ void main(void) {
         #endif
 
         // apply tint/brightness
-        color = color * clrScale + vec4(clrOffset, 0.0);
+        float offset = -blackPoint + brightness;
+        float scaleBase = 1.0 / max(1e-6, (whitePoint - blackPoint));
+        vec3 clrScaleVec = vec3(
+            scaleBase * tint.r * (1.0 + temperature),
+            scaleBase * tint.g,
+            scaleBase * tint.b * (1.0 - temperature)
+        );
+        color.xyz = color.xyz * clrScaleVec + vec3(offset);
 
         // apply saturation
-        color.xyz = applySaturation(color.xyz);
+        color.xyz = applySaturation(color.xyz, saturationVal);
 
         // don't allow out-of-range alpha
-        color.a = clamp(color.a, 0.0, 1.0);
+        color.a = clamp(color.a * transparency, 0.0, 1.0);
 
         // apply tonemapping
         color = vec4(prepareOutputFromGamma(max(color.xyz, 0.0)), color.w);
 
         // apply locked/selected colors
-        if ((vertexState & 2u) != 0u) {
-            // locked
-            color *= lockedClr;
-        } else if ((vertexState & 1u) != 0u) {
-            // selected
-            color.xyz = mix(color.xyz, selectedClr.xyz * 0.8, selectedClr.a);
-        }
-    #endif
+    if ((vertexState & 2u) != 0u) {
+        // locked
+        color *= lockedClr;
+    } else if ((vertexState & 1u) != 0u) {
+        // selected
+        vec4 sel = vec4(selectedClr.rgb, selectedClr.a * selectionAlpha);
+        color.xyz = mix(color.xyz, sel.xyz * 0.8, sel.a);
+    }
+#endif
 }
 `;
 
@@ -184,6 +210,9 @@ void main(void) {
             gl_FragColor = vec4(color.xyz * alpha, alpha);
         #endif
     #endif
+
+    // DEBUG: REVERT FORCE RED
+    // gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0);
 }
 `;
 
