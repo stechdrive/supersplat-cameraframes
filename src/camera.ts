@@ -61,6 +61,8 @@ const rollAxis = new Vec3();
 const quatYawPitch = new Quat();
 const quatRoll = new Quat();
 const quatFinal = new Quat();
+const quatOrbitYaw = new Quat();
+const quatOrbitPitch = new Quat();
 
 // modulo dealing with negative numbers
 const mod = (n: number, m: number) => ((n % m) + m) % m;
@@ -679,20 +681,49 @@ class Camera extends Element {
             return;
         }
 
-        const elevSin = Math.max(-1, Math.min(1, -orbitOffset.y / radius));
-        let azim = Math.atan2(orbitOffset.x, orbitOffset.z) * math.RAD_TO_DEG;
-        let elev = Math.asin(elevSin) * math.RAD_TO_DEG;
+        const currentAngles = this.azimElevTween.value;
+        const nextAzim = mod(currentAngles.azim - azimDelta, 360);
+        const unclampedElev = currentAngles.elev - elevDelta;
+        const nextElev = Math.max(this.minElev, Math.min(this.maxElev, unclampedElev));
+        const appliedPitch = nextElev - currentAngles.elev;
 
-        azim -= azimDelta;
-        elev -= elevDelta;
-        elev = Math.max(this.minElev, Math.min(this.maxElev, elev));
+        // yaw: world up軸でオフセットを回転
+        quatOrbitYaw.setFromAxisAngle(Vec3.UP, -azimDelta);
+        quatOrbitYaw.transformVector(orbitOffset, orbitOffset);
 
-        calcForwardVec(orbitForward, azim, elev);
-        orbitForward.mulScalar(radius);
-        va.copy(pivot).add(orbitForward);
+        // pitch: yaw後の右軸で回転
+        calcForwardVec(orbitForward, nextAzim, currentAngles.elev);
+        vecb.cross(Vec3.UP, orbitForward);
+        if (vecb.lengthSq() < 1e-6) {
+            // forward がほぼ真上/真下のときは現在の右軸を使う
+            this.entity.getWorldTransform().getX(vecb);
+            vecb.normalize();
+        } else {
+            vecb.normalize();
+        }
+        if (Math.abs(appliedPitch) > 1e-6) {
+            quatOrbitPitch.setFromAxisAngle(vecb, appliedPitch);
+            quatOrbitPitch.transformVector(orbitOffset, orbitOffset);
+        }
+
+        // 新しいカメラ位置
+        va.copy(pivot).add(orbitOffset);
         this.entity.setPosition(va);
 
-        this.setAzimElev(azim, elev, 0);
+        // focal = position - forward * worldDistance となるように再計算
+        this.setAzimElev(nextAzim, nextElev, 0);
+        const finalAngles = this.azimElevTween.target;
+        calcForwardVec(orbitForward, finalAngles.azim, finalAngles.elev);
+        const framingFactor = this.lockFraming ? 1 : this.fovFactor;
+        const distanceNorm = this.distanceTween.target.distance ?? this.distanceTween.value.distance ?? 1;
+        let worldDist = distanceNorm * this.sceneRadius / (framingFactor || 1);
+        if (!isFinite(worldDist) || worldDist <= 0) {
+            worldDist = radius;
+        }
+        vec.copy(orbitForward).mulScalar(worldDist);
+        vecb.copy(va).sub(vec);
+
+        this.focalPointTween.goto(vecb, 0);
 
         if (this.navMode === 'fpv') {
             this.fpvPosition.copy(va);
