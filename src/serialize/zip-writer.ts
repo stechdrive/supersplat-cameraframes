@@ -14,6 +14,7 @@ class ZipWriter implements Writer {
     close: () => Promise<void>;
 
     // helper function to start and write file contents
+    // helper function to start and write file contents
     async file(filename: string, content: string | Uint8Array | Uint8Array[]) {
         // start a new file
         await this.start(filename);
@@ -31,13 +32,39 @@ class ZipWriter implements Writer {
     }
 
     // write uncompressed data to a zip file using the passed-in writer
+    // write uncompressed data to a zip file using the passed-in writer
     constructor(writer: Writer) {
         const textEncoder = new TextEncoder();
-        const files: { filename: Uint8Array, crc: Crc, sizeBytes: number }[] = [];
+        const files: { filename: Uint8Array, crc: Crc, sizeBytes: number, compressedSizeBytes: number }[] = [];
+
+        // compression state
+        let compressor: CompressionStream = null;
+        let compressorWriter: WritableStreamDefaultWriter<any> = null;
+        let compressorReader: ReadableStreamDefaultReader<Uint8Array> = null;
+        let pumpPromise: Promise<void> = null;
 
         const date = new Date();
         const dosTime = (date.getHours() << 11) | (date.getMinutes() << 5) | Math.floor(date.getSeconds() / 2);
         const dosDate = ((date.getFullYear() - 1980) << 9) | ((date.getMonth() + 1) << 5) | date.getDate();
+
+        const startPump = () => {
+            pumpPromise = (async () => {
+                while (true) {
+                    if (!compressorReader) break;
+                    try {
+                        const { value, done } = await compressorReader.read();
+                        if (value) {
+                            files[files.length - 1].compressedSizeBytes += value.length;
+                            await writer.write(value);
+                        }
+                        if (done) break;
+                    } catch (e) {
+                        // reader might be cancelled or closed
+                        break;
+                    }
+                }
+            })();
+        };
 
         const writeHeader = async (filename: string) => {
             const filenameBuf = textEncoder.encode(filename);
@@ -49,7 +76,7 @@ class ZipWriter implements Writer {
             view.setUint32(0, 0x04034b50, true);
             view.setUint16(4, 20, true);            // version needed to extract = 2.0
             view.setUint16(6, 0x8 | 0x800, true);   // indicate crc and size comes after, utf-8 encoding
-            view.setUint16(8, 0, true);             // method = 0 (store)
+            view.setUint16(8, 8, true);             // method = 8 (deflate)
             view.setUint16(10, dosTime, true);
             view.setUint16(12, dosDate, true);
             view.setUint16(26, nameLen, true);
@@ -57,17 +84,42 @@ class ZipWriter implements Writer {
 
             await writer.write(header);
 
-            files.push({ filename: filenameBuf, crc: new Crc(), sizeBytes: 0 });
+            files.push({ filename: filenameBuf, crc: new Crc(), sizeBytes: 0, compressedSizeBytes: 0 });
+
+            // initialize compressor
+            compressor = new CompressionStream('deflate-raw');
+            compressorWriter = compressor.writable.getWriter();
+            compressorReader = compressor.readable.getReader();
+
+            startPump();
+        };
+
+        const flushCompressor = async () => {
+            if (compressorWriter) {
+                await compressorWriter.close();
+                compressorWriter = null;
+
+                // wait for reader to finish
+                if (pumpPromise) {
+                    await pumpPromise;
+                    pumpPromise = null;
+                }
+                compressorReader = null;
+                compressor = null;
+            }
         };
 
         const writeFooter = async () => {
+            // ensure compression is finished
+            await flushCompressor();
+
             const file = files[files.length - 1];
-            const { crc, sizeBytes } = file;
+            const { crc, sizeBytes, compressedSizeBytes } = file;
             const data = new Uint8Array(16);
             const view = new DataView(data.buffer);
             view.setUint32(0, 0x08074b50, true);
             view.setUint32(4, crc.value(), true);
-            view.setUint32(8, sizeBytes, true);
+            view.setUint32(8, compressedSizeBytes, true);
             view.setUint32(12, sizeBytes, true);
             await writer.write(data);
         };
@@ -85,7 +137,7 @@ class ZipWriter implements Writer {
             const file = files[files.length - 1];
             file.sizeBytes += data.length;
             file.crc.update(data);
-            await writer.write(data);
+            await compressorWriter.write(data);
         };
 
         this.close = async () => {
@@ -95,7 +147,7 @@ class ZipWriter implements Writer {
             // write cd records
             let offset = 0;
             for (const file of files) {
-                const { filename, crc, sizeBytes } = file;
+                const { filename, crc, sizeBytes, compressedSizeBytes } = file;
                 const nameLen = filename.length;
 
                 const cdr = new Uint8Array(46 + nameLen);
@@ -104,11 +156,11 @@ class ZipWriter implements Writer {
                 view.setUint16(4, 20, true);
                 view.setUint16(6, 20, true);
                 view.setUint16(8, 0x8 | 0x800, true);
-                view.setUint16(10, 0, true);
+                view.setUint16(10, 8, true);            // method = 8
                 view.setUint16(12, dosTime, true);
                 view.setUint16(14, dosDate, true);
                 view.setUint32(16, crc.value(), true);
-                view.setUint32(20, sizeBytes, true);
+                view.setUint32(20, compressedSizeBytes, true);
                 view.setUint32(24, sizeBytes, true);
                 view.setUint16(28, nameLen, true);
                 view.setUint32(42, offset, true);
@@ -116,10 +168,10 @@ class ZipWriter implements Writer {
 
                 await writer.write(cdr);
 
-                offset += 30 + nameLen + sizeBytes + 16; // 30 local header + name + data + 16 descriptor
+                offset += 30 + nameLen + compressedSizeBytes + 16; // 30 local header + name + data + 16 descriptor
             }
             const filenameLength = files.reduce((tot, file) => tot + file.filename.length, 0);
-            const dataLength = files.reduce((tot, file) => tot + file.sizeBytes, 0);
+            const dataLength = files.reduce((tot, file) => tot + file.compressedSizeBytes, 0);
 
             // write eocd record
             const eocd = new Uint8Array(22);
@@ -134,5 +186,6 @@ class ZipWriter implements Writer {
         };
     }
 }
+
 
 export { ZipWriter };
