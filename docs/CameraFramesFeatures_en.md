@@ -86,3 +86,4 @@ Camera controls when CAMERA FRAMES is enabled (or in FPV mode).
 *   **Auto Fit**: When resizing the window or opening/closing panels, the display magnification (Fit Scale) is automatically adjusted so that the Render Box fits within the screen.
 *   **Aspect Ratio Lock**: While CAMERA FRAMES is enabled, the camera framing is locked to the aspect ratio of the Render Box.
 *   **Near Clip Guard**: A guard function automatically adjusts the near clip to prevent display clipping when getting too close to splats.
+*   **Merged PLY Rendering**: Base Supersplat draws newly loaded PLY files always on top without occlusion. CAMERA FRAMES merges multiple PLY files and renders them with proper depth, so both viewport and exported images respect occlusion across files.
