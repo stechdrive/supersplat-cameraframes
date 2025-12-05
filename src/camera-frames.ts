@@ -292,6 +292,14 @@ export class CameraFramesController {
             this.requestRender();
         });
 
+        // カメラ操作でクリップが変わった場合も追従
+        this.events.on('camera.transform', () => {
+            if (!this.state.enabled) {
+                return;
+            }
+            this.syncCameraFrustum();
+        });
+
         // enable / disable
         this.events.function('cameraFrames.enabled', () => this.state.enabled);
         this.events.on('cameraFrames.setEnabled', (value: boolean) => this.setEnabled(value));
