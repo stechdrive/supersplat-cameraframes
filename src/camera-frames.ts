@@ -2058,20 +2058,47 @@ export class CameraFramesController {
         return pixels;
     }
 
-    private async renderOverlayPass(width: number, height: number) {
-        if (!this.state.exportGridOverlay) {
+    private async renderOverlayLayer(width: number, height: number, options: { includeGrid?: boolean; includeEyeLevel?: boolean; }): Promise<HTMLCanvasElement | null> {
+        const includeGrid = !!options.includeGrid;
+        const includeEyeLevel = !!options.includeEyeLevel;
+        if (!includeGrid && !includeEyeLevel) {
             return null;
         }
         const pixels = await this.events.invoke('render.offscreen', width, height, {
-            includeGrid: true,
-            includeEyeLevel: true,
+            includeGrid,
+            includeEyeLevel,
             overlaysOnly: true,
             unpremultiplyAlpha: true
         }) as Uint8Array;
         if (!pixels) {
             throw new Error('render.offscreen returned empty overlay buffer');
         }
-        return { canvas: this.canvasFromPixels(pixels, width, height) };
+        return this.canvasFromPixels(pixels, width, height);
+    }
+
+    private async renderOverlayLayers(width: number, height: number): Promise<{ grid: HTMLCanvasElement | null; eyeLevel: HTMLCanvasElement | null; } | null> {
+        if (!this.state.exportGridOverlay) {
+            return null;
+        }
+        const grid = await this.renderOverlayLayer(width, height, { includeGrid: true });
+        const eyeLevel = await this.renderOverlayLayer(width, height, { includeEyeLevel: true });
+        return { grid, eyeLevel };
+    }
+
+    private mergeOverlayCanvases(width: number, height: number, overlays: Array<HTMLCanvasElement | null | undefined>): HTMLCanvasElement | null {
+        const valid = overlays.filter((layer): layer is HTMLCanvasElement => !!layer);
+        if (valid.length === 0) {
+            return null;
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+            throw new Error('Failed to acquire 2D context for merged overlays');
+        }
+        valid.forEach(layer => ctx.drawImage(layer, 0, 0));
+        return canvas;
     }
 
     private renderFrameOverlay(width: number, height: number, frames?: FrameState[]) {
@@ -2250,16 +2277,15 @@ export class CameraFramesController {
             // 書き出し前に明示的にエクスポート用フラスタムを適用し、副作用イベント(camera.resize)頼りを排除
             this.syncExportFrustum(width, height);
             const basePixels = await this.renderBase(width, height);
-            const gridOverlay = await this.renderOverlayPass(width, height);
+            const debugOverlays = await this.renderOverlayLayers(width, height);
 
             if (format === 'psd') {
-                const overlays = this.renderFrameOverlaysByManagement(width, height);
-                const overlayLayers = gridOverlay ?
-                    [
-                        { name: localize('panel.camera-frames.export.grid-layer'), canvas: gridOverlay.canvas },
-                        ...overlays
-                    ] :
-                    overlays;
+                const frameOverlays = this.renderFrameOverlaysByManagement(width, height);
+                const overlayLayers = [
+                    ...(debugOverlays?.grid ? [{ name: localize('panel.camera-frames.export.grid-layer.grid'), canvas: debugOverlays.grid }] : []),
+                    ...(debugOverlays?.eyeLevel ? [{ name: localize('panel.camera-frames.export.grid-layer.eye-level'), canvas: debugOverlays.eyeLevel }] : []),
+                    ...frameOverlays
+                ];
                 await this.renderPsd({
                     basePixels: basePixels instanceof Uint8ClampedArray ? basePixels : new Uint8ClampedArray(basePixels),
                     overlays: overlayLayers,
@@ -2269,10 +2295,14 @@ export class CameraFramesController {
                 });
             } else {
                 const overlay = this.renderFrameOverlay(width, height);
+                const mergedOverlay = this.mergeOverlayCanvases(width, height, [
+                    debugOverlays?.grid,
+                    debugOverlays?.eyeLevel
+                ]);
                 await this.renderPng({
                     basePixels,
                     frameOverlay: overlay.canvas,
-                    gridOverlay: gridOverlay?.canvas ?? null,
+                    gridOverlay: mergedOverlay,
                     width,
                     height,
                     filename

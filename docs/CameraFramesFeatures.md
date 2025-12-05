@@ -43,7 +43,7 @@ CAMERA FRAMESは、シーン内に複数の「フレーム（枠）」を配置�
 
 ### ナビゲーションモード
 *   **オービット操作 (Orbit navigation)**: 被写体を中心に見回すオービット操作モード。
-*   **FPV操作 (FPV navigation)**: 一人称視点で視線を動かすFPV操作モード。CAMERA FRAMES有効時は自動的にFPVライクな挙動（画角固定など）になります。
+*   **FPV操作 (FPV navigation)**: 一人称視点で視線を動かすFPV操作モード。CAMERA FRAMES有効時は自動的にFPVになります。
 
 ---
 
