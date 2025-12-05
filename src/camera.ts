@@ -25,7 +25,8 @@ import {
     Texture,
     Vec3,
     Vec4,
-    WebglGraphicsDevice
+    WebglGraphicsDevice,
+    BLEND_NONE
 } from 'playcanvas';
 
 import { PointerController } from './controllers';
@@ -712,20 +713,15 @@ class Camera extends Element {
         va.copy(pivot).add(orbitOffset);
         this.entity.setPosition(va);
 
-        // focal = position - forward * worldDistance となるように再計算
-        this.setAzimElev(nextAzim, nextElev, 0);
-        const finalAngles = this.azimElevTween.target;
-        calcForwardVec(orbitForward, finalAngles.azim, finalAngles.elev);
+        // sync camera distance and focal point to the current pivot interaction
+        // this prevents the camera from jumping when switching back to normal orbit or
+        // when the pivot scale is much smaller than the scene bound
         const framingFactor = this.lockFraming ? 1 : this.fovFactor;
-        const distanceNorm = this.distanceTween.target.distance ?? this.distanceTween.value.distance ?? 1;
-        let worldDist = distanceNorm * this.sceneRadius / (framingFactor || 1);
-        if (!isFinite(worldDist) || worldDist <= 0) {
-            worldDist = radius;
-        }
-        vec.copy(orbitForward).mulScalar(worldDist);
-        vecb.copy(va).sub(vec);
+        const newDistNorm = radius / this.sceneRadius * framingFactor;
 
-        this.focalPointTween.goto(vecb, 0);
+        this.setAzimElev(nextAzim, nextElev, 0);
+        this.setDistance(newDistNorm, 0);
+        this.setFocalPoint(pivot, 0);
 
         if (this.navMode === 'fpv') {
             this.fpvPosition.copy(va);
@@ -1013,10 +1009,7 @@ class Camera extends Element {
             this.pickPrep(splat, 'set');
             const pickId = this.pick(sx, sy);
 
-            const mapped = this.scene.renderSystem.mapPickId(pickId);
-            if (mapped && mapped.splat === splat) {
-                splat.calcSplatWorldPosition(mapped.local, vec);
-
+            if (pickId !== -1 && splat.calcSplatWorldPosition(pickId, vec)) {
                 // create a plane at the world position facing perpendicular to the camera
                 plane.setFromPointNormal(vec, this.entity.forward);
 
@@ -1075,7 +1068,21 @@ class Camera extends Element {
         device.scope.resolve('pickerAlpha').setValue(alpha);
         device.scope.resolve('pickMode').setValue(['add', 'remove', 'set'].indexOf(op));
         this.picker.resize(width, height);
-        this.picker.prepare(this.entity.camera, this.scene.app.scene, [worldLayer]);
+
+        // Ensure blending is disabled for picking so that alpha=0 IDs are written
+        const instance = this.scene.renderSystem.mergedEntity?.gsplat?.instance as any;
+        const material = instance?.material;
+
+        if (material) {
+            const oldBlend = material.blendType;
+            material.blendType = BLEND_NONE;
+            material.update();
+            this.picker.prepare(this.entity.camera, this.scene.app.scene, [worldLayer]);
+            material.blendType = oldBlend;
+            material.update();
+        } else {
+            this.picker.prepare(this.entity.camera, this.scene.app.scene, [worldLayer]);
+        }
     }
 
     pick(x: number, y: number) {

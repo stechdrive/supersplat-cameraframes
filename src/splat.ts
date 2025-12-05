@@ -208,6 +208,7 @@ class Splat extends Element {
 
         const { centers, offset } = centersInfo;
         const base = offset + splatId * 3;
+        // console.log(`calcSplatWorldPosition: SplatId=${splatId} Offset=${offset} Base=${base} Center=[${centers[base]}, ${centers[base+1]}, ${centers[base+2]}]`);
         result.set(
             centers[base + 0],
             centers[base + 1],

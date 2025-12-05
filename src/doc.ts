@@ -141,10 +141,12 @@ const registerDocEvents = (scene: Scene, events: Events) => {
             // at this point staging succeeded, apply to scene
             resetScene();
 
+            scene.renderSystem.freeze();
             stagedSplats.forEach(({ splat, settings }) => {
                 scene.add(splat);
                 splat.docDeserialize(settings ?? {});
             });
+            scene.renderSystem.unfreeze();
 
             // FIXME: trigger scene bound calc in a better way
             const tmp = scene.bound;

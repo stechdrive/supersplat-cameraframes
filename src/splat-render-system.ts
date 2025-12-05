@@ -92,7 +92,11 @@ class SplatRenderSystem {
             selectionDirty: true,
             visibleDirty: true
         });
-        this.rebuild();
+        if (this._frozen) {
+            this._dirty = true;
+        } else {
+            this.rebuild();
+        }
     }
 
     remove(splat: Splat) {
@@ -103,7 +107,26 @@ class SplatRenderSystem {
             this.counts.delete(splat);
             this.transformBases.delete(splat);
             this.boundCache.delete(splat);
+            if (this._frozen) {
+                this._dirty = true;
+            } else {
+                this.rebuild();
+            }
+        }
+    }
+
+    private _frozen = false;
+    private _dirty = false;
+
+    freeze() {
+        this._frozen = true;
+    }
+
+    unfreeze() {
+        this._frozen = false;
+        if (this._dirty) {
             this.rebuild();
+            this._dirty = false;
         }
     }
 
@@ -485,9 +508,19 @@ class SplatRenderSystem {
         });
     }
 
+    private _needsTransformUpdate = false;
+
     onPreRender() {
         const instance = this.mergedEntity.gsplat?.instance;
         if (!instance) return;
+
+        // check if we need to run delayed transform updates
+        // this is necessary because the sorter (worker) and GPU resources might not be ready
+        // immediately after rebuild/add, leading to valid centers being overwritten with 0s
+        if (this._needsTransformUpdate && instance.sorter) {
+            this.sources.forEach(splat => this.updateTransform(splat));
+            this._needsTransformUpdate = false;
+        }
 
         if (this.materialDirty) {
             this.applyMaterialBands(this.scene.events.invoke('view.bands'));
@@ -566,6 +599,12 @@ class SplatRenderSystem {
         this.sources.forEach((splat) => {
             this.offsets.set(splat, runningOffset);
             this.counts.set(splat, splat.splatData.numSplats);
+
+            // Map global IDs to this splat for picking
+            for (let i = 0; i < splat.splatData.numSplats; i++) {
+                this.globalIdToSplat[runningOffset + i] = { splat, local: i };
+            }
+
             runningOffset += splat.splatData.numSplats;
             const resource = splat.asset.resource as GSplatResource;
             shBands = Math.max(shBands, resource.shBands ?? 0);
@@ -791,7 +830,18 @@ class SplatRenderSystem {
         this.rebuildSorterMapping();
         this.scene.forceRender = true;
         this.materialDirty = false;
+
         this.scene.boundDirty = true;
+
+        // Ensure transforms (and thus world centers) are up to date
+        // This prevents pivot picking issues where centers are initially 0 or unscaled
+        this.sources.forEach((splat) => {
+            this.updateTransform(splat);
+        });
+
+        // Trigger delayed transform update to ensure centers are valid
+        // regardless of async sorter initialization timing
+        this._needsTransformUpdate = true;
     }
 }
 
