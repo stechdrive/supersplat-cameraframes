@@ -101,9 +101,9 @@
     "panel.camera-frames.near-clip": "ニアクリップ",
     "panel.camera-frames.transform.title": "カメラ座標操作",
     "panel.camera-frames.transform.roll-lock": "ロール固定",
-    "panel.camera-frames.transform.yaw": "ヨー",
-    "panel.camera-frames.transform.pitch": "ピッチ",
-    "panel.camera-frames.transform.roll": "ロール",
+    "panel.camera-frames.transform.yaw": "Yaw",
+    "panel.camera-frames.transform.pitch": "Pitch",
+    "panel.camera-frames.transform.roll": "Roll",
     "panel.camera-frames.transform.right-left": "左右",
     "panel.camera-frames.transform.up-down": "上下",
     "panel.camera-frames.transform.forward-back": "前後",
@@ -262,4 +262,3 @@
     "tooltip.timeline.total-frames": "総フレーム数",
     "tooltip.timeline.smoothness": "スムーズさ"
 }
-
