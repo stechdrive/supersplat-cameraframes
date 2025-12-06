@@ -1,9 +1,9 @@
-import { version as appVersion } from '../package.json';
+import { buildInfo } from './build-info';
 
 // export default null
 declare let self: ServiceWorkerGlobalScope;
 
-const cacheName = `superSplat-v${appVersion}`;
+const cacheName = `superSplat-cFrames-${buildInfo.version}`;
 
 const cacheUrls = [
     './',
@@ -28,33 +28,51 @@ const cacheUrls = [
 ];
 
 self.addEventListener('install', (event) => {
-    console.log(`installing v${appVersion}`);
+    console.log(`installing ${cacheName}`);
+    self.skipWaiting();
 
     // create cache for current version
     event.waitUntil(
         caches.open(cacheName)
-        .then((cache) => {
-            cache.addAll(cacheUrls);
+            .then((cache) => {
+                // Append version to requests if they don't have them to match HTML injection? 
+                // Actually HTML injection adds query params, so requests will have them naturally.
+                // But cacheUrls above are clean.
+                // We should cache the exact URLs or let the fetch handler handle it.
+                // For simplicity and robustness, we can cache the "clean" URLs 
+                // but the fetch handler might see "dirty" URLs (with query params).
+                // However, the browser cache (not SW cache) handles the query params for busting.
+                // SW cache is separate.
+                // Let's stick to caching the files. 
+                // Note: `cache.addAll` makes requests. If we want those requests to be fresh, 
+                // we could append a random query param here too, or rely on the fact that 
+                // this SW version is new so it runs this install step again.
+                return cache.addAll(cacheUrls);
+            })
+    );
+});
+
+self.addEventListener('activate', (event) => {
+    console.log(`activating ${cacheName}`);
+    event.waitUntil(self.clients.claim());
+
+    // delete the old caches once this one is activated
+    event.waitUntil(
+        caches.keys().then((names) => {
+            return Promise.all(
+                names.map((name) => {
+                    if (name !== cacheName) {
+                        return caches.delete(name);
+                    }
+                })
+            );
         })
     );
 });
 
-self.addEventListener('activate', () => {
-    console.log(`activating v${appVersion}`);
-
-    // delete the old caches once this one is activated
-    caches.keys().then((names) => {
-        for (const name of names) {
-            if (name !== cacheName) {
-                caches.delete(name);
-            }
-        }
-    });
-});
-
 self.addEventListener('fetch', (event) => {
     event.respondWith(
-        caches.match(event.request)
-        .then(response => response ?? fetch(event.request))
+        caches.match(event.request, { ignoreSearch: true })
+            .then(response => response ?? fetch(event.request))
     );
 });

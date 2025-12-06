@@ -25,7 +25,7 @@ const ENGINE_DIR = path.resolve(`node_modules/playcanvas/build/playcanvas${BUILD
 const PCUI_DIR = path.resolve('node_modules/@playcanvas/pcui');
 const HREF = process.env.BASE_HREF || '';
 
-const outputHeader = () => {
+const inputHeader = () => {
     const BLUE_OUT = '\x1b[34m';
     const BOLD_OUT = '\x1b[1m';
     const REGULAR_OUT = '\x1b[22m';
@@ -38,7 +38,23 @@ const outputHeader = () => {
     console.log(`${BLUE_OUT}${title}${RESET_OUT}\n`);
 };
 
-outputHeader();
+inputHeader();
+
+// Generate build info
+import { readFileSync, writeFileSync } from 'fs';
+const pkg = JSON.parse(readFileSync('package.json', 'utf8'));
+const cameraFramesVersion = pkg.cameraFramesVersion || 'v0.0.0';
+const timestamp = Math.floor(Date.now() / 1000);
+const buildVersion = `${cameraFramesVersion}-${timestamp}`;
+
+const buildInfoContent = `export const buildInfo = {
+    cameraFramesVersion: '${cameraFramesVersion}',
+    timestamp: ${timestamp},
+    version: '${buildVersion}'
+};
+`;
+writeFileSync('src/build-info.ts', buildInfoContent);
+console.log(`Generated src/build-info.ts with version: ${buildVersion}`);
 
 const application = {
     input: 'src/index.ts',
@@ -53,7 +69,13 @@ const application = {
                 {
                     src: 'src/index.html',
                     transform: (contents, filename) => {
-                        return contents.toString().replace('__BASE_HREF__', HREF);
+                        let html = contents.toString().replace('__BASE_HREF__', HREF);
+                        // Inject version query parameter to script and link tags
+                        html = html.replace(/src="([^"]+)"/g, `src="$1?v=${buildVersion}"`);
+                        html = html.replace(/href="([^"]+)"/g, `href="$1?v=${buildVersion}"`);
+                        // Fix base href which shouldn't have a query param
+                        html = html.replace(`<base href="${HREF}?v=${buildVersion}">`, `<base href="${HREF}">`);
+                        return html;
                     }
                 },
                 { src: 'src/manifest.json' },
@@ -83,8 +105,8 @@ const application = {
             runtime: sass,
             processor: (css) => {
                 return postcss([autoprefixer])
-                .process(css, { from: undefined })
-                .then(result => result.css);
+                    .process(css, { from: undefined })
+                    .then(result => result.css);
             },
             fileName: 'index.css',
             includePaths: [`${PCUI_DIR}/dist`],
