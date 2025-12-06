@@ -369,16 +369,11 @@
 .pcui-vector-input {
   flex-direction: row;
   align-items: center;
+  gap: 6px;
 }
 .pcui-vector-input > .pcui-numeric-input {
   flex: 1;
-  margin: 6px 3px;
-}
-.pcui-vector-input > .pcui-numeric-input:first-child {
-  margin-left: 0;
-}
-.pcui-vector-input > .pcui-numeric-input:last-child {
-  margin-right: 0;
+  margin: 6px 0;
 }
 
 .pcui-boolean-input {
@@ -2248,12 +2243,6 @@
   align-items: center;
 }
 
-#app-icon {
-  width: 54px;
-  font-family: "pc-icon";
-  cursor: pointer;
-}
-
 #menu-arrow {
   display: none;
 }
@@ -2298,13 +2287,15 @@
 }
 
 .collapsed #menu-bar {
-  width: 90px;
+  width: auto;
+  height: auto;
 }
 .collapsed #menu-collapse {
   display: none;
 }
 .collapsed #menu-arrow {
   display: block;
+  padding: 10px;
 }
 .collapsed .menu-option {
   display: none;
