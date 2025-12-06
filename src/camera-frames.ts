@@ -1,6 +1,7 @@
 import { cameraFramesVersion } from './camera-frames-version';
 import { ElementType } from './element';
 import { Events } from './events';
+import { hitTestGizmo } from './gizmo-hit';
 import { PngCompressor } from './png-compressor';
 import { exportPsd } from './psd-export';
 import { Scene } from './scene';
@@ -1572,15 +1573,23 @@ export class CameraFramesController {
             this.overlay.style.cursor = this.dragState.mode === 'pan' ? 'grabbing' : '';
             return;
         }
+
+        const rect = this.canvasContainer.getBoundingClientRect();
+        const px = e.clientX - rect.left;
+        const py = e.clientY - rect.top;
+
+        // Gizmo優先チェック: ギズモにヒットしたらオーバーレイは透過する
+        if (hitTestGizmo(this.scene, e.clientX, e.clientY)) {
+            this.overlay.style.pointerEvents = 'none';
+            this.overlay.style.cursor = '';
+            return;
+        }
+
         if (e.shiftKey) {
             this.overlay.style.pointerEvents = 'auto';
             this.overlay.style.cursor = 'grab';
             return;
         }
-
-        const rect = this.canvasContainer.getBoundingClientRect();
-        const px = e.clientX - rect.left;
-        const py = e.clientY - rect.top;
 
         const handleHit = this.hitTestHandle(px, py);
         const borderHit = !handleHit && this.hitTestFrameBorder(px, py);
@@ -1704,6 +1713,12 @@ export class CameraFramesController {
 
     private onPointerDown(e: PointerEvent) {
         if (!this.state.enabled) return;
+
+        // Gizmo優先チェック: ギズモにヒットしたら操作開始しない
+        if (hitTestGizmo(this.scene, e.clientX, e.clientY)) {
+            return;
+        }
+
         const handleHit = this.hitTestHandle(e.offsetX, e.offsetY);
         const frame = handleHit?.frame ?? this.hitTestFrameBorder(e.offsetX, e.offsetY);
         if (e.shiftKey && e.button === 0 && !handleHit && !frame) {

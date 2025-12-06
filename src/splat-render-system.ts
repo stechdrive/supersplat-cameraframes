@@ -317,7 +317,7 @@ class SplatRenderSystem {
         upload(this.paramsTextures.tex2, arr2);
     }
 
-    updateTransform(splat: Splat) {
+    updateTransform(splat: Splat, skipCenterUpdate = false) {
         const block = this.transformBases.get(splat);
         if (!block) {
             return;
@@ -341,7 +341,7 @@ class SplatRenderSystem {
 
         // ソーターの位置情報も更新
         const instance = this.mergedEntity.gsplat?.instance;
-        if (instance) {
+        if (instance && !skipCenterUpdate) {
             const offset = this.offsets.get(splat) ?? 0;
             const count = this.counts.get(splat) ?? 0;
 
@@ -368,9 +368,6 @@ class SplatRenderSystem {
                 if (instance.sorter) {
                     (instance.sorter as any).centers = centers;
                 }
-            }
-            if (instance.sorter) {
-                (instance.sorter as any).centers = centers;
             }
         }
     }

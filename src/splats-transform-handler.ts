@@ -152,7 +152,7 @@ class SplatsTransformHandler implements TransformHandler {
             transformPalette.setTransform(newIdx, mat2);
         });
 
-        this.splat.scene.renderSystem.updateTransform(this.splat);
+        this.splat.scene.renderSystem.updateTransform(this.splat, true);
         this.splat.makeSelectionBoundDirty();
     }
 
