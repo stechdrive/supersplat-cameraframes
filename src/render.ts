@@ -96,6 +96,7 @@ const registerRenderEvents = (scene: Scene, events: Events) => {
         const prevRenderFlags = { ...scene.renderFlags };
         const prevGridVisible = scene.grid.visible;
         const prevEyeVisible = scene.eyeLevel.visible;
+        const prevHideBounds = scene.renderFlags.hideBounds;
 
         try {
             // start rendering to offscreen buffer only
@@ -120,6 +121,7 @@ const registerRenderEvents = (scene: Scene, events: Events) => {
             scene.renderFlags.forceEyeLevelOverlay = includeEyeLevel;
             scene.renderFlags.eyeLevelLayerOverride = includeEyeLevel ? scene.debugLayer : null;
             scene.renderFlags.gridLayerOverride = includeGrid ? scene.debugLayer : null;
+            scene.renderFlags.hideBounds = overlaysOnly;
             scene.grid.visible = includeGrid;
             scene.eyeLevel.visible = includeEyeLevel;
 
@@ -165,6 +167,7 @@ const registerRenderEvents = (scene: Scene, events: Events) => {
             scene.renderFlags.forceEyeLevelOverlay = prevRenderFlags.forceEyeLevelOverlay;
             scene.renderFlags.eyeLevelLayerOverride = prevRenderFlags.eyeLevelLayerOverride;
             scene.renderFlags.gridLayerOverride = prevRenderFlags.gridLayerOverride;
+            scene.renderFlags.hideBounds = prevHideBounds;
             scene.grid.visible = prevGridVisible;
             scene.eyeLevel.visible = prevEyeVisible;
             scene.camera.endOffscreenMode();

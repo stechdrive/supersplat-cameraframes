@@ -54,11 +54,13 @@ class Scene {
         forceEyeLevelOverlay: boolean;
         eyeLevelLayerOverride: Layer | null;
         gridLayerOverride: Layer | null;
+        hideBounds: boolean;
     } = {
             forceGridOverlay: false,
             forceEyeLevelOverlay: false,
             eyeLevelLayerOverride: null,
-            gridLayerOverride: null
+            gridLayerOverride: null,
+            hideBounds: false
         };
 
     canvasResize: { width: number; height: number } | null = null;

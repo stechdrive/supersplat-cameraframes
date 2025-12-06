@@ -256,7 +256,7 @@ class Splat extends Element {
         const events = this.scene.events;
         const selected = this.scene.camera.renderOverlays && events.invoke('selection') === this;
 
-        if (this.visible && selected && events.invoke('camera.bound')) {
+        if (this.visible && selected && events.invoke('camera.bound') && !this.scene.renderFlags.hideBounds) {
             const bound = this.localBound;
             const scale = new Mat4().setTRS(bound.center, Quat.IDENTITY, bound.halfExtents);
 
