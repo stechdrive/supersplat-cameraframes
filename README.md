@@ -2,26 +2,32 @@
 
 ![cameraframes-image](./static/images/screenshot-cameraframes.jpg)
 
-This repository adds the Camera Frames to SuperSplat. Camera Frames is the composition-safe camera workflow for renders. It keeps a reference render box anchored while you zoom the UI, preview extra scene area, and export matching images.
+**Key Features & Use Cases:**
 
-- Anchor-locked render box scaling (3×3 anchors) with off-axis frustum and horizontal FOV lock so composition survives viewport or aspect changes.
-- View zoom (25–100%) shrinks the on-screen render box and extrapolates the frustum to reveal surrounding 3D content without letterboxing; viewport resize keeps the render-box center stable in screen space.
-- Camera navigation swaps between FPV and Orbit modes, with numeric controls for position/rotation, roll lock to keep the optical axis level, and near-clip tuning to protect close shots.
-- Multiple labeled frames with per-frame scale/rotation/pivot, ordering, and an optional mask that dims everything outside the union of frames for layout checks.
-- Exports use the render-box dimensions at zoom 100%, so PNG/PSD output matches the preview; PNG embeds the red strokes with 150 PPI metadata, PSD includes the base render plus outline layers grouped by frame labels.
-- Full Camera Frames Features: see [CameraFramesFeatures_en.md](./docs/CameraFramesFeatures_en.md)
+-   **Animation Layout Workflow**: Specifically designed to support the Japanese animation production style (LO). It allows for defining camera work instructions (PAN, TU/TB) using multiple frames on a single large canvas.
+-   **High-Resolution Canvas**: The "Render Box" base size corresponds to **A4 paper at 150dpi (at 100% scale)**, and can be scaled up to **1000%**, enabling massive high-resolution outputs suitable for large-format layouts.
+-   **Camera Work Instructions**: Place multiple "Camera Frames" to indicate camera movement (Start/End frames for PAN/Track Up). These are exported as vector-like outlines in a separate PSD layer.
+-   **WYSIWYG Composition**: A fixed-aspect Render Box ensures your export (PNG/PSD) matches your preview pixel-perfectly.
+-   **Integrated Multi-PLY Rendering**: Multiple PLY files are rendered with correct depth occlusion, allowing characters and backgrounds to be composed naturally.
 
-### Camera Frames 日本語概要
+- Full Feature Guide: [CameraFramesFeatures_en.md](./docs/CameraFramesFeatures_en.md)
 
-このリポジトリは、SuperSplat に Camera Frames ワークフローを追加した派生版です。構図を崩さずにプレビューと書き出しを一致させるためのカメラ機能をまとめています。
+### Camera Frames (日本語)
 
-- 用紙サイズを3×3 アンカー基点で調整可能。大判の用紙サイズ設定ができます。
-- 表示倍率 25–100% で 大判時に全体をプレビューできます。
-- 複数の撮影フレームを配置し、それぞれスケール・回転・移動できます。Photoshopの変形操作と同様にAltで基点指定できます。
-- カメラをOrtbiとFPVで切り替えられます。数値入力によるカメラ制御可能、光軸ロール、ニアクリップも対応しています、
-- フレーム外だけを暗くするマスクを備えたレイアウト確認。
-- 書き出しはA4/150dpi相当のピクセル数を用紙サイズに合わせて大判にして出力できます。出力はPNGまたはPSD。PSD時は背景画像とフレーム枠でレイヤー分離。
-- 詳細な機能説明は [CameraFramesFeatures.md](./docs/CameraFramesFeatures.md) を参照してください。
+**アニメーション制作の「レイアウト」出力に最適化されたワークフロー**
+
+Camera Framesは、**日本のアニメーション制作における「レイアウト（LO）」工程**を想定して設計されたSuperSplatの拡張機能です。
+3D Gaussian Splatを用いて正確な構図を決め、PANやTU（トラックアップ）などのカメラワーク指示を含むレイアウト用紙を作成できます。
+
+**主な用途と機能:**
+
+-   **アニメ制作等のレイアウト出力**: **100%設定でA4用紙（150dpi）相当**の解像度となり、そこから**最大1000%まで拡大**可能です。これにより、超高解像度のレイアウト用紙を作成・出力できます。
+-   **カメラワーク指示（撮影フレーム）**: 画面上に複数の「撮影フレーム」を配置することで、PAN（パン）やTU（トラックアップ）などのカメラワーク始点・終点を指示できます。
+-   **PSDレイヤー出力**: 出力されたPSDファイルは、背景（レンダリング画像）とフレーム枠線（カメラワーク指示）が別レイヤーとして保持され、後工程での作業を効率化します。
+-   **見た目通りの完全な書き出し**: ウィンドウサイズに依存しない「Render Box」により、プレビューと完全に一致するPNG/PSD出力を保証します。
+-   **複数PLYの深度統合**: 複数のスプラットファイルを正しい前後関係（オクルージョン）で統合描画。背景と人物などを組み合わせたシーンも自然にレンダリングされます。
+
+- 詳細な機能説明: [CameraFramesFeatures.md](./docs/CameraFramesFeatures.md)
 
 
 # SuperSplat - 3D Gaussian Splat Editor
