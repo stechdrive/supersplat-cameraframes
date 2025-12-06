@@ -34,9 +34,10 @@ void main(void) {
     }
 
     // Calculate Custom UVs for our Parameters (independent of engine's transformA layout)
-    uint id = uint(gl_VertexID) / 4u;
+    // Use source.id (after splatOrder remap) so sorting does not desync params/state.
+    uint gaussId = source.id;
     uint paramWidth = splatParamsDim.x;
-    ivec2 customUV = ivec2(int(id % paramWidth), int(id / paramWidth));
+    ivec2 customUV = ivec2(int(gaussId % paramWidth), int(gaussId / paramWidth));
 
     // per-splat parameters (Using Custom UV)
     vec4 params0 = texelFetch(splatParams0, customUV, 0);

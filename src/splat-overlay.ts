@@ -99,7 +99,8 @@ class SplatOverlay extends Element {
             material.setParameter('splatCount', count);
             material.update();
 
-            meshInstance.node = splat.entity;
+            // ノード行列をそのまま使用（transformPalette のローカル変換と組み合わせる）
+            meshInstance.node = renderSystem.mergedEntity;
             this.splat = splat;
         };
 
