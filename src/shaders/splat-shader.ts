@@ -1,3 +1,5 @@
+// 統合レンダラー専用。パレットはワールド行列を直接格納し、matrix_model は恒等で運用する。
+// PlayCanvas 側を更新してもここでの前提を崩さないこと（元の gsplat に戻すとゴースト再発の危険あり）。
 const vertexShader = /* glsl*/`
 #include "gsplatCommonVS"
 
@@ -255,6 +257,7 @@ bool initCenter(SplatSource source, vec3 modelCenter, out SplatCenter center) {
         return false;
     }
 
+    // 非対称フラスタムを含む射影行列をそのまま適用し、FOV 推定などで再計算しない。
     vec4 centerProj = matrix_projection * centerView;
 
     center.view = centerView.xyz / centerView.w;

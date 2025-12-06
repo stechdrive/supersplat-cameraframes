@@ -164,6 +164,7 @@ export class CameraFramesController {
     } = null;
     private addedCount = 0;
     private fovInfo: FovInfo | null = null;
+    // CAMERA FRAMES は水平FOV基準で固定し、フォーマット互換を保つ（垂直運用に切り替えない）。
     private lockFovAxis: 'vertical' | 'horizontal' | undefined = 'horizontal';
     private runtimeFrustum: CameraFrustum | null = null;
     private baseFovRad: number = 60 * DEG2RAD;
@@ -942,6 +943,8 @@ export class CameraFramesController {
         return Math.min(MAX_VIEW_ZOOM_PCT, Math.max(MIN_VIEW_ZOOM_PCT, raw));
     }
 
+    // 毎回状態から再計算し、ズームやスケールの累積誤差を持たせない。
+    // camera.targetSize が設定されている間だけ書き出しモードの 1:1 計算に切り替わる。
     private computeViewportMapping(updateFitScale: boolean = false): ViewportMapping {
         const rb = this.state.renderBox;
 
@@ -1087,6 +1090,7 @@ export class CameraFramesController {
         const projection = rb.projection ?? { type: 'perspective' as const };
         const axis = this.lockFovAxis ?? 'horizontal';
 
+        // CAMERA FRAMES v6 では水平FOVを基準に保持し、縦横スケールやズームに左右されない土台を再生成する。
         // 修正: 構図基準(Base Frustum)のアスペクト比は RenderBox の Base Size に合わせる
         // これにより、RenderBoxがA4ならA4のフラスタム、16:9なら16:9のフラスタムが生成され、
         // ピクセルマッピング時の縦横比歪みを防止する。
@@ -1182,6 +1186,8 @@ export class CameraFramesController {
             return null;
         }
 
+        // targetSize 切替も含めて毎回再計算し、既存のフラスタムに依存しない。
+        // 書き出し時は先に targetSize をセットし、ここで setCustomFrustum を上書きする順序を維持する。
         // 1. 基本となるレンダーボックスのフラスタム (Zoomなし)
         const rbFrustum = this.computeEffectiveFrustum();
         if (!rbFrustum) {
@@ -2331,6 +2337,7 @@ export class CameraFramesController {
     // camera.resize などの副作用イベントに依存しない安全策。
     private syncExportFrustum(width: number, height: number) {
         // 一時的に targetSize を設定して export モードの計算を行い、終わったら戻す
+        // targetSize の切替はここに集約し、モード混在や累積誤差を防ぐ。
         const prevTarget = this.scene.camera.targetSize ? { ...this.scene.camera.targetSize } : null;
         this.scene.camera.targetSize = { width, height };
         this.syncCameraFrustum();

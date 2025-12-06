@@ -228,9 +228,11 @@ class Splat extends Element {
         this.scene.renderSystem.updateSplatParams(this);
         this.updateState();
 
-        // Prevent double rendering (RenderSystem handles the merged render)
-        if (this.entity.gsplat) {
-            this.entity.gsplat.enabled = false;
+        // 標準GSplatコンポーネントは統合レンダラーが吸収するため常時無効化。
+        // ここを再有効化すると標準レンダー経路が復活してゴーストが再発する。
+        const gsplatComp = this.entity.gsplat;
+        if (gsplatComp) {
+            gsplatComp.enabled = false;
         }
     }
 

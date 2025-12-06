@@ -140,14 +140,11 @@ class SplatOverlay extends Element {
         const useAspect = aspect.enabled && aspect.width > 0 && aspect.height > 0;
 
         // カメラの最終 blit と同じ矩形に合わせてバックバッファへ描画し、レターボックス時のズレを防ぐ
+        // 修正: 統合レンダラーおよび CAMERA FRAMES v6 は全画面ビューポート + 非対称フラスタムで位置合わせを行うため
+        // ここで aspectViewport に合わせてビューポートを絞ると座標がずれてゴースト化する。常に全画面を使用する。
         device.setRenderTarget(null);
-        if (useAspect) {
-            device.setViewport(aspect.offsetX, aspect.offsetY, aspect.width, aspect.height);
-            device.setScissor(aspect.offsetX, aspect.offsetY, aspect.width, aspect.height);
-        } else {
-            device.setViewport(0, 0, devW, devH);
-            device.setScissor(0, 0, devW, devH);
-        }
+        device.setViewport(0, 0, devW, devH);
+        device.setScissor(0, 0, devW, devH);
 
         const selectedClr = events.invoke('selectedClr');
         const unselectedClr = events.invoke('unselectedClr');
@@ -156,6 +153,13 @@ class SplatOverlay extends Element {
         material.setParameter('selectedClr', [selectedClr.r, selectedClr.g, selectedClr.b, selectedClr.a]);
         material.setParameter('unselectedClr', [unselectedClr.r, unselectedClr.g, unselectedClr.b, unselectedClr.a]);
         material.setParameter('transformPalette', this.scene.renderSystem.transformPalette.texture);
+
+        // 修正: シェーダ側の自動ユニフォーム依存を廃止し、明示的にメインカメラの行列を渡す。
+        // これにより、postrender 時に他のカメラ（ピッカー等）の行列が残っている可能性やタイミングのズレを排除する。
+        const cameraEntity = this.scene.camera.entity;
+        material.setParameter('view_matrix', cameraEntity.camera.viewMatrix.data);
+        material.setParameter('projection_matrix', cameraEntity.camera.projectionMatrix.data);
+
         this.scene.app.drawMeshInstance(this.meshInstance);
 
         // 後続描画のためにリセット

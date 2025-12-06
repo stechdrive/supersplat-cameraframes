@@ -1,10 +1,13 @@
+// 統合レンダラーのオーバーレイも、transformPalette をワールド行列として扱い matrix_model の二重適用を避ける。
+// camera.setCustomFrustum で設定される非対称射影を前提に matrix_viewProjection をそのまま使う。
 const vertexShader = /* glsl */ `
     attribute uint vertex_id;
 
-    uniform mat4 matrix_viewProjection;
+    uniform mat4 view_matrix;
+    uniform mat4 projection_matrix;
 
     uniform sampler2D splatState;
-    uniform highp usampler2D splatPosition;
+    uniform highp sampler2D splatPosition;          // 修正: 浮動小数点テクスチャを正しく読み込むため sampler2D を使用
     uniform highp usampler2D splatTransform;        // per-splat index into transform palette
     uniform sampler2D transformPalette;             // palette of transform matrices
 
@@ -59,9 +62,13 @@ const vertexShader = /* glsl */ `
 
             varying_color = (splatState == 1u) ? selectedClr : unselectedClr;
 
-            vec3 center = uintBitsToFloat(texelFetch(splatPosition, splatUV, 0).xyz);
+            // 修正: sampler2D から直接 vec3 を読み込む（uintBitsToFloat は不要）
+            vec3 center = texelFetch(splatPosition, splatUV, 0).xyz;
 
-            gl_Position = matrix_viewProjection * model * vec4(center, 1.0);
+            // 修正: 自動ユニフォームではなく明示的に渡された行列を使用する
+            vec4 centerView = view_matrix * model * vec4(center, 1.0);
+            gl_Position = projection_matrix * centerView;
+            
             gl_PointSize = splatSize;
         }
     }

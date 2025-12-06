@@ -449,6 +449,8 @@ class SplatRenderSystem {
 
         const material = instance.material;
         console.log('SplatRenderSystem: Applying material bands. SH_BANDS:', bands);
+        // PlayCanvas 標準の gsplat シェーダへ戻さず、常に統合レンダラー専用のシェーダで上書きする。
+        // ここがデフォルトへ戻ると二重描画や matrix_model 二重適用でゴーストが再発するため、削除・変更禁止。
         const { glsl } = material.shaderChunks;
         glsl.set('gsplatVS', vertexShader);
         glsl.set('gsplatPS', fragmentShader);
