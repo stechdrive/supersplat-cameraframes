@@ -227,6 +227,11 @@ class Splat extends Element {
         this.transformTexture = this.scene.renderSystem.transformTexture;
         this.scene.renderSystem.updateSplatParams(this);
         this.updateState();
+
+        // Prevent double rendering (RenderSystem handles the merged render)
+        if (this.entity.gsplat) {
+            this.entity.gsplat.enabled = false;
+        }
     }
 
     remove() {

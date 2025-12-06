@@ -8,7 +8,8 @@ import {
     MeshInstance,
     TYPE_UINT32,
     VertexBuffer,
-    VertexFormat
+    VertexFormat,
+    WebglGraphicsDevice
 } from 'playcanvas';
 
 import { ElementType, Element } from './element';
@@ -117,23 +118,49 @@ class SplatOverlay extends Element {
     }
 
     onPreRender() {
+        // no-op: 描画は onPostRender で行う
+    }
+
+    onPostRender() {
         const events = this.scene.events;
         const splatSize = events.invoke('camera.splatSize');
 
-        if (this.meshInstance.node &&
+        if (!(this.meshInstance.node &&
             this.scene.camera.renderOverlays &&
             splatSize > 0 &&
             events.invoke('camera.overlay') &&
-            events.invoke('camera.mode') === 'centers') {
-            const selectedClr = events.invoke('selectedClr');
-            const unselectedClr = events.invoke('unselectedClr');
-            const { material } = this.meshInstance;
-            material.setParameter('splatSize', splatSize * window.devicePixelRatio);
-            material.setParameter('selectedClr', [selectedClr.r, selectedClr.g, selectedClr.b, selectedClr.a]);
-            material.setParameter('unselectedClr', [unselectedClr.r, unselectedClr.g, unselectedClr.b, unselectedClr.a]);
-            material.setParameter('transformPalette', this.scene.renderSystem.transformPalette.texture);
-            this.scene.app.drawMeshInstance(this.meshInstance);
+            events.invoke('camera.mode') === 'centers')) {
+            return;
         }
+
+        const device = this.scene.graphicsDevice as WebglGraphicsDevice;
+        const devW = device.width;
+        const devH = device.height;
+        const aspect = this.scene.aspectViewport;
+        const useAspect = aspect.enabled && aspect.width > 0 && aspect.height > 0;
+
+        // カメラの最終 blit と同じ矩形に合わせてバックバッファへ描画し、レターボックス時のズレを防ぐ
+        device.setRenderTarget(null);
+        if (useAspect) {
+            device.setViewport(aspect.offsetX, aspect.offsetY, aspect.width, aspect.height);
+            device.setScissor(aspect.offsetX, aspect.offsetY, aspect.width, aspect.height);
+        } else {
+            device.setViewport(0, 0, devW, devH);
+            device.setScissor(0, 0, devW, devH);
+        }
+
+        const selectedClr = events.invoke('selectedClr');
+        const unselectedClr = events.invoke('unselectedClr');
+        const { material } = this.meshInstance;
+        material.setParameter('splatSize', splatSize * window.devicePixelRatio);
+        material.setParameter('selectedClr', [selectedClr.r, selectedClr.g, selectedClr.b, selectedClr.a]);
+        material.setParameter('unselectedClr', [unselectedClr.r, unselectedClr.g, unselectedClr.b, unselectedClr.a]);
+        material.setParameter('transformPalette', this.scene.renderSystem.transformPalette.texture);
+        this.scene.app.drawMeshInstance(this.meshInstance);
+
+        // 後続描画のためにリセット
+        device.setViewport(0, 0, devW, devH);
+        device.setScissor(0, 0, devW, devH);
     }
 }
 

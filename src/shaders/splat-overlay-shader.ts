@@ -1,7 +1,6 @@
 const vertexShader = /* glsl */ `
     attribute uint vertex_id;
 
-    uniform mat4 matrix_model;
     uniform mat4 matrix_viewProjection;
 
     uniform sampler2D splatState;
@@ -39,9 +38,10 @@ const vertexShader = /* glsl */ `
             gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
             gl_PointSize = 0.0;
         } else {
-            mat4 model = matrix_model;
-        
-            // handle per-splat transform
+            // transformPalette はワールド行列済み。ノード行列は掛けない。
+            mat4 model = mat4(1.0);
+
+            // handle per-splat transform (already in world space)
             uint transformIndex = texelFetch(splatTransform, splatUV, 0).r;
             if (transformIndex > 0u) {
                 // read transform matrix
@@ -54,7 +54,7 @@ const vertexShader = /* glsl */ `
                 t[2] = texelFetch(transformPalette, ivec2(u + 2, v), 0);
                 t[3] = vec4(0.0, 0.0, 0.0, 1.0);
 
-                model = matrix_model * transpose(t);
+                model = transpose(t);
             }
 
             varying_color = (splatState == 1u) ? selectedClr : unselectedClr;

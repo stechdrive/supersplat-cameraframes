@@ -225,10 +225,11 @@ uniform mat4 matrix_projection;
 uniform highp usampler2D splatTransform;        // per-splat index into transform palette
 uniform sampler2D transformPalette;             // palette of transform matrices
 
-mat4 applyPaletteTransform(SplatSource source, mat4 model) {
+// transformPalette はワールド行列前提。matrix_model は恒等として扱い、二重適用を防ぐ。
+mat4 applyPaletteTransform(SplatSource source) {
     uint transformIndex = texelFetch(splatTransform, source.uv, 0).r;
     if (transformIndex == 0u) {
-        return model;
+        return mat4(1.0);
     }
 
     // read transform matrix
@@ -241,12 +242,12 @@ mat4 applyPaletteTransform(SplatSource source, mat4 model) {
     t[2] = texelFetch(transformPalette, ivec2(u + 2, v), 0);
     t[3] = vec4(0.0, 0.0, 0.0, 1.0);
 
-    return model * transpose(t);
+    return transpose(t);
 }
 
 // project the model space gaussian center to view and clip space
 bool initCenter(SplatSource source, vec3 modelCenter, out SplatCenter center) {
-    mat4 modelView = matrix_view * applyPaletteTransform(source, matrix_model);
+    mat4 modelView = matrix_view * applyPaletteTransform(source);
     vec4 centerView = modelView * vec4(modelCenter, 1.0);
 
     // early out if splat is behind the camera
