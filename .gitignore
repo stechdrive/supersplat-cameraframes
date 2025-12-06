@@ -5,3 +5,4 @@ dist
 .vscode
 /loft/
 AGENTS.md
+src/build-info.ts
