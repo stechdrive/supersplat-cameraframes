@@ -9,7 +9,8 @@ import {
     Shader,
     ShaderUtils,
     QuadRender,
-    WebglGraphicsDevice
+    WebglGraphicsDevice,
+    Mat4
 } from 'playcanvas';
 
 import { Element, ElementType } from './element';
@@ -113,6 +114,24 @@ class Outline extends Element {
         dst.nearClip = src.nearClip;
         dst.farClip = src.farClip;
         dst.orthoHeight = src.orthoHeight;
+
+        // Custom Frustum / Projection Sync for Camera Frames
+        const customFrustum = this.scene.camera.getCustomFrustum();
+        if (customFrustum) {
+            dst.calculateProjection = (projMat: Mat4, _view?: number) => {
+                projMat.setFrustum(
+                    customFrustum.left,
+                    customFrustum.right,
+                    customFrustum.bottom,
+                    customFrustum.top,
+                    customFrustum.near,
+                    customFrustum.far
+                );
+            };
+        } else {
+            dst.calculateProjection = null;
+        }
+        (dst as any)._projMatDirty = true;
 
         this.entity.enabled = this.enabled && this.scene.events.invoke('view.outlineSelection');
         this.entity.camera.renderTarget = this.scene.camera.workRenderTarget;

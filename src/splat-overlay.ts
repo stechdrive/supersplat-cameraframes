@@ -9,7 +9,10 @@ import {
     TYPE_UINT32,
     VertexBuffer,
     VertexFormat,
-    WebglGraphicsDevice
+    WebglGraphicsDevice,
+    BlendState,
+    DepthState,
+    CULLFACE_NONE
 } from 'playcanvas';
 
 import { ElementType, Element } from './element';
@@ -142,9 +145,17 @@ class SplatOverlay extends Element {
         // カメラの最終 blit と同じ矩形に合わせてバックバッファへ描画し、レターボックス時のズレを防ぐ
         // 修正: 統合レンダラーおよび CAMERA FRAMES v6 は全画面ビューポート + 非対称フラスタムで位置合わせを行うため
         // ここで aspectViewport に合わせてビューポートを絞ると座標がずれてゴースト化する。常に全画面を使用する。
-        device.setRenderTarget(null);
-        device.setViewport(0, 0, devW, devH);
-        device.setScissor(0, 0, devW, devH);
+        // 修正: Outlineクラスと同様に、updateBegin/End を使用してGPUステートを確実にリセットする。
+        // これにより、Outline非表示時でも正しいビューポートとシザーが適用されるようになる。
+        device.setRenderTarget(this.scene.camera.entity.camera.renderTarget);
+        device.updateBegin();
+
+        // 修正: Outline非表示時に描画ステート（深度など）が不定になりズレや消失の原因となるため、
+        // Outlineクラスと同様に明示的にステートを設定して環境を統一する。
+        device.setDepthState(DepthState.NODEPTH);
+        device.setCullMode(CULLFACE_NONE);
+        device.setBlendState(BlendState.ALPHABLEND);
+        device.setStencilState(null, null);
 
         const selectedClr = events.invoke('selectedClr');
         const unselectedClr = events.invoke('unselectedClr');
@@ -162,9 +173,7 @@ class SplatOverlay extends Element {
 
         this.scene.app.drawMeshInstance(this.meshInstance);
 
-        // 後続描画のためにリセット
-        device.setViewport(0, 0, devW, devH);
-        device.setScissor(0, 0, devW, devH);
+        device.updateEnd();
     }
 }
 
