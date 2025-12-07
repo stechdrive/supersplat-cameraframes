@@ -108,8 +108,8 @@ class SplatOverlay extends Element {
             this.splat = splat;
         };
 
-        events.on('selection.changed', (selection: Splat) => {
-            update(selection);
+        events.on('selection.changed', (selection: Element) => {
+            update(selection instanceof Splat ? selection : null);
         });
 
         this.meshInstance = meshInstance;

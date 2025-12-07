@@ -43,8 +43,8 @@ class SplatsTransformHandler implements TransformHandler {
             }
         });
 
-        events.on('selection.changed', (splat) => {
-            if (this.splat && splat === this.splat) {
+        events.on('selection.changed', (selection) => {
+            if (this.splat && selection === this.splat) {
                 this.placePivot();
             }
         });
@@ -55,7 +55,7 @@ class SplatsTransformHandler implements TransformHandler {
             }
         });
 
-        events.on('camera.focalPointPicked', (details: { splat: Splat, position: Vec3 }) => {
+        events.on('camera.focalPointPicked', (details: { splat?: Splat, position: Vec3 }) => {
             if (this.splat && ['move', 'rotate', 'scale'].includes(this.events.invoke('tool.active'))) {
                 const pivot = events.invoke('pivot') as Pivot;
                 const oldt = pivot.transform.clone();
@@ -73,7 +73,8 @@ class SplatsTransformHandler implements TransformHandler {
     }
 
     activate() {
-        this.splat = this.events.invoke('selection') as Splat;
+        const selection = this.events.invoke('selection');
+        this.splat = selection instanceof Splat ? selection : null;
         if (this.splat) {
             this.placePivot();
         }

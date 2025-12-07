@@ -4,7 +4,6 @@ import { TranslateGizmo, Vec3 } from 'playcanvas';
 import { Events } from '../events';
 import { Scene } from '../scene';
 import { SphereShape } from '../sphere-shape';
-import { Splat } from '../splat';
 
 class SphereSelection {
     activate: () => void;
@@ -71,7 +70,7 @@ class SphereSelection {
             sphere.radius = radius.value;
         });
 
-        events.on('camera.focalPointPicked', (details: { splat: Splat, position: Vec3 }) => {
+        events.on('camera.focalPointPicked', (details: { position: Vec3 }) => {
             if (this.active) {
                 sphere.pivot.setPosition(details.position);
                 gizmo.attach([sphere.pivot]);

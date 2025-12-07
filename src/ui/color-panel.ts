@@ -238,7 +238,7 @@ class ColorPanel extends Container {
         let selected: Splat = null;
         let op: SetSplatColorAdjustmentOp = null;
 
-        const updateUIFromState = (splat: Splat) => {
+        const updateUIFromState = (splat: Splat | null) => {
             if (suppress) return;
             suppress = true;
             tintPicker.value = splat ? [splat.tintClr.r, splat.tintClr.g, splat.tintClr.b] : [1, 1, 1];
@@ -393,9 +393,9 @@ class ColorPanel extends Container {
             }
         });
 
-        events.on('selection.changed', (splat) => {
-            selected = splat;
-            updateUIFromState(splat);
+        events.on('selection.changed', (selection) => {
+            selected = selection instanceof Splat ? selection : null;
+            updateUIFromState(selected);
         });
 
         events.on('splat.tintClr', updateUIFromState);

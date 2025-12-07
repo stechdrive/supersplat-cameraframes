@@ -30,6 +30,12 @@ interface SceneExportOptions {
 }
 
 const filePickerTypes: { [key: string]: FilePickerAcceptType } = {
+    'glb': {
+        description: 'GLB Model',
+        accept: {
+            'model/gltf-binary': ['.glb']
+        }
+    },
     'ply': {
         description: 'Gaussian Splat PLY File',
         accept: {
@@ -87,6 +93,7 @@ const allImportTypes = {
     accept: {
         'application/ply': ['.ply'],
         'application/x-gaussian-splat': ['.json', '.sog', '.splat'],
+        'model/gltf-binary': ['.glb'],
         'image/webp': ['.webp'],
         'application/json': ['.lcc'],
         'application/octet-stream': ['.bin'],
@@ -351,7 +358,7 @@ const initFileHandler = (scene: Scene, events: Events, dropTarget: HTMLElement) 
             // check for unrecognized file types
             for (let i = 0; i < filenames.length; i++) {
                 const filename = filenames[i].toLowerCase();
-                if (['.ssproj', '.ply', '.splat', '.sog', '.webp', 'images.txt', '.json'].every(ext => !filename.endsWith(ext))) {
+                if (['.ssproj', '.ply', '.splat', '.sog', '.webp', 'images.txt', '.json', '.glb'].every(ext => !filename.endsWith(ext))) {
                     await showLoadError('Unrecognized file type', filename);
                     return;
                 }
@@ -364,8 +371,8 @@ const initFileHandler = (scene: Scene, events: Events, dropTarget: HTMLElement) 
                 if (filename.endsWith('.ssproj')) {
                     // load ssproj document
                     await events.invoke('doc.load', files[i].contents ?? (await fetch(files[i].url)).arrayBuffer(), files[i].handle);
-                } else if (['.ply', '.splat', '.sog'].some(ext => filename.endsWith(ext))) {
-                    // load gaussian splat model
+                } else if (['.ply', '.splat', '.sog', '.glb'].some(ext => filename.endsWith(ext))) {
+                    // load gaussian splat model or mesh
                     result.push(await importFile(files[i], animationFrame));
                 } else if (filename.endsWith('images.txt')) {
                     // load colmap frames
@@ -392,7 +399,7 @@ const initFileHandler = (scene: Scene, events: Events, dropTarget: HTMLElement) 
         fileSelector = document.createElement('input');
         fileSelector.setAttribute('id', 'file-selector');
         fileSelector.setAttribute('type', 'file');
-        fileSelector.setAttribute('accept', '.ply,.splat,meta.json,.json,.webp,.ssproj,.sog,.lcc,.bin,.txt');
+        fileSelector.setAttribute('accept', '.ply,.splat,.glb,meta.json,.json,.webp,.ssproj,.sog,.lcc,.bin,.txt');
         fileSelector.setAttribute('multiple', 'true');
 
         fileSelector.onchange = () => {
@@ -454,6 +461,7 @@ const initFileHandler = (scene: Scene, events: Events, dropTarget: HTMLElement) 
                         filePickerTypes.ply,
                         filePickerTypes.compressedPly,
                         filePickerTypes.splat,
+                        filePickerTypes.glb,
                         filePickerTypes.sog,
                         filePickerTypes.lcc,
                         filePickerTypes.indexTxt

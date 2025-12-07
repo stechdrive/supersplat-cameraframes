@@ -4,7 +4,6 @@ import { TranslateGizmo, Vec3 } from 'playcanvas';
 import { BoxShape } from '../box-shape';
 import { Events } from '../events';
 import { Scene } from '../scene';
-import { Splat } from '../splat';
 
 class BoxSelection {
     activate: () => void;
@@ -99,7 +98,7 @@ class BoxSelection {
             box.lenZ = lenZ.value;
         });
 
-        events.on('camera.focalPointPicked', (details: { splat: Splat, position: Vec3 }) => {
+        events.on('camera.focalPointPicked', (details: { position: Vec3 }) => {
             if (this.active) {
                 box.pivot.setPosition(details.position);
                 gizmo.attach([box.pivot]);

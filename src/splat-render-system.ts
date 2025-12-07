@@ -528,7 +528,8 @@ class SplatRenderSystem {
 
         const material = instance.material;
         const events = this.scene.events;
-        const selected = events.invoke('selection') as Splat | null;
+        const selection = events.invoke('selection');
+        const selected = selection instanceof Splat ? selection : null;
         const selectedClr = events.invoke('selectedClr');
         const unselectedClr = events.invoke('unselectedClr');
         const lockedClr = events.invoke('lockedClr');

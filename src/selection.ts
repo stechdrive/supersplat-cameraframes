@@ -1,21 +1,33 @@
 import { Element, ElementType } from './element';
 import { Events } from './events';
+import { Model } from './model';
 import { Scene } from './scene';
 import { Splat } from './splat';
 
 const registerSelectionEvents = (events: Events, scene: Scene) => {
-    let selection: Splat = null;
+    type Selectable = Splat | Model;
+    let selection: Selectable = null;
 
-    const setSelection = (splat: Splat) => {
-        if (splat !== selection && (!splat || splat.visible)) {
+    const isSelectable = (element: Element | null): element is Selectable => {
+        return element instanceof Splat || element instanceof Model;
+    };
+
+    const setSelection = (element: Element | null) => {
+        if (element && !isSelectable(element)) {
+            return;
+        }
+
+        const next = element as Selectable;
+
+        if (next !== selection && (!next || next.visible)) {
             const prev = selection;
-            selection = splat;
+            selection = next ?? null;
             events.fire('selection.changed', selection, prev);
         }
     };
 
-    events.on('selection', (splat: Splat) => {
-        setSelection(splat);
+    events.on('selection', (element: Element) => {
+        setSelection(element);
     });
 
     events.function('selection', () => {
@@ -24,22 +36,26 @@ const registerSelectionEvents = (events: Events, scene: Scene) => {
 
     events.on('selection.next', () => {
         const splats = scene.getElementsByType(ElementType.splat) as Splat[];
-        if (splats.length > 1) {
-            const idx = splats.indexOf(selection);
-            setSelection(splats[(idx + 1) % splats.length]);
+        const models = scene.getElementsByType(ElementType.model) as Model[];
+        const elements: Selectable[] = [...splats, ...models].filter(e => e.visible);
+        if (elements.length > 1) {
+            const idx = elements.indexOf(selection);
+            setSelection(elements[(idx + 1) % elements.length]);
         }
     });
 
     events.on('scene.elementAdded', (element: Element) => {
-        if (element.type === ElementType.splat) {
-            setSelection(element as Splat);
+        if (element.type === ElementType.splat || element.type === ElementType.model) {
+            setSelection(element as Element);
         }
     });
 
     events.on('scene.elementRemoved', (element: Element) => {
         if (element === selection) {
             const splats = scene.getElementsByType(ElementType.splat) as Splat[];
-            setSelection(splats.length === 1 ? null : splats.find(v => v !== element));
+            const models = scene.getElementsByType(ElementType.model) as Model[];
+            const next: Selectable[] = [...splats, ...models].filter(v => v !== element && v.visible);
+            setSelection(next.length > 0 ? next[0] : null);
         }
     });
 
@@ -49,8 +65,14 @@ const registerSelectionEvents = (events: Events, scene: Scene) => {
         }
     });
 
-    events.on('camera.focalPointPicked', (details: { splat: Splat }) => {
-        setSelection(details.splat);
+    events.on('model.visibility', (model: Model) => {
+        if (model === selection && !model.visible) {
+            setSelection(null);
+        }
+    });
+
+    events.on('camera.focalPointPicked', (details: { splat?: Splat, model?: Model, element?: Element }) => {
+        setSelection((details?.element as Element) ?? details?.model ?? details?.splat ?? null);
     });
 };
 

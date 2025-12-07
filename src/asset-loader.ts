@@ -5,6 +5,7 @@ import { AssetSource } from './loaders/asset-source';
 import { loadGsplat } from './loaders/gsplat';
 import { loadLcc } from './loaders/lcc';
 import { loadSplat } from './loaders/splat';
+import { Model } from './model';
 import { Splat } from './splat';
 
 const defaultOrientation = new Vec3(0, 0, 180);
@@ -21,6 +22,28 @@ class AssetLoader {
         this.app = app;
         this.events = events;
         this.defaultAnisotropy = defaultAnisotropy || 1;
+    }
+
+    private async loadContainer(assetSource: AssetSource) {
+        const url = assetSource.contents ? URL.createObjectURL(assetSource.contents) : assetSource.url ?? assetSource.filename;
+        const asset = new Asset(assetSource.filename || assetSource.url, 'container', {
+            url,
+            filename: assetSource.filename
+        });
+        this.app.assets.add(asset);
+
+        try {
+            await new Promise<void>((resolve, reject) => {
+                asset.once('load', () => resolve());
+                asset.once('error', (err: Error) => reject(err));
+                this.app.assets.load(asset);
+            });
+            return asset;
+        } finally {
+            if (assetSource.contents && url) {
+                URL.revokeObjectURL(url);
+            }
+        }
     }
 
     async load(assetSource: AssetSource) {
@@ -44,7 +67,10 @@ class AssetLoader {
             let asset;
             let orientation = defaultOrientation;
 
-            if (filename.endsWith('.splat')) {
+            if (filename.endsWith('.glb')) {
+                asset = await this.loadContainer(assetSource);
+                return new Model(asset);
+            } else if (filename.endsWith('.splat')) {
                 asset = wrap(await loadSplat(assetSource));
             } else if (filename.endsWith('.lcc')) {
                 asset = wrap(await loadLcc(assetSource));

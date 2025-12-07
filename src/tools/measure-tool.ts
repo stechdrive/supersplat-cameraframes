@@ -154,8 +154,8 @@ class MeasureTool {
             events.invoke('pivot').end();
         });
 
-        events.on('selection.changed', (selection: Splat) => {
-            splat = selection;
+        events.on('selection.changed', (selection) => {
+            splat = selection instanceof Splat ? selection : null;
             if (active) {
                 // for now we always deactivate the tool so the current transform handler remains in place
                 events.fire('tool.deactivate');

@@ -31,6 +31,7 @@ import {
 
 import { PointerController } from './controllers';
 import { Element, ElementType } from './element';
+import { Model } from './model';
 import { Serializer } from './serializer';
 import { Splat } from './splat';
 import { TweenValue } from './tween-value';
@@ -1001,7 +1002,7 @@ class Camera extends Element {
 
         let closestD = 0;
         const closestP = new Vec3();
-        let closestSplat = null;
+        let closestSplat: Splat | null = null;
 
         for (let i = 0; i < splats.length; ++i) {
             const splat = splats[i] as Splat;
@@ -1025,15 +1026,44 @@ class Camera extends Element {
             }
         }
 
-        if (!closestSplat) {
-            return null;
+        if (closestSplat) {
+            return {
+                splat: closestSplat,
+                element: closestSplat,
+                position: closestP,
+                distance: closestD
+            };
         }
 
-        return {
-            splat: closestSplat,
-            position: closestP,
-            distance: closestD
-        };
+        const worldLayer = scene.app.scene.layers.getLayerByName('World');
+        this.picker.resize(scene.targetSize.width, scene.targetSize.height);
+        this.picker.prepare(this.entity.camera, this.scene.app.scene, worldLayer ? [worldLayer] : undefined);
+        const selection = this.picker.getSelection(sx, sy);
+        for (let i = 0; i < selection.length; ++i) {
+            const mesh = selection[i];
+            const model = scene.events.invoke('mesh.fromGraphNode', mesh.node) as Model;
+            if (model) {
+                if (mesh.aabb.intersectsRay(ray, closestP)) {
+                    const distance = vecb.sub2(closestP, ray.origin).length();
+                    return {
+                        model,
+                        element: model,
+                        position: closestP,
+                        distance
+                    };
+                }
+                closestP.copy(mesh.aabb.center);
+                const distance = vecb.sub2(closestP, ray.origin).length();
+                return {
+                    model,
+                    element: model,
+                    position: closestP,
+                    distance
+                };
+            }
+        }
+
+        return null;
     }
 
     // intersect the scene at the screen location and focus the camera on this location
@@ -1041,12 +1071,15 @@ class Camera extends Element {
         const result = this.intersect(screenX, screenY);
         if (result) {
             const { scene } = this;
+            const targetElement = (result.element as Element) ?? (result.splat as Element) ?? (result.model as Element) ?? null;
 
             this.setFocalPoint(result.position);
             this.setDistance(result.distance / this.sceneRadius * this.fovFactor);
             scene.events.fire('camera.focalPointPicked', {
                 camera: this,
                 splat: result.splat,
+                model: result.model,
+                element: targetElement,
                 position: result.position
             });
         }

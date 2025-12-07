@@ -10,6 +10,7 @@ import { registerEditorEvents } from './editor';
 import { Events } from './events';
 import { initFileHandler } from './file-handler';
 import { registerIframeApi } from './iframe-api';
+import { MeshManager } from './mesh-manager';
 import { registerPlySequenceEvents } from './ply-sequence';
 import { registerPublishEvents } from './publish';
 import { registerRenderEvents } from './render';
@@ -148,6 +149,8 @@ const main = async () => {
         editorUI.canvas,
         graphicsDevice
     );
+    const meshManager = new MeshManager(events, scene);
+    events.function('mesh.manager', () => meshManager);
 
     // colors
     const bgClr = new Color();

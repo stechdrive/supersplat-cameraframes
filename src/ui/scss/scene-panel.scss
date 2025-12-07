@@ -8,7 +8,8 @@
     display: none;
 }
 
-.splat-list-container {
+.splat-list-container,
+.mesh-list-container {
     max-height: 300px;
     overflow: auto;
 }

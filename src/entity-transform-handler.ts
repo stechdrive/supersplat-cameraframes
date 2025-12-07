@@ -2,6 +2,7 @@ import { Mat4, Quat, Vec3 } from 'playcanvas';
 
 import { PlacePivotOp, EntityTransformOp, MultiOp } from './edit-ops';
 import { Events } from './events';
+import { Model } from './model';
 import { Pivot } from './pivot';
 import { Splat } from './splat';
 import { Transform } from './transform';
@@ -13,7 +14,7 @@ const transform = new Transform();
 
 class EntityTransformHandler implements TransformHandler {
     events: Events;
-    splat: Splat;
+    target: Splat | Model;
     top: EntityTransformOp;
     pop: PlacePivotOp;
     bindMat = new Mat4();
@@ -22,31 +23,31 @@ class EntityTransformHandler implements TransformHandler {
         this.events = events;
 
         events.on('pivot.started', (pivot: Pivot) => {
-            if (this.splat) {
+            if (this.target) {
                 this.start();
             }
         });
 
         events.on('pivot.moved', (pivot: Pivot) => {
-            if (this.splat) {
+            if (this.target) {
                 this.update(pivot.transform);
             }
         });
 
         events.on('pivot.ended', (pivot: Pivot) => {
-            if (this.splat) {
+            if (this.target) {
                 this.end();
             }
         });
 
         events.on('pivot.origin', (mode: 'center' | 'boundCenter') => {
-            if (this.splat) {
+            if (this.target) {
                 this.placePivot();
             }
         });
 
-        events.on('camera.focalPointPicked', (details: { splat: Splat, position: Vec3 }) => {
-            if (this.splat && ['move', 'rotate', 'scale'].includes(this.events.invoke('tool.active'))) {
+        events.on('camera.focalPointPicked', (details: { splat?: Splat, model?: Model, position: Vec3 }) => {
+            if (this.target && ['move', 'rotate', 'scale'].includes(this.events.invoke('tool.active'))) {
                 const pivot = events.invoke('pivot') as Pivot;
                 const newt = new Transform(details.position, pivot.transform.rotation, pivot.transform.scale);
                 const op = new PlacePivotOp({ pivot, oldt: pivot.transform.clone(), newt });
@@ -58,25 +59,26 @@ class EntityTransformHandler implements TransformHandler {
     placePivot() {
         // place initial pivot point
         const origin = this.events.invoke('pivot.origin');
-        this.splat.getPivot(origin === 'center' ? 'center' : 'boundCenter', false, transform);
+        this.target.getPivot(origin === 'center' ? 'center' : 'boundCenter', false, transform);
         this.events.invoke('pivot').place(transform);
     }
 
     activate() {
-        this.splat = this.events.invoke('selection') as Splat;
-        if (this.splat) {
+        const selection = this.events.invoke('selection');
+        this.target = (selection instanceof Splat || selection instanceof Model) ? selection : null;
+        if (this.target) {
             this.placePivot();
         }
     }
 
     deactivate() {
-        this.splat = null;
+        this.target = null;
     }
 
     start() {
         const pivot = this.events.invoke('pivot') as Pivot;
         const { transform } = pivot;
-        const { entity } = this.splat;
+        const { entity } = this.target;
 
         // calculate bind matrix
         this.bindMat.setTRS(transform.position, transform.rotation, transform.scale);
@@ -89,7 +91,7 @@ class EntityTransformHandler implements TransformHandler {
 
         // create op
         this.top = new EntityTransformOp({
-            splat: this.splat,
+            splat: this.target,
             oldt: new Transform(p, r, s),
             newt: new Transform(p, r, s)
         });
@@ -110,7 +112,7 @@ class EntityTransformHandler implements TransformHandler {
         const r = quat;
         const s = mat.getScale();
 
-        this.splat.move(t, r, s);
+        this.target.move(t, r, s);
         this.top.newt.set(t, r, s);
         this.pop.newt.copy(transform);
     }

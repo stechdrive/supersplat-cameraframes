@@ -1,5 +1,6 @@
 import { EntityTransformHandler } from './entity-transform-handler';
 import { Events } from './events';
+import { Model } from './model';
 import { registerPivotEvents } from './pivot';
 import { Splat } from './splat';
 import { SplatsTransformHandler } from './splats-transform-handler';
@@ -36,14 +37,16 @@ const registerTransformHandlerEvents = (events: Events) => {
     const entityTransformHandler = new EntityTransformHandler(events);
     const splatsTransformHandler = new SplatsTransformHandler(events);
 
-    const update = (splat: Splat) => {
+    const update = (selection: Splat | Model) => {
         pop();
-        if (splat) {
-            if (splat.numSelected > 0) {
+        if (selection instanceof Splat) {
+            if (selection.numSelected > 0) {
                 push(splatsTransformHandler);
             } else {
                 push(entityTransformHandler);
             }
+        } else if (selection instanceof Model) {
+            push(entityTransformHandler);
         }
     };
 

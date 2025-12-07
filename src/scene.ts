@@ -18,6 +18,7 @@ import { Element, ElementType, ElementTypeList } from './element';
 import { Events } from './events';
 import { EyeLevel } from './eye-level';
 import { InfiniteGrid as Grid } from './infinite-grid';
+import { Model } from './model';
 import { Outline } from './outline';
 import { PCApp } from './pc-app';
 import { SceneConfig } from './scene-config';
@@ -275,6 +276,11 @@ class Scene {
         splats.forEach((splat) => {
             this.remove(splat);
             (splat as Splat).destroy();
+        });
+        const models = this.getElementsByType(ElementType.model) as Model[];
+        models.forEach((model) => {
+            this.remove(model);
+            model.destroy();
         });
     }
 

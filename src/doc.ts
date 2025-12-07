@@ -129,10 +129,14 @@ const registerDocEvents = (scene: Scene, events: Events) => {
 
                 const contents = await plyFile.async('blob');
                 const url = URL.createObjectURL(contents);
-                const splat = await scene.assetLoader.load({
+                const loaded = await scene.assetLoader.load({
                     url,
                     filename
                 });
+                if (!(loaded instanceof Splat)) {
+                    throw new Error('document contains a non-splat asset');
+                }
+                const splat = loaded as Splat;
                 URL.revokeObjectURL(url);
 
                 stagedSplats.push({ splat, settings: splatSettings });

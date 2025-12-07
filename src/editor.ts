@@ -2,6 +2,7 @@ import { Color, Mat4, path, Texture, Vec3, Vec4 } from 'playcanvas';
 
 import { EditHistory } from './edit-history';
 import { SelectAllOp, SelectNoneOp, SelectInvertOp, SelectOp, HideSelectionOp, UnhideAllOp, DeleteSelectionOp, ResetOp, MultiOp, AddSplatOp } from './edit-ops';
+import { Element } from './element';
 import { Events } from './events';
 import { Scene } from './scene';
 import { BufferWriter } from './serialize/writer';
@@ -26,8 +27,8 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
 
     // get the list of selected splats (currently limited to just a single one)
     const selectedSplats = () => {
-        const selected = events.invoke('selection') as Splat;
-        return selected?.visible ? [selected] : [];
+        const selected = events.invoke('selection') as Element;
+        return selected instanceof Splat && selected.visible ? [selected] : [];
     };
 
     let lastExportCursor = 0;
@@ -283,8 +284,8 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
 
     // returns true if the selected splat has selected gaussians
     events.function('selection.splats', () => {
-        const splat = events.invoke('selection') as Splat;
-        return splat?.numSelected > 0;
+        const splat = events.invoke('selection');
+        return splat instanceof Splat ? splat.numSelected > 0 : false;
     });
 
     events.on('select.all', () => {
@@ -572,6 +573,10 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
             const url = URL.createObjectURL(blob);
             const filename = `${removeExtension(splat.filename)}.ply`;
             const copy = await scene.assetLoader.load({ url, filename });
+            if (!(copy instanceof Splat)) {
+                URL.revokeObjectURL(url);
+                throw new Error('Duplicate/separate supports splats only');
+            }
 
             if (func === 'separate') {
                 editHistory.add(new MultiOp([

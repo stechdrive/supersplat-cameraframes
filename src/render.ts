@@ -235,7 +235,7 @@ const registerRenderEvents = (scene: Scene, events: Events) => {
             );
 
             // construct filename
-            const selected = events.invoke('selection') as Splat;
+            const selected = events.invoke('selection') as { name?: string } | null;
             const filename = `${removeExtension(selected?.name ?? 'SuperSplat')}-image.png`;
 
             // download

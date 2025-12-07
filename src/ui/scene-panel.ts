@@ -2,6 +2,7 @@ import { Container, Element, Label } from '@playcanvas/pcui';
 
 import { Events } from '../events';
 import { localize } from './localization';
+import { MeshList } from './mesh-list';
 import { SplatList } from './splat-list';
 import sceneImportSvg from './svg/import.svg';
 import sceneNewSvg from './svg/new.svg';
@@ -69,11 +70,17 @@ class ScenePanel extends Container {
         tooltips.register(sceneNew, 'New Scene', 'top');
 
         const splatList = new SplatList(events);
+        const meshList = new MeshList(events);
 
         const splatListContainer = new Container({
             class: 'splat-list-container'
         });
         splatListContainer.append(splatList);
+
+        const meshListContainer = new Container({
+            class: 'mesh-list-container'
+        });
+        meshListContainer.append(meshList);
 
         const transformHeader = new Container({
             class: 'panel-header'
@@ -94,6 +101,7 @@ class ScenePanel extends Container {
 
         this.append(sceneHeader);
         this.append(splatListContainer);
+        this.append(meshListContainer);
         this.append(transformHeader);
         this.append(new Transform(events));
         this.append(new Element({
