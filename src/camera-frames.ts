@@ -669,13 +669,16 @@ export class CameraFramesController {
         if (!points || points.length === 0) {
             return null;
         }
+        const targetSize = this.scene?.targetSize ?? { width: this.viewport.vw, height: this.viewport.vh };
+        const width = targetSize.width || this.viewport.vw;
+        const height = targetSize.height || this.viewport.vh;
         const projected: { x: number; y: number; z: number; }[] = [];
         const screen = new Vec3();
         points.forEach((p) => {
             this.scene.camera.worldToScreen(p, screen);
             projected.push({
-                x: screen.x * this.viewport.vw,
-                y: screen.y * this.viewport.vh,
+                x: screen.x * width,
+                y: screen.y * height,
                 z: screen.z
             });
         });
@@ -699,23 +702,30 @@ export class CameraFramesController {
             return false;
         }
         const points = this.getFrustumDebugPoints();
-        if (!points || points.length < 8) {
+        // buildFrustumPoints は「頂点+底面4点」の5頂点構成
+        if (!points || points.length < 5) {
             return false;
         }
         const screenPts = this.projectFrustumToScreen(points);
-        if (!screenPts || screenPts.length < 8) {
+        if (!screenPts || screenPts.length < 5) {
             return false;
         }
+        const width = this.scene?.targetSize?.width || this.viewport.vw;
+        const height = this.scene?.targetSize?.height || this.viewport.vh;
+        const scaleX = this.viewport.vw > 0 ? width / this.viewport.vw : 1;
+        const scaleY = this.viewport.vh > 0 ? height / this.viewport.vh : 1;
+        const sx = px * scaleX;
+        const sy = py * scaleY;
         const edges = [
             [1, 2], [2, 3], [3, 4], [4, 1],
             [0, 1], [0, 2], [0, 3], [0, 4]
         ] as const;
-        const HIT_PX = 12;
+        const HIT_PX = 12 * Math.max(scaleX, scaleY);
         let minDist = Number.POSITIVE_INFINITY;
         edges.forEach(([ai, bi]) => {
             const a = screenPts[ai];
             const b = screenPts[bi];
-            const d = this.distanceToSegment(px, py, a, b);
+            const d = this.distanceToSegment(sx, sy, a, b);
             if (d < minDist) {
                 minDist = d;
             }
@@ -731,8 +741,11 @@ export class CameraFramesController {
         normal.normalize();
         const ray = this.workRay;
         const rect = this.canvasContainer.getBoundingClientRect();
-        const sx = clientX - rect.left;
-        const sy = clientY - rect.top;
+        const targetSize = this.scene?.targetSize ?? { width: rect.width, height: rect.height };
+        const scaleX = rect.width > 0 ? targetSize.width / rect.width : 1;
+        const scaleY = rect.height > 0 ? targetSize.height / rect.height : 1;
+        const sx = (clientX - rect.left) * scaleX;
+        const sy = (clientY - rect.top) * scaleY;
         this.scene.camera.getRay(sx, sy, ray);
         const denom = ray.direction.dot(normal);
         if (Math.abs(denom) < 1e-6) {
@@ -2404,6 +2417,7 @@ export class CameraFramesController {
         this.overlay.setPointerCapture(e.pointerId);
         this.overlay.style.pointerEvents = 'auto';
         this.overlay.style.cursor = 'grabbing';
+        this.requestRender();
         e.stopPropagation();
         e.preventDefault();
         return true;
@@ -2468,6 +2482,7 @@ export class CameraFramesController {
             this.frustumDragState = null;
             this.lastPointer = { x: e.clientX, y: e.clientY };
             this.updatePointerFromLast();
+            this.requestRender();
             e.stopPropagation();
             e.preventDefault();
             return true;
