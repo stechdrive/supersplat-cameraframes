@@ -149,7 +149,8 @@ const MIN_VIEW_ZOOM_PCT = 25;
 const MAX_VIEW_ZOOM_PCT = 100;
 const PAN_MARGIN_PX = 0;
 const FRUSTUM_DEBUG_COLOR = new Color(0, 1, 1, 1);
-const FRUSTUM_DEBUG_CACHE_VERSION = 1;
+const FRUSTUM_DEBUG_LENGTH = 0.5;
+const FRUSTUM_DEBUG_CACHE_VERSION = 2;
 
 const cloneFrame = (f: FrameState): FrameState => ({
     ...f,
@@ -225,6 +226,7 @@ export class CameraFramesController {
         points: null,
         version: FRUSTUM_DEBUG_CACHE_VERSION
     };
+    private viewportFovRuntime: number | null = null;
     private frustumDragState: {
         pointerId: number;
         startPointer: { x: number; y: number; };
@@ -290,6 +292,8 @@ export class CameraFramesController {
         this.state.renderBox.projection.baseFov = initialBaseFov;
         this.baseFovRad = initialBaseFov * DEG2RAD;
         this.rebuildBaseFrustum();
+        this.viewportFovRuntime = initialBaseFov;
+        this.updateFovInfo();
 
         this.updateFovInfo();
 
@@ -490,33 +494,67 @@ export class CameraFramesController {
         };
     }
 
-    private buildFrustumPoints(frustum: ReturnType<CameraFramesController['computeEffectiveFrustum']>, basis: CameraBasis): Vec3[] | null {
-        if (!frustum || !basis) {
+    private buildFrustumPoints(frustum: ReturnType<CameraFramesController['computeEffectiveFrustum']> | null, basis: CameraBasis): Vec3[] | null {
+        if (!basis) {
             return null;
         }
-        const { left, right, bottom, top, near, far } = frustum;
+
+        let left: number;
+        let right: number;
+        let top: number;
+        let bottom: number;
+        let near: number;
+
+        if (frustum) {
+            left = frustum.left;
+            right = frustum.right;
+            top = frustum.top;
+            bottom = frustum.bottom;
+            near = frustum.near;
+        } else {
+            // フラスタム情報が取れない場合のフォールバック（レンダーボックスのアスペクトだけ維持）
+            const rb = this.state.renderBox;
+            const aspect = (rb.baseSize.w * rb.scale.kx) / (rb.baseSize.h * rb.scale.ky || 1);
+            const baseFovDeg = rb.projection?.baseFov ?? this.scene.camera?.fov ?? 60;
+            const baseFovRad = baseFovDeg * DEG2RAD;
+            const horizontalRad = this.baseFovToHorizontalRad(baseFovRad, this.lockFovAxis ?? 'horizontal', aspect);
+            const halfW = Math.tan(horizontalRad * 0.5);
+            const halfH = halfW / aspect;
+            left = -halfW;
+            right = halfW;
+            bottom = -halfH;
+            top = halfH;
+            near = 1;
+        }
+
         const forward = basis.forward.clone();
         if (forward.lengthSq() > 0) {
             forward.normalize();
         }
         const camRight = basis.right.clone();
         const camUp = basis.up.clone();
-        const makeCorner = (x: number, y: number, dist: number) => {
-            const p = basis.position.clone();
-            p.add(forward.clone().mulScalar(dist));
+        const baseDistance = FRUSTUM_DEBUG_LENGTH;
+        const nearSafe = Math.max(near, 1e-4);
+        const scale = baseDistance / nearSafe;
+        const scaledLeft = left * scale;
+        const scaledRight = right * scale;
+        const scaledTop = top * scale;
+        const scaledBottom = bottom * scale;
+
+        const apex = basis.position.clone();
+        const baseCenter = apex.clone().add(forward.mulScalar(baseDistance));
+        const makeBaseCorner = (x: number, y: number) => {
+            const p = baseCenter.clone();
             p.add(camRight.clone().mulScalar(x));
             p.add(camUp.clone().mulScalar(y));
             return p;
         };
-        const nearTl = makeCorner(left, top, near);
-        const nearTr = makeCorner(right, top, near);
-        const nearBr = makeCorner(right, bottom, near);
-        const nearBl = makeCorner(left, bottom, near);
-        const farTl = makeCorner(left, top, far);
-        const farTr = makeCorner(right, top, far);
-        const farBr = makeCorner(right, bottom, far);
-        const farBl = makeCorner(left, bottom, far);
-        return [nearTl, nearTr, nearBr, nearBl, farTl, farTr, farBr, farBl];
+        const baseTl = makeBaseCorner(scaledLeft, scaledTop);
+        const baseTr = makeBaseCorner(scaledRight, scaledTop);
+        const baseBr = makeBaseCorner(scaledRight, scaledBottom);
+        const baseBl = makeBaseCorner(scaledLeft, scaledBottom);
+        // 0: apex, 1-4: base (TL, TR, BR, BL)
+        return [apex, baseTl, baseTr, baseBr, baseBl];
     }
 
     private isSamePose(a: CameraPoseSnapshot | null, b: CameraPoseSnapshot | null) {
@@ -559,12 +597,9 @@ export class CameraFramesController {
             return null;
         }
         const frustum = this.computeEffectiveFrustum();
-        if (!frustum) {
-            return null;
-        }
         const cache = this.frustumDebugCache;
         const poseChanged = !cache.pose || !this.isSamePose(cache.pose, pose) || cache.version !== FRUSTUM_DEBUG_CACHE_VERSION;
-        const frustumChanged = !cache.frustum || !this.isSameFrustum(cache.frustum, frustum);
+        const frustumChanged = !cache.frustum || !frustum || !this.isSameFrustum(cache.frustum, frustum);
         if (poseChanged || frustumChanged || !cache.points) {
             const basis = this.buildCameraBasis(pose);
             if (!basis) {
@@ -576,7 +611,7 @@ export class CameraFramesController {
             }
             this.frustumDebugCache = {
                 pose,
-                frustum: { ...frustum },
+                frustum: frustum ? { ...frustum } : null,
                 points,
                 version: FRUSTUM_DEBUG_CACHE_VERSION
             };
@@ -595,23 +630,21 @@ export class CameraFramesController {
             return;
         }
         const points = this.getFrustumDebugPoints();
-        if (!points || points.length < 8) {
+        if (!points || points.length < 5) {
             return;
         }
         const color = this.mainCameraSelected ? new Color(0, 1, 0.7, 1) : FRUSTUM_DEBUG_COLOR;
         const draw = (a: number, b: number) => this.scene.app.drawLine(points[a], points[b], color, true, this.scene.debugLayer);
-        draw(0, 1);
+        // base rectangle
         draw(1, 2);
         draw(2, 3);
-        draw(3, 0);
-        draw(4, 5);
-        draw(5, 6);
-        draw(6, 7);
-        draw(7, 4);
+        draw(3, 4);
+        draw(4, 1);
+        // sides
+        draw(0, 1);
+        draw(0, 2);
+        draw(0, 3);
         draw(0, 4);
-        draw(1, 5);
-        draw(2, 6);
-        draw(3, 7);
     }
 
     private projectFrustumToScreen(points: Vec3[]) {
@@ -656,9 +689,8 @@ export class CameraFramesController {
             return false;
         }
         const edges = [
-            [0, 1], [1, 2], [2, 3], [3, 0],
-            [4, 5], [5, 6], [6, 7], [7, 4],
-            [0, 4], [1, 5], [2, 6], [3, 7]
+            [1, 2], [2, 3], [3, 4], [4, 1],
+            [0, 1], [0, 2], [0, 3], [0, 4]
         ] as const;
         const HIT_PX = 12;
         let minDist = Number.POSITIVE_INFINITY;
@@ -937,6 +969,13 @@ export class CameraFramesController {
         // camera fov -> update fov info
         this.events.on('camera.fov', (value?: number) => {
             const currentFov = (typeof value === 'number' && isFinite(value)) ? value : this.events.invoke('camera.fov');
+            if (!this.state.enabled) {
+                if (typeof currentFov === 'number' && isFinite(currentFov)) {
+                    this.viewportFovRuntime = currentFov;
+                }
+                this.updateFovInfo();
+                return;
+            }
             if (typeof currentFov === 'number' && isFinite(currentFov)) {
                 const projection = this.state.renderBox.projection ?? { type: 'perspective' as const };
                 projection.baseFov = currentFov;
@@ -1053,6 +1092,12 @@ export class CameraFramesController {
             if (value) {
                 // OFF -> ON
                 this.viewportPoseRuntime = this.clonePoseSnapshot(currentPose);
+                if (this.viewportFovRuntime === null || this.viewportFovRuntime === undefined) {
+                    const currentFov = this.events.invoke('camera.fov');
+                    if (typeof currentFov === 'number' && isFinite(currentFov)) {
+                        this.viewportFovRuntime = currentFov;
+                    }
+                }
                 if (!this.state.mainCameraPose) {
                     this.state.mainCameraPose = this.clonePoseSnapshot(currentPose);
                 }
@@ -1067,6 +1112,11 @@ export class CameraFramesController {
                 if (poseToApply) {
                     // フラスタム同期前にポーズを適用
                     this.applyCameraPose(poseToApply, { silent: true });
+                }
+                const mainFov = this.state.renderBox.projection?.baseFov ?? this.scene.camera.fov;
+                if (typeof mainFov === 'number' && isFinite(mainFov)) {
+                    this.state.renderBox.projection.baseFov = mainFov;
+                    this.events.fire('camera.setFov', mainFov);
                 }
                 // ニアクリップの初期値を現在のカメラから引き継ぎ、固定値として適用
                 const baseNear = (this.state.nearClip === null || this.state.nearClip === undefined) ?
@@ -1088,16 +1138,30 @@ export class CameraFramesController {
                 }
                 this.mainCameraSelected = false;
                 this.state.enabled = false;
+                // ビューポート表示用にフラスタムを再計算しておく
+                this.rebuildBaseFrustum();
+                this.frustumDebugCache.points = null;
+                this.frustumDebugCache.pose = null;
                 // 無効化時はニアクリップ固定を解除
                 this.events.fire('camera.setNearOverride', null);
                 this.events.fire('camera.setCustomFrustum', null);
                 this.events.fire('camera.setLockFovAxis', undefined);
                 this.overlay.style.pointerEvents = 'none';
                 this.frustumDragState = null;
+                if (this.viewportFovRuntime === null || this.viewportFovRuntime === undefined) {
+                    const currentFov = this.events.invoke('camera.fov');
+                    if (typeof currentFov === 'number' && isFinite(currentFov)) {
+                        this.viewportFovRuntime = currentFov;
+                    }
+                }
                 // ビューポート用ポーズがあれば戻す
                 const viewportPose = this.clonePoseSnapshot(this.viewportPoseRuntime);
                 if (viewportPose) {
                     this.applyCameraPose(viewportPose, { silent: true });
+                }
+                const vpFov = this.viewportFovRuntime ?? this.events.invoke('camera.fov');
+                if (typeof vpFov === 'number' && isFinite(vpFov)) {
+                    this.events.fire('camera.setFov', vpFov);
                 }
                 // 無効化中は追従ロジックを停止するが状態は保持
                 this.requestRender();
@@ -2241,12 +2305,13 @@ export class CameraFramesController {
         if (!this.hitTestFrustum(px, py)) {
             return false;
         }
-        const planePoint = new Vec3(
+        const basis = this.buildCameraBasis(this.state.mainCameraPose);
+        const planePoint = basis?.focalPoint ?? new Vec3(
             this.state.mainCameraPose.focalPoint.x,
             this.state.mainCameraPose.focalPoint.y,
             this.state.mainCameraPose.focalPoint.z
         );
-        const planeNormal = this.scene.camera.entity.forward.clone();
+        const planeNormal = basis?.forward ?? this.scene.camera.entity.forward.clone();
         const startHit = this.intersectPointerWithPlane(e.clientX, e.clientY, planePoint, planeNormal);
         this.mainCameraSelected = true;
         this.frustumDragState = {
