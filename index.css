@@ -2130,6 +2130,15 @@
   flex-grow: 1;
   text-transform: uppercase;
 }
+.panel > .panel-header > .panel-header-label-inline {
+  color: #fff;
+  font-weight: bold;
+  flex-grow: 0;
+  flex-shrink: 0;
+  text-transform: none;
+  white-space: nowrap;
+  margin-right: 6px;
+}
 .panel .panel-header-button {
   font-family: pc-icon;
   font-weight: bold;
@@ -2318,9 +2327,28 @@
   display: none;
 }
 
-.splat-list-container {
+.splat-list-container,
+.mesh-list-container {
   max-height: 300px;
   overflow: auto;
+}
+
+.panel-header-slider {
+  margin: 4px 12px;
+}
+
+.panel .light-button,
+.panel .light-reset-button {
+  color: #aaa;
+}
+.panel .light-button svg,
+.panel .light-reset-button svg {
+  color: inherit;
+}
+
+.panel .light-button.active {
+  color: #f60;
+  background-color: rgba(255, 102, 0, 0.12);
 }
 
 #view-panel {
@@ -2472,6 +2500,65 @@
   cursor: pointer;
 }
 .splat-list .splat-item .splat-item-delete:hover {
+  color: #fff;
+}
+
+.mesh-list {
+  min-height: 80px;
+  padding: 4px 0px;
+}
+.mesh-list .mesh-item {
+  display: flex;
+  flex-direction: row;
+  padding: 2px;
+}
+.mesh-list .mesh-item:hover:not(.selected).visible {
+  cursor: pointer;
+}
+.mesh-list .mesh-item.selected {
+  background-color: #202020;
+}
+.mesh-list .mesh-item #mesh-edit {
+  margin: 0;
+  flex-grow: 1;
+  flex-shrink: 1;
+}
+.mesh-list .mesh-item .mesh-item-text {
+  flex-grow: 1;
+  flex-shrink: 1;
+}
+.visible .mesh-list .mesh-item .mesh-item-text:hover:not(.selected) {
+  color: #fff;
+}
+.selected .mesh-list .mesh-item .mesh-item-text {
+  color: #fff;
+}
+.mesh-list .mesh-item .mesh-item-visible {
+  flex-grow: 0;
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  line-height: 24px;
+  color: #aaa;
+  cursor: pointer;
+}
+.visible .mesh-list .mesh-item .mesh-item-visible {
+  color: #aaa;
+}
+.mesh-list .mesh-item .mesh-item-visible:hover {
+  color: #fff;
+}
+.mesh-list .mesh-item .mesh-item-delete {
+  flex-grow: 0;
+  flex-shrink: 0;
+  padding: 4px;
+  width: 16px;
+  height: 16px;
+  line-height: 16px;
+  color: #aaa;
+  cursor: pointer;
+}
+.mesh-list .mesh-item .mesh-item-delete:hover {
   color: #fff;
 }
 
@@ -3496,16 +3583,19 @@
   height: 32px;
 }
 
-.format-row .grid-toggle-button {
+.format-row .grid-toggle-button,
+.format-row .model-layer-toggle-button {
   width: 36px;
   height: 36px;
   padding: 3px;
 }
-.format-row .grid-toggle-button svg {
+.format-row .grid-toggle-button svg,
+.format-row .model-layer-toggle-button svg {
   width: 24px;
   height: 24px;
 }
-.format-row .grid-toggle-button.active {
+.format-row .grid-toggle-button.active,
+.format-row .model-layer-toggle-button.active {
   border-color: #f60;
   color: #f60;
   background-color: rgba(255, 102, 0, 0.12);
