@@ -14,6 +14,8 @@ type ZipEntry = {
     useZip64: boolean;
 };
 
+type CompressionInput = ArrayBuffer | ArrayBufferView;
+
 const UINT32_MAX = 0xffffffffn;
 
 class ZipWriter implements Writer {
@@ -24,7 +26,7 @@ class ZipWriter implements Writer {
     private writer: Writer;
     private entries: ZipEntry[] = [];
     private compressor: CompressionStream | null = null;
-    private compressorWriter: WritableStreamDefaultWriter<BufferSource> | null = null;
+    private compressorWriter: WritableStreamDefaultWriter<CompressionInput> | null = null;
     private compressorReader: ReadableStreamDefaultReader<Uint8Array> | null = null;
     private pumpPromise: Promise<void> | null = null;
     private activeEntry: ZipEntry | null = null;
@@ -114,7 +116,7 @@ class ZipWriter implements Writer {
         }
         this.activeEntry.uncompressedSize += BigInt(data.byteLength);
         this.activeEntry.crc.update(data);
-        await this.compressorWriter.write(data as unknown as BufferSource);
+        await this.compressorWriter.write(data);
     }
 
     private async closeImpl() {
