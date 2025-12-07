@@ -77,7 +77,13 @@ const deserializeFromSSplat = (data: ArrayBufferLike) => {
 
 const loadSplat = async (assetSource: AssetSource) => {
     const source = await createReadSource(assetSource);
-    return deserializeFromSSplat(await source.arrayBuffer());
+    const buffer = await source.arrayBuffer();
+    const sourceBlob = assetSource.contents instanceof Blob ? assetSource.contents : new Blob([buffer]);
+
+    return {
+        data: deserializeFromSSplat(buffer),
+        sourceBlob
+    };
 };
 
 export { loadSplat };

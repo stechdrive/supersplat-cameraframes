@@ -13,19 +13,20 @@ class FileStreamWriter implements Writer {
     close: () => void;
 
     constructor(stream: FileSystemWritableFileStream) {
-        let cursor = 0;
-
-        stream.seek(0);
+        let cursor = 0n;
+        const ready = stream.seek(0);
 
         this.write = async (data: Uint8Array) => {
-            cursor += data.byteLength;
+            await ready;
+            cursor += BigInt(data.byteLength);
             await stream.write(data as unknown as ArrayBuffer);
         };
 
         this.close = async () => {
-            await stream.truncate(cursor);
+            await ready;
+            await stream.truncate(Number(cursor));
             await stream.close();
-            return true;
+            return cursor;
         };
     }
 }
@@ -84,24 +85,11 @@ class DownloadWriter implements Writer {
     close: () => void;
 
     constructor(filename: string) {
-        const bufferWriter = new BufferWriter();
-
-        this.write = (data: Uint8Array) => {
-            bufferWriter.write(data);
-        };
-
-        this.close = () => {
-            const buffers = bufferWriter.close();
-
-            // download file to client
-            const blob = new Blob(buffers as unknown as ArrayBuffer[], { type: 'application/octet-stream' });
-            const url = window.URL.createObjectURL(blob);
-
+        const triggerDownload = (url: string) => {
             const lnk = document.createElement('a');
             lnk.download = filename;
             lnk.href = url;
 
-            // create a "fake" click-event to trigger the download
             if (document.createEvent) {
                 const e = document.createEvent('MouseEvents');
                 e.initMouseEvent('click', true, true, window,
@@ -112,11 +100,49 @@ class DownloadWriter implements Writer {
                 // @ts-ignore
                 lnk.fireEvent?.('onclick');
             }
-
-            window.URL.revokeObjectURL(url);
-
-            return true;
         };
+
+        if (typeof TransformStream !== 'undefined') {
+            const { readable, writable } = new TransformStream<Uint8Array>();
+            const streamWriter = writable.getWriter();
+            let closed = false;
+
+            this.write = async (data: Uint8Array) => {
+                await streamWriter.ready;
+                await streamWriter.write(data);
+            };
+
+            this.close = async () => {
+                if (closed) {
+                    return;
+                }
+                closed = true;
+                let url: string | null = null;
+                try {
+                    await streamWriter.close();
+                    const response = new Response(readable, { headers: { 'Content-Type': 'application/octet-stream' } });
+                    url = window.URL.createObjectURL(await response.blob());
+                    triggerDownload(url);
+                } finally {
+                    if (url) {
+                        window.URL.revokeObjectURL(url);
+                    }
+                }
+            };
+        } else {
+            console.warn('DownloadWriter: TransformStream not supported, falling back to memory buffering');
+            const bufferWriter = new BufferWriter();
+            this.write = (data: Uint8Array) => {
+                bufferWriter.write(data);
+            };
+
+            this.close = () => {
+                const buffers = bufferWriter.close();
+                const url = window.URL.createObjectURL(new Blob(buffers as unknown as ArrayBuffer[], { type: 'application/octet-stream' }));
+                triggerDownload(url);
+                window.URL.revokeObjectURL(url);
+            };
+        }
     }
 }
 
@@ -158,21 +184,22 @@ class ProgressWriter implements Writer {
     write: (data: Uint8Array) => void;
     close: () => any;
 
-    constructor(writer: Writer, totalBytes: number, progress?: (progress: number, total: number) => void) {
-        let cursor = 0;
+    constructor(writer: Writer, totalBytes: number | bigint, progress?: (progress: number, total: number) => void, strict = false) {
+        const total = typeof totalBytes === 'bigint' ? totalBytes : BigInt(totalBytes);
+        let cursor = 0n;
 
         this.write = async (data: Uint8Array) => {
-            cursor += data.byteLength;
+            cursor += BigInt(data.byteLength);
             await writer.write(data);
-            progress?.(cursor, totalBytes);
+            progress?.(Number(cursor), Number(total));
         };
 
         this.close = () => {
-            if (cursor !== totalBytes) {
-                throw new Error(`ProgressWriter: expected ${totalBytes} bytes, but wrote ${cursor} bytes`);
+            if (strict && cursor !== total) {
+                throw new Error(`ProgressWriter: expected ${total} bytes, but wrote ${cursor} bytes`);
             }
-            progress?.(cursor, totalBytes);
-            return totalBytes;
+            progress?.(Number(cursor), Number(total));
+            return cursor;
         };
     }
 }

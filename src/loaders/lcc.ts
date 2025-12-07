@@ -359,7 +359,9 @@ const deserializeFromLcc = async (param: LccParam) => {
 const loadLcc = async (assetSource: AssetSource) => {
     // .lcc
     const textSource = await createReadSource(assetSource);
-    const text = new TextDecoder().decode(await textSource.arrayBuffer());
+    const textBuffer = await textSource.arrayBuffer();
+    const sourceBlob = assetSource.contents instanceof Blob ? assetSource.contents : new Blob([textBuffer]);
+    const text = new TextDecoder().decode(textBuffer);
     const meta = JSON.parse(text);
 
     const isHasSH: boolean = meta.fileType === 'Quality' && !!(assetSource.mapFile('shcoef.bin'));
@@ -386,7 +388,7 @@ const loadLcc = async (assetSource: AssetSource) => {
     const unitInfos: LccUnitInfo[] = parseIndexBin(indexBuffer, meta);
 
     // data.bin + shcoef.bin -> gsplatData
-    return await deserializeFromLcc({
+    const data = await deserializeFromLcc({
         totalSplats,
         unitInfos,
         targetLod,
@@ -395,6 +397,8 @@ const loadLcc = async (assetSource: AssetSource) => {
         shFile,
         compressInfo
     });
+
+    return { data, sourceBlob };
 };
 
 export { loadLcc };

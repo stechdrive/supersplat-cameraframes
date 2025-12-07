@@ -11,8 +11,11 @@ import { serializePly } from './splat-serialize';
 import { Transform } from './transform';
 import { localize } from './ui/localization';
 
-const DOC_VERSION = 2;
-const SUPPORTED_DOC_VERSIONS = new Set([0, 1, 2]);
+const DOC_VERSION = 3;
+const SUPPORTED_DOC_VERSIONS = new Set([0, 1, 2, 3]);
+const ZIP64_MARGIN_BYTES = 1800n * 1024n * 1024n;   // 約1.8GB (GiB基準)
+const ZIP32_LIMIT = 0xffffffffn;
+const ZIP_ENTRY_OVERHEAD = 256n;
 
 // ts compiler and vscode find this type, but eslint does not
 type FilePickerAcceptType = unknown;
@@ -56,6 +59,34 @@ class FileSelector {
         };
     }
 }
+
+const hasFileSystemAccess = () => !!window.showSaveFilePicker;
+
+const estimateSplatPlySize = (splat: Splat) => {
+    const element = splat.splatData.getElement('vertex');
+    const internalProps = new Set(['state', 'transform']);
+    const props = element.properties.filter((p: any) => p.storage && !internalProps.has(p.name));
+    const perPointBytes = props.reduce((sum: bigint, p: any) => sum + BigInt(p.byteSize ?? 4), 0n);
+    const gaussianCount = BigInt(Math.max(0, splat.numSplats - splat.numDeleted));
+    // ヘッダは数百バイト程度なので簡易的に上乗せ
+    const headerBytes = 256n + BigInt(props.length * 32);
+    return headerBytes + perPointBytes * gaussianCount;
+};
+
+const estimateDocumentSize = (documentData: any, splats: Splat[], models: Model[], resolveBlob: (model: Model) => Blob | null) => {
+    const encoder = new TextEncoder();
+    const docSize = BigInt(encoder.encode(JSON.stringify(documentData)).length);
+    const splatSize = splats.reduce((sum, splat) => sum + estimateSplatPlySize(splat), 0n);
+    const modelSize = models.reduce((sum, model) => sum + BigInt(resolveBlob(model)?.size ?? 0), 0n);
+    const entryCount = BigInt(1 + splats.length + models.length);
+    const overhead = entryCount * ZIP_ENTRY_OVERHEAD;
+    return {
+        docSize,
+        splatSize,
+        modelSize,
+        total: docSize + splatSize + modelSize + overhead
+    };
+};
 
 const registerDocEvents = (scene: Scene, events: Events) => {
     // construct the file selector
@@ -193,12 +224,12 @@ const registerDocEvents = (scene: Scene, events: Events) => {
     };
 
     const getModelBlob = async (model: Model) => {
-        const file = model.asset?.file as any;
-        const savedBlob = (model.asset as any)?.__sourceBlob as Blob | undefined;
-
-        if (savedBlob instanceof Blob) {
-            return savedBlob;
+        const stored = scene.assetLoader.getSourceBlob(model);
+        if (stored instanceof Blob) {
+            return stored;
         }
+
+        const file = model.asset?.file as any;
 
         if (file?.contents instanceof Blob) {
             return file.contents;
@@ -219,9 +250,9 @@ const registerDocEvents = (scene: Scene, events: Events) => {
         throw new Error(`Model source not available for '${model.name}'`);
     };
 
-    const writeBlobToZip = async (zipWriter: ZipWriter, filename: string, blob: Blob) => {
+    const writeBlobToZip = async (zipWriter: ZipWriter, filename: string, source: Blob | ReadableStream<Uint8Array>) => {
         await zipWriter.start(filename);
-        const reader = blob.stream().getReader();
+        const reader = (source instanceof Blob ? source.stream() : source).getReader();
         while (true) {
             const { value, done } = await reader.read();
             if (done) {
@@ -248,8 +279,9 @@ const registerDocEvents = (scene: Scene, events: Events) => {
                 };
             });
 
-            const document = {
-                version: DOC_VERSION,
+            const createDocumentPayload = (version: number, zip64: boolean) => ({
+                version,
+                ...(zip64 ? { zip64: true } : {}),
                 camera: scene.camera.docSerialize(),
                 view: events.invoke('docSerialize.view'),
                 poseSets: events.invoke('docSerialize.poseSets'),
@@ -258,7 +290,23 @@ const registerDocEvents = (scene: Scene, events: Events) => {
                 splats: splats.map(s => s.docSerialize()),
                 models: modelDocs,
                 lighting: scene.docSerializeLighting()
-            };
+            });
+
+            // 予測用のペイロードを使って ZIP64 が必要か判定
+            const provisionalDoc = createDocumentPayload(DOC_VERSION, true);
+            const estimate = estimateDocumentSize(provisionalDoc, splats, models, model => scene.assetLoader.getSourceBlob(model));
+            const useZip64 = estimate.total >= ZIP64_MARGIN_BYTES || estimate.total > ZIP32_LIMIT;
+            const docVersion = useZip64 ? 3 : 2;
+            const document = createDocumentPayload(docVersion, useZip64);
+
+            if (!options.stream && useZip64 && !hasFileSystemAccess()) {
+                await events.invoke('showPopup', {
+                    type: 'error',
+                    header: localize('doc.save-failed'),
+                    message: 'この環境では大容量プロジェクトの保存に対応していません。File System Access API 対応ブラウザで保存してください。'
+                });
+                return;
+            }
 
             const serializeSettings = {
                 // even though we support saving selection state, we disable that for now
@@ -270,7 +318,8 @@ const registerDocEvents = (scene: Scene, events: Events) => {
             };
 
             const writer = options.stream ? new FileStreamWriter(options.stream) : new DownloadWriter(options.filename);
-            const zipWriter = new ZipWriter(writer);
+            const zipWriter = new ZipWriter(writer, { zip64: useZip64 });
+
             await zipWriter.file('document.json', JSON.stringify(document));
             for (let i = 0; i < splats.length; ++i) {
                 await zipWriter.start(`splat_${i}.ply`);

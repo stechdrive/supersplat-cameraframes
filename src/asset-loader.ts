@@ -17,11 +17,46 @@ class AssetLoader {
     events: Events;
     defaultAnisotropy: number;
     loadAllData = true;
+    private sourceBlobs = new WeakMap<object, Blob>();
 
     constructor(app: AppBase, events: Events, defaultAnisotropy?: number) {
         this.app = app;
         this.events = events;
         this.defaultAnisotropy = defaultAnisotropy || 1;
+    }
+
+    private setSourceBlob(target: object, blob?: Blob | null) {
+        if (!blob) {
+            return;
+        }
+        this.sourceBlobs.set(target, blob);
+        // 互換性のために既存の __sourceBlob にも格納する
+        (target as any).__sourceBlob = blob;
+    }
+
+    private async prepareSourceBlob(assetSource: AssetSource, fallbackBuffer?: ArrayBuffer) {
+        if (assetSource.contents instanceof Blob) {
+            return assetSource.contents;
+        }
+        if (assetSource.contents instanceof Response) {
+            try {
+                return await assetSource.contents.clone().blob();
+            } catch {
+                return null;
+            }
+        }
+        if (fallbackBuffer) {
+            return new Blob([fallbackBuffer]);
+        }
+        return null;
+    }
+
+    getSourceBlob(target: Asset | { asset?: Asset }) {
+        const assetCandidate = (target as any)?.asset ?? target;
+        if (!(assetCandidate instanceof Asset) && !(assetCandidate as any)?.file) {
+            return null;
+        }
+        return this.sourceBlobs.get(assetCandidate) ?? (assetCandidate as any).__sourceBlob ?? null;
     }
 
     private async loadContainer(assetSource: AssetSource) {
@@ -31,10 +66,8 @@ class AssetLoader {
             url,
             filename: assetSource.filename ?? assetSource.url
         });
-        if (sourceBlob) {
-            // 保存用に元データを残す（object URL revoke 後も参照可能にする）
-            (asset as any).__sourceBlob = sourceBlob;
-        }
+        // 保存用に元データを残す（object URL revoke 後も参照可能にする）
+        this.setSourceBlob(asset, sourceBlob ?? null);
         this.app.assets.add(asset);
 
         try {
@@ -52,13 +85,14 @@ class AssetLoader {
     }
 
     async load(assetSource: AssetSource) {
-        const wrap = (gsplatData: GSplatData) => {
+        const wrap = (gsplatData: GSplatData, sourceBlob?: Blob | null) => {
             const asset = new Asset(assetSource.filename || assetSource.url, 'gsplat', {
                 url: assetSource.contents ? `local-asset-${Date.now()}` : assetSource.url ?? assetSource.filename,
                 filename: assetSource.filename
             });
             this.app.assets.add(asset);
             asset.resource = new GSplatResource(this.app.graphicsDevice, gsplatData);
+            this.setSourceBlob(asset, sourceBlob ?? null);
             return asset;
         };
 
@@ -76,12 +110,16 @@ class AssetLoader {
                 asset = await this.loadContainer(assetSource);
                 return new Model(asset);
             } else if (filename.endsWith('.splat')) {
-                asset = wrap(await loadSplat(assetSource));
+                const { data, sourceBlob } = await loadSplat(assetSource);
+                asset = wrap(data, sourceBlob);
             } else if (filename.endsWith('.lcc')) {
-                asset = wrap(await loadLcc(assetSource));
+                const { data, sourceBlob } = await loadLcc(assetSource);
+                asset = wrap(data, sourceBlob);
                 orientation = lccOrientation;
             } else {
+                const sourceBlobPromise = this.prepareSourceBlob(assetSource);
                 asset = await loadGsplat(this.app.assets, assetSource);
+                this.setSourceBlob(asset, await sourceBlobPromise);
             }
 
             return new Splat(asset, orientation);
