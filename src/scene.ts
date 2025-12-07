@@ -15,6 +15,7 @@ import { AssetLoader } from './asset-loader';
 import { Camera } from './camera';
 import { DataProcessor } from './data-processor';
 import { Element, ElementType, ElementTypeList } from './element';
+import { AmbientLightOp } from './edit-ops';
 import { Events } from './events';
 import { EyeLevel } from './eye-level';
 import { InfiniteGrid as Grid } from './infinite-grid';
@@ -92,6 +93,10 @@ class Scene {
 
     contentRoot: Entity;
     cameraRoot: Entity;
+    private pendingAmbientOp: AmbientLightOp | null = null;
+    private pendingAmbientFresh = false;
+    private pendingAmbientTimer: number | null = null;
+    private lightingHistoryCoalesceMs = 400;
 
     constructor(
         events: Events,
@@ -239,17 +244,12 @@ class Scene {
         layers.push(this.gizmoLayer);
 
         // Ambient fallback (環境マップ未設定時の視認性確保)
-        this.app.scene.ambientLight.set(0.3, 0.3, 0.3);
+        this.app.scene.ambientLight.set(0.5, 0.5, 0.5);
         events.on('lighting.setAmbient', (value: number) => {
-            const v = Math.max(0, value ?? 0);
-            this.app.scene.ambientLight.set(v, v, v);
-            const fill = Math.max(0, v * 0.35);
-            this.ambientFillLights.forEach(light => {
-                light.light.intensity = fill;
-            });
-            this.forceRender = true;
+            this.setAmbient(value, true);
         });
         events.function('lighting.ambient', () => this.app.scene.ambientLight.r ?? 0.3);
+        events.on('edit.apply', this.onEditApplied, this);
 
         this.dataProcessor = new DataProcessor(this.app.graphicsDevice);
         this.assetLoader = new AssetLoader(this.app, events, this.app.graphicsDevice.maxAnisotropy);
@@ -321,12 +321,85 @@ class Scene {
             return ent;
         };
 
-        const base = this.app.scene.ambientLight.r ?? 0.3;
+        const base = this.app.scene.ambientLight.r ?? 0.5;
         // 上下から弱く当てる「なんちゃってヘミスフィア」
         this.ambientFillLights = [
-            makeLight('ambientFillUp', { x: -60, y: 30, z: 0 }, base * 0.35),
-            makeLight('ambientFillDown', { x: 60, y: -30, z: 0 }, base * 0.35)
+            makeLight('ambientFillUp', { x: -60, y: 30, z: 0 }, base * 0.5),
+            makeLight('ambientFillDown', { x: 60, y: -30, z: 0 }, base * 0.5)
         ];
+    }
+
+    applyAmbient(value: number) {
+        const v = Math.max(0, value ?? 0);
+        this.app.scene.ambientLight.set(v, v, v);
+        const fill = Math.max(0, v * 0.5);
+        this.ambientFillLights.forEach(light => {
+            light.light.intensity = fill;
+        });
+        this.forceRender = true;
+        this.events.fire('lighting.ambientChanged', v);
+    }
+
+    setAmbient(value: number, recordHistory = false) {
+        const v = Math.max(0, value ?? 0);
+        const prev = this.app.scene.ambientLight.r ?? 0;
+        if (recordHistory) {
+            this.recordAmbientChange(prev, v);
+        } else {
+            this.applyAmbient(v);
+        }
+    }
+
+    private recordAmbientChange(prev: number, next: number) {
+        if (Math.abs(prev - next) < 1e-6) {
+            this.applyAmbient(next);
+            return;
+        }
+        if (!this.pendingAmbientOp) {
+            const op = new AmbientLightOp({
+                scene: this,
+                prev,
+                next
+            });
+            this.pendingAmbientOp = op;
+            this.pendingAmbientFresh = true;
+            this.events.fire('edit.add', op);
+        } else {
+            this.pendingAmbientOp.next = next;
+            this.applyAmbient(next);
+        }
+        this.scheduleAmbientReset();
+    }
+
+    private scheduleAmbientReset() {
+        if (this.pendingAmbientTimer !== null) {
+            window.clearTimeout(this.pendingAmbientTimer);
+        }
+        this.pendingAmbientTimer = window.setTimeout(() => {
+            this.clearPendingAmbientOp();
+        }, this.lightingHistoryCoalesceMs);
+    }
+
+    private clearPendingAmbientOp() {
+        if (this.pendingAmbientTimer !== null) {
+            window.clearTimeout(this.pendingAmbientTimer);
+            this.pendingAmbientTimer = null;
+        }
+        this.pendingAmbientOp = null;
+        this.pendingAmbientFresh = false;
+    }
+
+    private onEditApplied(op: any) {
+        if (!this.pendingAmbientOp) {
+            return;
+        }
+        if (op === this.pendingAmbientOp) {
+            if (this.pendingAmbientFresh) {
+                this.pendingAmbientFresh = false;
+                return;
+            }
+        }
+        this.clearPendingAmbientOp();
     }
 
     start() {

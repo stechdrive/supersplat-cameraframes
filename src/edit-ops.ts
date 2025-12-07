@@ -371,6 +371,53 @@ class SetSplatColorAdjustmentOp {
     }
 }
 
+class LightStateOp implements EditOp {
+    name = 'lightState';
+    light: LightRig;
+    prevEnabled: boolean;
+    prevIntensity: number;
+    nextEnabled: boolean;
+    nextIntensity: number;
+
+    constructor(options: { light: LightRig; prevEnabled: boolean; prevIntensity: number; nextEnabled: boolean; nextIntensity: number; }) {
+        const { light, prevEnabled, prevIntensity, nextEnabled, nextIntensity } = options;
+        this.light = light;
+        this.prevEnabled = !!prevEnabled;
+        this.prevIntensity = prevIntensity;
+        this.nextEnabled = !!nextEnabled;
+        this.nextIntensity = nextIntensity;
+    }
+
+    do() {
+        this.light.applyStateDirect(this.nextEnabled, this.nextIntensity);
+    }
+
+    undo() {
+        this.light.applyStateDirect(this.prevEnabled, this.prevIntensity);
+    }
+}
+
+class AmbientLightOp implements EditOp {
+    name = 'ambientLight';
+    scene: Scene;
+    prev: number;
+    next: number;
+
+    constructor(options: { scene: Scene; prev: number; next: number; }) {
+        this.scene = options.scene;
+        this.prev = options.prev;
+        this.next = options.next;
+    }
+
+    do() {
+        this.scene.applyAmbient(this.next);
+    }
+
+    undo() {
+        this.scene.applyAmbient(this.prev);
+    }
+}
+
 class MultiOp {
     name = 'multiOp';
     ops: EditOp[];
@@ -447,6 +494,8 @@ export {
     PlacePivotOp,
     ColorAdjustment,
     SetSplatColorAdjustmentOp,
+    LightStateOp,
+    AmbientLightOp,
     MultiOp,
     AddSplatOp,
     SplatRenameOp

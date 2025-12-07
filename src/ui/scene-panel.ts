@@ -180,6 +180,7 @@ class ScenePanel extends Container {
         let lightEnabled = initialLightState?.enabled ?? true;
         let lightSelected = false;
         let syncingIntensity = false;
+        let syncingAmbient = false;
 
         const updateLightToggleState = (enabled: boolean) => {
             lightEnabled = enabled;
@@ -203,6 +204,18 @@ class ScenePanel extends Container {
             syncingIntensity = true;
             lightInput.value = intensity;
             syncingIntensity = false;
+        };
+
+        const updateAmbientFromState = (value?: number) => {
+            if (typeof value !== 'number' || !isFinite(value)) {
+                return;
+            }
+            if (syncingAmbient) {
+                return;
+            }
+            syncingAmbient = true;
+            ambientInput.value = value;
+            syncingAmbient = false;
         };
 
         updateLightToggleState(lightEnabled);
@@ -249,6 +262,9 @@ class ScenePanel extends Container {
                 updateIntensityFromState(state.intensity);
             }
         });
+        events.on('lighting.ambientChanged', (value: number) => {
+            updateAmbientFromState(value);
+        });
 
         tooltips.register(lightToggle, localize('panel.scene-manager.lighting.toggle'), 'top');
         tooltips.register(lightSelect, localize('panel.scene-manager.lighting.select'), 'top');
@@ -276,6 +292,9 @@ class ScenePanel extends Container {
         });
 
         ambientInput.on('change', (value: number) => {
+            if (syncingAmbient) {
+                return;
+            }
             events.fire('lighting.setAmbient', value);
         });
     }
