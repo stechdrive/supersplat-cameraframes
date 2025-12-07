@@ -540,8 +540,12 @@ export class CameraFramesController {
         return this.clonePoseSnapshot(this.state.mainCameraPose);
     }
 
+    private canSelectMainTarget() {
+        return !this.state.enabled && !!this.state.mainCameraPose && !this.scene.camera.targetSize;
+    }
+
     private setUiTarget(target: 'viewport' | 'main') {
-        const canSelectMain = !this.state.enabled && !!this.state.mainCameraPose && !this.scene.camera.targetSize;
+        const canSelectMain = this.canSelectMainTarget();
         const resolved = (target === 'main' && canSelectMain) ? 'main' : 'viewport';
         const changed = this.uiTarget !== resolved;
         const nextSelected = resolved === 'main';
@@ -557,7 +561,7 @@ export class CameraFramesController {
     }
 
     private ensureUiTargetAvailability() {
-        if (this.uiTarget === 'main' && (this.state.enabled || !this.state.mainCameraPose || this.scene.camera.targetSize)) {
+        if (this.uiTarget === 'main' && !this.canSelectMainTarget()) {
             this.setUiTarget('viewport');
         }
     }
@@ -934,42 +938,6 @@ export class CameraFramesController {
         return Math.hypot(px - projX, py - projY);
     }
 
-    private hitTestFrustum(px: number, py: number) {
-        if (this.state.enabled || this.scene.camera.targetSize) {
-            return false;
-        }
-        const points = this.getFrustumDebugPoints();
-        // buildFrustumPoints は「頂点+底面4点」の5頂点構成
-        if (!points || points.length < 5) {
-            return false;
-        }
-        const screenPts = this.projectFrustumToScreen(points);
-        if (!screenPts || screenPts.length < 5) {
-            return false;
-        }
-        const width = this.scene?.targetSize?.width || this.viewport.vw;
-        const height = this.scene?.targetSize?.height || this.viewport.vh;
-        const scaleX = this.viewport.vw > 0 ? width / this.viewport.vw : 1;
-        const scaleY = this.viewport.vh > 0 ? height / this.viewport.vh : 1;
-        const sx = px * scaleX;
-        const sy = py * scaleY;
-        const edges = [
-            [1, 2], [2, 3], [3, 4], [4, 1],
-            [0, 1], [0, 2], [0, 3], [0, 4]
-        ] as const;
-        const HIT_PX = 12 * Math.max(scaleX, scaleY);
-        let minDist = Number.POSITIVE_INFINITY;
-        edges.forEach(([ai, bi]) => {
-            const a = screenPts[ai];
-            const b = screenPts[bi];
-            const d = this.distanceToSegment(sx, sy, a, b);
-            if (d < minDist) {
-                minDist = d;
-            }
-        });
-        return minDist <= HIT_PX;
-    }
-
     private intersectPointerWithPlane(clientX: number, clientY: number, planePoint: Vec3, planeNormal: Vec3) {
         if (!planeNormal || planeNormal.lengthSq() < 1e-6) {
             return null;
@@ -1056,6 +1024,14 @@ export class CameraFramesController {
         this.events.function('cameraFrames.viewportLens', () => this.getViewportLensState());
         this.events.on('cameraFrames.setViewportLens', (mm: number) => this.setViewportLensMm(mm));
         this.events.function('cameraFrames.uiTarget', () => this.uiTarget);
+        this.events.function('cameraFrames.uiTargetAvailability', () => ({
+            uiTarget: this.uiTarget,
+            canSelectMain: this.canSelectMainTarget()
+        }));
+        this.events.on('cameraFrames.setUiTarget', (target: 'viewport' | 'main') => {
+            this.setUiTarget(target);
+            this.updatePointerFromLast();
+        });
         this.events.function('cameraFrames.mainTransform', () => this.getMainCameraTransform());
 
         // 提供: 現在のレンダーボックスに基づくアスペクトロック情報
@@ -1481,6 +1457,10 @@ export class CameraFramesController {
                 this.applyNearClipOverride();
                 this.rebuildBaseFrustum();
                 this.syncCameraFrustum();
+            } else if (this.uiTarget === 'main') {
+                this.rebuildBaseFrustum();
+                this.frustumDebugCache.points = null;
+                this.frustumDebugCache.pose = null;
             }
             this.requestRender();
             this.events.fire('cameraFrames.stateChanged', this.snapshot());
@@ -1971,7 +1951,9 @@ export class CameraFramesController {
             ...projection,
             baseFov: axisBaseFovDeg
         };
-        this.events.fire('camera.setFov', rb.projection.baseFov);
+        if (this.state.enabled) {
+            this.events.fire('camera.setFov', rb.projection.baseFov);
+        }
     }
 
     private computeEffectiveFrustum() {
@@ -2464,14 +2446,8 @@ export class CameraFramesController {
         }
 
         if (!this.state.enabled) {
-            if (!this.state.mainCameraPose || this.scene.camera.targetSize) {
-                this.overlay.style.pointerEvents = 'none';
-                this.overlay.style.cursor = '';
-                return;
-            }
-            const frustumHit = this.hitTestFrustum(px, py);
-            this.overlay.style.pointerEvents = frustumHit ? 'auto' : 'none';
-            this.overlay.style.cursor = frustumHit ? 'grab' : '';
+            this.overlay.style.pointerEvents = 'none';
+            this.overlay.style.cursor = '';
             return;
         }
         if (this.dragState) {
@@ -2493,27 +2469,8 @@ export class CameraFramesController {
         this.overlay.style.cursor = this.getCursorForHit(handleHit?.handleId, borderHit);
     }
 
-    private onContainerPointerDown(e: PointerEvent) {
-        if (this.state.enabled) {
-            return;
-        }
-        if (this.scene.camera.targetSize) {
-            return;
-        }
-        if (this.uiTarget !== 'main') {
-            return;
-        }
-        if (this.frustumDragState) {
-            return;
-        }
-        const rect = this.canvasContainer.getBoundingClientRect();
-        const px = e.clientX - rect.left;
-        const py = e.clientY - rect.top;
-        if (this.hitTestFrustum(px, py)) {
-            return;
-        }
-        this.setUiTarget('viewport');
-        this.requestRender();
+    private onContainerPointerDown(_e: PointerEvent) {
+        // クリックでの対象切り替えは行わない（パネルUI経由でのみ操作対象を変更）
     }
 
     private updatePointerFromLast() {
@@ -2531,14 +2488,8 @@ export class CameraFramesController {
             return;
         }
         if (!this.state.enabled) {
-            if (!this.state.mainCameraPose || this.scene.camera.targetSize) {
-                this.overlay.style.pointerEvents = 'none';
-                this.overlay.style.cursor = '';
-                return;
-            }
-            const frustumHit = this.hitTestFrustum(px, py);
-            this.overlay.style.pointerEvents = frustumHit ? 'auto' : 'none';
-            this.overlay.style.cursor = frustumHit ? 'grab' : '';
+            this.overlay.style.pointerEvents = 'none';
+            this.overlay.style.cursor = '';
             return;
         }
         const handleHit = this.hitTestHandle(px, py);
@@ -2652,124 +2603,23 @@ export class CameraFramesController {
         return null;
     }
 
-    private handleFrustumPointerDown(e: PointerEvent) {
-        if (this.state.enabled || !this.state.mainCameraPose || this.scene.camera.targetSize) {
-            return false;
-        }
-        if (hitTestGizmo(this.scene, e.clientX, e.clientY)) {
-            return false;
-        }
-        const rect = this.canvasContainer.getBoundingClientRect();
-        const px = e.clientX - rect.left;
-        const py = e.clientY - rect.top;
-        if (!this.hitTestFrustum(px, py)) {
-            return false;
-        }
-        const basis = this.buildCameraBasis(this.state.mainCameraPose);
-        const planePoint = basis?.focalPoint ?? new Vec3(
-            this.state.mainCameraPose.focalPoint.x,
-            this.state.mainCameraPose.focalPoint.y,
-            this.state.mainCameraPose.focalPoint.z
-        );
-        const planeNormal = basis?.forward ?? this.scene.camera.entity.forward.clone();
-        const startHit = this.intersectPointerWithPlane(e.clientX, e.clientY, planePoint, planeNormal);
-        this.setUiTarget('main');
-        this.frustumDragState = {
-            pointerId: e.pointerId,
-            startPointer: { x: e.clientX, y: e.clientY },
-            startPose: this.clonePoseSnapshot(this.state.mainCameraPose),
-            startHit,
-            planePoint,
-            planeNormal,
-            mode: e.altKey ? 'rotate' : 'translate'
-        };
-        this.historyBegin('cameraFrames.mainCameraPose');
-        this.overlay.setPointerCapture(e.pointerId);
-        this.overlay.style.pointerEvents = 'auto';
-        this.overlay.style.cursor = 'grabbing';
-        this.requestRender();
-        e.stopPropagation();
-        e.preventDefault();
-        return true;
+    private handleFrustumPointerDown(_e: PointerEvent) {
+        // フラスタムクリックによる対象切替・ドラッグは行わない
+        return false;
     }
 
-    private handleFrustumPointerMove(e: PointerEvent) {
-        if (!this.frustumDragState || e.pointerId !== this.frustumDragState.pointerId) {
-            return false;
-        }
-        const drag = this.frustumDragState;
-        const nextPose = this.clonePoseSnapshot(drag.startPose);
-        if (!nextPose) {
-            return true;
-        }
-        if (drag.mode === 'translate') {
-            const hit = this.intersectPointerWithPlane(e.clientX, e.clientY, drag.planePoint, drag.planeNormal);
-            if (!hit || !drag.startHit) {
-                return true;
-            }
-            const delta = hit.clone().sub(drag.startHit);
-            nextPose.focalPoint = {
-                x: nextPose.focalPoint.x + delta.x,
-                y: nextPose.focalPoint.y + delta.y,
-                z: nextPose.focalPoint.z + delta.z
-            };
-            if (nextPose.navMode === 'fpv') {
-                const fpv = nextPose.fpvPosition ?? { ...nextPose.focalPoint };
-                nextPose.fpvPosition = {
-                    x: fpv.x + delta.x,
-                    y: fpv.y + delta.y,
-                    z: fpv.z + delta.z
-                };
-            }
-        } else {
-            const dx = e.clientX - drag.startPointer.x;
-            const dy = e.clientY - drag.startPointer.y;
-            const factor = 0.25;
-            const minElev = this.scene.camera?.minElev ?? -90;
-            const maxElev = this.scene.camera?.maxElev ?? 90;
-            nextPose.azim = this.normalizeDegrees((drag.startPose?.azim ?? 0) + dx * factor);
-            nextPose.elev = Math.min(maxElev, Math.max(minElev, (drag.startPose?.elev ?? 0) - dy * factor));
-        }
-        this.state.mainCameraPose = nextPose;
-        this.frustumDebugCache.points = null;
-        this.frustumDebugCache.pose = null;
-        this.requestRender();
-        this.events.fire('cameraFrames.stateChanged', this.snapshot());
-        this.overlay.style.cursor = 'grabbing';
-        e.stopPropagation();
-        e.preventDefault();
-        return true;
+    private handleFrustumPointerMove(_e: PointerEvent) {
+        // フラスタムドラッグは無効化
+        return false;
     }
 
-    private handleFrustumPointerUp(e: PointerEvent) {
-        if (this.frustumDragState && e.pointerId === this.frustumDragState.pointerId) {
-            this.historyCommit('cameraFrames.mainCameraPose');
-            try {
-                this.overlay.releasePointerCapture(e.pointerId);
-            } catch (error) {
-                // ignore
-            }
-            this.frustumDragState = null;
-            this.lastPointer = { x: e.clientX, y: e.clientY };
-            this.updatePointerFromLast();
-            this.requestRender();
-            e.stopPropagation();
-            e.preventDefault();
-            return true;
-        }
+    private handleFrustumPointerUp(_e: PointerEvent) {
+        // フラスタムドラッグは無効化
         return false;
     }
 
     private onPointerDown(e: PointerEvent) {
         if (!this.state.enabled) {
-            if (this.handleFrustumPointerDown(e)) {
-                return;
-            }
-            // OFF時に別の場所をクリックしたら main 選択を解除
-            if (this.uiTarget === 'main') {
-                this.setUiTarget('viewport');
-                this.requestRender();
-            }
             return;
         }
 

@@ -7,11 +7,13 @@ import cameraResetSvg from './svg/camera-reset.svg';
 import collapseSvg from './svg/collapse.svg';
 import deleteSvg from './svg/delete.svg';
 import exportSvg from './svg/export.svg';
+import hiddenSvg from './svg/hidden.svg';
 import newSvg from './svg/new.svg';
 import lockSvg from './svg/select-lock.svg';
 import separateSvg from './svg/select-separate.svg';
 import orbitSvg from './svg/select-sphere.svg';
 import unlockSvg from './svg/select-unlock.svg';
+import shownSvg from './svg/shown.svg';
 
 type CameraFramesState = {
     enabled: boolean;
@@ -173,6 +175,7 @@ class CameraFramesPanel extends Panel {
         let navMode: 'orbit' | 'fpv' = 'orbit';
         let viewportLensEnabled = false;
         let uiTarget: 'viewport' | 'main' = (events.invoke('cameraFrames.uiTarget') as ('viewport' | 'main')) ?? 'viewport';
+        let canSelectMain = false;
         let altSlow = false;
         let lastPose = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0 };
         let transformEditing = false;
@@ -215,16 +218,12 @@ class CameraFramesPanel extends Panel {
         this.header.append(collapseButton);
         setCompact(false);
 
-        const mainBadge = new Label({ class: ['main-target-badge'], text: 'CAMERA FRAMES OFF: main camera 編集中' });
-        mainBadge.hidden = true;
-        mainBadge.dom.style.display = 'inline-flex';
-        mainBadge.dom.style.alignItems = 'center';
-        mainBadge.dom.style.padding = '4px 8px';
-        mainBadge.dom.style.borderRadius = '4px';
-        mainBadge.dom.style.background = '#1f3d2c';
-        mainBadge.dom.style.color = '#b6f3d5';
-        mainBadge.dom.style.fontSize = '11px';
-        mainBadge.dom.style.fontWeight = 'bold';
+        const viewportTargetButton = new Button({ class: ['icon-button', 'target-icon'], text: '' });
+        const mainTargetButton = new Button({ class: ['icon-button', 'target-icon'], text: '' });
+        viewportTargetButton.dom.setAttribute('aria-label', localize('panel.camera-frames.target.viewport'));
+        mainTargetButton.dom.setAttribute('aria-label', localize('panel.camera-frames.target.main'));
+        viewportTargetButton.dom.title = localize('panel.camera-frames.target.viewport');
+        mainTargetButton.dom.title = localize('panel.camera-frames.target.main');
 
         // layout group (大判指定)
         const layoutGroup = new Container({ class: ['layout-group'] });
@@ -317,8 +316,15 @@ class CameraFramesPanel extends Panel {
             precision: 1,
             value: 35
         });
+        fovSlider.dom.style.flex = '1 1 0';
+        const fovControl = new Container({ class: ['control-element-expand', 'lens-control'] });
+        fovControl.dom.style.display = 'flex';
+        fovControl.dom.style.alignItems = 'center';
+        fovControl.dom.style.gap = '6px';
+        fovControl.append(fovSlider);
+        fovControl.append(mainTargetButton);
         fovRow.append(fovLabel);
-        fovRow.append(fovSlider);
+        fovRow.append(fovControl);
         const viewportLensRow = new Container({ class: 'control-parent' });
         const viewportLensLabel = new Label({ class: 'control-label', text: localize('panel.camera-frames.viewport-lens') });
         const viewportLensSlider = new SliderInput({
@@ -328,8 +334,15 @@ class CameraFramesPanel extends Panel {
             precision: 1,
             value: 35
         });
+        viewportLensSlider.dom.style.flex = '1 1 0';
+        const viewportLensControl = new Container({ class: ['control-element-expand', 'lens-control'] });
+        viewportLensControl.dom.style.display = 'flex';
+        viewportLensControl.dom.style.alignItems = 'center';
+        viewportLensControl.dom.style.gap = '6px';
+        viewportLensControl.append(viewportLensSlider);
+        viewportLensControl.append(viewportTargetButton);
         viewportLensRow.append(viewportLensLabel);
-        viewportLensRow.append(viewportLensSlider);
+        viewportLensRow.append(viewportLensControl);
 
         // canvas zoom
         const canvasZoomRow = new Container({ class: 'control-parent' });
@@ -438,6 +451,42 @@ class CameraFramesPanel extends Panel {
         maskRow.append(maskToggle);
         maskRow.append(maskOpacityLabel);
         maskRow.append(maskOpacityInput);
+
+        const resolveTargetAvailability = () => {
+            const availability = events.invoke('cameraFrames.uiTargetAvailability') as { canSelectMain?: boolean } | null;
+            if (availability && typeof availability.canSelectMain === 'boolean') {
+                canSelectMain = availability.canSelectMain;
+            } else {
+                canSelectMain = !framesEnabled && !!lastState?.mainCameraPose;
+            }
+        };
+
+        const setTargetButtonState = (button: Button, active: boolean, enabled: boolean) => {
+            button.dom.innerHTML = '';
+            button.dom.appendChild(createSvg(active ? shownSvg : hiddenSvg));
+            button.class[active ? 'add' : 'remove']('active');
+            button.dom.setAttribute('aria-pressed', active ? 'true' : 'false');
+            button.enabled = enabled;
+            button.dom.setAttribute('aria-disabled', enabled ? 'false' : 'true');
+        };
+
+        const updateTargetUI = () => {
+            resolveTargetAvailability();
+            const mainEnabled = canSelectMain && !framesEnabled;
+            setTargetButtonState(viewportTargetButton, uiTarget === 'viewport', true);
+            setTargetButtonState(mainTargetButton, uiTarget === 'main', mainEnabled);
+        };
+
+        viewportTargetButton.on('click', () => {
+            if (suppress) return;
+            events.fire('cameraFrames.setUiTarget', 'viewport');
+        });
+        mainTargetButton.on('click', () => {
+            if (suppress) return;
+            resolveTargetAvailability();
+            if (!canSelectMain || framesEnabled) return;
+            events.fire('cameraFrames.setUiTarget', 'main');
+        });
 
         // helpers
         const updateFovUI = (info?: FovInfo) => {
@@ -883,7 +932,6 @@ class CameraFramesPanel extends Panel {
         [sliderR, sliderU, sliderF].forEach(hideSliderInputs);
 
         // assemble
-        this.content.append(mainBadge);
         this.content.append(layoutGroup);
         this.content.append(outputRow);
         this.content.append(filenameRow);
@@ -932,10 +980,6 @@ class CameraFramesPanel extends Panel {
             nearClipRow.dom.style.display = active ? 'grid' : 'none';
             nearClipInput.enabled = active;
         };
-        const updateMainBadge = () => {
-            mainBadge.hidden = !(uiTarget === 'main' && !framesEnabled);
-        };
-
         // state update hook
         const updateFromState = (state: CameraFramesState) => {
             suppress = true;
@@ -943,7 +987,7 @@ class CameraFramesPanel extends Panel {
             enableToggle.value = state.enabled;
             framesEnabled = state.enabled;
             updateNearClipUI();
-            updateMainBadge();
+            updateTargetUI();
             if (uiTarget === 'main' && state.mainCameraPose?.navMode) {
                 setNavModeState(state.mainCameraPose.navMode);
             }
@@ -1043,7 +1087,7 @@ class CameraFramesPanel extends Panel {
         events.on('cameraFrames.uiTargetChanged', (target: 'viewport' | 'main') => {
             uiTarget = target === 'main' ? 'main' : 'viewport';
             updateNearClipUI();
-            updateMainBadge();
+            updateTargetUI();
             updateFovUI();
             applyViewportLensState();
             const nav = uiTarget === 'main' ? (lastState?.mainCameraPose?.navMode ?? navMode) : (events.invoke('camera.navMode') as ('orbit' | 'fpv'));
@@ -1115,6 +1159,7 @@ class CameraFramesPanel extends Panel {
             updateFovUI(initialFovInfo);
         }
         applyViewportLensState();
+        updateTargetUI();
 
         const initialNav = uiTarget === 'main' ?
             (lastState?.mainCameraPose?.navMode ?? (events.invoke('camera.navMode') as ('orbit' | 'fpv'))) :
