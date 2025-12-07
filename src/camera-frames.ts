@@ -636,7 +636,13 @@ export class CameraFramesController {
             return;
         }
         if (!this.state.mainCameraPose) {
-            return;
+            // 空シーンなどで mainCameraPose が消えている場合は現在のカメラを初期値として確保する
+            const fallback = this.captureCameraPose();
+            if (fallback) {
+                this.state.mainCameraPose = fallback;
+            } else {
+                return;
+            }
         }
         if (this.scene.camera.targetSize) {
             return;
@@ -1170,6 +1176,9 @@ export class CameraFramesController {
                     if (typeof currentFov === 'number' && isFinite(currentFov)) {
                         this.viewportFovRuntime = currentFov;
                     }
+                }
+                if (!this.state.mainCameraPose) {
+                    this.state.mainCameraPose = this.clonePoseSnapshot(currentPose);
                 }
                 // ビューポート用ポーズがあれば戻す
                 const viewportPose = this.clonePoseSnapshot(this.viewportPoseRuntime);
