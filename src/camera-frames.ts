@@ -2352,8 +2352,8 @@ export class CameraFramesController {
         return result.buffer;
     }
 
-    private async renderPng(params: { basePixels: Uint8Array; frameOverlay: HTMLCanvasElement; gridOverlay?: HTMLCanvasElement | null; width: number; height: number; filename: string; }) {
-        const { basePixels, frameOverlay, gridOverlay, width, height, filename } = params;
+    private async renderPng(params: { basePixels: Uint8Array; frameOverlay: HTMLCanvasElement; gridOverlay?: HTMLCanvasElement | null; eyeLevelOverlay?: HTMLCanvasElement | null; width: number; height: number; filename: string; }) {
+        const { basePixels, frameOverlay, gridOverlay, eyeLevelOverlay, width, height, filename } = params;
         const canvas = document.createElement('canvas');
         canvas.width = width;
         canvas.height = height;
@@ -2365,7 +2365,12 @@ export class CameraFramesController {
         const imgData = new ImageData(new Uint8ClampedArray(basePixels), width, height);
         ctx.putImageData(imgData, 0, 0);
         if (gridOverlay) {
+            ctx.globalCompositeOperation = 'destination-over';
             ctx.drawImage(gridOverlay, 0, 0);
+            ctx.globalCompositeOperation = 'source-over';
+        }
+        if (eyeLevelOverlay) {
+            ctx.drawImage(eyeLevelOverlay, 0, 0);
         }
         ctx.drawImage(frameOverlay, 0, 0);
 
@@ -2425,14 +2430,13 @@ export class CameraFramesController {
                 });
             } else {
                 const overlay = this.renderFrameOverlay(width, height);
-                const mergedOverlay = this.mergeOverlayCanvases(width, height, [
-                    debugOverlays?.grid,
-                    debugOverlays?.eyeLevel
-                ]);
+                const gridOverlay = this.mergeOverlayCanvases(width, height, [debugOverlays?.grid]);
+                const eyeLevelOverlay = this.mergeOverlayCanvases(width, height, [debugOverlays?.eyeLevel]);
                 await this.renderPng({
                     basePixels,
                     frameOverlay: overlay.canvas,
-                    gridOverlay: mergedOverlay,
+                    gridOverlay,
+                    eyeLevelOverlay,
                     width,
                     height,
                     filename
