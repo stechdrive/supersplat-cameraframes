@@ -46,6 +46,17 @@ type CameraFramesState = {
         enabled: boolean;
         opacity: number;
     };
+    mainCameraPose?: {
+        focalPoint: { x: number; y: number; z: number; };
+        azim: number;
+        elev: number;
+        distance: number;
+        roll: number;
+        navMode: 'orbit' | 'fpv';
+        fpvPosition?: { x: number; y: number; z: number; };
+        ortho?: boolean;
+        lockFraming?: boolean;
+    } | null;
     nearClip?: number | null;
     exportName?: string;
     exportFormat?: 'png' | 'psd';
