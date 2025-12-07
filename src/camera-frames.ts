@@ -149,6 +149,7 @@ const MIN_VIEW_ZOOM_PCT = 25;
 const MAX_VIEW_ZOOM_PCT = 100;
 const PAN_MARGIN_PX = 0;
 const FRUSTUM_DEBUG_COLOR = new Color(0, 1, 1, 1);
+const FRUSTUM_SELECTED_COLOR = new Color(1, 0, 1, 1);
 const FRUSTUM_DEBUG_CACHE_VERSION = 2;
 
 const cloneFrame = (f: FrameState): FrameState => ({
@@ -277,6 +278,8 @@ export class CameraFramesController {
 
         // hover判定で必要なときだけポインターイベントを有効化
         canvasContainer.addEventListener('pointermove', e => this.onHover(e));
+        // フラスタム選択中にキャンバス外をクリックした場合の解除用フォールバック
+        canvasContainer.addEventListener('pointerdown', e => this.onContainerPointerDown(e));
 
         // events wiring
         this.registerEvents();
@@ -885,7 +888,7 @@ export class CameraFramesController {
         if (!points || points.length < 5) {
             return;
         }
-        const color = this.mainCameraSelected ? new Color(0, 1, 0.7, 1) : FRUSTUM_DEBUG_COLOR;
+        const color = this.mainCameraSelected ? FRUSTUM_SELECTED_COLOR : FRUSTUM_DEBUG_COLOR;
         const draw = (a: number, b: number) => this.scene.app.drawLine(points[a], points[b], color, true, this.scene.debugLayer);
         // base rectangle
         draw(1, 2);
@@ -2490,6 +2493,29 @@ export class CameraFramesController {
         this.overlay.style.cursor = this.getCursorForHit(handleHit?.handleId, borderHit);
     }
 
+    private onContainerPointerDown(e: PointerEvent) {
+        if (this.state.enabled) {
+            return;
+        }
+        if (this.scene.camera.targetSize) {
+            return;
+        }
+        if (this.uiTarget !== 'main') {
+            return;
+        }
+        if (this.frustumDragState) {
+            return;
+        }
+        const rect = this.canvasContainer.getBoundingClientRect();
+        const px = e.clientX - rect.left;
+        const py = e.clientY - rect.top;
+        if (this.hitTestFrustum(px, py)) {
+            return;
+        }
+        this.setUiTarget('viewport');
+        this.requestRender();
+    }
+
     private updatePointerFromLast() {
         if (!this.lastPointer) {
             this.overlay.style.pointerEvents = 'none';
@@ -2738,6 +2764,11 @@ export class CameraFramesController {
         if (!this.state.enabled) {
             if (this.handleFrustumPointerDown(e)) {
                 return;
+            }
+            // OFF時に別の場所をクリックしたら main 選択を解除
+            if (this.uiTarget === 'main') {
+                this.setUiTarget('viewport');
+                this.requestRender();
             }
             return;
         }

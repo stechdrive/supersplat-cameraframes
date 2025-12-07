@@ -1060,7 +1060,7 @@ class CameraFramesPanel extends Panel {
             }
         });
 
-        const applyViewportLensState = (info?: { enabled: boolean; mm: number; min: number; max: number }) => {
+        function applyViewportLensState(info?: { enabled: boolean; mm: number; min: number; max: number }) {
             suppress = true;
             const state = (uiTarget === 'viewport' && !framesEnabled) ? (info ?? (events.invoke('cameraFrames.viewportLens') as any)) : null;
             if (state) {
@@ -1076,7 +1076,7 @@ class CameraFramesPanel extends Panel {
                 viewportLensSlider.enabled = false;
             }
             suppress = false;
-        };
+        }
         events.on('cameraFrames.viewportLensChanged', (info: any) => applyViewportLensState(info));
 
         events.on('camera.navMode', (mode: 'orbit' | 'fpv') => {
@@ -1084,7 +1084,7 @@ class CameraFramesPanel extends Panel {
             setNavModeState(mode);
         });
 
-        const applyTransformToInputs = (t: any) => {
+        function applyTransformToInputs(t: any) {
             if (!t) return;
             if (transformEditing) return;
             suppress = true;
@@ -1103,7 +1103,7 @@ class CameraFramesPanel extends Panel {
                 pitch: t.rotation.pitch,
                 roll: t.rotation.roll
             };
-        };
+        }
 
         events.on('camera.transform', (t: any) => {
             if (uiTarget !== 'viewport') return;
