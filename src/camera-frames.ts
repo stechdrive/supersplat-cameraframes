@@ -218,6 +218,7 @@ export class CameraFramesController {
     private applyingHistory = false;
     private viewportPoseRuntime: CameraPoseSnapshot | null = null;
     private applyingPose = false;
+    private uiTarget: 'viewport' | 'main' = 'viewport';
     private mainCameraSelected = false;
     private frustumDebugCache: FrustumDebugCache = {
         pose: null,
@@ -493,6 +494,238 @@ export class CameraFramesController {
         };
     }
 
+    private getPoseWorldDistance(pose: CameraPoseSnapshot | null) {
+        const snap = this.clonePoseSnapshot(pose);
+        if (!snap) {
+            return 0;
+        }
+        const framingFactor = snap.lockFraming ? 1 : (this.scene.camera.fovFactor || 1);
+        const sceneRadius = this.scene.camera.sceneRadius || 1;
+        return Math.max(1e-6, (snap.distance || 1) * sceneRadius / (framingFactor || 1e-6));
+    }
+
+    private worldDistanceToNormalized(distance: number, pose: CameraPoseSnapshot | null) {
+        const snap = this.clonePoseSnapshot(pose);
+        const framingFactor = snap?.lockFraming ? 1 : (this.scene.camera.fovFactor || 1);
+        const sceneRadius = this.scene.camera.sceneRadius || 1;
+        return Math.max(1e-6, distance * (framingFactor || 1e-6) / (sceneRadius || 1e-6));
+    }
+
+    private poseToTransform(pose: CameraPoseSnapshot | null) {
+        const basis = this.buildCameraBasis(pose);
+        const snap = this.clonePoseSnapshot(pose);
+        if (!basis || !snap) {
+            return null;
+        }
+        return {
+            position: { x: basis.position.x, y: basis.position.y, z: basis.position.z },
+            rotation: { yaw: snap.azim ?? 0, pitch: snap.elev ?? 0, roll: snap.roll ?? 0 }
+        };
+    }
+
+    private getMainCameraTransform() {
+        return this.poseToTransform(this.ensureMainCameraPose());
+    }
+
+    private ensureMainCameraPose(): CameraPoseSnapshot | null {
+        if (!this.state.mainCameraPose) {
+            const fallback = this.captureCameraPose();
+            if (fallback) {
+                this.state.mainCameraPose = fallback;
+            }
+        }
+        return this.clonePoseSnapshot(this.state.mainCameraPose);
+    }
+
+    private setUiTarget(target: 'viewport' | 'main') {
+        const canSelectMain = !this.state.enabled && !!this.state.mainCameraPose && !this.scene.camera.targetSize;
+        const resolved = (target === 'main' && canSelectMain) ? 'main' : 'viewport';
+        const changed = this.uiTarget !== resolved;
+        const nextSelected = resolved === 'main';
+        const selectionChanged = this.mainCameraSelected !== nextSelected;
+        this.uiTarget = resolved;
+        this.mainCameraSelected = nextSelected;
+        if (changed) {
+            this.events.fire('cameraFrames.uiTargetChanged', this.uiTarget);
+        }
+        if (selectionChanged) {
+            this.requestRender();
+        }
+    }
+
+    private ensureUiTargetAvailability() {
+        if (this.uiTarget === 'main' && (this.state.enabled || !this.state.mainCameraPose || this.scene.camera.targetSize)) {
+            this.setUiTarget('viewport');
+        }
+    }
+
+    private updateMainCameraPose(mutator: (pose: CameraPoseSnapshot) => void) {
+        const apply = () => {
+            const basePose = this.ensureMainCameraPose();
+            if (!basePose) {
+                this.setUiTarget('viewport');
+                return;
+            }
+            const next = this.clonePoseSnapshot(basePose);
+            if (!next) {
+                return;
+            }
+            mutator(next);
+            this.state.mainCameraPose = next;
+            this.frustumDebugCache.points = null;
+            this.frustumDebugCache.pose = null;
+            if (this.state.enabled) {
+                this.applyCameraPose(this.state.mainCameraPose, { silent: true });
+                this.syncCameraFrustum();
+            }
+            this.requestRender();
+            this.events.fire('cameraFrames.stateChanged', this.snapshot());
+        };
+        this.historyDebounced('cameraFrames.mainCameraPose', apply);
+    }
+
+    private setMainCameraPosition(position: { x: number; y: number; z: number }) {
+        this.updateMainCameraPose((pose) => {
+            const worldPos = new Vec3(position.x, position.y, position.z);
+            const forward = new Vec3();
+            this.calcForwardVec(forward, pose.azim, pose.elev);
+            if (forward.lengthSq() < 1e-6) {
+                forward.set(0, 0, -1);
+            } else {
+                forward.normalize();
+            }
+            const worldDist = this.getPoseWorldDistance(pose);
+            const pivot = worldPos.clone().add(forward.mulScalar(worldDist || 1));
+            pose.focalPoint = { x: pivot.x, y: pivot.y, z: pivot.z };
+            if (pose.navMode === 'fpv') {
+                pose.fpvPosition = { x: worldPos.x, y: worldPos.y, z: worldPos.z };
+            }
+            pose.distance = this.worldDistanceToNormalized(worldDist || 1, pose);
+        });
+    }
+
+    private setMainCameraRotation(rot: { yaw: number; pitch: number; roll: number; lockRoll?: boolean; }) {
+        this.updateMainCameraPose((pose) => {
+            const basis = this.buildCameraBasis(pose);
+            const position = basis?.position ?? new Vec3(pose.focalPoint.x, pose.focalPoint.y, pose.focalPoint.z);
+            const worldDist = this.getPoseWorldDistance(pose) || 1;
+            const yaw = rot.yaw ?? pose.azim ?? 0;
+            const pitch = Math.max(-89.9, Math.min(89.9, rot.pitch ?? pose.elev ?? 0));
+            const roll = rot.lockRoll ? (pose.roll ?? 0) : (rot.roll ?? pose.roll ?? 0);
+            pose.azim = yaw;
+            pose.elev = pitch;
+            pose.roll = roll;
+            const forward = new Vec3();
+            this.calcForwardVec(forward, yaw, pitch);
+            if (forward.lengthSq() < 1e-6) {
+                forward.set(0, 0, -1);
+            } else {
+                forward.normalize();
+            }
+            if (pose.navMode === 'orbit') {
+                const pivot = position.clone().add(forward.mulScalar(worldDist));
+                pose.focalPoint = { x: pivot.x, y: pivot.y, z: pivot.z };
+            } else {
+                const pivot = position.clone().add(forward.mulScalar(worldDist));
+                pose.focalPoint = { x: pivot.x, y: pivot.y, z: pivot.z };
+                pose.fpvPosition = pose.fpvPosition ?? { x: position.x, y: position.y, z: position.z };
+            }
+            pose.distance = this.worldDistanceToNormalized(worldDist, pose);
+        });
+    }
+
+    private setMainCameraPose(transform: { position: { x: number; y: number; z: number; }; rotation: { yaw: number; pitch: number; roll: number; }; lockRoll?: boolean; }) {
+        this.updateMainCameraPose((pose) => {
+            const worldDist = this.getPoseWorldDistance(pose) || 1;
+            const yaw = transform.rotation?.yaw ?? pose.azim ?? 0;
+            const pitch = Math.max(-89.9, Math.min(89.9, transform.rotation?.pitch ?? pose.elev ?? 0));
+            const lockRoll = transform.lockRoll ?? (transform.rotation as any)?.lockRoll;
+            const roll = lockRoll ? (pose.roll ?? 0) : (transform.rotation?.roll ?? pose.roll ?? 0);
+            const worldPos = new Vec3(transform.position.x, transform.position.y, transform.position.z);
+            pose.azim = yaw;
+            pose.elev = pitch;
+            pose.roll = roll;
+            const forward = new Vec3();
+            this.calcForwardVec(forward, yaw, pitch);
+            if (forward.lengthSq() < 1e-6) {
+                forward.set(0, 0, -1);
+            } else {
+                forward.normalize();
+            }
+            const pivot = worldPos.clone().add(forward.mulScalar(worldDist));
+            pose.focalPoint = { x: pivot.x, y: pivot.y, z: pivot.z };
+            pose.distance = this.worldDistanceToNormalized(worldDist, pose);
+            if (pose.navMode === 'fpv') {
+                pose.fpvPosition = { x: worldPos.x, y: worldPos.y, z: worldPos.z };
+            }
+        });
+    }
+
+    private nudgeMainCamera(delta: { right?: number; up?: number; forward?: number; scale?: number; }) {
+        this.updateMainCameraPose((pose) => {
+            const basis = this.buildCameraBasis(pose);
+            if (!basis) {
+                return;
+            }
+            const dx = delta.right ?? 0;
+            const dy = delta.up ?? 0;
+            const dz = delta.forward ?? 0;
+            const scale = delta.scale ?? 1;
+            if (dx === 0 && dy === 0 && dz === 0) {
+                return;
+            }
+            const offset = basis.right.clone().mulScalar(dx * scale);
+            offset.add(basis.up.clone().mulScalar(dy * scale));
+            offset.add(basis.forward.clone().mulScalar(dz * scale));
+            const worldPos = basis.position.clone().add(offset);
+            const worldDist = this.getPoseWorldDistance(pose) || 1;
+            const forward = basis.forward.clone();
+            if (forward.lengthSq() < 1e-6) {
+                forward.set(0, 0, -1);
+            } else {
+                forward.normalize();
+            }
+            const pivot = worldPos.clone().add(forward.mulScalar(worldDist));
+            pose.focalPoint = { x: pivot.x, y: pivot.y, z: pivot.z };
+            pose.distance = this.worldDistanceToNormalized(worldDist, pose);
+            if (pose.navMode === 'fpv') {
+                pose.fpvPosition = { x: worldPos.x, y: worldPos.y, z: worldPos.z };
+            }
+        });
+    }
+
+    private setMainNavMode(mode: 'orbit' | 'fpv') {
+        const target = mode === 'fpv' ? 'fpv' : 'orbit';
+        this.updateMainCameraPose((pose) => {
+            if (pose.navMode === target) {
+                pose.navMode = target;
+                return;
+            }
+            const basis = this.buildCameraBasis(pose);
+            if (!basis) {
+                pose.navMode = target;
+                return;
+            }
+            if (target === 'fpv') {
+                pose.navMode = 'fpv';
+                pose.fpvPosition = { x: basis.position.x, y: basis.position.y, z: basis.position.z };
+            } else {
+                const worldDist = this.getPoseWorldDistance(pose) || 1;
+                const forward = basis.forward.clone();
+                if (forward.lengthSq() < 1e-6) {
+                    forward.set(0, 0, -1);
+                } else {
+                    forward.normalize();
+                }
+                const pivot = basis.position.clone().add(forward.mulScalar(worldDist));
+                pose.navMode = 'orbit';
+                pose.focalPoint = { x: pivot.x, y: pivot.y, z: pivot.z };
+                pose.distance = this.worldDistanceToNormalized(worldDist, pose);
+                pose.ortho = false;
+            }
+        });
+    }
+
     private buildFrustumPoints(frustum: ReturnType<CameraFramesController['computeEffectiveFrustum']> | null, basis: CameraBasis): Vec3[] | null {
         if (!basis) {
             return null;
@@ -632,6 +865,7 @@ export class CameraFramesController {
     }
 
     private drawMainCameraFrustum() {
+        this.ensureUiTargetAvailability();
         if (this.state.enabled) {
             return;
         }
@@ -802,7 +1036,7 @@ export class CameraFramesController {
         this.events.on('scene.clear', () => {
             this.state.mainCameraPose = null;
             this.viewportPoseRuntime = null;
-            this.mainCameraSelected = false;
+            this.setUiTarget('viewport');
             this.frustumDragState = null;
             this.frustumDebugCache = {
                 pose: null,
@@ -818,6 +1052,8 @@ export class CameraFramesController {
         this.events.on('cameraFrames.toggleEnabled', () => this.setEnabled(!this.state.enabled));
         this.events.function('cameraFrames.viewportLens', () => this.getViewportLensState());
         this.events.on('cameraFrames.setViewportLens', (mm: number) => this.setViewportLensMm(mm));
+        this.events.function('cameraFrames.uiTarget', () => this.uiTarget);
+        this.events.function('cameraFrames.mainTransform', () => this.getMainCameraTransform());
 
         // 提供: 現在のレンダーボックスに基づくアスペクトロック情報
         this.events.function('cameraFrames.aspectLock', () => {
@@ -902,6 +1138,13 @@ export class CameraFramesController {
         // near clip override (CAMERA FRAMES 有効時にのみ適用)
         this.events.function('cameraFrames.nearClip', () => this.state.nearClip ?? null);
         this.events.on('cameraFrames.setNearClip', (value: number | null) => this.setNearClip(value));
+
+        // main camera pose editing (CAMERA FRAMES OFF 時の UI ターゲット切替で使用)
+        this.events.on('cameraFrames.setMainCameraPosition', (pos: { x: number; y: number; z: number }) => this.setMainCameraPosition(pos));
+        this.events.on('cameraFrames.setMainCameraRotation', (rot: { yaw: number; pitch: number; roll: number; lockRoll?: boolean; }) => this.setMainCameraRotation(rot));
+        this.events.on('cameraFrames.setMainCameraPose', (transform: { position: { x: number; y: number; z: number; }; rotation: { yaw: number; pitch: number; roll: number; }; lockRoll?: boolean; }) => this.setMainCameraPose(transform));
+        this.events.on('cameraFrames.nudgeMainCamera', (delta: { right?: number; up?: number; forward?: number; scale?: number; }) => this.nudgeMainCamera(delta));
+        this.events.on('cameraFrames.setMainNavMode', (mode: 'orbit' | 'fpv') => this.setMainNavMode(mode));
 
         // render box scale and anchor
         this.events.on('cameraFrames.setScalePct', (values: { x?: number; y?: number }) => {
@@ -1124,6 +1367,7 @@ export class CameraFramesController {
             if (value === this.state.enabled) return;
             const currentPose = this.captureCameraPose();
 
+            this.setUiTarget('viewport');
             if (value) {
                 // OFF -> ON
                 this.viewportPoseRuntime = this.clonePoseSnapshot(currentPose);
@@ -1136,7 +1380,6 @@ export class CameraFramesController {
                 if (!this.state.mainCameraPose) {
                     this.state.mainCameraPose = this.clonePoseSnapshot(currentPose);
                 }
-                this.mainCameraSelected = false;
                 this.frustumDragState = null;
                 this.state.enabled = true;
                 // CAMERA FRAMES 有効時はカメラフレーミングと水平画角をロック
@@ -1172,7 +1415,6 @@ export class CameraFramesController {
                 if (currentPose) {
                     this.state.mainCameraPose = this.clonePoseSnapshot(currentPose);
                 }
-                this.mainCameraSelected = false;
                 this.state.enabled = false;
                 // ビューポート表示用にフラスタムを再計算しておく
                 this.rebuildBaseFrustum();
@@ -2199,6 +2441,7 @@ export class CameraFramesController {
 
     private onHover(e: PointerEvent) {
         this.lastPointer = { x: e.clientX, y: e.clientY };
+        this.ensureUiTargetAvailability();
 
         const rect = this.canvasContainer.getBoundingClientRect();
         const px = e.clientX - rect.left;
@@ -2252,6 +2495,7 @@ export class CameraFramesController {
             this.overlay.style.pointerEvents = 'none';
             return;
         }
+        this.ensureUiTargetAvailability();
         const rect = this.canvasContainer.getBoundingClientRect();
         const px = this.lastPointer.x - rect.left;
         const py = this.lastPointer.y - rect.top;
@@ -2403,7 +2647,7 @@ export class CameraFramesController {
         );
         const planeNormal = basis?.forward ?? this.scene.camera.entity.forward.clone();
         const startHit = this.intersectPointerWithPlane(e.clientX, e.clientY, planePoint, planeNormal);
-        this.mainCameraSelected = true;
+        this.setUiTarget('main');
         this.frustumDragState = {
             pointerId: e.pointerId,
             startPointer: { x: e.clientX, y: e.clientY },
