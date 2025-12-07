@@ -43,6 +43,7 @@ class Scene {
     gizmoLayer: Layer;
     modelLightingLayer: Layer;
     ambientFillLights: Entity[] = [];
+    defaultAmbient = 0.5;
     sceneState = [new SceneState(), new SceneState()];
     elements: Element[] = [];
     boundStorage = new BoundingBox();
@@ -245,6 +246,7 @@ class Scene {
 
         // Ambient fallback (環境マップ未設定時の視認性確保)
         this.app.scene.ambientLight.set(0.5, 0.5, 0.5);
+        this.defaultAmbient = this.app.scene.ambientLight.r ?? this.defaultAmbient;
         events.on('lighting.setAmbient', (value: number) => {
             this.setAmbient(value, true);
         });
@@ -424,6 +426,42 @@ class Scene {
         models.forEach((model) => {
             this.remove(model);
             model.destroy();
+        });
+    }
+
+    docSerializeLighting() {
+        const lights = this.getElementsByType(ElementType.other)
+        .filter((element): element is LightRig => element instanceof LightRig)
+        .map(light => light.docSerialize());
+
+        return {
+            ambient: this.app.scene.ambientLight.r ?? this.defaultAmbient,
+            lights
+        };
+    }
+
+    docDeserializeLighting(doc: any) {
+        const ambient = (typeof doc?.ambient === 'number' && isFinite(doc.ambient)) ? doc.ambient : this.defaultAmbient;
+        this.applyAmbient(ambient);
+
+        const lights = Array.isArray(doc?.lights) ? doc.lights : [];
+        const rigs = this.getElementsByType(ElementType.other)
+        .filter((element): element is LightRig => element instanceof LightRig);
+
+        if (lights.length === 0) {
+            // データが無い場合は既定状態を適用するだけ
+            rigs.forEach((rig) => {
+                rig.resetDirection();
+                rig.applyStateDirect(rig.visible, rig.intensity);
+            });
+            return;
+        }
+
+        rigs.forEach((rig, i) => {
+            const payload = lights[Math.min(i, lights.length - 1)];
+            if (payload) {
+                rig.docDeserialize(payload);
+            }
         });
     }
 

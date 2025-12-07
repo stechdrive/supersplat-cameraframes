@@ -1,15 +1,18 @@
+import { ElementType } from './element';
 import { Events } from './events';
+import { Model } from './model';
 import { recentFiles } from './recent-files';
 import { Scene } from './scene';
 import { DownloadWriter, FileStreamWriter } from './serialize/writer';
+import { ZipReader } from './serialize/zip-reader';
 import { ZipWriter } from './serialize/zip-writer';
 import { Splat } from './splat';
 import { serializePly } from './splat-serialize';
 import { Transform } from './transform';
 import { localize } from './ui/localization';
 
-const DOC_VERSION = 1;
-const SUPPORTED_DOC_VERSIONS = new Set([0, 1]);
+const DOC_VERSION = 2;
+const SUPPORTED_DOC_VERSIONS = new Set([0, 1, 2]);
 
 // ts compiler and vscode find this type, but eslint does not
 type FilePickerAcceptType = unknown;
@@ -85,21 +88,12 @@ const registerDocEvents = (scene: Scene, events: Events) => {
     };
 
     // load the document from the given file
-    const loadDocument = async (file: File) => {
+    const loadDocument = async (file: Blob | ArrayBuffer) => {
         events.fire('startSpinner');
         try {
-            // read the document
-            /* global JSZip */
-            // @ts-ignore
-            const zip = new JSZip();
-            await zip.loadAsync(file);
+            const zip = await ZipReader.from(file);
 
-            const documentFile = zip.file('document.json');
-            if (!documentFile) {
-                throw new Error('document.json not found in archive');
-            }
-
-            const documentText = await documentFile.async('text');
+            const documentText = await zip.text('document.json');
             let document: any;
             try {
                 document = JSON.parse(documentText);
@@ -116,36 +110,47 @@ const registerDocEvents = (scene: Scene, events: Events) => {
                 throw new Error('Invalid document: splats are missing');
             }
 
-            // stage all splats before mutating current scene, so failure keeps the previous state
+            // stage assets before mutating current scene
             const stagedSplats: { splat: Splat, settings: any }[] = [];
             for (let i = 0; i < document.splats.length; ++i) {
                 const filename = `splat_${i}.ply`;
                 const splatSettings = document.splats[i];
 
-                const plyFile = zip.file(filename);
-                if (!plyFile) {
-                    throw new Error(`Missing ${filename} in archive`);
-                }
-
-                const contents = await plyFile.async('blob');
-                const url = URL.createObjectURL(contents);
+                const contents = await zip.blob(filename);
                 const loaded = await scene.assetLoader.load({
-                    url,
-                    filename
+                    filename,
+                    contents
                 });
                 if (!(loaded instanceof Splat)) {
                     throw new Error('document contains a non-splat asset');
                 }
-                const splat = loaded as Splat;
-                URL.revokeObjectURL(url);
+                stagedSplats.push({ splat: loaded as Splat, settings: splatSettings });
+            }
 
-                stagedSplats.push({ splat, settings: splatSettings });
+            const stagedModels: { model: Model, settings: any }[] = [];
+            const modelDocs = Array.isArray(document?.models) ? document.models : [];
+            for (let i = 0; i < modelDocs.length; ++i) {
+                const modelDoc = modelDocs[i] ?? {};
+                const modelPath = typeof modelDoc.filename === 'string' ? modelDoc.filename : `models/model_${i}.glb`;
+                const contents = await zip.blob(modelPath);
+                const loaded = await scene.assetLoader.load({
+                    filename: modelPath.split('/').pop() ?? modelPath,
+                    contents
+                });
+                if (!(loaded instanceof Model)) {
+                    throw new Error('document contains a non-model asset');
+                }
+                stagedModels.push({ model: loaded as Model, settings: modelDoc });
             }
 
             // at this point staging succeeded, apply to scene
             resetScene();
 
             scene.renderSystem.freeze();
+            stagedModels.forEach(({ model, settings }) => {
+                scene.add(model);
+                model.docDeserialize(settings ?? {});
+            });
             stagedSplats.forEach(({ splat, settings }) => {
                 scene.add(splat);
                 splat.docDeserialize(settings ?? {});
@@ -163,6 +168,7 @@ const registerDocEvents = (scene: Scene, events: Events) => {
             events.invoke('docDeserialize.view', document.view ?? {});
             events.invoke('docDeserialize.cameraFrames', document.cameraFrames ?? null);
             scene.camera.docDeserialize(document.camera ?? null);
+            scene.docDeserializeLighting(document.lighting ?? null);
 
             // refresh the pivot to reflect the loaded transform
             const currentSelection = events.invoke('selection');
@@ -186,11 +192,56 @@ const registerDocEvents = (scene: Scene, events: Events) => {
         }
     };
 
+    const getModelBlob = async (model: Model) => {
+        const file = model.asset?.file as any;
+
+        if (file?.contents instanceof Blob) {
+            return file.contents;
+        }
+
+        if (file?.contents instanceof Response) {
+            return await file.contents.clone().blob();
+        }
+
+        if (file?.url) {
+            const response = await fetch(file.url);
+            if (!response.ok) {
+                throw new Error(`Failed to fetch model data: ${response.status} ${response.statusText}`);
+            }
+            return await response.blob();
+        }
+
+        throw new Error(`Model source not available for '${model.name}'`);
+    };
+
+    const writeBlobToZip = async (zipWriter: ZipWriter, filename: string, blob: Blob) => {
+        await zipWriter.start(filename);
+        const reader = blob.stream().getReader();
+        while (true) {
+            const { value, done } = await reader.read();
+            if (done) {
+                break;
+            }
+            if (value) {
+                await zipWriter.write(value);
+            }
+        }
+    };
+
     const saveDocument = async (options: { stream?: FileSystemWritableFileStream, filename?: string }) => {
         events.fire('startSpinner');
 
         try {
             const splats = events.invoke('scene.allSplats') as Splat[];
+            const models = scene.getElementsByType(ElementType.model) as Model[];
+
+            const modelDocs = models.map((model, i) => {
+                const serialized = model.docSerialize();
+                return {
+                    ...serialized,
+                    filename: `models/model_${i}.glb`
+                };
+            });
 
             const document = {
                 version: DOC_VERSION,
@@ -199,7 +250,9 @@ const registerDocEvents = (scene: Scene, events: Events) => {
                 poseSets: events.invoke('docSerialize.poseSets'),
                 timeline: events.invoke('docSerialize.timeline'),
                 cameraFrames: events.invoke('docSerialize.cameraFrames'),
-                splats: splats.map(s => s.docSerialize())
+                splats: splats.map(s => s.docSerialize()),
+                models: modelDocs,
+                lighting: scene.docSerializeLighting()
             };
 
             const serializeSettings = {
@@ -217,6 +270,10 @@ const registerDocEvents = (scene: Scene, events: Events) => {
             for (let i = 0; i < splats.length; ++i) {
                 await zipWriter.start(`splat_${i}.ply`);
                 await serializePly([splats[i]], serializeSettings, zipWriter);
+            }
+            for (let i = 0; i < models.length; ++i) {
+                const blob = await getModelBlob(models[i]);
+                await writeBlobToZip(zipWriter, modelDocs[i].filename, blob);
             }
             await zipWriter.close();
             await writer.close();
@@ -244,14 +301,17 @@ const registerDocEvents = (scene: Scene, events: Events) => {
     // NOTE: on chrome it's possible to get the FileSystemFileHandle from the DataTransferItem
     // (which would result in more seamless user experience), but this is not yet supported in
     // other browsers.
-    events.function('doc.load', async (file: File, handle?: FileSystemFileHandle) => {
+    events.function('doc.load', async (file: File | Blob | ArrayBuffer, handle?: FileSystemFileHandle) => {
         if (!events.invoke('scene.empty') && !await getResetConfirmation()) {
             return false;
         }
 
         await loadDocument(file);
 
-        events.fire('doc.setName', file.name);
+        const fileName = (file as File)?.name ?? handle?.name;
+        if (fileName) {
+            events.fire('doc.setName', fileName);
+        }
 
         if (handle) {
             documentFileHandle = handle;
@@ -268,6 +328,7 @@ const registerDocEvents = (scene: Scene, events: Events) => {
             fileSelector.show(async (file?: File) => {
                 if (file) {
                     await loadDocument(file);
+                    events.fire('doc.setName', file.name);
                 }
             });
         } else {

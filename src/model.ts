@@ -164,6 +164,40 @@ class Model extends Element {
         result.set(position, this.entity.getRotation(), this.entity.getLocalScale());
     }
 
+    docSerialize() {
+        const pack3 = (v: Vec3) => [v.x, v.y, v.z];
+        const pack4 = (q: Quat) => [q.x, q.y, q.z, q.w];
+
+        return {
+            filename: (this.asset?.file as any)?.filename ?? this.name ?? 'model.glb',
+            name: this.name,
+            visible: this.visible,
+            transform: {
+                position: pack3(this.entity.getLocalPosition()),
+                rotation: pack4(this.entity.getLocalRotation()),
+                scale: pack3(this.entity.getLocalScale())
+            }
+        };
+    }
+
+    docDeserialize(doc: any) {
+        if (!doc) {
+            return;
+        }
+
+        const { name, visible = true } = doc;
+        const transform = doc.transform ?? {};
+        const position = Array.isArray(transform.position) ? new Vec3(transform.position) : this.entity.getLocalPosition().clone();
+        const rotation = Array.isArray(transform.rotation) ? new Quat(transform.rotation) : this.entity.getLocalRotation().clone();
+        const scale = Array.isArray(transform.scale) ? new Vec3(transform.scale) : this.entity.getLocalScale().clone();
+
+        if (name) {
+            this.name = name;
+        }
+        this.move(position, rotation, scale);
+        this.visible = visible;
+    }
+
     private markBoundDirty() {
         this.boundDirty = true;
         if (this.scene) {

@@ -25,10 +25,11 @@ class AssetLoader {
     }
 
     private async loadContainer(assetSource: AssetSource) {
-        const url = assetSource.contents ? URL.createObjectURL(assetSource.contents) : assetSource.url ?? assetSource.filename;
+        const sourceBlob = assetSource.contents instanceof Response ? await assetSource.contents.blob() : assetSource.contents;
+        const url = sourceBlob ? URL.createObjectURL(sourceBlob) : assetSource.url ?? assetSource.filename;
         const asset = new Asset(assetSource.filename || assetSource.url, 'container', {
             url,
-            filename: assetSource.filename
+            filename: assetSource.filename ?? assetSource.url
         });
         this.app.assets.add(asset);
 
@@ -40,7 +41,7 @@ class AssetLoader {
             });
             return asset;
         } finally {
-            if (assetSource.contents && url) {
+            if (sourceBlob && url) {
                 URL.revokeObjectURL(url);
             }
         }
