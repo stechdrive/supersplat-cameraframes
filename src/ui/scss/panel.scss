@@ -28,6 +28,16 @@
             flex-grow: 1;
             text-transform: uppercase;
         }
+
+        & > .panel-header-label-inline {
+            color: $text-primary;
+            font-weight: bold;
+            flex-grow: 0;
+            flex-shrink: 0;
+            text-transform: none;
+            white-space: nowrap;
+            margin-right: 6px;
+        }
     }
 
     .panel-header-button {

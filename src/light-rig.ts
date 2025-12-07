@@ -91,11 +91,19 @@ class LightRig extends Element {
         this.scene.forceRender = true;
     }
 
+    set visible(value: boolean) {
+        this.setEnabled(!!value);
+    }
+
+    get visible() {
+        return this.light?.light?.enabled ?? true;
+    }
+
     getPivot(_mode: 'center' | 'boundCenter', _selection: boolean, result: any) {
         result.set(this.entity.getLocalPosition(), this.entity.getLocalRotation(), this.entity.getLocalScale());
     }
 
-    get worldBound() {
+    get worldBound(): null {
         return null;
     }
 

@@ -1,4 +1,4 @@
-import { Container, Element, Label, SliderInput } from '@playcanvas/pcui';
+import { Container, Element, Label, NumericInput } from '@playcanvas/pcui';
 
 import { Events } from '../events';
 import { localize } from './localization';
@@ -131,14 +131,42 @@ class ScenePanel extends Container {
         });
         lightReset.dom.appendChild(createSvg(cameraResetSvg));
 
-        const lightIntensity = new SliderInput({
-            class: 'panel-header-slider',
+        const intensityRow = new Container({
+            class: 'panel-header'
+        });
+
+        const lightLabelInline = new Label({
+            text: 'ライト',
+            class: 'panel-header-label-inline'
+        });
+
+        const lightInput = new NumericInput({
             min: 0,
             max: 2,
             step: 0.05,
             precision: 2,
-            value: 0.8
+            value: 0.8,
+            class: 'panel-header-slider'
         });
+
+        const ambientLabel = new Label({
+            text: '環境光',
+            class: 'panel-header-label-inline'
+        });
+
+        const ambientInput = new NumericInput({
+            min: 0,
+            max: 2,
+            step: 0.05,
+            precision: 2,
+            value: (events.invoke('lighting.ambient') as number) ?? 0.3,
+            class: 'panel-header-slider'
+        });
+
+        intensityRow.append(lightLabelInline);
+        intensityRow.append(lightInput);
+        intensityRow.append(ambientLabel);
+        intensityRow.append(ambientInput);
 
         lightHeader.append(lightIcon);
         lightHeader.append(lightLabel);
@@ -158,25 +186,31 @@ class ScenePanel extends Container {
             events.fire('modelLight.resetDirection');
         });
 
-        lightIntensity.on('change', (value: number) => {
-            events.fire('modelLight.setIntensity', value);
-        });
-
         tooltips.register(lightToggle, 'モデルライトのON/OFF', 'top');
         tooltips.register(lightSelect, 'ライトを選択して回転を編集', 'top');
         tooltips.register(lightReset, 'ライト方向をリセット', 'top');
+        tooltips.register(lightInput, 'ライト強度', 'top');
+        tooltips.register(ambientInput, '環境光強度', 'top');
 
         this.append(sceneHeader);
         this.append(splatListContainer);
         this.append(meshListContainer);
         this.append(lightHeader);
-        this.append(lightIntensity);
+        this.append(intensityRow);
         this.append(transformHeader);
         this.append(new Transform(events));
         this.append(new Element({
             class: 'panel-header',
             height: 20
         }));
+
+        lightInput.on('change', (value: number) => {
+            events.fire('modelLight.setIntensity', value);
+        });
+
+        ambientInput.on('change', (value: number) => {
+            events.fire('lighting.setAmbient', value);
+        });
     }
 }
 

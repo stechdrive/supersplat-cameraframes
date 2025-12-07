@@ -41,6 +41,7 @@ class Scene {
     overlayLayer: Layer;
     gizmoLayer: Layer;
     modelLightingLayer: Layer;
+    ambientFillLights: Entity[] = [];
     sceneState = [new SceneState(), new SceneState()];
     elements: Element[] = [];
     boundStorage = new BoundingBox();
@@ -239,6 +240,16 @@ class Scene {
 
         // Ambient fallback (環境マップ未設定時の視認性確保)
         this.app.scene.ambientLight.set(0.3, 0.3, 0.3);
+        events.on('lighting.setAmbient', (value: number) => {
+            const v = Math.max(0, value ?? 0);
+            this.app.scene.ambientLight.set(v, v, v);
+            const fill = Math.max(0, v * 0.35);
+            this.ambientFillLights.forEach(light => {
+                light.light.intensity = fill;
+            });
+            this.forceRender = true;
+        });
+        events.function('lighting.ambient', () => this.app.scene.ambientLight.r ?? 0.3);
 
         this.dataProcessor = new DataProcessor(this.app.graphicsDevice);
         this.assetLoader = new AssetLoader(this.app, events, this.app.graphicsDevice.maxAnisotropy);
@@ -249,6 +260,9 @@ class Scene {
 
         this.cameraRoot = new Entity('cameraRoot');
         this.app.root.addChild(this.cameraRoot);
+
+        // 環境光補助ライト（contentRoot 作成後に生成）
+        this.createAmbientFillLights();
 
         this.renderSystem = new SplatRenderSystem(this);
 
@@ -276,6 +290,43 @@ class Scene {
         this.add(this.outline);
         this.underlay = new Underlay();
         this.add(this.underlay);
+    }
+
+    private createAmbientFillLights() {
+        // contentRoot が未初期化の場合は何もしない
+        if (!this.contentRoot) {
+            return;
+        }
+
+        // 既存をクリーンアップ
+        this.ambientFillLights.forEach(light => {
+            light.destroy();
+        });
+        this.ambientFillLights.length = 0;
+
+        const targetLayers = this.modelLightingLayer ? [this.modelLightingLayer.id] : undefined;
+        const makeLight = (name: string, angles: { x: number; y: number; z: number; }, intensity: number) => {
+            const ent = new Entity(name);
+            ent.addComponent('light', {
+                type: 'directional',
+                castShadows: false,
+                color: new Color(1, 1, 1),
+                intensity
+            });
+            if (targetLayers) {
+                ent.light.layers = targetLayers.slice();
+            }
+            ent.setEulerAngles(angles.x, angles.y, angles.z);
+            this.contentRoot.addChild(ent);
+            return ent;
+        };
+
+        const base = this.app.scene.ambientLight.r ?? 0.3;
+        // 上下から弱く当てる「なんちゃってヘミスフィア」
+        this.ambientFillLights = [
+            makeLight('ambientFillUp', { x: -60, y: 30, z: 0 }, base * 0.35),
+            makeLight('ambientFillDown', { x: 60, y: -30, z: 0 }, base * 0.35)
+        ];
     }
 
     start() {

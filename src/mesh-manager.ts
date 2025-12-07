@@ -88,18 +88,19 @@ class MeshManager {
     }
 
     private applyLayers(model: Model) {
-        if (!this.modelLightingLayerId) {
-            return;
-        }
         const layers: number[] = [];
-        if (Array.isArray((model.entity as any)?.render?.layers)) {
-            layers.push(...(model.entity as any).render.layers);
-        } else if (this.worldLayerId !== null) {
-            layers.push(this.worldLayerId);
-        }
-        if (!layers.includes(this.modelLightingLayerId)) {
+
+        // モデル描画はライト付き1パスに統一し、上書き・二重描画を防ぐ
+        if (this.modelLightingLayerId !== null) {
             layers.push(this.modelLightingLayerId);
+        } else {
+            if (Array.isArray((model.entity as any)?.render?.layers)) {
+                layers.push(...(model.entity as any).render.layers);
+            } else if (this.worldLayerId !== null) {
+                layers.push(this.worldLayerId);
+            }
         }
+
         model.setLayers(layers);
     }
 

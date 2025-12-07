@@ -1036,8 +1036,9 @@ class Camera extends Element {
         }
 
         const worldLayer = scene.app.scene.layers.getLayerByName('World');
+        const layersToPick = [worldLayer, scene.modelLightingLayer].filter((layer) => !!layer);
         this.picker.resize(scene.targetSize.width, scene.targetSize.height);
-        this.picker.prepare(this.entity.camera, this.scene.app.scene, worldLayer ? [worldLayer] : undefined);
+        this.picker.prepare(this.entity.camera, this.scene.app.scene, layersToPick.length > 0 ? layersToPick : undefined);
         const selection = this.picker.getSelection(sx, sy);
         for (let i = 0; i < selection.length; ++i) {
             const mesh = selection[i];
@@ -1091,6 +1092,7 @@ class Camera extends Element {
     pickPrep(splat: Splat, op: 'add' | 'remove' | 'set') {
         const { width, height } = this.scene.targetSize;
         const worldLayer = this.scene.app.scene.layers.getLayerByName('World');
+        const layersToPick = [worldLayer, this.scene.modelLightingLayer].filter((layer) => !!layer);
 
         const device = this.scene.graphicsDevice;
         const events = this.scene.events;
@@ -1110,11 +1112,11 @@ class Camera extends Element {
             const oldBlend = material.blendType;
             material.blendType = BLEND_NONE;
             material.update();
-            this.picker.prepare(this.entity.camera, this.scene.app.scene, [worldLayer]);
+            this.picker.prepare(this.entity.camera, this.scene.app.scene, layersToPick);
             material.blendType = oldBlend;
             material.update();
         } else {
-            this.picker.prepare(this.entity.camera, this.scene.app.scene, [worldLayer]);
+            this.picker.prepare(this.entity.camera, this.scene.app.scene, layersToPick);
         }
     }
 

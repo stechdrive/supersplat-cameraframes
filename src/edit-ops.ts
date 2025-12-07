@@ -1,6 +1,7 @@
 import { Color, Mat4 } from 'playcanvas';
 
 import { Model } from './model';
+import { LightRig } from './light-rig';
 import { Pivot } from './pivot';
 import { Scene } from './scene';
 import { Splat } from './splat';
@@ -198,11 +199,11 @@ class ResetOp extends StateOp {
 // op for modifying a splat transform
 class EntityTransformOp {
     name = 'entityTransform';
-    splat: Splat | Model;
+    splat: Splat | Model | LightRig;
     oldt: Transform;
     newt: Transform;
 
-    constructor(options: { splat: Splat | Model, oldt: Transform, newt: Transform }) {
+    constructor(options: { splat: Splat | Model | LightRig, oldt: Transform, newt: Transform }) {
         this.splat = options.splat;
         this.oldt = options.oldt;
         this.newt = options.newt;
