@@ -771,9 +771,11 @@ export class CameraFramesController {
                     }
                 } else {
                     this.viewportPoseRuntime = pose;
+                    this.emitViewportLensChanged();
                 }
             }
             if (!this.state.enabled) {
+                this.emitViewportLensChanged();
                 return;
             }
             this.syncCameraFrustum();
@@ -795,6 +797,8 @@ export class CameraFramesController {
         this.events.function('cameraFrames.enabled', () => this.state.enabled);
         this.events.on('cameraFrames.setEnabled', (value: boolean) => this.setEnabled(value));
         this.events.on('cameraFrames.toggleEnabled', () => this.setEnabled(!this.state.enabled));
+        this.events.function('cameraFrames.viewportLens', () => this.getViewportLensState());
+        this.events.on('cameraFrames.setViewportLens', (mm: number) => this.setViewportLensMm(mm));
 
         // 提供: 現在のレンダーボックスに基づくアスペクトロック情報
         this.events.function('cameraFrames.aspectLock', () => {
@@ -1143,6 +1147,7 @@ export class CameraFramesController {
                 this.syncCameraFrustum();
                 this.requestRender();
                 this.scheduleNearClipGuard();
+                this.emitViewportLensChanged();
             } else {
                 // ON -> OFF
                 if (currentPose) {
@@ -1177,6 +1182,7 @@ export class CameraFramesController {
                 }
                 // 無効化中は追従ロジックを停止するが状態は保持
                 this.requestRender();
+                this.emitViewportLensChanged();
             }
             this.events.fire('camera.setLockFraming', this.state.enabled);
             this.events.fire('cameraFrames.enabled', this.state.enabled);
@@ -1853,6 +1859,56 @@ export class CameraFramesController {
             minEqMm,
             maxEqMm
         };
+    }
+
+    private viewportLensRange() {
+        const rb = this.state.renderBox;
+        const crop = this.cropFactor(rb);
+        const minEqMm = this.eqMmForFov(HFOV_MAX, crop);
+        const maxEqMm = this.eqMmForFov(HFOV_MIN, crop);
+        return {
+            min: Math.min(minEqMm, maxEqMm),
+            max: Math.max(minEqMm, maxEqMm)
+        };
+    }
+
+    private getViewportLensMm(): number | null {
+        const rb = this.state.renderBox;
+        const crop = this.cropFactor(rb);
+        const fov = (typeof this.viewportFovRuntime === 'number' && isFinite(this.viewportFovRuntime)) ? this.viewportFovRuntime : this.events.invoke('camera.fov');
+        if (typeof fov !== 'number' || !isFinite(fov)) {
+            return null;
+        }
+        return this.eqMmForFov(fov, crop);
+    }
+
+    private setViewportLensMm(mm: number) {
+        if (this.state.enabled) {
+            return;
+        }
+        const range = this.viewportLensRange();
+        const clamped = Math.min(range.max, Math.max(range.min, mm));
+        const rb = this.state.renderBox;
+        const crop = this.cropFactor(rb);
+        const hfovDeg = this.eqMmToHfov(clamped, crop);
+        this.viewportFovRuntime = hfovDeg;
+        this.events.fire('camera.setFov', hfovDeg);
+        this.emitViewportLensChanged();
+    }
+
+    private getViewportLensState() {
+        const range = this.viewportLensRange();
+        const mm = this.getViewportLensMm();
+        return {
+            enabled: !this.state.enabled,
+            mm: mm ?? range.max,
+            min: range.min,
+            max: range.max
+        };
+    }
+
+    private emitViewportLensChanged() {
+        this.events.fire('cameraFrames.viewportLensChanged', this.getViewportLensState());
     }
 
     private updateFovInfo() {

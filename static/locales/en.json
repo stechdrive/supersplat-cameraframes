@@ -110,6 +110,7 @@
     "panel.camera-frames.mask": "Mask Outside Frame",
     "panel.camera-frames.mask.opacity": "Opacity (%)",
     "panel.camera-frames.near-clip": "Near Clip",
+    "panel.camera-frames.viewport-lens": "Viewport Lens (mm)",
     "panel.camera-frames.transform.title": "Camera Transform",
     "panel.camera-frames.transform.roll-lock": "Roll Lock",
     "panel.camera-frames.transform.yaw": "Yaw",

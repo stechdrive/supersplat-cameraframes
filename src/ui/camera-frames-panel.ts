@@ -170,6 +170,7 @@ class CameraFramesPanel extends Panel {
         let gridOverlayEnabled = false;
         let modelLayerEnabled = false;
         let navMode: 'orbit' | 'fpv' = 'orbit';
+        let viewportLensEnabled = false;
         let altSlow = false;
         let lastPose = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0 };
         let transformEditing = false;
@@ -304,6 +305,17 @@ class CameraFramesPanel extends Panel {
         });
         fovRow.append(fovLabel);
         fovRow.append(fovSlider);
+        const viewportLensRow = new Container({ class: 'control-parent' });
+        const viewportLensLabel = new Label({ class: 'control-label', text: localize('panel.camera-frames.viewport-lens') });
+        const viewportLensSlider = new SliderInput({
+            class: 'control-element',
+            min: 10,
+            max: 200,
+            precision: 1,
+            value: 35
+        });
+        viewportLensRow.append(viewportLensLabel);
+        viewportLensRow.append(viewportLensSlider);
 
         // canvas zoom
         const canvasZoomRow = new Container({ class: 'control-parent' });
@@ -422,6 +434,7 @@ class CameraFramesPanel extends Panel {
             const current = lastFovInfo;
             const sliderEnabled = framesEnabled && !!current;
             fovSlider.enabled = sliderEnabled;
+            viewportLensSlider.enabled = !framesEnabled;
             if (!sliderEnabled || !current) {
                 suppress = false;
                 return;
@@ -451,6 +464,10 @@ class CameraFramesPanel extends Panel {
         fovSlider.on('change', (value: number) => {
             if (suppress) return;
             events.fire('cameraFrames.setEqFovMm', value);
+        });
+        viewportLensSlider.on('change', (value: number) => {
+            if (suppress) return;
+            events.fire('cameraFrames.setViewportLens', value);
         });
         canvasZoomInput.on('change', (value: number) => {
             if (suppress) return;
@@ -830,6 +847,7 @@ class CameraFramesPanel extends Panel {
         this.content.append(frameScaleRow);
         this.content.append(maskRow);
         this.content.append(fovRow);
+        this.content.append(viewportLensRow);
         this.content.append(camTransformHeader);
         this.content.append(camTransformBody);
 
@@ -966,6 +984,25 @@ class CameraFramesPanel extends Panel {
             updateFovUI(info);
         });
 
+        const applyViewportLensState = (info?: { enabled: boolean; mm: number; min: number; max: number }) => {
+            suppress = true;
+            const state = info ?? (events.invoke('cameraFrames.viewportLens') as any);
+            if (state) {
+                viewportLensEnabled = !!state.enabled;
+                viewportLensSlider.enabled = viewportLensEnabled;
+                viewportLensSlider.min = state.min ?? viewportLensSlider.min;
+                viewportLensSlider.max = state.max ?? viewportLensSlider.max;
+                if (typeof state.mm === 'number' && isFinite(state.mm)) {
+                    viewportLensSlider.value = state.mm;
+                }
+            } else {
+                viewportLensEnabled = false;
+                viewportLensSlider.enabled = false;
+            }
+            suppress = false;
+        };
+        events.on('cameraFrames.viewportLensChanged', (info: any) => applyViewportLensState(info));
+
         events.on('camera.navMode', (mode: 'orbit' | 'fpv') => {
             navMode = mode;
             orbitIcon.class[mode === 'orbit' ? 'add' : 'remove']('active');
@@ -999,6 +1036,7 @@ class CameraFramesPanel extends Panel {
         if (initialFovInfo) {
             updateFovUI(initialFovInfo);
         }
+        applyViewportLensState();
 
         const initialNav = events.invoke('camera.navMode') as ('orbit' | 'fpv');
         if (initialNav) {

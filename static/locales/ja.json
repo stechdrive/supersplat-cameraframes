@@ -110,6 +110,7 @@
     "panel.camera-frames.mask": "フレーム外マスク",
     "panel.camera-frames.mask.opacity": "不透明度(%)",
     "panel.camera-frames.near-clip": "ニアクリップ",
+    "panel.camera-frames.viewport-lens": "ビューポートレンズ (mm)",
     "panel.camera-frames.transform.title": "カメラ座標操作",
     "panel.camera-frames.transform.roll-lock": "ロール固定",
     "panel.camera-frames.transform.yaw": "Yaw",
