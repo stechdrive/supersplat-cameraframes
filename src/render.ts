@@ -105,7 +105,7 @@ const registerRenderEvents = (scene: Scene, events: Events) => {
             const worldLayer = scene.app.scene.layers.getLayerByName('World');
 
             if (overlaysOnly) {
-                [scene.backgroundLayer, scene.shadowLayer, scene.overlayLayer, scene.gizmoLayer, worldLayer].forEach((layer) => {
+                [scene.backgroundLayer, scene.shadowLayer, scene.overlayLayer, scene.gizmoLayer, scene.modelLightingLayer, worldLayer].forEach((layer) => {
                     if (!layer) return;
                     rememberLayer(layer);
                     layer.enabled = false;

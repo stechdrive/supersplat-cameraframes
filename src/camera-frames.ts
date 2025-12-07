@@ -2,6 +2,7 @@ import { cameraFramesVersion } from './camera-frames-version';
 import { ElementType } from './element';
 import { Events } from './events';
 import { hitTestGizmo } from './gizmo-hit';
+import { Model } from './model';
 import { PngCompressor } from './png-compressor';
 import { exportPsd } from './psd-export';
 import { Scene } from './scene';
@@ -50,6 +51,7 @@ export type CameraFramesState = {
     exportName?: string;
     exportFormat?: ExportFormat;
     exportGridOverlay?: boolean;
+    exportModelLayers?: boolean;
 };
 
 type Viewport = { vw: number; vh: number; };
@@ -139,7 +141,8 @@ export class CameraFramesController {
         nearClip: null,
         exportName: 'yc4_00_000_CGLO',
         exportFormat: 'psd',
-        exportGridOverlay: false
+        exportGridOverlay: false,
+        exportModelLayers: false
     };
     private selectedId: string = null;
     private compressor: PngCompressor | null = null;
@@ -457,6 +460,13 @@ export class CameraFramesController {
             const next = !!value;
             if (this.state.exportGridOverlay === next) return;
             this.state.exportGridOverlay = next;
+            this.events.fire('cameraFrames.stateChanged', this.snapshot());
+        });
+
+        this.events.on('cameraFrames.setExportModelLayers', (value: boolean) => {
+            const next = !!value;
+            if (this.state.exportModelLayers === next) return;
+            this.state.exportModelLayers = next;
             this.events.fire('cameraFrames.stateChanged', this.snapshot());
         });
 
@@ -2106,6 +2116,103 @@ export class CameraFramesController {
         return { grid, eyeLevel };
     }
 
+    private async renderModelLayers(width: number, height: number): Promise<Array<{ name: string; canvas: HTMLCanvasElement; }>> {
+        if (!this.state.exportModelLayers) {
+            return [];
+        }
+
+        const models = ((this.events.invoke('mesh.list') as Model[] | null) ?? []).filter((model) => {
+            return !!model && !!model.entity && model.visible && model.entity.enabled !== false;
+        });
+
+        if (models.length === 0) {
+            return [];
+        }
+
+        const overlays: Array<{ name: string; canvas: HTMLCanvasElement; }> = [];
+
+        const modelStates = models.map(model => ({
+            model,
+            enabled: model.entity.enabled
+        }));
+
+        const layers = this.scene.app.scene.layers;
+        const worldLayer = layers.getLayerByName('World');
+        const restoreLayers: Array<{ layer: any; enabled: boolean; }> = [];
+        const rememberLayer = (layer?: any) => {
+            if (!layer) return;
+            restoreLayers.push({ layer, enabled: layer.enabled });
+        };
+
+        const layersToDisable = [
+            worldLayer,
+            this.scene.overlayLayer,
+            this.scene.debugLayer,
+            this.scene.gizmoLayer,
+            this.scene.backgroundLayer,
+            this.scene.shadowLayer,
+            this.scene.exportOverlayLayer
+        ];
+        layersToDisable.forEach(rememberLayer);
+
+        const prevRenderFlags = { ...this.scene.renderFlags };
+        const prevGridVisible = this.scene.grid.visible;
+        const prevEyeVisible = this.scene.eyeLevel.visible;
+        const prevRenderOverlays = this.scene.camera.renderOverlays;
+
+        try {
+            layersToDisable.forEach((layer) => {
+                if (layer) {
+                    layer.enabled = false;
+                }
+            });
+
+            this.scene.renderFlags.forceGridOverlay = false;
+            this.scene.renderFlags.forceEyeLevelOverlay = false;
+            this.scene.renderFlags.eyeLevelLayerOverride = null;
+            this.scene.renderFlags.gridLayerOverride = null;
+            this.scene.renderFlags.hideBounds = true;
+            this.scene.grid.visible = false;
+            this.scene.eyeLevel.visible = false;
+            this.scene.camera.renderOverlays = false;
+
+            modelStates.forEach(({ model }) => {
+                model.entity.enabled = false;
+            });
+
+            for (const { model } of modelStates) {
+                model.entity.enabled = true;
+                const pixels = await this.events.invoke('render.offscreen', width, height, {
+                    unpremultiplyAlpha: true
+                }) as Uint8Array;
+                if (pixels && pixels.length > 0) {
+                    overlays.push({
+                        name: localize('panel.camera-frames.export.model-layer', { name: model.name ?? 'Model' }),
+                        canvas: this.canvasFromPixels(pixels, width, height)
+                    });
+                }
+                model.entity.enabled = false;
+            }
+        } finally {
+            modelStates.forEach(({ model, enabled }) => {
+                model.entity.enabled = enabled;
+            });
+            restoreLayers.forEach(({ layer, enabled }) => {
+                layer.enabled = enabled;
+            });
+            this.scene.renderFlags.forceGridOverlay = prevRenderFlags.forceGridOverlay;
+            this.scene.renderFlags.forceEyeLevelOverlay = prevRenderFlags.forceEyeLevelOverlay;
+            this.scene.renderFlags.eyeLevelLayerOverride = prevRenderFlags.eyeLevelLayerOverride;
+            this.scene.renderFlags.gridLayerOverride = prevRenderFlags.gridLayerOverride;
+            this.scene.renderFlags.hideBounds = prevRenderFlags.hideBounds;
+            this.scene.grid.visible = prevGridVisible;
+            this.scene.eyeLevel.visible = prevEyeVisible;
+            this.scene.camera.renderOverlays = prevRenderOverlays;
+        }
+
+        return overlays;
+    }
+
     private mergeOverlayCanvases(width: number, height: number, overlays: Array<HTMLCanvasElement | null | undefined>): HTMLCanvasElement | null {
         const valid = overlays.filter((layer): layer is HTMLCanvasElement => !!layer);
         if (valid.length === 0) {
@@ -2301,10 +2408,12 @@ export class CameraFramesController {
             const debugOverlays = await this.renderOverlayLayers(width, height);
 
             if (format === 'psd') {
+                const modelOverlays = await this.renderModelLayers(width, height);
                 const frameOverlays = this.renderFrameOverlaysByManagement(width, height);
                 const overlayLayers = [
                     ...(debugOverlays?.grid ? [{ name: localize('panel.camera-frames.export.grid-layer.grid'), canvas: debugOverlays.grid }] : []),
                     ...(debugOverlays?.eyeLevel ? [{ name: localize('panel.camera-frames.export.grid-layer.eye-level'), canvas: debugOverlays.eyeLevel }] : []),
+                    ...modelOverlays,
                     ...frameOverlays
                 ];
                 await this.renderPsd({
@@ -2370,7 +2479,8 @@ export class CameraFramesController {
             nearClip: this.state.nearClip,
             exportName: this.state.exportName,
             exportFormat: this.normalizeFormat(this.state.exportFormat),
-            exportGridOverlay: !!this.state.exportGridOverlay
+            exportGridOverlay: !!this.state.exportGridOverlay,
+            exportModelLayers: !!this.state.exportModelLayers
         };
     }
 
@@ -2381,6 +2491,7 @@ export class CameraFramesController {
             this.selectedId = this.state.frames.find(f => f.selected)?.id ?? null;
             this.state.nearClip = this.computeSafeNearClip(this.state.nearClip);
             this.state.exportGridOverlay = !!this.state.exportGridOverlay;
+            this.state.exportModelLayers = !!this.state.exportModelLayers;
             this.overlay.style.pointerEvents = 'none';
             this.rebuildBaseFrustum();
             if (this.state.enabled) {
@@ -2420,7 +2531,8 @@ export class CameraFramesController {
                 nearClip: null,
                 exportName: 'yc4_00_000_CGLO',
                 exportFormat: 'png',
-                exportGridOverlay: false
+                exportGridOverlay: false,
+                exportModelLayers: false
             };
             this.selectedId = null;
             this.rebuildBaseFrustum();
@@ -2439,6 +2551,7 @@ export class CameraFramesController {
         const exportName = typeof docState.exportName === 'string' ? docState.exportName : 'yc4_00_000_CGLO';
         const exportFormat = this.normalizeFormat(docState.exportFormat ?? 'psd');
         const exportGridOverlay = !!docState.exportGridOverlay;
+        const exportModelLayers = !!docState.exportModelLayers;
         const frames = (docState.frames ?? []).map((f: FrameState) => ({
             id: f.id,
             pos: { ...f.pos },
@@ -2526,7 +2639,8 @@ export class CameraFramesController {
             nearClip: (typeof docState.nearClip === 'number' && isFinite(docState.nearClip)) ? Math.max(1e-6, docState.nearClip) : null,
             exportName,
             exportFormat,
-            exportGridOverlay
+            exportGridOverlay,
+            exportModelLayers
         };
 
         this.state.nearClip = this.computeSafeNearClip(this.state.nearClip);

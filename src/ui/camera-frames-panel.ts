@@ -10,6 +10,7 @@ import exportSvg from './svg/export.svg';
 import newSvg from './svg/new.svg';
 import lockSvg from './svg/select-lock.svg';
 import orbitSvg from './svg/select-sphere.svg';
+import separateSvg from './svg/select-separate.svg';
 import unlockSvg from './svg/select-unlock.svg';
 
 type CameraFramesState = {
@@ -49,6 +50,7 @@ type CameraFramesState = {
     exportName?: string;
     exportFormat?: 'png' | 'psd';
     exportGridOverlay?: boolean;
+    exportModelLayers?: boolean;
 };
 
 type FovInfo = {
@@ -155,6 +157,7 @@ class CameraFramesPanel extends Panel {
         let framesEnabled = false;
         let rendering = false;
         let gridOverlayEnabled = false;
+        let modelLayerEnabled = false;
         let navMode: 'orbit' | 'fpv' = 'orbit';
         let altSlow = false;
         let lastPose = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0 };
@@ -332,18 +335,23 @@ class CameraFramesPanel extends Panel {
         gridToggle.dom.appendChild(createSvg(cameraResetSvg));
         gridToggle.dom.title = localize('panel.camera-frames.export.grid-tooltip');
         gridToggle.dom.setAttribute('aria-pressed', 'false');
-        const gridToggleWrapper = new Container({ class: 'format-grid-toggle' });
-        gridToggleWrapper.dom.style.display = 'flex';
-        gridToggleWrapper.dom.style.alignItems = 'center';
-        gridToggleWrapper.dom.style.gap = '6px';
-        gridToggleWrapper.append(gridToggle);
+        const modelLayerToggle = new Button({ class: ['icon-button', 'model-layer-toggle-button'], text: '' });
+        modelLayerToggle.dom.appendChild(createSvg(separateSvg));
+        modelLayerToggle.dom.title = localize('panel.camera-frames.export.model-layer-tooltip');
+        modelLayerToggle.dom.setAttribute('aria-pressed', 'false');
+        const toggleGroup = new Container({ class: 'format-toggle-group' });
+        toggleGroup.dom.style.display = 'flex';
+        toggleGroup.dom.style.alignItems = 'center';
+        toggleGroup.dom.style.gap = '6px';
+        toggleGroup.append(gridToggle);
+        toggleGroup.append(modelLayerToggle);
         const renderButton = new Button({ class: ['icon-button'], text: '' });
         renderButton.dom.appendChild(createSvg(exportSvg));
         renderButton.dom.title = localize('panel.camera-frames.export.render');
         const formatGroup = new Container({ class: 'format-row' });
         formatGroup.append(formatLabel);
         formatGroup.append(formatSelect);
-        formatGroup.append(gridToggleWrapper);
+        formatGroup.append(toggleGroup);
         formatGroup.append(renderButton);
         const renderSpinner = new Container({ class: 'render-spinner', hidden: true });
         formatGroup.append(renderSpinner);
@@ -455,6 +463,10 @@ class CameraFramesPanel extends Panel {
         gridToggle.on('click', () => {
             if (suppress) return;
             events.fire('cameraFrames.setExportGridOverlay', !gridOverlayEnabled);
+        });
+        modelLayerToggle.on('click', () => {
+            if (suppress) return;
+            events.fire('cameraFrames.setExportModelLayers', !modelLayerEnabled);
         });
 
         const setRenderBusy = (busy: boolean) => {
@@ -861,6 +873,9 @@ class CameraFramesPanel extends Panel {
             gridOverlayEnabled = !!state.exportGridOverlay;
             gridToggle.class[gridOverlayEnabled ? 'add' : 'remove']('active');
             gridToggle.dom.setAttribute('aria-pressed', gridOverlayEnabled ? 'true' : 'false');
+            modelLayerEnabled = !!state.exportModelLayers;
+            modelLayerToggle.class[modelLayerEnabled ? 'add' : 'remove']('active');
+            modelLayerToggle.dom.setAttribute('aria-pressed', modelLayerEnabled ? 'true' : 'false');
 
             const zoomPct = Math.round(state.renderBox.viewZoomPct ?? 100);
             canvasZoomInput.value = zoomPct;
