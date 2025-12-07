@@ -149,7 +149,6 @@ const MIN_VIEW_ZOOM_PCT = 25;
 const MAX_VIEW_ZOOM_PCT = 100;
 const PAN_MARGIN_PX = 0;
 const FRUSTUM_DEBUG_COLOR = new Color(0, 1, 1, 1);
-const FRUSTUM_DEBUG_LENGTH = 0.5;
 const FRUSTUM_DEBUG_CACHE_VERSION = 2;
 
 const cloneFrame = (f: FrameState): FrameState => ({
@@ -527,14 +526,27 @@ export class CameraFramesController {
             near = 1;
         }
 
+        const nearSafe = Math.max(near, 1e-4);
+
+        // 視覚化用距離: 「レンズmm -> メートル換算 * 12倍」で計算し、0.2m〜2mにクランプ
+        const hfovRadForMm = (() => {
+            if (frustum) {
+                const width = right - left;
+                return 2 * Math.atan(width / (2 * nearSafe));
+            }
+            return this.baseFovRad || ((this.state.renderBox.projection?.baseFov ?? 60) * DEG2RAD);
+        })();
+        const crop = this.cropFactor(this.state.renderBox);
+        const eqMm = this.eqMmForFov(hfovRadForMm * RAD2DEG, crop);
+        const distanceRaw = (eqMm / 1000) * 12;
+        const baseDistance = Math.min(2, Math.max(0.2, (isFinite(distanceRaw) && distanceRaw > 0) ? distanceRaw : 0.5));
+
         const forward = basis.forward.clone();
         if (forward.lengthSq() > 0) {
             forward.normalize();
         }
         const camRight = basis.right.clone();
         const camUp = basis.up.clone();
-        const baseDistance = FRUSTUM_DEBUG_LENGTH;
-        const nearSafe = Math.max(near, 1e-4);
         const scale = baseDistance / nearSafe;
         const scaledLeft = left * scale;
         const scaledRight = right * scale;
