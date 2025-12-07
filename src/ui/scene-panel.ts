@@ -6,6 +6,9 @@ import { MeshList } from './mesh-list';
 import { SplatList } from './splat-list';
 import sceneImportSvg from './svg/import.svg';
 import sceneNewSvg from './svg/new.svg';
+import cameraResetSvg from './svg/camera-reset.svg';
+import selectPickerSvg from './svg/select-picker.svg';
+import shownSvg from './svg/shown.svg';
 import { Tooltips } from './tooltips';
 import { Transform } from './transform';
 
@@ -116,17 +119,17 @@ class ScenePanel extends Container {
         const lightToggle = new Container({
             class: 'panel-header-button'
         });
-        lightToggle.dom.textContent = 'On/Off';
+        lightToggle.dom.appendChild(createSvg(shownSvg));
 
         const lightSelect = new Container({
             class: 'panel-header-button'
         });
-        lightSelect.dom.textContent = 'Select';
+        lightSelect.dom.appendChild(createSvg(selectPickerSvg));
 
         const lightReset = new Container({
             class: 'panel-header-button'
         });
-        lightReset.dom.textContent = 'Reset Dir';
+        lightReset.dom.appendChild(createSvg(cameraResetSvg));
 
         const lightIntensity = new SliderInput({
             class: 'panel-header-slider',

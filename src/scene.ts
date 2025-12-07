@@ -255,6 +255,10 @@ class Scene {
         // create elements
         this.camera = new Camera();
         this.add(this.camera);
+        const camLayers = this.camera.entity.camera.layers;
+        if (this.modelLightingLayer && !camLayers.includes(this.modelLightingLayer.id)) {
+            this.camera.entity.camera.layers = camLayers.concat([this.modelLightingLayer.id]);
+        }
 
         this.splatOverlay = new SplatOverlay();
         this.add(this.splatOverlay);

@@ -53,7 +53,7 @@ class LightRig extends Element {
     serialize(serializer: Serializer) {
         serializer.packa(this.entity.getWorldTransform().data);
         serializer.pack(this.intensity);
-        serializer.pack(this.light.enabled);
+        serializer.pack(this.light.light.enabled);
     }
 
     move(position?: Vec3, rotation?: Quat) {
@@ -76,14 +76,14 @@ class LightRig extends Element {
     }
 
     setEnabled(value: boolean) {
-        if (this.light.enabled !== value) {
-            this.light.enabled = value;
+        if (this.light.light.enabled !== value) {
+            this.light.light.enabled = value;
             this.scene.forceRender = true;
         }
     }
 
     toggle = () => {
-        this.setEnabled(!this.light.enabled);
+        this.setEnabled(!this.light.light.enabled);
     };
 
     resetDirection() {
