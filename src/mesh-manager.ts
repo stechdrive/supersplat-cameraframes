@@ -10,9 +10,14 @@ class MeshManager {
     private models = new Set<Model>();
     private nodeToModel = new Map<GraphNode, Model>();
     private modelNodes = new Map<Model, Set<GraphNode>>();
+    private modelLightingLayerId: number | null;
+    private worldLayerId: number | null;
 
     constructor(events: Events, scene: Scene) {
         this.events = events;
+        const worldLayer = scene.app.scene.layers.getLayerByName('World');
+        this.worldLayerId = worldLayer ? worldLayer.id : null;
+        this.modelLightingLayerId = scene.modelLightingLayer?.id ?? null;
 
         events.on('scene.elementAdded', (element: Element) => {
             if (element.type === ElementType.model) {
@@ -71,6 +76,7 @@ class MeshManager {
         }
 
         this.models.add(model);
+        this.applyLayers(model);
         const nodes = new Set<GraphNode>();
         const collect = (node: GraphNode) => {
             nodes.add(node);
@@ -79,6 +85,22 @@ class MeshManager {
         };
         collect(model.entity);
         this.modelNodes.set(model, nodes);
+    }
+
+    private applyLayers(model: Model) {
+        if (!this.modelLightingLayerId) {
+            return;
+        }
+        const layers: number[] = [];
+        if (Array.isArray((model.entity as any)?.render?.layers)) {
+            layers.push(...(model.entity as any).render.layers);
+        } else if (this.worldLayerId !== null) {
+            layers.push(this.worldLayerId);
+        }
+        if (!layers.includes(this.modelLightingLayerId)) {
+            layers.push(this.modelLightingLayerId);
+        }
+        model.setLayers(layers);
     }
 
     private unregister(model: Model) {

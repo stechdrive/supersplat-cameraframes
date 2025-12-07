@@ -119,6 +119,18 @@ class Model extends Element {
         return this._name;
     }
 
+    setLayers(layers: number[]) {
+        const visit = (node: GraphNode) => {
+            const entity = node as Entity;
+            if (entity.render) {
+                entity.render.layers = layers.slice();
+            }
+            node?.children?.forEach((child: GraphNode) => visit(child));
+        };
+        visit(this.entity);
+        this.markBoundDirty();
+    }
+
     set visible(value: boolean) {
         const next = !!value;
         if (next !== this._visible) {

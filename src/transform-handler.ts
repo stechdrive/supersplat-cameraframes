@@ -1,5 +1,6 @@
 import { EntityTransformHandler } from './entity-transform-handler';
 import { Events } from './events';
+import { LightRig } from './light-rig';
 import { Model } from './model';
 import { registerPivotEvents } from './pivot';
 import { Splat } from './splat';
@@ -37,7 +38,7 @@ const registerTransformHandlerEvents = (events: Events) => {
     const entityTransformHandler = new EntityTransformHandler(events);
     const splatsTransformHandler = new SplatsTransformHandler(events);
 
-    const update = (selection: Splat | Model) => {
+    const update = (selection: Splat | Model | LightRig) => {
         pop();
         if (selection instanceof Splat) {
             if (selection.numSelected > 0) {
@@ -46,6 +47,8 @@ const registerTransformHandlerEvents = (events: Events) => {
                 push(entityTransformHandler);
             }
         } else if (selection instanceof Model) {
+            push(entityTransformHandler);
+        } else if (selection instanceof LightRig) {
             push(entityTransformHandler);
         }
     };

@@ -1,15 +1,16 @@
 import { Element, ElementType } from './element';
 import { Events } from './events';
+import { LightRig } from './light-rig';
 import { Model } from './model';
 import { Scene } from './scene';
 import { Splat } from './splat';
 
 const registerSelectionEvents = (events: Events, scene: Scene) => {
-    type Selectable = Splat | Model;
+    type Selectable = Splat | Model | LightRig;
     let selection: Selectable = null;
 
     const isSelectable = (element: Element | null): element is Selectable => {
-        return element instanceof Splat || element instanceof Model;
+        return element instanceof Splat || element instanceof Model || element instanceof LightRig;
     };
 
     const setSelection = (element: Element | null) => {
@@ -37,7 +38,8 @@ const registerSelectionEvents = (events: Events, scene: Scene) => {
     events.on('selection.next', () => {
         const splats = scene.getElementsByType(ElementType.splat) as Splat[];
         const models = scene.getElementsByType(ElementType.model) as Model[];
-        const elements: Selectable[] = [...splats, ...models].filter(e => e.visible);
+        const lights = scene.getElementsByType(ElementType.other).filter(e => e instanceof LightRig) as LightRig[];
+        const elements: Selectable[] = [...splats, ...models, ...lights].filter(e => (e as any).visible !== false);
         if (elements.length > 1) {
             const idx = elements.indexOf(selection);
             setSelection(elements[(idx + 1) % elements.length]);
@@ -54,7 +56,8 @@ const registerSelectionEvents = (events: Events, scene: Scene) => {
         if (element === selection) {
             const splats = scene.getElementsByType(ElementType.splat) as Splat[];
             const models = scene.getElementsByType(ElementType.model) as Model[];
-            const next: Selectable[] = [...splats, ...models].filter(v => v !== element && v.visible);
+            const lights = scene.getElementsByType(ElementType.other).filter(e => e instanceof LightRig) as LightRig[];
+            const next: Selectable[] = [...splats, ...models, ...lights].filter(v => v !== element && (v as any).visible !== false);
             setSelection(next.length > 0 ? next[0] : null);
         }
     });

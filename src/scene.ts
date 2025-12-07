@@ -18,6 +18,7 @@ import { Element, ElementType, ElementTypeList } from './element';
 import { Events } from './events';
 import { EyeLevel } from './eye-level';
 import { InfiniteGrid as Grid } from './infinite-grid';
+import { LightRig } from './light-rig';
 import { Model } from './model';
 import { Outline } from './outline';
 import { PCApp } from './pc-app';
@@ -39,6 +40,7 @@ class Scene {
     exportOverlayLayer: Layer;
     overlayLayer: Layer;
     gizmoLayer: Layer;
+    modelLightingLayer: Layer;
     sceneState = [new SceneState(), new SceneState()];
     elements: Element[] = [];
     boundStorage = new BoundingBox();
@@ -186,6 +188,12 @@ class Scene {
             name: 'Shadow Layer'
         });
 
+        // model lighting layer (models専用ディレクショナルライト用)
+        this.modelLightingLayer = new Layer({
+            name: 'Model Lighting',
+            enabled: true
+        });
+
         this.exportOverlayLayer = new Layer({
             enabled: false,
             name: 'Export Overlay',
@@ -223,10 +231,14 @@ class Scene {
         const idx = layers.getOpaqueIndex(worldLayer);
         layers.insert(this.backgroundLayer, idx);
         layers.insert(this.shadowLayer, idx + 1);
+        layers.insert(this.modelLightingLayer, idx + 2);
         layers.insert(this.debugLayer, idx + 1);
-        layers.insert(this.exportOverlayLayer, idx + 2);
+        layers.insert(this.exportOverlayLayer, idx + 3);
         layers.push(this.overlayLayer);
         layers.push(this.gizmoLayer);
+
+        // Ambient fallback (環境マップ未設定時の視認性確保)
+        this.app.scene.ambientLight.set(0.3, 0.3, 0.3);
 
         this.dataProcessor = new DataProcessor(this.app.graphicsDevice);
         this.assetLoader = new AssetLoader(this.app, events, this.app.graphicsDevice.maxAnisotropy);
@@ -252,6 +264,9 @@ class Scene {
 
         this.eyeLevel = new EyeLevel();
         this.add(this.eyeLevel);
+
+        const lightRig = new LightRig([this.modelLightingLayer.id]);
+        this.add(lightRig);
 
         this.outline = new Outline();
         this.add(this.outline);

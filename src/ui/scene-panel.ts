@@ -1,4 +1,4 @@
-import { Container, Element, Label } from '@playcanvas/pcui';
+import { Container, Element, Label, SliderInput } from '@playcanvas/pcui';
 
 import { Events } from '../events';
 import { localize } from './localization';
@@ -99,9 +99,75 @@ class ScenePanel extends Container {
         transformHeader.append(transformIcon);
         transformHeader.append(transformLabel);
 
+        const lightHeader = new Container({
+            class: 'panel-header'
+        });
+
+        const lightIcon = new Label({
+            text: '\uE3F0',
+            class: 'panel-header-icon'
+        });
+
+        const lightLabel = new Label({
+            text: 'Model Light',
+            class: 'panel-header-label'
+        });
+
+        const lightToggle = new Container({
+            class: 'panel-header-button'
+        });
+        lightToggle.dom.textContent = 'On/Off';
+
+        const lightSelect = new Container({
+            class: 'panel-header-button'
+        });
+        lightSelect.dom.textContent = 'Select';
+
+        const lightReset = new Container({
+            class: 'panel-header-button'
+        });
+        lightReset.dom.textContent = 'Reset Dir';
+
+        const lightIntensity = new SliderInput({
+            class: 'panel-header-slider',
+            min: 0,
+            max: 2,
+            step: 0.05,
+            precision: 2,
+            value: 0.8
+        });
+
+        lightHeader.append(lightIcon);
+        lightHeader.append(lightLabel);
+        lightHeader.append(lightToggle);
+        lightHeader.append(lightSelect);
+        lightHeader.append(lightReset);
+
+        lightToggle.on('click', () => {
+            events.fire('modelLight.toggle');
+        });
+
+        lightSelect.on('click', () => {
+            events.fire('modelLight.selectRig');
+        });
+
+        lightReset.on('click', () => {
+            events.fire('modelLight.resetDirection');
+        });
+
+        lightIntensity.on('change', (value: number) => {
+            events.fire('modelLight.setIntensity', value);
+        });
+
+        tooltips.register(lightToggle, 'モデルライトのON/OFF', 'top');
+        tooltips.register(lightSelect, 'ライトを選択して回転を編集', 'top');
+        tooltips.register(lightReset, 'ライト方向をリセット', 'top');
+
         this.append(sceneHeader);
         this.append(splatListContainer);
         this.append(meshListContainer);
+        this.append(lightHeader);
+        this.append(lightIntensity);
         this.append(transformHeader);
         this.append(new Transform(events));
         this.append(new Element({

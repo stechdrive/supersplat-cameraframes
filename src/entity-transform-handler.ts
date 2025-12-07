@@ -2,6 +2,7 @@ import { Mat4, Quat, Vec3 } from 'playcanvas';
 
 import { PlacePivotOp, EntityTransformOp, MultiOp } from './edit-ops';
 import { Events } from './events';
+import { LightRig } from './light-rig';
 import { Model } from './model';
 import { Pivot } from './pivot';
 import { Splat } from './splat';
@@ -14,7 +15,7 @@ const transform = new Transform();
 
 class EntityTransformHandler implements TransformHandler {
     events: Events;
-    target: Splat | Model;
+    target: Splat | Model | LightRig;
     top: EntityTransformOp;
     pop: PlacePivotOp;
     bindMat = new Mat4();
@@ -65,7 +66,7 @@ class EntityTransformHandler implements TransformHandler {
 
     activate() {
         const selection = this.events.invoke('selection');
-        this.target = (selection instanceof Splat || selection instanceof Model) ? selection : null;
+        this.target = (selection instanceof Splat || selection instanceof Model || selection instanceof LightRig) ? selection : null;
         if (this.target) {
             this.placePivot();
         }
