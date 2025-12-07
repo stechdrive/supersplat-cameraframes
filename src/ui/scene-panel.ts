@@ -1,6 +1,8 @@
-import { Container, Element, Label, NumericInput } from '@playcanvas/pcui';
+import { Container, Element as PCUIElement, Label, NumericInput } from '@playcanvas/pcui';
 
+import { Element as SceneElement } from '../element';
 import { Events } from '../events';
+import { LightRig } from '../light-rig';
 import { localize } from './localization';
 import { MeshList } from './mesh-list';
 import { SplatList } from './splat-list';
@@ -8,6 +10,7 @@ import sceneImportSvg from './svg/import.svg';
 import sceneNewSvg from './svg/new.svg';
 import cameraResetSvg from './svg/camera-reset.svg';
 import selectPickerSvg from './svg/select-picker.svg';
+import hiddenSvg from './svg/hidden.svg';
 import shownSvg from './svg/shown.svg';
 import { Tooltips } from './tooltips';
 import { Transform } from './transform';
@@ -31,6 +34,13 @@ class ScenePanel extends Container {
         ['pointerdown', 'pointerup', 'pointermove', 'wheel', 'dblclick'].forEach((eventName) => {
             this.dom.addEventListener(eventName, (event: Event) => event.stopPropagation());
         });
+
+        const safeInvoke = <T>(name: string): T | undefined => {
+            return events.functions.has(name) ? events.invoke(name) as T : undefined;
+        };
+
+        const initialLightState = safeInvoke<{ enabled?: boolean; intensity?: number }>('modelLight.state');
+        const initialAmbient = safeInvoke<number>('lighting.ambient');
 
         const sceneHeader = new Container({
             class: 'panel-header'
@@ -112,22 +122,26 @@ class ScenePanel extends Container {
         });
 
         const lightLabel = new Label({
-            text: 'Model Light',
+            text: localize('panel.scene-manager.lighting'),
             class: 'panel-header-label'
         });
 
         const lightToggle = new Container({
-            class: 'panel-header-button'
+            class: ['panel-header-button', 'light-button']
         });
-        lightToggle.dom.appendChild(createSvg(shownSvg));
+        const lightToggleOnIcon = createSvg(shownSvg);
+        const lightToggleOffIcon = createSvg(hiddenSvg);
+        lightToggleOffIcon.style.display = 'none';
+        lightToggle.dom.appendChild(lightToggleOnIcon);
+        lightToggle.dom.appendChild(lightToggleOffIcon);
 
         const lightSelect = new Container({
-            class: 'panel-header-button'
+            class: ['panel-header-button', 'light-button']
         });
         lightSelect.dom.appendChild(createSvg(selectPickerSvg));
 
         const lightReset = new Container({
-            class: 'panel-header-button'
+            class: ['panel-header-button', 'light-reset-button']
         });
         lightReset.dom.appendChild(createSvg(cameraResetSvg));
 
@@ -136,7 +150,7 @@ class ScenePanel extends Container {
         });
 
         const lightLabelInline = new Label({
-            text: 'ライト',
+            text: localize('panel.scene-manager.lighting.light'),
             class: 'panel-header-label-inline'
         });
 
@@ -145,12 +159,12 @@ class ScenePanel extends Container {
             max: 2,
             step: 0.05,
             precision: 2,
-            value: 0.8,
+            value: initialLightState?.intensity ?? 0.8,
             class: 'panel-header-slider'
         });
 
         const ambientLabel = new Label({
-            text: '環境光',
+            text: localize('panel.scene-manager.lighting.ambient'),
             class: 'panel-header-label-inline'
         });
 
@@ -159,9 +173,41 @@ class ScenePanel extends Container {
             max: 2,
             step: 0.05,
             precision: 2,
-            value: (events.invoke('lighting.ambient') as number) ?? 0.3,
+            value: initialAmbient ?? 0.3,
             class: 'panel-header-slider'
         });
+
+        let lightEnabled = initialLightState?.enabled ?? true;
+        let lightSelected = false;
+        let syncingIntensity = false;
+
+        const updateLightToggleState = (enabled: boolean) => {
+            lightEnabled = enabled;
+            lightToggle.class[enabled ? 'add' : 'remove']('active');
+            lightToggleOnIcon.style.display = enabled ? 'block' : 'none';
+            lightToggleOffIcon.style.display = enabled ? 'none' : 'block';
+        };
+
+        const updateLightSelectionState = (selected: boolean) => {
+            lightSelected = selected;
+            lightSelect.class[selected ? 'add' : 'remove']('active');
+        };
+
+        const updateIntensityFromState = (intensity?: number) => {
+            if (typeof intensity !== 'number' || !isFinite(intensity)) {
+                return;
+            }
+            if (syncingIntensity) {
+                return;
+            }
+            syncingIntensity = true;
+            lightInput.value = intensity;
+            syncingIntensity = false;
+        };
+
+        updateLightToggleState(lightEnabled);
+        updateLightSelectionState(safeInvoke<SceneElement>('selection') instanceof LightRig);
+        updateIntensityFromState(initialLightState?.intensity);
 
         intensityRow.append(lightLabelInline);
         intensityRow.append(lightInput);
@@ -175,22 +221,40 @@ class ScenePanel extends Container {
         lightHeader.append(lightReset);
 
         lightToggle.on('click', () => {
+            updateLightToggleState(!lightEnabled);
             events.fire('modelLight.toggle');
         });
 
         lightSelect.on('click', () => {
-            events.fire('modelLight.selectRig');
+            if (lightSelected) {
+                events.fire('selection', null);
+            } else {
+                events.fire('modelLight.selectRig');
+            }
         });
 
         lightReset.on('click', () => {
             events.fire('modelLight.resetDirection');
         });
 
-        tooltips.register(lightToggle, 'モデルライトのON/OFF', 'top');
-        tooltips.register(lightSelect, 'ライトを選択して回転を編集', 'top');
-        tooltips.register(lightReset, 'ライト方向をリセット', 'top');
-        tooltips.register(lightInput, 'ライト強度', 'top');
-        tooltips.register(ambientInput, '環境光強度', 'top');
+        events.on('selection.changed', (selection: SceneElement) => {
+            updateLightSelectionState(selection instanceof LightRig);
+        });
+
+        events.on('modelLight.state', (state: { enabled?: boolean; intensity?: number; }) => {
+            if (state && typeof state.enabled === 'boolean') {
+                updateLightToggleState(state.enabled);
+            }
+            if (state && typeof state.intensity === 'number') {
+                updateIntensityFromState(state.intensity);
+            }
+        });
+
+        tooltips.register(lightToggle, localize('panel.scene-manager.lighting.toggle'), 'top');
+        tooltips.register(lightSelect, localize('panel.scene-manager.lighting.select'), 'top');
+        tooltips.register(lightReset, localize('panel.scene-manager.lighting.reset'), 'top');
+        tooltips.register(lightInput, localize('panel.scene-manager.lighting.intensity'), 'top');
+        tooltips.register(ambientInput, localize('panel.scene-manager.lighting.ambient-intensity'), 'top');
 
         this.append(sceneHeader);
         this.append(splatListContainer);
@@ -199,12 +263,15 @@ class ScenePanel extends Container {
         this.append(intensityRow);
         this.append(transformHeader);
         this.append(new Transform(events));
-        this.append(new Element({
+        this.append(new PCUIElement({
             class: 'panel-header',
             height: 20
         }));
 
         lightInput.on('change', (value: number) => {
+            if (syncingIntensity) {
+                return;
+            }
             events.fire('modelLight.setIntensity', value);
         });
 

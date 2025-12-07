@@ -32,12 +32,15 @@ class LightRig extends Element {
         this.applyLayers();
 
         const events = this.scene.events;
+        events.function('modelLight.state', () => this.getState());
         events.on('modelLight.toggle', this.toggle, this);
         events.on('modelLight.on', () => this.setEnabled(true), this);
         events.on('modelLight.off', () => this.setEnabled(false), this);
         events.on('modelLight.setIntensity', (value: number) => this.setIntensity(value), this);
         events.on('modelLight.resetDirection', () => this.resetDirection(), this);
         events.on('modelLight.selectRig', () => events.fire('selection', this), this);
+
+        this.notifyState();
     }
 
     remove() {
@@ -72,6 +75,7 @@ class LightRig extends Element {
             this.intensity = next;
             this.light.light.intensity = this.intensity;
             this.scene.forceRender = true;
+            this.notifyState();
         }
     }
 
@@ -79,6 +83,7 @@ class LightRig extends Element {
         if (this.light.light.enabled !== value) {
             this.light.light.enabled = value;
             this.scene.forceRender = true;
+            this.notifyState();
         }
     }
 
@@ -110,6 +115,17 @@ class LightRig extends Element {
     private applyLayers() {
         const targetLayers = this.layers.slice();
         this.light.light.layers = targetLayers;
+    }
+
+    private getState() {
+        return {
+            enabled: this.light?.light?.enabled ?? false,
+            intensity: this.intensity
+        };
+    }
+
+    private notifyState() {
+        this.scene?.events.fire('modelLight.state', this.getState());
     }
 }
 
