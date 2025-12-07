@@ -194,6 +194,11 @@ const registerDocEvents = (scene: Scene, events: Events) => {
 
     const getModelBlob = async (model: Model) => {
         const file = model.asset?.file as any;
+        const savedBlob = (model.asset as any)?.__sourceBlob as Blob | undefined;
+
+        if (savedBlob instanceof Blob) {
+            return savedBlob;
+        }
 
         if (file?.contents instanceof Blob) {
             return file.contents;

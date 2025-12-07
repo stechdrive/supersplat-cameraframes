@@ -31,6 +31,10 @@ class AssetLoader {
             url,
             filename: assetSource.filename ?? assetSource.url
         });
+        if (sourceBlob) {
+            // 保存用に元データを残す（object URL revoke 後も参照可能にする）
+            (asset as any).__sourceBlob = sourceBlob;
+        }
         this.app.assets.add(asset);
 
         try {
