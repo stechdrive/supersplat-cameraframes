@@ -1036,7 +1036,7 @@ class Camera extends Element {
         }
 
         const worldLayer = scene.app.scene.layers.getLayerByName('World');
-        const layersToPick = [worldLayer, scene.modelLightingLayer].filter((layer) => !!layer);
+        const layersToPick = [worldLayer, scene.modelLightingLayer].filter(layer => !!layer);
         this.picker.resize(scene.targetSize.width, scene.targetSize.height);
         this.picker.prepare(this.entity.camera, this.scene.app.scene, layersToPick.length > 0 ? layersToPick : undefined);
         const selection = this.picker.getSelection(sx, sy);
@@ -1092,7 +1092,7 @@ class Camera extends Element {
     pickPrep(splat: Splat, op: 'add' | 'remove' | 'set') {
         const { width, height } = this.scene.targetSize;
         const worldLayer = this.scene.app.scene.layers.getLayerByName('World');
-        const layersToPick = [worldLayer, this.scene.modelLightingLayer].filter((layer) => !!layer);
+        const layersToPick = [worldLayer, this.scene.modelLightingLayer].filter(layer => !!layer);
 
         const device = this.scene.graphicsDevice;
         const events = this.scene.events;

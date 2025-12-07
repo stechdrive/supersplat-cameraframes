@@ -9,6 +9,7 @@
 -   **Camera Work Instructions**: Place multiple "Camera Frames" to indicate camera movement (Start/End frames for PAN/Track Up). These are exported as vector-like outlines in a separate PSD layer.
 -   **WYSIWYG Composition**: A fixed-aspect Render Box ensures your export (PNG/PSD) matches your preview pixel-perfectly.
 -   **Integrated Multi-PLY Rendering**: Multiple PLY files are rendered with correct depth occlusion, allowing characters and backgrounds to be composed naturally.
+-   **GLB Import & Display**: Load and view GLB assets directly to check layout alongside splats.
 
 - Full Feature Guide: [CameraFramesFeatures_en.md](./docs/CameraFramesFeatures_en.md)
 
@@ -26,6 +27,7 @@ Camera Framesは、**日本のアニメーション制作における「レイ�
 -   **PSDレイヤー出力**: 出力されたPSDファイルは、背景（レンダリング画像）とフレーム枠線（カメラワーク指示）が別レイヤーとして保持され、後工程での作業を効率化します。
 -   **見た目通りの完全な書き出し**: ウィンドウサイズに依存しない「Render Box」により、プレビューと完全に一致するPNG/PSD出力を保証します。
 -   **複数PLYの深度統合**: 複数のスプラットファイルを正しい前後関係（オクルージョン）で統合描画。背景と人物などを組み合わせたシーンも自然にレンダリングされます。
+-   **GLBの読み込み・表示**: GLBアセットを直接読み込んで表示し、スプラットと並べてレイアウト確認が可能です。
 
 - 詳細な機能説明: [CameraFramesFeatures.md](./docs/CameraFramesFeatures.md)
 

@@ -1,7 +1,7 @@
 import { Color, Mat4 } from 'playcanvas';
 
-import { Model } from './model';
 import { LightRig } from './light-rig';
+import { Model } from './model';
 import { Pivot } from './pivot';
 import { Scene } from './scene';
 import { Splat } from './splat';

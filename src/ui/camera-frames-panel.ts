@@ -9,8 +9,8 @@ import deleteSvg from './svg/delete.svg';
 import exportSvg from './svg/export.svg';
 import newSvg from './svg/new.svg';
 import lockSvg from './svg/select-lock.svg';
-import orbitSvg from './svg/select-sphere.svg';
 import separateSvg from './svg/select-separate.svg';
+import orbitSvg from './svg/select-sphere.svg';
 import unlockSvg from './svg/select-unlock.svg';
 
 type CameraFramesState = {

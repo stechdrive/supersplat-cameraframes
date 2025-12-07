@@ -14,8 +14,8 @@ import {
 import { AssetLoader } from './asset-loader';
 import { Camera } from './camera';
 import { DataProcessor } from './data-processor';
-import { Element, ElementType, ElementTypeList } from './element';
 import { AmbientLightOp } from './edit-ops';
+import { Element, ElementType, ElementTypeList } from './element';
 import { Events } from './events';
 import { EyeLevel } from './eye-level';
 import { InfiniteGrid as Grid } from './infinite-grid';
@@ -299,7 +299,7 @@ class Scene {
         }
 
         // 既存をクリーンアップ
-        this.ambientFillLights.forEach(light => {
+        this.ambientFillLights.forEach((light) => {
             light.destroy();
         });
         this.ambientFillLights.length = 0;
@@ -333,7 +333,7 @@ class Scene {
         const v = Math.max(0, value ?? 0);
         this.app.scene.ambientLight.set(v, v, v);
         const fill = Math.max(0, v * 0.5);
-        this.ambientFillLights.forEach(light => {
+        this.ambientFillLights.forEach((light) => {
             light.light.intensity = fill;
         });
         this.forceRender = true;
