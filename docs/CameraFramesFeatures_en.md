@@ -42,8 +42,13 @@ Precise control of camera position and rotation using numerical values.
     *   **Alt Key**: Holding the Alt key while operating allows for fine adjustments (Slow mode).
 
 ### Navigation Mode
-*   **Orbit navigation**: Orbit operation mode looking around a subject.
-*   **FPV navigation**: FPV operation mode moving the line of sight from a first-person perspective. When CAMERA FRAMES is enabled, it automatically behaves like FPV (fixed FOV, etc.).
+*   **Main Camera**: The filming camera for the final output. This view determines exactly what gets rendered.
+*   **Viewport Camera**: A working camera to move freely in 3D space. You can explore optimal arrangements and compositions while viewing objects and the Main Camera's position from an easy-to-see perspective.
+    *   **Eye Icon**: In Viewport Camera mode, clicking the "Eye" icon next to the Main Camera enables adjustment of the Main Camera's focal length and position. To return to operating the Viewport Camera, click the "Eye" icon on the Viewport Camera side.
+*   **Orbit / FPV**: Standard camera operation modes. When CAMERA FRAMES is enabled, it defaults to FPV mode.
+
+#### Quick Switch
+Use the green toggle switch in the top-right corner of the Camera Frames panel to instantly switch between Main Camera operation and Viewport Camera operation.
 
 ---
 

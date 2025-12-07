@@ -5,6 +5,7 @@
 **Key Features & Use Cases:**
 
 -   **Animation Layout Workflow**: Specifically designed to support the Japanese animation production style (LO). It allows for defining camera work instructions (PAN, TU/TB) using multiple frames on a single large canvas.
+-   **Viewport & Main Camera Workflow**: Compose your shots efficiently by switching between the **Viewport Camera** for free navigation and the **Main Camera** for the final view.
 -   **High-Resolution Canvas**: The "Render Box" base size corresponds to **A4 paper at 150dpi (at 100% scale)**, and can be scaled up to **1000%**, enabling massive high-resolution outputs suitable for large-format layouts.
 -   **Camera Work Instructions**: Place multiple "Camera Frames" to indicate camera movement (Start/End frames for PAN/Track Up). These are exported as vector-like outlines in a separate PSD layer.
 -   **WYSIWYG Composition**: A fixed-aspect Render Box ensures your export (PNG/PSD) matches your preview pixel-perfectly.
@@ -23,6 +24,7 @@ Camera Framesは、**日本のアニメーション制作における「レイ�
 **主な用途と機能:**
 
 -   **アニメ制作等のレイアウト出力**: **100%設定でA4用紙（150dpi）相当**の解像度となり、そこから**最大1000%まで拡大**可能です。これにより、超高解像度のレイアウト用紙を作成・出力できます。
+-   **ビューポートカメラとメインカメラ**: **ビューポートカメラ**で自由に移動しながら**メインカメラ**の調整を行い、効率的に構図を決めることができます。
 -   **カメラワーク指示（撮影フレーム）**: 画面上に複数の「撮影フレーム」を配置することで、PAN（パン）やTU（トラックアップ）などのカメラワーク始点・終点を指示できます。
 -   **PSDレイヤー出力**: 出力されたPSDファイルは、背景（レンダリング画像）とフレーム枠線（カメラワーク指示）が別レイヤーとして保持され、後工程での作業を効率化します。
 -   **見た目通りの完全な書き出し**: ウィンドウサイズに依存しない「Render Box」により、プレビューと完全に一致するPNG/PSD出力を保証します。
