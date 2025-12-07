@@ -87,3 +87,5 @@ Camera controls when CAMERA FRAMES is enabled (or in FPV mode).
 *   **Aspect Ratio Lock**: While CAMERA FRAMES is enabled, the camera framing is locked to the aspect ratio of the Render Box.
 *   **Near Clip Guard**: A guard function automatically adjusts the near clip to prevent display clipping when getting too close to splats.
 *   **Merged PLY Rendering**: Base Supersplat draws newly loaded PLY files always on top without occlusion. CAMERA FRAMES merges multiple PLY files and renders them with proper depth, so both viewport and exported images respect occlusion across files.
+*   **GLB Import & Mesh Management**: Use the Scene panel's import button to load GLB files. Imported meshes appear in the Mesh list where you can select, rename, toggle visibility, or remove them while checking layouts alongside splats.
+*   **Lighting Controls**: The Lighting header lets you toggle the model light, select the light rig to rotate its direction with the transform gizmo (reset with the reset button), and adjust both direct and ambient intensity when evaluating GLB shading.
