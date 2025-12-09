@@ -1,96 +1,69 @@
 # CAMERA FRAMES Features Overview
 
-CAMERA FRAMES is a feature that allows you to place multiple "frames" within a scene, layout them, and export them as a single image. It also provides functions to assist with camera Field of View (FOV) and alignment.
+CAMERA FRAMES v2.4.0 lets you lay out multiple frames on an A4-like master sheet and keep the composition stable with anchored off-axis frustums so preview and export match. It unifies zoomable previews, frame editing, camera pose control, and PSD/PNG export.
 
-## 1. UI Panel Operations
+## 1. What it offers
+- **Anchored render box scaling**: 3×3 anchors drive off-axis frustums so horizontal/vertical scale and viewZoom never drift the anchored composition.
+- **Preview = export**: Aside from viewZoom, what you see in preview matches PNG/PSD pixels. Export forces viewZoom=100% and centered mapping, then restores the preview frustum.
+- **Multi-frame management**: Add/move/rotate/scale/change anchors for up to 20 frames; mask and draw order are preserved.
+- **Dual camera handling**: When CAMERA FRAMES is on, the main pose is held while the viewport camera is locked. When off, switch between main/viewport to edit lenses (mm) and poses separately.
+- **Export options**: PNG/PSD, grid+eye-level combined toggle, PSD model layers, 150dpi pHYs, unpremultiply, and per-frame layers.
 
-### Layout
-Configures the overall drawing area (Render Box).
-*   **Anchor**: 3x3 grid buttons. Specifies the reference point (center, corners, midpoints of edges) when resizing the Render Box.
-*   **Width (%)**: Specifies the width of the Render Box as a percentage (100% - 1000%).
-*   **Height (%)**: Specifies the height of the Render Box as a percentage (100% - 1000%).
-*   **Canvas Zoom (%)**: Specifies the display magnification of the working view (25% - 100%). This does not affect the export size.
-*   **Lens (mm) (FOV)**: Specifies the camera's field of view in 35mm equivalent focal length (mm). You can intuitively change the FOV using the slider. This value assumes the frame placed within the layout is at 100% scale.
+## 2. Panel and toggles
+- Header provides **CAMERA FRAMES ON/OFF** (Main=ON, Viewport=OFF icons) and **Compact** toggle. Compact mode shows only the header.
+- ON locks uiTarget=viewport and shows the Main button as locked. OFF allows choosing Main only when a mainCameraPose exists.
+- Panel can be dragged and is clamped inside the window; pointer events on the panel do not fall through to the canvas.
+- Label shows `| CAMERA FRAMES v2.4.0`.
 
-### Export
-*   **Filename**: Enter the filename for export.
-*   **PSD/PNG (Format)**: Select the export format.
-    *   **PSD**: Exports with layer structure preserved (Grid, each Frame group).
-    *   **PNG**: Exports as a single merged image.
-*   **Grid / Eye Level**: Toggle button to include overlays such as grid lines and eye-level lines in the exported image.
-*   **Render**: Executes the image export.
+## 3. Render Box (Layout)
+- Master sheet `1754 × 1240px` (A4 at 150dpi). `Width/Height (%)` are clamped to 100%+ up to 16000px equivalent. 3×3 anchor sets the pivot for future scaling.
+- On viewport resize, AutoFit updates `fitScale` and adjusts center so the anchored screen position stays fixed.
+- **Canvas Zoom (25–100%)**: Preview-only magnification. Zooming out shrinks the sheet and frames evenly and reveals more of the scene.
+- **FOV (mm)**: Edits the composition base horizontal FOV in 35mm equivalent (HFOV 10–120°). Enabled only when frames are active (CF ON or uiTarget=main).
+- **Viewport lens (mm)**: When CF is OFF and uiTarget=viewport, edits the normal camera FOV in mm (same range conversion). Locked while CF is ON.
+- Output resolution readout shows logical size, scale, and viewport overflow warnings.
 
-### Frames
-*   **Add Frame**: Adds a new frame. Up to 20 frames.
-*   **Delete Frame**: Deletes the currently selected frame.
-*   **List**: List of frames. Click to select.
-*   **Frame Scale (%)**: Specifies the scale of the selected frame as a percentage.
+## 4. Frame management and interactions
+- Base size `1536 × 864px`. Add/delete buttons and list manage up to 20 frames; the list shows effective pixel size and scale.
+- Handles are active only when selected. Scale% input (10–400%, UI 1–500%) scales uniformly.
+- Drag handles to move/scale; drag the rotation handle to rotate (Shift snaps to 15°). Alt+drag scales symmetrically around the frame anchor.
+- Drag the center handle to change the frame anchor; double-click to reset to center. Double-click the rotation handle to reset to 0°.
+- Higher `order` frames draw and hit-test in front. Selection state is saved with snapshots.
 
-### Mask Outside Frame
-*   **Toggle**: Toggles the mask that darkens the area outside the frames.
-*   **Opacity (%)**: Specifies the opacity of the mask (0% - 100%).
+## 5. Mask
+- Toggle to enable; set opacity 0–100%.
+- `scope: all / selected` chooses whether to mask all frames or only the selected frame bounds (falls back to all when nothing is selected).
+- Preview-only; excluded from PNG/PSD. Included in history and saves.
 
-### Camera Transform
-Precise control of camera position and rotation using numerical values.
-*   **X, Y, Z**: Camera world coordinates.
-*   **Yaw, Pitch, Roll**: Camera rotation angles.
-    *   **Roll Lock**: Button to lock the roll value.
-*   **R/L (Right-Left)**: Moves left/right relative to the camera's own orientation.
-*   **U/D (Up-Down)**: Moves up/down relative to the camera's own orientation.
-*   **F/B (Forward-Back)**: Moves forward/back relative to the camera's own orientation.
-*   **Near Clip**: Adjusts the camera's near clip distance. Slider or numerical input.
-    *   **Alt Key**: Holding the Alt key while operating allows for fine adjustments (Slow mode).
+## 6. Export
+- Filename and format (PSD/PNG, default PSD). Blank names fall back to `camera-frames`. Export settings are not part of history.
+- **Grid/Eye-level**: Single toggle outputs both overlays. Composited for PNG; separate layers for PSD.
+- **Model layers**: PSD-only; each visible model renders into its own layer with localized names (toggle is always shown).
+- Render button starts export; shows spinner and disables while busy.
+- Export locks viewZoom=100% and centers the frustum; preview frustum is restored afterward.
+- PSD layer order: grid → eye-level → models → frames (grouped by leading frame letter) → Render. PNG is compressed with 150dpi pHYs.
 
-### Navigation Mode
-*   **Main Camera**: The filming camera for the final output. This view determines exactly what gets rendered.
-*   **Viewport Camera**: A working camera to move freely in 3D space. You can explore optimal arrangements and compositions while viewing objects and the Main Camera's position from an easy-to-see perspective.
-    *   **Eye Icon**: In Viewport Camera mode, clicking the "Eye" icon next to the Main Camera enables adjustment of the Main Camera's focal length and position. To return to operating the Viewport Camera, click the "Eye" icon on the Viewport Camera side.
-*   **Orbit / FPV**: Standard camera operation modes. When CAMERA FRAMES is enabled, it defaults to FPV mode.
+## 7. Camera / target / transform
+- Switch uiTarget between viewport/main via header buttons (viewport locked while CF is ON). Even when CF is OFF, mainPose is kept; selecting Main draws the debug frustum in cyan/magenta.
+- Transform section edits position XYZ, yaw/pitch/roll (with roll lock), local move sliders, and nearClip; Alt enables fine adjustment.
+- Toggle navMode between Orbit/FPV. While an input has focus, automatic syncing pauses until blur.
+- When frames are active, composition FOV and nearClip apply to mainPose. With CF off, viewport edits affect the normal camera; re-enabling reapplies mainPose.
+- nearClip is auto-guarded to safe values (≥0.01, within far×0.1 and sceneRadius×0.5). mainPose auto-updates are paused during timeline playback.
 
-#### Quick Switch
-Use the green toggle switch in the top-right corner of the Camera Frames panel to instantly switch between Main Camera operation and Viewport Camera operation.
+## 8. Viewport interactions
+- Select: click frame outline or list; click again to deselect.
+- Move: drag inside the frame; Shift locks axis.
+- Scale: drag edge/corner handles; Alt scales symmetrically around the anchor.
+- Rotate: drag the top handle; Shift snaps to 15°, double-click resets to 0°.
+- Edit anchor: drag the center handle; double-click to reset.
+- Render box pan: Shift+drag outside frames to move the sheet (clamped inside the screen).
+- Lost pointer capture commits drag history. Overlay enables pointerEvents only on hit; `grabbing` cursor while dragging.
 
----
+## 9. Save and history
+- Document saves include full CAMERA FRAMES state (renderBox, frames, mask, nearClip, export options, selectedId, mainCameraPose, cameraFramesVersion, etc.).
+- Undo/Redo tracks enable/disable, render box scale/anchor/pan/viewZoom, FOV, frame add/delete/select/edit, mask, nearClip, and mainPose edits. Export settings are excluded.
 
-## 2. Mouse & Viewport Operations
-
-You can directly manipulate overlays (such as red frames) on the viewport.
-
-### Frame Operations
-*   **Select**: Click inside a frame to select it (the red border becomes dotted and handles appear).
-*   **Move**: Drag inside the frame to move it.
-    *   **Shift + Drag**: Restricts movement to vertical or horizontal (Axis Lock).
-*   **Resize**: Drag the white handles (□) on the corners or edges of the frame to resize.
-    *   **Alt + Drag**: Resizes around the Anchor (reference point). Usually, the opposite handle is fixed.
-*   **Rotate**: Drag the rotation handle (○) displayed at the top of the frame to rotate it.
-    *   **Shift + Drag**: Snaps rotation in 15-degree increments.
-*   **Move Anchor**: Drag the anchor point (◎) in the center of the frame to change the reference point for rotation and scaling.
-
-### Render Box Operations
-*   **Pan**: **Shift + Left Drag** (area outside frames) to move (pan) the entire Render Box within the screen.
-
-### Reset Operations
-*   **Reset Rotation**: **Double-click** the rotation handle to reset rotation to 0 degrees.
-*   **Reset Anchor**: **Double-click** the anchor point to reset it to the center of the frame.
-
-### FPV Camera Operations
-Camera controls when CAMERA FRAMES is enabled (or in FPV mode).
-
-*   **Look**: **Left Drag** to rotate the view (Yaw/Pitch).
-*   **Move**: **Mouse Wheel** to move forward and backward.
-    *   **Alt + Wheel**: Move slowly.
-*   **Strafe**: **Right Drag** to move up, down, left, or right.
-    *   **Alt + Right Drag**: Move slowly.
-*   **Pivot Orbit**: **Ctrl + Left Drag** to orbit around the clicked point (or a point in space).
-    *   Useful when you want to rotate around a specific subject.
-
----
-
-## 3. Others / Notes
-
-*   **Auto Fit**: When resizing the window or opening/closing panels, the display magnification (Fit Scale) is automatically adjusted so that the Render Box fits within the screen.
-*   **Aspect Ratio Lock**: While CAMERA FRAMES is enabled, the camera framing is locked to the aspect ratio of the Render Box.
-*   **Near Clip Guard**: A guard function automatically adjusts the near clip to prevent display clipping when getting too close to splats.
-*   **Merged PLY Rendering**: Base Supersplat draws newly loaded PLY files always on top without occlusion. CAMERA FRAMES merges multiple PLY files and renders them with proper depth, so both viewport and exported images respect occlusion across files.
-*   **GLB Import & Mesh Management**: Use the Scene panel's import button to load GLB files. Imported meshes appear in the Mesh list where you can select, rename, toggle visibility, or remove them while checking layouts alongside splats.
-*   **Lighting Controls**: The Lighting header lets you toggle the model light, select the light rig to rotate its direction with the transform gizmo (reset with the reset button), and adjust both direct and ambient intensity when evaluating GLB shading.
+## 10. Display and drawing notes
+- Render box is white dashed; frames are 2px red with white dashed overlay when selected; handles are 10px white with red stroke; rotation handle sits 30px above. 90° multiples snap frame strokes for export.
+- Mask darkens outside the target frame bounds and is preview-only.
+- With CF ON, rendering uses custom frustums (rect/scissor reset) and overlays scale with devicePixelRatio.
