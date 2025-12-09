@@ -1,9 +1,12 @@
 {
-    "name": "supersplat",
+    "name": "supersplat-cameraframes",
     "version": "2.16.0",
     "cameraFramesVersion": "v2.3.0",
-    "author": "PlayCanvas<support@playcanvas.com>",
-    "homepage": "https://playcanvas.com/supersplat/editor",
+    "author": "stechdrive",
+    "contributors": [
+        "PlayCanvas <support@playcanvas.com>"
+    ],
+    "homepage": "https://github.com/stechdrive/supersplat-cameraframes",
     "description": "3D Gaussian Splat Editor",
     "keywords": [
         "playcanvas",
