@@ -68,14 +68,10 @@ const application = {
             targets: [
                 {
                     src: 'src/index.html',
-                    transform: (contents, filename) => {
-                        let html = contents.toString().replace('__BASE_HREF__', HREF);
-                        // Inject version query parameter to script and link tags
-                        html = html.replace(/src="([^"]+)"/g, `src="$1?v=${buildVersion}"`);
-                        html = html.replace(/href="([^"]+)"/g, `href="$1?v=${buildVersion}"`);
-                        // Fix base href which shouldn't have a query param
-                        html = html.replace(`<base href="${HREF}?v=${buildVersion}">`, `<base href="${HREF}">`);
-                        return html;
+                    transform: (contents) => {
+                        return contents.toString()
+                            .replaceAll('__BASE_HREF__', HREF)
+                            .replaceAll('__BUILD_VERSION__', buildVersion);
                     }
                 },
                 { src: 'src/manifest.json' },
