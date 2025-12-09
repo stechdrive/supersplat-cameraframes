@@ -2,18 +2,20 @@ import { BooleanInput, Button, Container, Label, NumericInput, Panel, SelectInpu
 
 import { Events } from '../events';
 import { formatInteger, localize } from './localization';
-import cameraPanelSvg from './svg/fpv-nav.svg';
+import mainCamSvg from './svg/camera-panel.svg';
 import cameraResetSvg from './svg/camera-reset.svg';
 import collapseSvg from './svg/collapse.svg';
 import deleteSvg from './svg/delete.svg';
 import exportSvg from './svg/export.svg';
+import cameraPanelSvg from './svg/fpv-nav.svg';
 import hiddenSvg from './svg/hidden.svg';
 import newSvg from './svg/new.svg';
+import orbitSvg from './svg/orbit-nav.svg';
 import lockSvg from './svg/select-lock.svg';
 import separateSvg from './svg/select-separate.svg';
-import orbitSvg from './svg/orbit-nav.svg';
 import unlockSvg from './svg/select-unlock.svg';
 import shownSvg from './svg/shown.svg';
+import viewportSvg from './svg/viewport.svg';
 
 type CameraFramesState = {
     enabled: boolean;
@@ -195,7 +197,7 @@ class CameraFramesPanel extends Panel {
         const setCompact = (value: boolean) => {
             compact = value;
             collapseButton.dom.innerHTML = '';
-            collapseButton.dom.appendChild(createSvg(compact ? cameraPanelSvg : collapseSvg));
+            collapseButton.dom.appendChild(createSvg(compact ? mainCamSvg : collapseSvg));
             collapseButton.dom.title = compact ? localize('panel.camera-frames.expand') : localize('panel.camera-frames.collapse');
             this.class[compact ? 'add' : 'remove']('compact');
             this.content.hidden = compact;
@@ -207,23 +209,46 @@ class CameraFramesPanel extends Panel {
         };
         collapseButton.on('click', toggleCompact);
 
-        // enable toggle (header)
-        const enableToggle = new BooleanInput({ type: 'toggle', class: ['panel-header-toggle'], value: false });
-        enableToggle.dom.classList.add('panel-header-button');
-        enableToggle.dom.title = localize('panel.camera-frames.toggle');
+        // header toggle (Mode Switch)
+        const headerToggle = new Container({ class: ['header-toggle-group'] });
         ['pointerdown', 'pointerup', 'click'].forEach((evt) => {
-            enableToggle.dom.addEventListener(evt, (e: Event) => e.stopPropagation());
+            headerToggle.dom.addEventListener(evt, (e: Event) => e.stopPropagation());
         });
-        this.header.append(enableToggle);
+
+        const mainCamBtn = new Container({ class: 'toggle-icon-btn' });
+        mainCamBtn.dom.appendChild(createSvg(mainCamSvg));
+        mainCamBtn.dom.title = localize('panel.camera-frames.mode.main');
+
+        const viewportBtn = new Container({ class: 'toggle-icon-btn' });
+        viewportBtn.dom.appendChild(createSvg(viewportSvg));
+        viewportBtn.dom.title = localize('panel.camera-frames.mode.viewport');
+
+        headerToggle.append(mainCamBtn);
+        headerToggle.append(viewportBtn);
+
+        mainCamBtn.dom.addEventListener('click', () => {
+            if (!framesEnabled) {
+                events.fire('cameraFrames.setEnabled', true);
+                events.fire('camera.setNavMode', 'fpv');
+            }
+        });
+
+        viewportBtn.dom.addEventListener('click', () => {
+            if (framesEnabled) {
+                events.fire('cameraFrames.setEnabled', false);
+            }
+        });
+
+        this.header.append(headerToggle);
         this.header.append(collapseButton);
         setCompact(false);
 
-        const viewportTargetButton = new Button({ class: ['icon-button', 'target-icon'], text: '' });
-        const mainTargetButton = new Button({ class: ['icon-button', 'target-icon'], text: '' });
+        const viewportTargetButton = new Button({ class: ['radio-button'], text: '' });
+        const mainTargetButton = new Button({ class: ['radio-button'], text: '' });
         viewportTargetButton.dom.setAttribute('aria-label', localize('panel.camera-frames.target.viewport'));
         mainTargetButton.dom.setAttribute('aria-label', localize('panel.camera-frames.target.main'));
-        viewportTargetButton.dom.title = localize('panel.camera-frames.target.viewport');
-        mainTargetButton.dom.title = localize('panel.camera-frames.target.main');
+        viewportTargetButton.dom.title = localize('panel.camera-frames.target.select');
+        mainTargetButton.dom.title = localize('panel.camera-frames.target.select');
 
         // layout group (大判指定)
         const layoutGroup = new Container({ class: ['layout-group'] });
@@ -462,19 +487,39 @@ class CameraFramesPanel extends Panel {
         };
 
         const setTargetButtonState = (button: Button, active: boolean, enabled: boolean) => {
-            button.dom.innerHTML = '';
-            button.dom.appendChild(createSvg(active ? shownSvg : hiddenSvg));
             button.class[active ? 'add' : 'remove']('active');
+            button.class[enabled ? 'remove' : 'add']('locked');
+            if (!enabled) {
+                button.class.remove('active'); // ロック時はactive表示を消す（Plan通りMain固定に見せる場合は別ロジックだが、ここではradioの見た目制御）
+            }
+            if (!enabled && active) {
+                // MainがロックされているがActiveとして表示したい場合（CF=ON時）、activeかつlockedにする
+                button.class.add('active');
+            }
+
             button.dom.setAttribute('aria-pressed', active ? 'true' : 'false');
-            button.enabled = enabled;
+            button.enabled = enabled; // input要素としてのdisable
             button.dom.setAttribute('aria-disabled', enabled ? 'false' : 'true');
         };
 
         const updateTargetUI = () => {
             resolveTargetAvailability();
             const mainEnabled = canSelectMain && !framesEnabled;
-            setTargetButtonState(viewportTargetButton, uiTarget === 'viewport', true);
-            setTargetButtonState(mainTargetButton, uiTarget === 'main', mainEnabled);
+            // CF有効時は Main=Selected/Locked, Viewport=Unselected/Locked
+            // CF無効時は 通常のRadio動作
+            if (framesEnabled) {
+                setTargetButtonState(viewportTargetButton, false, false);
+                setTargetButtonState(mainTargetButton, true, false);
+                mainTargetButton.dom.title = localize('panel.camera-frames.target.locked');
+                viewportTargetButton.dom.title = localize('panel.camera-frames.target.locked');
+            } else {
+                setTargetButtonState(viewportTargetButton, uiTarget === 'viewport', true);
+                setTargetButtonState(mainTargetButton, uiTarget === 'main', mainEnabled);
+                mainTargetButton.dom.title = localize('panel.camera-frames.target.select');
+                viewportTargetButton.dom.title = localize('panel.camera-frames.target.select');
+            }
+            mainCamBtn.class[framesEnabled ? 'add' : 'remove']('active');
+            viewportBtn.class[framesEnabled ? 'remove' : 'add']('active');
         };
 
         viewportTargetButton.on('click', () => {
@@ -565,14 +610,6 @@ class CameraFramesPanel extends Panel {
             renderButton.enabled = !busy;
             renderSpinner.hidden = !busy;
         };
-
-        enableToggle.on('change', (value: boolean) => {
-            if (suppress) return;
-            events.fire('cameraFrames.setEnabled', value);
-            if (value) {
-                events.fire('camera.setNavMode', 'fpv');
-            }
-        });
 
         addButton.on('click', () => events.fire('cameraFrames.addFrame'));
         renderButton.on('click', async () => {
@@ -984,7 +1021,9 @@ class CameraFramesPanel extends Panel {
         const updateFromState = (state: CameraFramesState) => {
             suppress = true;
 
-            enableToggle.value = state.enabled;
+            // enableToggle.value = state.enabled;
+            mainCamBtn.class[state.enabled ? 'add' : 'remove']('active');
+            viewportBtn.class[!state.enabled ? 'add' : 'remove']('active');
             framesEnabled = state.enabled;
             updateNearClipUI();
             updateTargetUI();

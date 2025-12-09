@@ -45,7 +45,8 @@
 
         .panel-header-label,
         .panel-header-toggle,
-        .panel-header-button:not(.camera-frames-collapse) {
+        .panel-header-button:not(.camera-frames-collapse),
+        .header-toggle-group {
             display: none;
         }
 
@@ -64,6 +65,42 @@
         .pcui-panel-content,
         .panel-content {
             display: none;
+        }
+    }
+
+    .header-toggle-group {
+        display: flex;
+        align-items: center;
+        background-color: $bcg-dark;
+        border: 1px solid $bcg-light;
+        border-radius: 4px;
+        padding: 2px;
+        gap: 2px;
+        margin-right: 8px;
+
+        .toggle-icon-btn {
+            width: 28px;
+            height: 28px;
+            display: grid;
+            place-items: center;
+            border-radius: 2px;
+            cursor: pointer;
+            color: $text-secondary;
+
+            &:hover {
+                background-color: rgba(255, 255, 255, 0.1);
+            }
+
+            svg {
+                width: 24px;
+                height: 24px;
+                pointer-events: none;
+            }
+
+            &.active {
+                background-color: $clr-hilight;
+                color: $clr-active;
+            }
         }
     }
 }
@@ -348,4 +385,52 @@
 
 body.collapsed #camera-frames-panel {
     right: 24px;
+}
+
+.radio-button {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    border: 2px solid $text-secondary;
+    display: grid;
+    place-items: center;
+    cursor: pointer;
+    padding: 0;
+    margin: 2px 8px 2px 2px;
+    background: transparent;
+
+    &::after {
+        content: "";
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background-color: transparent;
+    }
+
+    &.active {
+        border-color: $clr-hilight;
+
+        &::after {
+            background-color: $clr-hilight;
+        }
+    }
+
+    &.locked {
+        opacity: 0.6;
+        cursor: not-allowed;
+        border-color: $text-secondary;
+
+        &.active {
+            border-color: $clr-hilight;
+
+            &::after {
+                background-color: $clr-hilight;
+            }
+        }
+    }
+
+    &.disabled {
+        opacity: 0.3;
+        cursor: not-allowed;
+    }
 }
