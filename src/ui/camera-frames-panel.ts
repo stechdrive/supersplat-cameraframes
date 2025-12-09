@@ -2,7 +2,7 @@ import { BooleanInput, Button, Container, Label, NumericInput, Panel, SelectInpu
 
 import { Events } from '../events';
 import { formatInteger, localize } from './localization';
-import cameraPanelSvg from './svg/camera-panel.svg';
+import cameraPanelSvg from './svg/fpv-nav.svg';
 import cameraResetSvg from './svg/camera-reset.svg';
 import collapseSvg from './svg/collapse.svg';
 import deleteSvg from './svg/delete.svg';
@@ -11,7 +11,7 @@ import hiddenSvg from './svg/hidden.svg';
 import newSvg from './svg/new.svg';
 import lockSvg from './svg/select-lock.svg';
 import separateSvg from './svg/select-separate.svg';
-import orbitSvg from './svg/select-sphere.svg';
+import orbitSvg from './svg/orbit-nav.svg';
 import unlockSvg from './svg/select-unlock.svg';
 import shownSvg from './svg/shown.svg';
 
@@ -688,8 +688,8 @@ class CameraFramesPanel extends Panel {
         const fpvIcon = new Container({ class: ['cam-nav-icon'] });
         fpvIcon.dom.appendChild(createSvg(cameraPanelSvg));
         fpvIcon.dom.title = localize('panel.camera-frames.transform.fpv');
-        camNavControls.append(orbitIcon);
         camNavControls.append(fpvIcon);
+        camNavControls.append(orbitIcon);
         camTransformHeader.append(camTransformArrow);
         camTransformHeader.append(camTransformLabel);
         camTransformHeader.append(camNavControls);
