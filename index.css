@@ -3468,7 +3468,8 @@
 }
 #camera-frames-panel.compact .panel-header-label,
 #camera-frames-panel.compact .panel-header-toggle,
-#camera-frames-panel.compact .panel-header-button:not(.camera-frames-collapse) {
+#camera-frames-panel.compact .panel-header-button:not(.camera-frames-collapse),
+#camera-frames-panel.compact .header-toggle-group {
   display: none;
 }
 #camera-frames-panel.compact .camera-frames-collapse {
@@ -3484,6 +3485,37 @@
 #camera-frames-panel.compact .pcui-panel-content,
 #camera-frames-panel.compact .panel-content {
   display: none;
+}
+#camera-frames-panel .header-toggle-group {
+  display: flex;
+  align-items: center;
+  background-color: #282828;
+  border: 1px solid #555;
+  border-radius: 4px;
+  padding: 2px;
+  gap: 2px;
+  margin-right: 8px;
+}
+#camera-frames-panel .header-toggle-group .toggle-icon-btn {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border-radius: 2px;
+  cursor: pointer;
+  color: #aaa;
+}
+#camera-frames-panel .header-toggle-group .toggle-icon-btn:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+#camera-frames-panel .header-toggle-group .toggle-icon-btn svg {
+  width: 24px;
+  height: 24px;
+  pointer-events: none;
+}
+#camera-frames-panel .header-toggle-group .toggle-icon-btn.active {
+  background-color: #f60;
+  color: white;
 }
 
 #camera-frames-overlay {
@@ -3633,11 +3665,32 @@
 
 .mask-row {
   align-items: center;
-  gap: 4px;
+  gap: 3px;
+  flex-wrap: nowrap;
+}
+.mask-row .control-label {
+  width: auto;
+  margin: 0 2px 0 0;
+  padding-left: 4px;
+}
+
+.mask-label {
+  width: 40px;
+  margin-right: 2px;
+}
+
+.mask-scope-label {
+  width: 30px;
+  margin-right: 2px;
 }
 
 .mask-opacity-label {
-  width: 72px;
+  width: 48px;
+}
+
+.mask-scope-select.pcui-select-input {
+  width: 78px;
+  min-width: 0;
 }
 
 .collapsible-header {
@@ -3703,8 +3756,8 @@
   cursor: pointer;
 }
 .cam-nav-icon svg {
-  width: 36px;
-  height: 36px;
+  width: 24px;
+  height: 24px;
   pointer-events: none;
 }
 
@@ -3759,6 +3812,47 @@
 
 body.collapsed #camera-frames-panel {
   right: 24px;
+}
+
+.radio-button {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid #aaa;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  padding: 0;
+  margin: 2px 8px 2px 2px;
+  background: transparent;
+}
+.radio-button::after {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: transparent;
+}
+.radio-button.active {
+  border-color: #f60;
+}
+.radio-button.active::after {
+  background-color: #f60;
+}
+.radio-button.locked {
+  opacity: 0.6;
+  cursor: not-allowed;
+  border-color: #aaa;
+}
+.radio-button.locked.active {
+  border-color: #f60;
+}
+.radio-button.locked.active::after {
+  background-color: #f60;
+}
+.radio-button.disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
 }
 
 * {
