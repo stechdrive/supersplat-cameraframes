@@ -1,45 +1,116 @@
 const buildInfo = {
-    version: 'v2.2.1-1765124327'
+    version: 'v2.3.0-1765245685'
 };
 
 const cacheName = `superSplat-cFrames-${buildInfo.version}`;
-const cacheUrls = [
-    './',
-    './index.css',
+const scopeUrl = new URL(self.location.href);
+const withVersion = (path) => `${path}?v=${buildInfo.version}`;
+const toAbsoluteUrl = (path) => new URL(path, scopeUrl).toString();
+const versionedAssets = [
     './index.html',
     './index.js',
-    './index.js.map',
+    './index.css',
     './jszip.js',
-    './manifest.json',
+    './manifest.json'
+].map(path => withVersion(path));
+const staticAssets = [
+    './index.js.map',
     './static/icons/logo-192.png',
     './static/icons/logo-512.png',
+    './static/images/header.webp',
+    './static/images/screenshot-cameraframes.jpg',
     './static/images/screenshot-narrow.jpg',
     './static/images/screenshot-wide.jpg',
     './static/lib/lodepng/lodepng.js',
     './static/lib/lodepng/lodepng.wasm',
     './static/locales/de.json',
     './static/locales/en.json',
+    './static/locales/es.json',
     './static/locales/fr.json',
     './static/locales/ja.json',
     './static/locales/ko.json',
-    './static/locales/zh-CN.json'
+    './static/locales/pt-BR.json',
+    './static/locales/ru.json',
+    './static/locales/zh-CN.json',
+    './static/env/VertebraeHDRI_v1_512.png'
 ];
+const cacheUrls = [...versionedAssets, ...staticAssets];
+const absoluteCacheUrls = cacheUrls.map(url => toAbsoluteUrl(url));
+const cacheFirstTargets = new Set(absoluteCacheUrls);
+const navigationFallbackUrl = toAbsoluteUrl(withVersion('./index.html'));
 self.addEventListener('install', (event) => {
     console.log(`installing ${cacheName}`);
     self.skipWaiting();
-    // create cache for current version
-    event.waitUntil(caches.open(cacheName).then(cache => cache.addAll(cacheUrls)));
+    event.waitUntil(caches.open(cacheName).then(cache => cache.addAll(absoluteCacheUrls)));
 });
 self.addEventListener('activate', (event) => {
     console.log(`activating ${cacheName}`);
-    event.waitUntil(self.clients.claim());
-    // delete the old caches once this one is activated
-    event.waitUntil(caches.keys().then((names) => {
+    event.waitUntil((async () => {
+        const names = await caches.keys();
         const deletions = names.filter(name => name !== cacheName).map(name => caches.delete(name));
-        return Promise.all(deletions);
-    }));
+        await Promise.all(deletions);
+        await self.clients.claim();
+    })());
 });
+const isNavigationRequest = (request) => request.mode === 'navigate' || request.destination === 'document';
+const cacheFirst = async (request) => {
+    const cached = await caches.match(request, { ignoreSearch: false });
+    if (cached) {
+        return cached;
+    }
+    const response = await fetch(request);
+    if (response && response.ok) {
+        const cache = await caches.open(cacheName);
+        cache.put(request, response.clone());
+    }
+    return response;
+};
+const networkFirst = async (request, fallbackUrl) => {
+    try {
+        const response = await fetch(request);
+        if (response && response.ok) {
+            const cache = await caches.open(cacheName);
+            cache.put(request, response.clone());
+        }
+        return response;
+    }
+    catch (err) {
+        const cached = await caches.match(request, { ignoreSearch: false });
+        if (cached) {
+            return cached;
+        }
+        if (fallbackUrl) {
+            const fallbackResponse = await caches.match(fallbackUrl, { ignoreSearch: false });
+            if (fallbackResponse) {
+                return fallbackResponse;
+            }
+        }
+        throw err;
+    }
+};
 self.addEventListener('fetch', (event) => {
-    event.respondWith(caches.match(event.request, { ignoreSearch: true }).then(response => response ?? fetch(event.request)));
+    if (event.request.method !== 'GET') {
+        return;
+    }
+    const url = new URL(event.request.url);
+    if (url.origin !== scopeUrl.origin) {
+        return;
+    }
+    if (isNavigationRequest(event.request)) {
+        event.respondWith(networkFirst(event.request, navigationFallbackUrl));
+        return;
+    }
+    if (event.request.destination === 'manifest') {
+        event.respondWith(networkFirst(event.request));
+        return;
+    }
+    const normalizedUrl = url.toString();
+    if (cacheFirstTargets.has(normalizedUrl)) {
+        event.respondWith(cacheFirst(event.request));
+        return;
+    }
+    if (url.searchParams.get('v') === buildInfo.version) {
+        event.respondWith(cacheFirst(event.request));
+    }
 });
 //# sourceMappingURL=sw.js.map
