@@ -42,6 +42,7 @@ type FrameState = {
 type FrameMaskState = {
     enabled: boolean;
     opacity: number; // 0.0 - 1.0
+    scope: 'all' | 'selected';
 };
 
 export type CameraFramesState = {
@@ -134,7 +135,14 @@ const DEFAULT_FRAME_BASE = { w: 1536, h: 864 };
 
 const DEFAULT_MASK: FrameMaskState = {
     enabled: false,
-    opacity: 0.8
+    opacity: 0.8,
+    scope: 'all'
+};
+
+const normalizeMaskScope = (scope: unknown, fallback: 'all' | 'selected' = 'all'): 'all' | 'selected' => {
+    if (scope === 'selected') return 'selected';
+    if (scope === 'all') return 'all';
+    return fallback;
 };
 
 const DEFAULT_NEAR_CLIP = 0.01;
@@ -1155,7 +1163,7 @@ export class CameraFramesController {
         // frames
         this.events.on('cameraFrames.addFrame', () => this.addFrame());
         this.events.on('cameraFrames.deleteSelected', () => this.deleteSelectedFrame());
-        this.events.on('cameraFrames.selectFrame', (id: string) => this.selectFrame(id));
+        this.events.on('cameraFrames.selectFrame', (id: string | null) => this.selectFrame(id));
         this.events.on('cameraFrames.setFrameScale', (data: { id: string; scalePct: number }) => {
             this.setFrameScale(data.id, data.scalePct);
         });
@@ -1166,7 +1174,14 @@ export class CameraFramesController {
         // mask
         this.events.on('cameraFrames.setMask', (mask: Partial<FrameMaskState>) => {
             this.historyRecord('cameraFrames.mask', () => {
-                this.state.mask = { ...this.state.mask, ...mask };
+                const nextScope = Object.prototype.hasOwnProperty.call(mask ?? {}, 'scope') ?
+                    normalizeMaskScope(mask.scope, this.state.mask.scope ?? 'all') :
+                    normalizeMaskScope(this.state.mask.scope ?? 'all');
+                this.state.mask = {
+                    ...this.state.mask,
+                    ...mask,
+                    scope: nextScope
+                };
                 this.requestRender();
                 this.events.fire('cameraFrames.stateChanged', this.snapshot());
             });
@@ -1692,7 +1707,7 @@ export class CameraFramesController {
         });
     }
 
-    private selectFrame(id: string) {
+    private selectFrame(id: string | null) {
         this.historyRecord('cameraFrames.selectFrame', () => {
             this.selectedId = id;
             this.state.frames.forEach((f) => {
@@ -2333,13 +2348,19 @@ export class CameraFramesController {
         const ctx = this.overlayCtx;
         const { vw, vh } = this.viewport;
 
+        const filtered = mask.scope === 'selected' ? rects.filter(r => r.frame.selected) : rects;
+        const targetRects = filtered.length > 0 ? filtered : rects;
+        if (targetRects.length === 0) {
+            return;
+        }
+
         // compute bounding box
         let minX = Number.POSITIVE_INFINITY;
         let minY = Number.POSITIVE_INFINITY;
         let maxX = Number.NEGATIVE_INFINITY;
         let maxY = Number.NEGATIVE_INFINITY;
 
-        rects.forEach((r) => {
+        targetRects.forEach((r) => {
             const b = r.bounding;
             minX = Math.min(minX, b.x);
             minY = Math.min(minY, b.y);
@@ -3405,6 +3426,11 @@ export class CameraFramesController {
         this.applyingHistory = true;
         try {
             this.state = JSON.parse(JSON.stringify(snapshot));
+            this.state.mask = {
+                ...DEFAULT_MASK,
+                ...(this.state.mask ?? {}),
+                scope: normalizeMaskScope(this.state.mask?.scope, DEFAULT_MASK.scope)
+            };
             this.state.mainCameraPose = this.clonePoseSnapshot(this.state.mainCameraPose);
             if (!this.state.mainCameraPose) {
                 this.state.mainCameraPose = this.clonePoseSnapshot(this.captureCameraPose());
@@ -3483,6 +3509,7 @@ export class CameraFramesController {
         const exportFormat = this.normalizeFormat(docState.exportFormat ?? 'psd');
         const exportGridOverlay = !!docState.exportGridOverlay;
         const exportModelLayers = !!docState.exportModelLayers;
+        const maskScope = normalizeMaskScope(docState.mask?.scope, DEFAULT_MASK.scope);
         const frames = (docState.frames ?? []).map((f: FrameState) => ({
             id: f.id,
             pos: { ...f.pos },
@@ -3566,7 +3593,8 @@ export class CameraFramesController {
             frames,
             mask: {
                 ...DEFAULT_MASK,
-                ...(docState.mask ?? {})
+                ...(docState.mask ?? {}),
+                scope: maskScope
             },
             nearClip: (typeof docState.nearClip === 'number' && isFinite(docState.nearClip)) ? Math.max(1e-6, docState.nearClip) : null,
             exportName,
@@ -3584,7 +3612,9 @@ export class CameraFramesController {
         this.overlay.style.pointerEvents = 'none';
         this.viewportPoseRuntime = null;
 
-        this.selectedId = docState.selectedId ?? frames[0]?.id ?? null;
+        this.selectedId = (docState && Object.prototype.hasOwnProperty.call(docState, 'selectedId')) ?
+            docState.selectedId :
+            (frames[0]?.id ?? null);
         this.state.frames.forEach((f) => {
             f.selected = f.id === this.selectedId;
         });

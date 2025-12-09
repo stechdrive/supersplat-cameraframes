@@ -255,11 +255,33 @@
 
 .mask-row {
     align-items: center;
-    gap: 4px;
+    gap: 3px;
+    flex-wrap: nowrap;
+
+    .control-label {
+        width: auto;
+        margin: 0 2px 0 0;
+        padding-left: 4px;
+    }
+}
+
+.mask-label {
+    width: 40px;
+    margin-right: 2px;
+}
+
+.mask-scope-label {
+    width: 30px;
+    margin-right: 2px;
 }
 
 .mask-opacity-label {
-    width: 72px;
+    width: 48px;
+}
+
+.mask-scope-select.pcui-select-input {
+    width: 78px;
+    min-width: 0;
 }
 
 .collapsible-header {

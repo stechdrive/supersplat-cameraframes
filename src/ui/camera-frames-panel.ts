@@ -49,6 +49,7 @@ type CameraFramesState = {
     mask: {
         enabled: boolean;
         opacity: number;
+        scope: 'all' | 'selected';
     };
     mainCameraPose?: {
         focalPoint: { x: number; y: number; z: number; };
@@ -172,6 +173,7 @@ class CameraFramesPanel extends Panel {
         let lastState: CameraFramesState | null = null;
         let framesEnabled = false;
         let rendering = false;
+        let maskScope: 'all' | 'selected' = 'all';
         let gridOverlayEnabled = false;
         let modelLayerEnabled = false;
         let navMode: 'orbit' | 'fpv' = 'orbit';
@@ -461,8 +463,17 @@ class CameraFramesPanel extends Panel {
 
         // mask controls
         const maskRow = new Container({ class: ['control-parent', 'mask-row'] });
-        const maskLabel = new Label({ class: 'control-label', text: localize('panel.camera-frames.mask') });
+        const maskLabel = new Label({ class: ['control-label', 'mask-label'], text: localize('panel.camera-frames.mask') });
         const maskToggle = new BooleanInput({ type: 'toggle', class: 'control-element', value: false });
+        const maskScopeLabel = new Label({ class: ['control-label', 'mask-scope-label'], text: localize('panel.camera-frames.mask.scope') });
+        const maskScopeSelect = new SelectInput({
+            class: ['control-element', 'mask-scope-select'],
+            options: [
+                { v: 'all', t: localize('panel.camera-frames.mask.scope.all') },
+                { v: 'selected', t: localize('panel.camera-frames.mask.scope.selected') }
+            ],
+            value: 'all'
+        });
         const maskOpacityLabel = new Label({ class: ['control-label', 'mask-opacity-label'], text: localize('panel.camera-frames.mask.opacity') });
         const maskOpacityInput = new NumericInput({
             class: 'control-element',
@@ -474,6 +485,8 @@ class CameraFramesPanel extends Panel {
         });
         maskRow.append(maskLabel);
         maskRow.append(maskToggle);
+        maskRow.append(maskScopeLabel);
+        maskRow.append(maskScopeSelect);
         maskRow.append(maskOpacityLabel);
         maskRow.append(maskOpacityInput);
 
@@ -637,6 +650,12 @@ class CameraFramesPanel extends Panel {
         maskToggle.on('change', (v: boolean) => {
             if (suppress) return;
             events.fire('cameraFrames.setMask', { enabled: v });
+        });
+        maskScopeSelect.on('change', (value: string) => {
+            const next = value === 'selected' ? 'selected' : 'all';
+            if (suppress || maskScope === next) return;
+            maskScope = next;
+            events.fire('cameraFrames.setMask', { scope: next });
         });
         const updateMaskOpacity = (value: number) => {
             if (suppress) return;
@@ -991,7 +1010,8 @@ class CameraFramesPanel extends Panel {
                 const scalePct = Math.round(frame.scalePct);
                 const text = `${frame.id} (${formatInteger(frame.baseSize.w * frame.scaleK * rbScale.kx)} x ${formatInteger(frame.baseSize.h * frame.scaleK * rbScale.ky)} px @${scalePct}%)`;
                 const classes = ['list-item'];
-                if (frame.selected) {
+                const isSelected = !!frame.selected;
+                if (isSelected) {
                     classes.push('active');
                 }
 
@@ -999,7 +1019,10 @@ class CameraFramesPanel extends Panel {
                     text,
                     class: classes
                 });
-                item.on('click', () => events.fire('cameraFrames.selectFrame', frame.id));
+                item.on('click', () => {
+                    const nextId = isSelected ? null : frame.id;
+                    events.fire('cameraFrames.selectFrame', nextId);
+                });
                 frameList.append(item);
             });
         };
@@ -1080,7 +1103,11 @@ class CameraFramesPanel extends Panel {
                 const frame = state.frames.find(f => f.id === selectedFrameId);
                 frameScaleInput.value = frame.scalePct;
             }
+            frameScaleInput.enabled = !!selectedFrameId;
+            deleteBtn.enabled = !!selectedFrameId;
 
+            maskScope = state.mask.scope === 'selected' ? 'selected' : 'all';
+            maskScopeSelect.value = maskScope;
             maskToggle.value = state.mask.enabled;
             const op = Math.round((state.mask.opacity ?? 0) * 100);
             maskOpacityInput.value = op;
