@@ -184,7 +184,7 @@
         </div>
         <p style="text-align: left; font-size: 1.0em; color: #5a5a5a;">
             パネルヘッダーには <span class="control">メインカメラ / 編集カメラ</span> 切り替えアイコンと、パネルを畳む <span class="control">コンパクト切替</span>
-            があります。どちらのカメラで編集するかを切り替えられます。
+            があります。どちらのカメラで編集するかを切り替えられます。<span class="keyword">メインカメラで見ているものが最終的にレンダリングされて出力されます。</span>
         </p>
 
         <table>
@@ -228,22 +228,26 @@
                         <li><span class="control">リスト</span>クリックで選択・再クリックで解除。</li>
                         <li><span class="control">フレーム拡縮(%)</span>で選択中のフレームのスケールを数値指定（10-400%）。</li>
                         <li><span class="control">マスク</span> マスクONでフレーム外を暗く表示。<span
-                                class="control">範囲</span>はマスクする範囲を全フレームか個別のフレームかを切り替えます。プレビュー専用で書き出しには含まれません。</li>
+                                class="control">範囲</span>はマスクする範囲を全フレームか個別のフレームかを切り替えます。<span
+                                class="control">不透明度</span>でマスクの濃度を設定。マスクはプレビュー専用で書き出し画像には含まれません。
+                        </li>
                     </ul>
                 </td>
             </tr>
             <tr>
-                <td><span class="control">カメラ / ナビゲーション</span></td>
+                <td><span class="control">カメラ座標操作</span></td>
                 <td>カメラ姿勢と画角の調整</td>
                 <td>
                     <ul>
+                        <li><span class="control">FPV/オービット</span>
+                            マウスでのカメラの操作方法の切り替え。FPVはカメラを主観視点として移動できます。オービットは注視点を基準に軌道を描くようにカメラが移動します。</li>
                         <li><span class="control">メインカメラ(mm)</span>
                             メインカメラ表示中にメインカメラのレンズを編集。数値は、100%の撮影フレーム基準の水平画角を35mm判換算で表示しています。</li>
                         <li><span class="control">編集カメラ(mm)</span> 編集カメラ表示中に編集カメラのレンズを編集。</li>
                         <li><span class="control">ターゲット切替</span>
                             ラジオボタンで切り替え。メインカメラ編集中はメインカメラ以外操作できません。編集カメラ表示中の時には、どちらのカメラの数値を操作するか選べます。編集カメラの視点からメインカメラの配置を確認し、カメラの位置や向き、レンズを変更できます。
                         </li>
-                        <li><span class="control">FPV/オービット</span> カメラの操作方法の切り替え。 <span class="control">X, Y, Z</span> /
+                        <li> <span class="control">X, Y, Z</span> /
                             <span class="control">ヨー, ピッチ, ロール</span>入力で姿勢を精密制御。<span class="control">ロール固定</span>も可能。
                         </li>
                         <li><span class="control">左右・上下・前後</span> スライダーでローカル方向へ移動。<span
@@ -274,7 +278,7 @@
             <tr>
                 <td><span class="keyword">選択</span></td>
                 <td>撮影フレームを<span class="control">クリック</span></td>
-                <td>赤枠が点線になり、ハンドルが表示されます。再クリックで解除できます。</td>
+                <td>赤枠が点線になり、ハンドルが表示されます。フレーム一覧から選択と選択解除をすることもできます。</td>
             </tr>
             <tr>
                 <td><span class="keyword">移動</span></td>
@@ -309,7 +313,7 @@
         </table>
 
         <h3>2-2. FPVカメラ操作 (一人称視点での移動)</h3>
-        <p>CAMERA FRAMES有効時（またはFPVモード選択時）のカメラ操作です。パネルのオービット/FPVアイコンで切り替えます。</p>
+        <p>メインカメラ表示に切り替えた時（またはFPVモード選択時）のカメラ操作です。</p>
         <div class="image-placeholder">
 
             <span class="note">FPVモードでのカメラ移動操作 (視点移動、前後移動、平行移動) のイメージ図</span>
@@ -348,8 +352,7 @@
                 <span class="keyword">自動フィット</span>: ウィンドウサイズ変更などで、レイアウト用紙全体が画面に収まるように自動的に表示倍率が調整されます。
             </li>
             <li>
-                <span class="keyword">プレビュー＝書き出し</span>: 書き出し時は viewZoom
-                が自動で100%になり、プレビューで見えているレンダーボックス内とピクセル一致します。マスクはプレビュー専用でPNG/PSDには含まれません。
+                <span class="keyword">プレビュー＝書き出し</span>: プレビューで見えている用紙サイズ内が指定解像度で出力されます。マスクはプレビュー専用でPNG/PSDには含まれません。
             </li>
             <li>
                 <span class="keyword">複数PLY/GLBの統合レンダリング</span>: 複数の3Dデータを読み込んでも、<span
