@@ -88,7 +88,7 @@ class ReferenceImageRenderer extends Element {
 
     remove() {
         const layers = this.scene?.app?.scene?.layers;
-        [this.referenceBackLayer, this.referenceFrontLayer].forEach(layer => {
+        [this.referenceBackLayer, this.referenceFrontLayer].forEach((layer) => {
             if (layer && layers) {
                 layers.remove(layer);
             }

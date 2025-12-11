@@ -194,10 +194,11 @@ const registerRenderEvents = (scene: Scene, events: Events) => {
     events.function('render.image', async (imageSettings: ImageSettings) => {
         events.fire('startSpinner');
 
+        const restoreLayers: Array<{ layer: Layer; enabled: boolean; }> = [];
+
         try {
             const { width, height, transparentBg, showDebug } = imageSettings;
             const includeReferenceImage = !!imageSettings.includeReferenceImage;
-            const restoreLayers: Array<{ layer: Layer; enabled: boolean; }> = [];
             const rememberLayer = (layer?: Layer) => {
                 if (!layer) return;
                 restoreLayers.push({ layer, enabled: layer.enabled });
@@ -294,10 +295,11 @@ const registerRenderEvents = (scene: Scene, events: Events) => {
     events.function('render.video', async (videoSettings: VideoSettings, fileStream: FileSystemWritableFileStream) => {
         events.fire('progressStart', localize('panel.render.render-video'));
 
+        const restoreLayers: Array<{ layer: Layer; enabled: boolean; }> = [];
+
         try {
             const { startFrame, endFrame, frameRate, width, height, bitrate, transparentBg, showDebug, format, codec: codecChoice } = videoSettings;
             const includeReferenceImage = !!videoSettings.includeReferenceImage;
-            const restoreLayers: Array<{ layer: Layer; enabled: boolean; }> = [];
             const rememberLayer = (layer?: Layer) => {
                 if (!layer) return;
                 restoreLayers.push({ layer, enabled: layer.enabled });
