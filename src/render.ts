@@ -13,6 +13,7 @@ type ImageSettings = {
     height: number;
     transparentBg: boolean;
     showDebug: boolean;
+    includeReferenceImage?: boolean;
 };
 
 type VideoSettings = {
@@ -26,6 +27,7 @@ type VideoSettings = {
     showDebug: boolean;
     format: 'mp4' | 'webm' | 'mov' | 'mkv';
     codec: 'h264' | 'h265' | 'vp9' | 'av1';
+    includeReferenceImage?: boolean;
 };
 
 type OffscreenRenderOptions = {
@@ -33,6 +35,7 @@ type OffscreenRenderOptions = {
     includeEyeLevel?: boolean;
     overlaysOnly?: boolean;
     unpremultiplyAlpha?: boolean;
+    includeReferenceImage?: boolean;
 };
 
 const removeExtension = (filename: string) => {
@@ -85,11 +88,20 @@ const registerRenderEvents = (scene: Scene, events: Events) => {
         const includeEyeLevel = !!options?.includeEyeLevel;
         const overlaysOnly = !!options?.overlaysOnly;
         const applyUnpremultiply = !!options?.unpremultiplyAlpha;
+        const includeReferenceImage = !!options?.includeReferenceImage;
 
         const restoreLayers: Array<{ layer: Layer; enabled: boolean; }> = [];
         const rememberLayer = (layer?: Layer) => {
             if (!layer) return;
             restoreLayers.push({ layer, enabled: layer.enabled });
+        };
+        const referenceLayers = [scene.referenceBackLayer, scene.referenceFrontLayer];
+        const disableReferenceLayers = () => {
+            referenceLayers.forEach((layer) => {
+                if (!layer) return;
+                rememberLayer(layer);
+                layer.enabled = false;
+            });
         };
 
         const prevRenderOverlays = scene.camera.renderOverlays;
@@ -105,7 +117,7 @@ const registerRenderEvents = (scene: Scene, events: Events) => {
             const worldLayer = scene.app.scene.layers.getLayerByName('World');
 
             if (overlaysOnly) {
-                [scene.backgroundLayer, scene.shadowLayer, scene.overlayLayer, scene.gizmoLayer, scene.modelLightingLayer, worldLayer].forEach((layer) => {
+                [scene.backgroundLayer, scene.shadowLayer, scene.overlayLayer, scene.gizmoLayer, scene.modelLightingLayer, worldLayer, ...referenceLayers].forEach((layer) => {
                     if (!layer) return;
                     rememberLayer(layer);
                     layer.enabled = false;
@@ -113,6 +125,9 @@ const registerRenderEvents = (scene: Scene, events: Events) => {
             } else {
                 rememberLayer(scene.gizmoLayer);
                 scene.gizmoLayer.enabled = false;
+                if (!includeReferenceImage) {
+                    disableReferenceLayers();
+                }
             }
 
             scene.camera.renderOverlays = includeGrid || includeEyeLevel;
@@ -181,6 +196,19 @@ const registerRenderEvents = (scene: Scene, events: Events) => {
 
         try {
             const { width, height, transparentBg, showDebug } = imageSettings;
+            const includeReferenceImage = !!imageSettings.includeReferenceImage;
+            const restoreLayers: Array<{ layer: Layer; enabled: boolean; }> = [];
+            const rememberLayer = (layer?: Layer) => {
+                if (!layer) return;
+                restoreLayers.push({ layer, enabled: layer.enabled });
+            };
+            if (!includeReferenceImage) {
+                [scene.referenceBackLayer, scene.referenceFrontLayer].forEach((layer) => {
+                    if (!layer) return;
+                    rememberLayer(layer);
+                    layer.enabled = false;
+                });
+            }
             const bgClr = events.invoke('bgClr');
 
             // start rendering to offscreen buffer only
@@ -249,6 +277,11 @@ const registerRenderEvents = (scene: Scene, events: Events) => {
                 message: `'${error.message ?? error}'`
             });
         } finally {
+            restoreLayers.forEach(({ layer, enabled }) => {
+                if (layer) {
+                    layer.enabled = enabled;
+                }
+            });
             scene.camera.endOffscreenMode();
             scene.camera.renderOverlays = true;
             scene.gizmoLayer.enabled = true;
@@ -263,6 +296,19 @@ const registerRenderEvents = (scene: Scene, events: Events) => {
 
         try {
             const { startFrame, endFrame, frameRate, width, height, bitrate, transparentBg, showDebug, format, codec: codecChoice } = videoSettings;
+            const includeReferenceImage = !!videoSettings.includeReferenceImage;
+            const restoreLayers: Array<{ layer: Layer; enabled: boolean; }> = [];
+            const rememberLayer = (layer?: Layer) => {
+                if (!layer) return;
+                restoreLayers.push({ layer, enabled: layer.enabled });
+            };
+            if (!includeReferenceImage) {
+                [scene.referenceBackLayer, scene.referenceFrontLayer].forEach((layer) => {
+                    if (!layer) return;
+                    rememberLayer(layer);
+                    layer.enabled = false;
+                });
+            }
 
             const target = fileStream ? new StreamTarget(fileStream) : new BufferTarget();
 
@@ -453,6 +499,11 @@ const registerRenderEvents = (scene: Scene, events: Events) => {
                 message: `'${error.message ?? error}'`
             });
         } finally {
+            restoreLayers.forEach(({ layer, enabled }) => {
+                if (layer) {
+                    layer.enabled = enabled;
+                }
+            });
             scene.camera.endOffscreenMode();
             scene.camera.renderOverlays = true;
             scene.gizmoLayer.enabled = true;

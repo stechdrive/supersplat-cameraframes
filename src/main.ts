@@ -35,6 +35,8 @@ import { ToolManager } from './tools/tool-manager';
 import { registerTransformHandlerEvents } from './transform-handler';
 import { EditorUI } from './ui/editor';
 import { localizeInit } from './ui/localization';
+import { ReferenceImageHistory } from './reference-image-history';
+import { registerReferenceImage } from './reference-image-controller';
 
 declare global {
     interface LaunchParams {
@@ -273,6 +275,13 @@ const main = async () => {
         snapshot => cameraFramesController.applySnapshot(snapshot)
     );
     cameraFramesController.setHistory(cameraFramesHistory);
+    const referenceImageController = registerReferenceImage(events, scene);
+    const referenceImageHistory = new ReferenceImageHistory(
+        events,
+        () => referenceImageController.snapshot(),
+        snapshot => referenceImageController.applySnapshot(snapshot)
+    );
+    referenceImageController.setHistory(referenceImageHistory);
     registerDocEvents(scene, events);
     registerRenderEvents(scene, events);
     registerIframeApi(events);

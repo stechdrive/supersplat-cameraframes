@@ -11,8 +11,8 @@ import { serializePly } from './splat-serialize';
 import { Transform } from './transform';
 import { localize } from './ui/localization';
 
-const DOC_VERSION = 3;
-const SUPPORTED_DOC_VERSIONS = new Set([0, 1, 2, 3]);
+const DOC_VERSION = 4;
+const SUPPORTED_DOC_VERSIONS = new Set([0, 1, 2, 3, 4]);
 const ZIP64_MARGIN_BYTES = 1800n * 1024n * 1024n;   // 約1.8GB (GiB基準)
 const ZIP32_LIMIT = 0xffffffffn;
 const ZIP_ENTRY_OVERHEAD = 256n;
@@ -73,18 +73,18 @@ const estimateSplatPlySize = (splat: Splat) => {
     return headerBytes + perPointBytes * gaussianCount;
 };
 
-const estimateDocumentSize = (documentData: any, splats: Splat[], models: Model[], resolveBlob: (model: Model) => Blob | null) => {
+const estimateDocumentSize = (documentData: any, splats: Splat[], models: Model[], resolveBlob: (model: Model) => Blob | null, referenceImageSize: bigint = 0n) => {
     const encoder = new TextEncoder();
     const docSize = BigInt(encoder.encode(JSON.stringify(documentData)).length);
     const splatSize = splats.reduce((sum, splat) => sum + estimateSplatPlySize(splat), 0n);
     const modelSize = models.reduce((sum, model) => sum + BigInt(resolveBlob(model)?.size ?? 0), 0n);
-    const entryCount = BigInt(1 + splats.length + models.length);
+    const entryCount = BigInt(1 + splats.length + models.length + (referenceImageSize > 0n ? 1 : 0));
     const overhead = entryCount * ZIP_ENTRY_OVERHEAD;
     return {
         docSize,
         splatSize,
         modelSize,
-        total: docSize + splatSize + modelSize + overhead
+        total: docSize + splatSize + modelSize + referenceImageSize + overhead
     };
 };
 
@@ -200,6 +200,17 @@ const registerDocEvents = (scene: Scene, events: Events) => {
             events.invoke('docDeserialize.cameraFrames', document.cameraFrames ?? null);
             scene.camera.docDeserialize(document.camera ?? null);
             scene.docDeserializeLighting(document.lighting ?? null);
+            const referenceImageState = document.referenceImage ?? null;
+            let referenceImageBlob: Blob | null = null;
+            if (referenceImageState?.source?.filename) {
+                const refPath = `reference-image/${referenceImageState.source.filename}`;
+                try {
+                    referenceImageBlob = await zip.blob(refPath);
+                } catch (error) {
+                    console.warn(`reference image missing: ${refPath}`, error);
+                }
+            }
+            await events.invoke('docDeserialize.referenceImage', referenceImageState, referenceImageBlob);
 
             // refresh the pivot to reflect the loaded transform
             const currentSelection = events.invoke('selection');
@@ -270,6 +281,9 @@ const registerDocEvents = (scene: Scene, events: Events) => {
         try {
             const splats = events.invoke('scene.allSplats') as Splat[];
             const models = scene.getElementsByType(ElementType.model) as Model[];
+            const referenceImageState = events.invoke('docSerialize.referenceImage');
+            const referenceImageAsset = events.invoke('referenceImage.docAsset') as { blob: Blob; filename: string } | null;
+            const referenceImageSize = BigInt(referenceImageAsset?.blob?.size ?? 0);
 
             const modelDocs = models.map((model, i) => {
                 const serialized = model.docSerialize();
@@ -287,6 +301,7 @@ const registerDocEvents = (scene: Scene, events: Events) => {
                 poseSets: events.invoke('docSerialize.poseSets'),
                 timeline: events.invoke('docSerialize.timeline'),
                 cameraFrames: events.invoke('docSerialize.cameraFrames'),
+                referenceImage: referenceImageState ?? undefined,
                 splats: splats.map(s => s.docSerialize()),
                 models: modelDocs,
                 lighting: scene.docSerializeLighting()
@@ -294,9 +309,9 @@ const registerDocEvents = (scene: Scene, events: Events) => {
 
             // 予測用のペイロードを使って ZIP64 が必要か判定
             const provisionalDoc = createDocumentPayload(DOC_VERSION, true);
-            const estimate = estimateDocumentSize(provisionalDoc, splats, models, model => scene.assetLoader.getSourceBlob(model));
+            const estimate = estimateDocumentSize(provisionalDoc, splats, models, model => scene.assetLoader.getSourceBlob(model), referenceImageSize);
             const useZip64 = estimate.total >= ZIP64_MARGIN_BYTES || estimate.total > ZIP32_LIMIT;
-            const docVersion = useZip64 ? 3 : 2;
+            const docVersion = DOC_VERSION;
             const document = createDocumentPayload(docVersion, useZip64);
 
             if (!options.stream && useZip64 && !hasFileSystemAccess()) {
@@ -328,6 +343,10 @@ const registerDocEvents = (scene: Scene, events: Events) => {
             for (let i = 0; i < models.length; ++i) {
                 const blob = await getModelBlob(models[i]);
                 await writeBlobToZip(zipWriter, modelDocs[i].filename, blob);
+            }
+            if (referenceImageAsset?.blob) {
+                const safeName = (referenceImageAsset.filename ?? 'reference-image').split(/[\\/]/).pop() ?? 'reference-image';
+                await writeBlobToZip(zipWriter, `reference-image/${safeName}`, referenceImageAsset.blob);
             }
             await zipWriter.close();
             await writer.close();

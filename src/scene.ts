@@ -42,6 +42,8 @@ class Scene {
     overlayLayer: Layer;
     gizmoLayer: Layer;
     modelLightingLayer: Layer;
+    referenceBackLayer: Layer | null = null;
+    referenceFrontLayer: Layer | null = null;
     ambientFillLights: Entity[] = [];
     defaultAmbient = 0.5;
     sceneState = [new SceneState(), new SceneState()];
@@ -233,16 +235,14 @@ class Scene {
             transparentSortMode: SORTMODE_NONE
         });
 
-        const layers = this.app.scene.layers;
-        const worldLayer = layers.getLayerByName('World');
-        const idx = layers.getOpaqueIndex(worldLayer);
-        layers.insert(this.backgroundLayer, idx);
-        layers.insert(this.shadowLayer, idx + 1);
-        layers.insert(this.modelLightingLayer, idx + 2);
-        layers.insert(this.debugLayer, idx + 1);
-        layers.insert(this.exportOverlayLayer, idx + 3);
-        layers.push(this.overlayLayer);
-        layers.push(this.gizmoLayer);
+        const worldLayer = this.app.scene.layers.getLayerByName('World');
+        this.insertLayerBefore(this.backgroundLayer, worldLayer);
+        this.insertLayerBefore(this.shadowLayer, worldLayer);
+        this.insertLayerBefore(this.modelLightingLayer, worldLayer);
+        this.insertLayerBefore(this.debugLayer, worldLayer);
+        this.insertLayerBefore(this.exportOverlayLayer, worldLayer);
+        this.insertLayerAfter(this.overlayLayer, worldLayer);
+        this.insertLayerAfter(this.gizmoLayer, this.overlayLayer);
 
         // Ambient fallback (環境マップ未設定時の視認性確保)
         this.app.scene.ambientLight.set(0.5, 0.5, 0.5);
@@ -292,6 +292,24 @@ class Scene {
         this.add(this.outline);
         this.underlay = new Underlay();
         this.add(this.underlay);
+    }
+
+    insertLayerBefore(layer: Layer, target: Layer | string | null | undefined) {
+        if (!layer) return;
+        const layers = this.app.scene.layers;
+        const targetLayer = typeof target === 'string' ? layers.getLayerByName(target) : target;
+        const idx = targetLayer ? layers.getOpaqueIndex(targetLayer) : -1;
+        const insertIndex = idx >= 0 ? idx : layers.layerList.length;
+        layers.insert(layer, insertIndex);
+    }
+
+    insertLayerAfter(layer: Layer, target: Layer | string | null | undefined) {
+        if (!layer) return;
+        const layers = this.app.scene.layers;
+        const targetLayer = typeof target === 'string' ? layers.getLayerByName(target) : target;
+        const idx = targetLayer ? layers.getOpaqueIndex(targetLayer) : -1;
+        const insertIndex = idx >= 0 ? idx + 1 : layers.layerList.length;
+        layers.insert(layer, insertIndex);
     }
 
     private createAmbientFillLights() {

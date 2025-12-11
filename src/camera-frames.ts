@@ -1062,6 +1062,18 @@ export class CameraFramesController {
             };
         });
 
+        // 提供: レンダーボックスのビューポート情報（アンカー含む）
+        this.events.function('cameraFrames.viewportMapping', () => {
+            if (!this.state.enabled) {
+                return null;
+            }
+            const mapping = this.computeViewportMapping(false);
+            return {
+                ...mapping,
+                anchor: this.state.renderBox.anchor
+            };
+        });
+
         // 提供: View Zoom / View Scale (CAMERA FRAMES 有効時のみ)
         this.events.function('cameraFrames.viewZoom', () => {
             if (!this.state.enabled) {
@@ -3010,8 +3022,14 @@ export class CameraFramesController {
         return canvas;
     }
 
+    private includeReferenceImageForExport() {
+        const refState = this.events.invoke('referenceImage.state') as { enabled?: boolean; visible?: boolean; includeInRender?: boolean; } | null;
+        return !!(refState && refState.enabled && refState.visible && refState.includeInRender);
+    }
+
     private async renderBase(width: number, height: number) {
-        const pixels = await this.events.invoke('render.offscreen', width, height) as Uint8Array;
+        const includeReferenceImage = this.includeReferenceImageForExport();
+        const pixels = await this.events.invoke('render.offscreen', width, height, includeReferenceImage ? { includeReferenceImage } : undefined) as Uint8Array;
         if (!pixels) {
             throw new Error('render.offscreen returned empty buffer');
         }

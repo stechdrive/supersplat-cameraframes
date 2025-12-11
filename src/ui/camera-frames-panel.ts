@@ -16,6 +16,7 @@ import separateSvg from './svg/select-separate.svg';
 import unlockSvg from './svg/select-unlock.svg';
 import shownSvg from './svg/shown.svg';
 import viewportSvg from './svg/viewport.svg';
+import { ReferenceImagePanel } from './reference-image-panel';
 
 type CameraFramesState = {
     enabled: boolean;
@@ -210,6 +211,8 @@ class CameraFramesPanel extends Panel {
             setCompact(!compact);
         };
         collapseButton.on('click', toggleCompact);
+
+        const referenceImagePanel = new ReferenceImagePanel(events);
 
         // header toggle (Mode Switch)
         const headerToggle = new Container({ class: ['header-toggle-group'] });
@@ -988,6 +991,7 @@ class CameraFramesPanel extends Panel {
         [sliderR, sliderU, sliderF].forEach(hideSliderInputs);
 
         // assemble
+        this.content.append(referenceImagePanel);
         this.content.append(layoutGroup);
         this.content.append(outputRow);
         this.content.append(filenameRow);
