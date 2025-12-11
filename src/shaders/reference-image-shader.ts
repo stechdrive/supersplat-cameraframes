@@ -14,7 +14,7 @@ const fragmentShader = /* glsl */`
     uniform float opacity;
 
     void main(void) {
-        vec2 frag = gl_FragCoord.xy;
+        vec2 frag = vec2(gl_FragCoord.x, targetSize.y - gl_FragCoord.y);
         vec2 minPos = rectPx.xy;
         vec2 maxPos = rectPx.xy + rectPx.zw;
 
