@@ -16,7 +16,6 @@ import separateSvg from './svg/select-separate.svg';
 import unlockSvg from './svg/select-unlock.svg';
 import shownSvg from './svg/shown.svg';
 import viewportSvg from './svg/viewport.svg';
-import { ReferenceImagePanel } from './reference-image-panel';
 
 type CameraFramesState = {
     enabled: boolean;
@@ -212,7 +211,22 @@ class CameraFramesPanel extends Panel {
         };
         collapseButton.on('click', toggleCompact);
 
-        const referenceImagePanel = new ReferenceImagePanel(events);
+        const referenceImageButtonRow = new Container({ class: 'control-parent' });
+        const referenceImageButton = new Button({
+            class: ['control-element-expand', 'reference-image-open-button'],
+            text: localize('panel.reference-image.title')
+        });
+        referenceImageButton.dom.title = localize('panel.reference-image.title');
+        referenceImageButton.on('click', () => {
+            events.fire('referenceImagePanel.toggleVisible');
+        });
+        referenceImageButtonRow.append(referenceImageButton);
+        const setReferenceButtonState = (visible: boolean) => {
+            referenceImageButton.class[visible ? 'add' : 'remove']('active');
+            referenceImageButton.dom.setAttribute('aria-pressed', visible ? 'true' : 'false');
+        };
+        setReferenceButtonState(false);
+        events.on('referenceImagePanel.visible', (visible: boolean) => setReferenceButtonState(!!visible));
 
         // header toggle (Mode Switch)
         const headerToggle = new Container({ class: ['header-toggle-group'] });
@@ -991,7 +1005,7 @@ class CameraFramesPanel extends Panel {
         [sliderR, sliderU, sliderF].forEach(hideSliderInputs);
 
         // assemble
-        this.content.append(referenceImagePanel);
+        this.content.append(referenceImageButtonRow);
         this.content.append(layoutGroup);
         this.content.append(outputRow);
         this.content.append(filenameRow);

@@ -23,7 +23,9 @@ class ReferenceImagePanel extends Container {
     constructor(events: Events, args: any = {}) {
         super({
             ...args,
-            class: ['reference-image-panel', 'control-parent']
+            id: 'reference-image-panel',
+            class: ['panel', 'reference-image-panel'],
+            hidden: true
         });
 
         ['pointerdown', 'pointerup', 'click', 'wheel'].forEach((evt) => {
@@ -32,14 +34,19 @@ class ReferenceImagePanel extends Container {
 
         let suppress = false;
 
-        const header = new Label({ class: 'control-label', text: localize('panel.reference-image.title') });
-        header.dom.style.marginBottom = '4px';
+        const panelHeader = new Container({ class: 'panel-header' });
+        const panelIcon = new Label({ class: 'panel-header-icon', text: '\uE3B6' });
+        const panelTitle = new Label({ class: 'panel-header-label', text: localize('panel.reference-image.title') });
+        panelHeader.append(panelIcon);
+        panelHeader.append(panelTitle);
 
-        const infoLabel = new Label({ class: 'control-element-expand', text: localize('panel.reference-image.empty') });
+        const body = new Container({ class: 'reference-image-body' });
+
+        const infoLabel = new Label({ class: ['control-element-expand', 'reference-image-info'], text: localize('panel.reference-image.empty') });
 
         const loadButton = new Button({ class: 'icon-button', text: localize('panel.reference-image.load') });
         const clearButton = new Button({ class: ['icon-button', 'danger-icon'], text: localize('panel.reference-image.clear') });
-        const buttonRow = new Container({ class: 'control-parent' });
+        const buttonRow = new Container({ class: ['control-parent', 'button-row'] });
         buttonRow.append(loadButton);
         buttonRow.append(clearButton);
 
@@ -168,16 +175,45 @@ class ReferenceImagePanel extends Container {
         applyState(initialState);
         events.on('referenceImage.stateChanged', (state: ReferenceImageState) => applyState(state));
 
-        this.append(header);
-        this.append(buttonRow);
-        this.append(infoLabel);
-        this.append(visibleRow);
-        this.append(includeRow);
-        this.append(layerRow);
-        this.append(opacityRow);
-        this.append(scaleRow);
-        this.append(offsetRow);
-        this.append(pixelPerfectLabel);
+        const setVisible = (visible: boolean) => {
+            const nextHidden = !visible;
+            if (this.hidden === nextHidden) {
+                return;
+            }
+            this.hidden = nextHidden;
+            events.fire('referenceImagePanel.visible', visible);
+        };
+
+        events.function('referenceImagePanel.visible', () => {
+            return !this.hidden;
+        });
+
+        events.on('referenceImagePanel.setVisible', (visible: boolean) => {
+            setVisible(!!visible);
+        });
+
+        events.on('referenceImagePanel.toggleVisible', () => {
+            setVisible(this.hidden);
+        });
+
+        events.on('cameraFramesPanel.visible', (visible: boolean) => {
+            if (!visible) {
+                setVisible(false);
+            }
+        });
+
+        body.append(buttonRow);
+        body.append(infoLabel);
+        body.append(visibleRow);
+        body.append(includeRow);
+        body.append(layerRow);
+        body.append(opacityRow);
+        body.append(scaleRow);
+        body.append(offsetRow);
+        body.append(pixelPerfectLabel);
+
+        this.append(panelHeader);
+        this.append(body);
     }
 }
 

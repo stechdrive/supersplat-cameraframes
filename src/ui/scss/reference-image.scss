@@ -1,0 +1,27 @@
+@use 'colors.scss' as *;
+
+#reference-image-panel {
+    top: 50%;
+    transform: translate(0, -50%);
+    right: 480px;
+    width: 360px;
+    flex-direction: column;
+    gap: 8px;
+    z-index: 5;
+
+    &:not(.pcui-hidden) {
+        display: flex;
+    }
+
+    .reference-image-body {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        padding: 8px;
+    }
+
+    .reference-image-info {
+        line-height: 16px;
+        word-break: break-all;
+    }
+}
