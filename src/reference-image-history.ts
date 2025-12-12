@@ -1,6 +1,6 @@
-import type { ReferenceImageState } from './reference-image-types';
 import { Events } from './events';
 import { SnapshotOp } from './history-ops';
+import type { ReferenceImageState } from './reference-image-types';
 
 const cloneState = <T>(value: T): T => JSON.parse(JSON.stringify(value));
 

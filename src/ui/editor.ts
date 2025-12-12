@@ -15,6 +15,7 @@ import logo from './playcanvas-logo.png';
 import { Popup, ShowOptions } from './popup';
 import { Progress } from './progress';
 import { PublishSettingsDialog } from './publish-settings-dialog';
+import { ReferenceImagePanel } from './reference-image-panel';
 import { RightToolbar } from './right-toolbar';
 import { ScenePanel } from './scene-panel';
 import { ShortcutsPopup } from './shortcuts-popup';
@@ -25,7 +26,6 @@ import { VideoSettingsDialog } from './video-settings-dialog';
 import { ViewCube } from './view-cube';
 import { ViewPanel } from './view-panel';
 import { version } from '../../package.json';
-import { ReferenceImagePanel } from './reference-image-panel';
 
 // ts compiler and vscode find this type, but eslint does not
 type FilePickerAcceptType = unknown;

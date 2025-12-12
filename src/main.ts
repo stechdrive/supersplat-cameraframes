@@ -13,6 +13,8 @@ import { registerIframeApi } from './iframe-api';
 import { MeshManager } from './mesh-manager';
 import { registerPlySequenceEvents } from './ply-sequence';
 import { registerPublishEvents } from './publish';
+import { registerReferenceImage } from './reference-image-controller';
+import { ReferenceImageHistory } from './reference-image-history';
 import { registerRenderEvents } from './render';
 import { Scene } from './scene';
 import { getSceneConfig } from './scene-config';
@@ -35,8 +37,6 @@ import { ToolManager } from './tools/tool-manager';
 import { registerTransformHandlerEvents } from './transform-handler';
 import { EditorUI } from './ui/editor';
 import { localizeInit } from './ui/localization';
-import { ReferenceImageHistory } from './reference-image-history';
-import { registerReferenceImage } from './reference-image-controller';
 
 declare global {
     interface LaunchParams {
@@ -291,8 +291,8 @@ const main = async () => {
     // wait until the first safe render before forcing FPV navigation and camera frames
     const fpvReadyHandle = events.on('postrender', () => {
         fpvReadyHandle.off();
-        events.fire('camera.setNavMode', 'fpv');
         events.fire('cameraFrames.setEnabled', true);
+        events.fire('camera.setNavMode', 'fpv');
     });
 
     // load async models

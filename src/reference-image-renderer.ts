@@ -17,8 +17,8 @@ import {
 } from 'playcanvas';
 
 import { Element, ElementType } from './element';
-import { fragmentShader, vertexShader } from './shaders/reference-image-shader';
 import type { ReferenceImageLayer } from './reference-image-types';
+import { fragmentShader, vertexShader } from './shaders/reference-image-shader';
 
 type RenderRect = { x: number; y: number; w: number; h: number; };
 
