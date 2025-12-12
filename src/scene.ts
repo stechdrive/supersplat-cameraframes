@@ -307,8 +307,13 @@ class Scene {
         if (!layer) return;
         const layers = this.app.scene.layers;
         const targetLayer = typeof target === 'string' ? layers.getLayerByName(target) : target;
-        const idx = targetLayer ? layers.getOpaqueIndex(targetLayer) : -1;
-        const insertIndex = idx >= 0 ? idx + 1 : layers.layerList.length;
+        // Insert after the *whole* target layer (opaque + transparent). Using the opaque index can
+        // split the target layer and/or place the new layer before the target's transparent pass.
+        // That can break depth ordering (e.g. clearing depth before World transparent splats).
+        const transparentIdx = targetLayer ? layers.getTransparentIndex(targetLayer) : -1;
+        const opaqueIdx = targetLayer ? layers.getOpaqueIndex(targetLayer) : -1;
+        const baseIdx = transparentIdx >= 0 ? transparentIdx : opaqueIdx;
+        const insertIndex = baseIdx >= 0 ? baseIdx + 1 : layers.layerList.length;
         layers.insert(layer, insertIndex);
     }
 
