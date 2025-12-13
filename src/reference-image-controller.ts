@@ -326,6 +326,10 @@ class ReferenceImageController {
     }
 
     private updateRenderer() {
+        if (this.scene.camera.suppressFinalBlit && !this.scene.renderFlags.offscreenIncludeReferenceImage) {
+            this.renderer.clearParams();
+            return;
+        }
         const mapping = this.getViewportMapping();
         this.computePixelPerfect(mapping);
         const rect = this.computeRect(mapping);

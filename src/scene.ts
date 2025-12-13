@@ -63,12 +63,14 @@ class Scene {
         eyeLevelLayerOverride: Layer | null;
         gridLayerOverride: Layer | null;
         hideBounds: boolean;
+        offscreenIncludeReferenceImage: boolean;
     } = {
             forceGridOverlay: false,
             forceEyeLevelOverlay: false,
             eyeLevelLayerOverride: null,
             gridLayerOverride: null,
-            hideBounds: false
+            hideBounds: false,
+            offscreenIncludeReferenceImage: false
         };
 
     canvasResize: { width: number; height: number } | null = null;

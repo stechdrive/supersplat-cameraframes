@@ -88,7 +88,7 @@ const registerRenderEvents = (scene: Scene, events: Events) => {
         const includeEyeLevel = !!options?.includeEyeLevel;
         const overlaysOnly = !!options?.overlaysOnly;
         const applyUnpremultiply = !!options?.unpremultiplyAlpha;
-        const includeReferenceImage = !!options?.includeReferenceImage;
+        const includeReferenceImage = !!options?.includeReferenceImage && !overlaysOnly;
 
         const restoreLayers: Array<{ layer: Layer; enabled: boolean; }> = [];
         const rememberLayer = (layer?: Layer) => {
@@ -109,10 +109,12 @@ const registerRenderEvents = (scene: Scene, events: Events) => {
         const prevGridVisible = scene.grid.visible;
         const prevEyeVisible = scene.eyeLevel.visible;
         const prevHideBounds = scene.renderFlags.hideBounds;
+        const prevOffscreenIncludeReferenceImage = scene.renderFlags.offscreenIncludeReferenceImage;
 
         try {
             // start rendering to offscreen buffer only
             scene.camera.startOffscreenMode(width, height);
+            scene.renderFlags.offscreenIncludeReferenceImage = includeReferenceImage;
 
             const worldLayer = scene.app.scene.layers.getLayerByName('World');
 
@@ -183,6 +185,7 @@ const registerRenderEvents = (scene: Scene, events: Events) => {
             scene.renderFlags.eyeLevelLayerOverride = prevRenderFlags.eyeLevelLayerOverride;
             scene.renderFlags.gridLayerOverride = prevRenderFlags.gridLayerOverride;
             scene.renderFlags.hideBounds = prevHideBounds;
+            scene.renderFlags.offscreenIncludeReferenceImage = prevOffscreenIncludeReferenceImage;
             scene.grid.visible = prevGridVisible;
             scene.eyeLevel.visible = prevEyeVisible;
             scene.camera.endOffscreenMode();
@@ -195,6 +198,7 @@ const registerRenderEvents = (scene: Scene, events: Events) => {
         events.fire('startSpinner');
 
         const restoreLayers: Array<{ layer: Layer; enabled: boolean; }> = [];
+        const prevOffscreenIncludeReferenceImage = scene.renderFlags.offscreenIncludeReferenceImage;
 
         try {
             const { width, height, transparentBg, showDebug } = imageSettings;
@@ -214,6 +218,7 @@ const registerRenderEvents = (scene: Scene, events: Events) => {
 
             // start rendering to offscreen buffer only
             scene.camera.startOffscreenMode(width, height);
+            scene.renderFlags.offscreenIncludeReferenceImage = includeReferenceImage;
             scene.camera.renderOverlays = showDebug;
             scene.gizmoLayer.enabled = false;
             if (!transparentBg) {
@@ -289,6 +294,8 @@ const registerRenderEvents = (scene: Scene, events: Events) => {
             scene.camera.entity.camera.clearColor.set(0, 0, 0, 0);
 
             events.fire('stopSpinner');
+
+            scene.renderFlags.offscreenIncludeReferenceImage = prevOffscreenIncludeReferenceImage;
         }
     });
 
@@ -296,6 +303,7 @@ const registerRenderEvents = (scene: Scene, events: Events) => {
         events.fire('progressStart', localize('panel.render.render-video'));
 
         const restoreLayers: Array<{ layer: Layer; enabled: boolean; }> = [];
+        const prevOffscreenIncludeReferenceImage = scene.renderFlags.offscreenIncludeReferenceImage;
 
         try {
             const { startFrame, endFrame, frameRate, width, height, bitrate, transparentBg, showDebug, format, codec: codecChoice } = videoSettings;
@@ -389,6 +397,7 @@ const registerRenderEvents = (scene: Scene, events: Events) => {
 
             // start rendering to offscreen buffer only
             scene.camera.startOffscreenMode(width, height);
+            scene.renderFlags.offscreenIncludeReferenceImage = includeReferenceImage;
             scene.camera.renderOverlays = showDebug;
             scene.gizmoLayer.enabled = false;
             if (!transparentBg) {
@@ -512,6 +521,7 @@ const registerRenderEvents = (scene: Scene, events: Events) => {
             scene.camera.entity.camera.clearColor.set(0, 0, 0, 0);
             scene.lockedRenderMode = false;
             scene.forceRender = true;       // camera likely moved, finish with normal render
+            scene.renderFlags.offscreenIncludeReferenceImage = prevOffscreenIncludeReferenceImage;
 
             events.fire('progressEnd');
         }
