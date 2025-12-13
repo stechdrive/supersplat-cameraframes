@@ -204,6 +204,49 @@ class ReferenceImagePanel extends Container {
         opacityGroup.append(opacityInput);
         transformRow.append(opacityGroup);
 
+        const registerUndoGroup = (input: NumericInput, label: string) => {
+            let active = false;
+
+            const begin = () => {
+                if (suppress || active) {
+                    return;
+                }
+                active = true;
+                events.fire('referenceImage.historyBegin', label);
+            };
+
+            const commit = () => {
+                if (!active) {
+                    return;
+                }
+                active = false;
+                events.fire('referenceImage.historyCommit', label);
+            };
+
+            input.on('slider:mousedown', begin);
+            input.on('slider:mouseup', commit);
+            input.on('blur', commit);
+
+            // ArrowUp/ArrowDown は keydown 内で値が更新され 'change' が発火するため、
+            // capture で先に begin して 1 操作としてまとめる。
+            input.input.addEventListener('keydown', (event: KeyboardEvent) => {
+                if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+                    begin();
+                }
+            }, true);
+
+            input.input.addEventListener('keyup', (event: KeyboardEvent) => {
+                if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+                    commit();
+                }
+            }, true);
+        };
+
+        registerUndoGroup(offsetX, 'referenceImage.offset');
+        registerUndoGroup(offsetY, 'referenceImage.offset');
+        registerUndoGroup(scaleInput, 'referenceImage.scale');
+        registerUndoGroup(opacityInput, 'referenceImage.opacity');
+
         positionGroup.append(offsetRow);
         positionGroup.append(transformRow);
 

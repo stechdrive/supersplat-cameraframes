@@ -63,6 +63,8 @@ class ReferenceImageController {
         this.events.on('referenceImage.center', () => this.center());
         this.events.on('referenceImage.setAnchor', (anchor: RenderBoxAnchor) => this.setAnchor(anchor));
         this.events.on('referenceImage.setIncludeInRender', (value: boolean) => this.setIncludeInRender(value));
+        this.events.on('referenceImage.historyBegin', (label: string) => this.historyBegin(label));
+        this.events.on('referenceImage.historyCommit', (label?: string) => this.historyCommit(label));
         this.events.function('referenceImage.renderExportLayer', (width: number, height: number, options?: { applyOpacity?: boolean; }) => {
             return this.renderExportLayer(width, height, options);
         });
