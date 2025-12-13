@@ -6,7 +6,7 @@ import { Events } from './events';
 import { hitTestGizmo } from './gizmo-hit';
 import { Model } from './model';
 import { PngCompressor } from './png-compressor';
-import { exportPsd } from './psd-export';
+import { exportPsd, type PsdOverlayLayer } from './psd-export';
 import { Scene } from './scene';
 import { Crc } from './serialize/crc';
 import { localize } from './ui/localization';
@@ -3071,17 +3071,18 @@ export class CameraFramesController {
         return pixels;
     }
 
-    private renderReferenceLayer(width: number, height: number, options?: { applyOpacity?: boolean; }): { layer: 'back' | 'front'; canvas: HTMLCanvasElement; } | null {
-        const refState = this.events.invoke('referenceImage.state') as { enabled?: boolean; visible?: boolean; includeInRender?: boolean; layer?: 'back' | 'front'; } | null;
+    private async renderReferenceLayer(width: number, height: number, options?: { applyOpacity?: boolean; }): Promise<{ layer: 'back' | 'front'; canvas: HTMLCanvasElement; opacity: number; } | null> {
+        const refState = this.events.invoke('referenceImage.state') as { enabled?: boolean; visible?: boolean; includeInRender?: boolean; layer?: 'back' | 'front'; opacity?: number; } | null;
         if (!refState || !refState.enabled || !refState.visible || !refState.includeInRender) {
             return null;
         }
-        const canvas = this.events.invoke('referenceImage.renderExportLayer', width, height, options) as HTMLCanvasElement | null;
+        const canvas = await this.events.invoke('referenceImage.renderExportLayer', width, height, options) as HTMLCanvasElement | null;
         if (!canvas) {
             return null;
         }
         const layer: 'back' | 'front' = refState.layer === 'front' ? 'front' : 'back';
-        return { layer, canvas };
+        const opacity = Math.max(0, Math.min(1, refState.opacity ?? 1));
+        return { layer, canvas, opacity };
     }
 
     private async renderOverlayLayer(width: number, height: number, options: { includeGrid?: boolean; includeEyeLevel?: boolean; }): Promise<HTMLCanvasElement | null> {
@@ -3385,7 +3386,7 @@ export class CameraFramesController {
         this.downloadArrayBuffer(arrayBuffer, filename);
     }
 
-    private async renderPsd(params: { basePixels: Uint8ClampedArray; underlays?: Array<{ name: string; canvas: HTMLCanvasElement; }>; overlays: Array<{ name: string; canvas: HTMLCanvasElement; }>; width: number; height: number; filename: string; }) {
+    private async renderPsd(params: { basePixels: Uint8ClampedArray; underlays?: PsdOverlayLayer[]; overlays: PsdOverlayLayer[]; width: number; height: number; filename: string; }) {
         const { basePixels, underlays, overlays, width, height, filename } = params;
         await exportPsd({
             basePixels,
@@ -3418,11 +3419,11 @@ export class CameraFramesController {
             this.syncExportFrustum(width, height);
             const basePixels = await this.renderBase(width, height);
             const debugOverlays = await this.renderOverlayLayers(width, height);
-            const referenceLayer = this.renderReferenceLayer(width, height, { applyOpacity: format !== 'psd' });
+            const referenceLayer = await this.renderReferenceLayer(width, height, { applyOpacity: format !== 'psd' });
 
             if (format === 'psd') {
                 const underlays = referenceLayer?.layer === 'back' ?
-                    [{ name: 'Reference', canvas: referenceLayer.canvas }] :
+                    [{ name: 'Reference', canvas: referenceLayer.canvas, opacity: referenceLayer.opacity }] :
                     [];
                 const modelOverlays = await this.renderModelLayers(width, height);
                 const frameOverlays = this.renderFrameOverlaysByManagement(width, height);
@@ -3430,7 +3431,7 @@ export class CameraFramesController {
                     ...(debugOverlays?.grid ? [{ name: localize('panel.camera-frames.export.grid-layer.grid'), canvas: debugOverlays.grid }] : []),
                     ...(debugOverlays?.eyeLevel ? [{ name: localize('panel.camera-frames.export.grid-layer.eye-level'), canvas: debugOverlays.eyeLevel }] : []),
                     ...modelOverlays,
-                    ...(referenceLayer?.layer === 'front' ? [{ name: 'Reference', canvas: referenceLayer.canvas }] : []),
+                    ...(referenceLayer?.layer === 'front' ? [{ name: 'Reference', canvas: referenceLayer.canvas, opacity: referenceLayer.opacity }] : []),
                     ...frameOverlays
                 ];
                 await this.renderPsd({
