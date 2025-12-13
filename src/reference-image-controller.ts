@@ -383,7 +383,6 @@ class ReferenceImageController {
         }
         const apply = () => {
             this.state.anchor = next;
-            this.renderBoxAnchor = next;
             this.updateRenderer();
             this.requestRender();
         };
