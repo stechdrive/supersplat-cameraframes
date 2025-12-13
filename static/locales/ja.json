@@ -144,6 +144,7 @@
     "panel.reference-image.opacity": "不透明度",
     "panel.reference-image.scale": "スケール(%)",
     "panel.reference-image.offset": "オフセット X / Y",
+    "panel.reference-image.center": "センタリング",
     "panel.reference-image.scaled": "縮小済み",
     "panel.reference-image.pixel-perfect": "ピクセルパーフェクト",
     "panel.reference-image.pixel-off": "ピクセルパーフェクト外",

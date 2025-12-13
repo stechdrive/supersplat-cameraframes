@@ -60,6 +60,7 @@ class ReferenceImageController {
         this.events.on('referenceImage.setOpacity', (opacity: number) => this.setOpacity(opacity));
         this.events.on('referenceImage.setScale', (pct: number) => this.setScalePct(pct));
         this.events.on('referenceImage.setOffset', (offset: { x?: number; y?: number }) => this.setOffset(offset));
+        this.events.on('referenceImage.center', () => this.center());
         this.events.on('referenceImage.setAnchor', (anchor: RenderBoxAnchor) => this.setAnchor(anchor));
         this.events.on('referenceImage.setIncludeInRender', (value: boolean) => this.setIncludeInRender(value));
         this.events.function('referenceImage.renderExportLayer', (width: number, height: number, options?: { applyOpacity?: boolean; }) => {
@@ -420,6 +421,23 @@ class ReferenceImageController {
         }
         this.historyRecord('referenceImage.offset', () => {
             this.state.offsetPx = next;
+            this.updateRenderer();
+            this.requestRender();
+            this.events.fire('referenceImage.stateChanged', this.snapshot());
+        });
+    }
+
+    private center() {
+        const nextOffset = { x: 0, y: 0 };
+        const nextAnchor = { ax: 0.5, ay: 0.5 };
+        const offsetChanged = Math.abs(nextOffset.x - this.state.offsetPx.x) >= 1e-3 || Math.abs(nextOffset.y - this.state.offsetPx.y) >= 1e-3;
+        const anchorChanged = Math.abs(nextAnchor.ax - this.state.anchor.ax) >= 1e-3 || Math.abs(nextAnchor.ay - this.state.anchor.ay) >= 1e-3;
+        if (!offsetChanged && !anchorChanged) {
+            return;
+        }
+        this.historyRecord('referenceImage.center', () => {
+            this.state.offsetPx = nextOffset;
+            this.state.anchor = nextAnchor;
             this.updateRenderer();
             this.requestRender();
             this.events.fire('referenceImage.stateChanged', this.snapshot());

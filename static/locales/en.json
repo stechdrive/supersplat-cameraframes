@@ -144,6 +144,7 @@
     "panel.reference-image.opacity": "Opacity",
     "panel.reference-image.scale": "Scale (%)",
     "panel.reference-image.offset": "Offset X / Y",
+    "panel.reference-image.center": "Center",
     "panel.reference-image.scaled": "scaled",
     "panel.reference-image.pixel-perfect": "Pixel perfect",
     "panel.reference-image.pixel-off": "Not pixel perfect",

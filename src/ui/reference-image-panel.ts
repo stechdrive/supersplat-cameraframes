@@ -4,6 +4,7 @@ import { Events } from '../events';
 import { formatInteger, localize } from './localization';
 import deleteSvg from './svg/delete.svg';
 import referenceImageSvg from './svg/reference-image.svg';
+import undoSvg from './svg/undo.svg';
 
 const createSvg = (svgString: string) => {
     let markup = svgString;
@@ -182,6 +183,12 @@ class ReferenceImagePanel extends Container {
         offsetRow.append(offsetX);
         offsetRow.append(offsetY);
 
+        const centerButton = new Button({ class: ['icon-button'], text: '' });
+        centerButton.dom.appendChild(createSvg(undoSvg));
+        centerButton.dom.title = localize('panel.reference-image.center');
+        centerButton.dom.setAttribute('aria-label', localize('panel.reference-image.center'));
+        offsetRow.append(centerButton);
+
         const pixelPerfectLabel = new Label({ class: 'control-element-expand', text: '' });
 
         const fileInput = document.createElement('input');
@@ -229,6 +236,11 @@ class ReferenceImagePanel extends Container {
             applyOffset();
         });
 
+        centerButton.on('click', () => {
+            if (suppress) return;
+            events.fire('referenceImage.center');
+        });
+
         const applyState = (state?: ReferenceImageState | null) => {
             suppress = true;
             const active = !!(state?.source);
@@ -239,6 +251,7 @@ class ReferenceImagePanel extends Container {
             scaleInput.value = state?.scalePct ?? 100;
             offsetX.value = state?.offsetPx?.x ?? 0;
             offsetY.value = state?.offsetPx?.y ?? 0;
+            centerButton.enabled = active;
             const infoParts = [];
             if (state?.source?.filename) {
                 infoParts.push(state.source.filename);
