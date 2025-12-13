@@ -3033,19 +3033,19 @@ export class CameraFramesController {
 
     private async renderBase(width: number, height: number) {
         // ベース描画には下絵を混ぜない（PSD で独立レイヤー化し、PNG も CPU 合成で制御する）
-        const pixels = await this.events.invoke('render.offscreen', width, height) as Uint8Array;
+        const pixels = await this.events.invoke('render.offscreen', width, height, { includeReferenceImage: false }) as Uint8Array;
         if (!pixels) {
             throw new Error('render.offscreen returned empty buffer');
         }
         return pixels;
     }
 
-    private renderReferenceLayer(width: number, height: number): { layer: 'back' | 'front'; canvas: HTMLCanvasElement; } | null {
+    private renderReferenceLayer(width: number, height: number, options?: { applyOpacity?: boolean; }): { layer: 'back' | 'front'; canvas: HTMLCanvasElement; } | null {
         const refState = this.events.invoke('referenceImage.state') as { enabled?: boolean; visible?: boolean; includeInRender?: boolean; layer?: 'back' | 'front'; } | null;
         if (!refState || !refState.enabled || !refState.visible || !refState.includeInRender) {
             return null;
         }
-        const canvas = this.events.invoke('referenceImage.renderExportLayer', width, height) as HTMLCanvasElement | null;
+        const canvas = this.events.invoke('referenceImage.renderExportLayer', width, height, options) as HTMLCanvasElement | null;
         if (!canvas) {
             return null;
         }
@@ -3387,7 +3387,7 @@ export class CameraFramesController {
             this.syncExportFrustum(width, height);
             const basePixels = await this.renderBase(width, height);
             const debugOverlays = await this.renderOverlayLayers(width, height);
-            const referenceLayer = this.renderReferenceLayer(width, height);
+            const referenceLayer = this.renderReferenceLayer(width, height, { applyOpacity: format !== 'psd' });
 
             if (format === 'psd') {
                 const underlays = referenceLayer?.layer === 'back' ?

@@ -62,7 +62,9 @@ class ReferenceImageController {
         this.events.on('referenceImage.setOffset', (offset: { x?: number; y?: number }) => this.setOffset(offset));
         this.events.on('referenceImage.setAnchor', (anchor: RenderBoxAnchor) => this.setAnchor(anchor));
         this.events.on('referenceImage.setIncludeInRender', (value: boolean) => this.setIncludeInRender(value));
-        this.events.function('referenceImage.renderExportLayer', (width: number, height: number) => this.renderExportLayer(width, height));
+        this.events.function('referenceImage.renderExportLayer', (width: number, height: number, options?: { applyOpacity?: boolean; }) => {
+            return this.renderExportLayer(width, height, options);
+        });
         this.events.on('referenceImage.clear', () => this.clearWithHistory());
         this.events.function('referenceImage.loadBlob', async (blob: Blob, filename?: string) => {
             await this.loadFromBlob(blob, filename);
@@ -278,7 +280,7 @@ class ReferenceImageController {
         };
     }
 
-    private renderExportLayer(width: number, height: number) {
+    private renderExportLayer(width: number, height: number, options?: { applyOpacity?: boolean; }) {
         if (!this.state.enabled || !this.state.visible || !this.state.includeInRender) {
             return null;
         }
@@ -296,7 +298,8 @@ class ReferenceImageController {
         if (!ctx) {
             throw new Error('Failed to acquire 2D context for reference image export');
         }
-        const opacity = Math.max(0, Math.min(1, this.state.opacity));
+        const applyOpacity = options?.applyOpacity !== false;
+        const opacity = applyOpacity ? Math.max(0, Math.min(1, this.state.opacity)) : 1;
         if (opacity <= 0) {
             return canvas;
         }
