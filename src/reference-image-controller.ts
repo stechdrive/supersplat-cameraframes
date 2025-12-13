@@ -62,6 +62,7 @@ class ReferenceImageController {
         this.events.on('referenceImage.setOffset', (offset: { x?: number; y?: number }) => this.setOffset(offset));
         this.events.on('referenceImage.setAnchor', (anchor: RenderBoxAnchor) => this.setAnchor(anchor));
         this.events.on('referenceImage.setIncludeInRender', (value: boolean) => this.setIncludeInRender(value));
+        this.events.function('referenceImage.renderExportLayer', (width: number, height: number) => this.renderExportLayer(width, height));
         this.events.on('referenceImage.clear', () => this.clearWithHistory());
         this.events.function('referenceImage.loadBlob', async (blob: Blob, filename?: string) => {
             await this.loadFromBlob(blob, filename);
@@ -187,11 +188,10 @@ class ReferenceImageController {
             this.state.pixelPerfectEligible = false;
             return;
         }
-        const sameSize = Math.round(mapping.logicalW) === Math.round(source.appliedSize.w) &&
-            Math.round(mapping.logicalH) === Math.round(source.appliedSize.h);
-        const offsetZero = Math.abs(this.state.offsetPx.x) < 1e-3 && Math.abs(this.state.offsetPx.y) < 1e-3;
         const scaleDefault = Math.abs(this.state.scalePct - 100) < 1e-3;
-        this.state.pixelPerfectEligible = sameSize && offsetZero && scaleDefault;
+        const offsetXInt = Math.abs(this.state.offsetPx.x - Math.round(this.state.offsetPx.x)) < 1e-3;
+        const offsetYInt = Math.abs(this.state.offsetPx.y - Math.round(this.state.offsetPx.y)) < 1e-3;
+        this.state.pixelPerfectEligible = scaleDefault && offsetXInt && offsetYInt;
     }
 
     private sourceKey(source: ReferenceImageSourceMeta | null) {
@@ -276,6 +276,50 @@ class ReferenceImageController {
             w: rect.w * sx,
             h: rect.h * sy
         };
+    }
+
+    private renderExportLayer(width: number, height: number) {
+        if (!this.state.enabled || !this.state.visible || !this.state.includeInRender) {
+            return null;
+        }
+        const source = this.state.source;
+        const image = this.runtime.canvas;
+        if (!source || !image) {
+            return null;
+        }
+        const outW = Math.max(1, Math.round(width));
+        const outH = Math.max(1, Math.round(height));
+        const canvas = document.createElement('canvas');
+        canvas.width = outW;
+        canvas.height = outH;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+            throw new Error('Failed to acquire 2D context for reference image export');
+        }
+        const opacity = Math.max(0, Math.min(1, this.state.opacity));
+        if (opacity <= 0) {
+            return canvas;
+        }
+
+        const anchor = this.state.anchor;
+        const imgW = source.appliedSize.w * this.state.scaleK;
+        const imgH = source.appliedSize.h * this.state.scaleK;
+        const topLeftX = outW * anchor.ax - anchor.ax * imgW - this.state.offsetPx.x;
+        const topLeftY = outH * anchor.ay - anchor.ay * imgH - this.state.offsetPx.y;
+
+        ctx.globalAlpha = opacity;
+
+        const scaleDefault = Math.abs(this.state.scalePct - 100) < 1e-3;
+        if (scaleDefault) {
+            // scale=100% の場合は 1:1 の貼り付け。半端座標でも nearest を優先してブラーを避ける。
+            ctx.imageSmoothingEnabled = false;
+            ctx.drawImage(image, Math.round(topLeftX), Math.round(topLeftY));
+        } else {
+            ctx.imageSmoothingEnabled = true;
+            ctx.drawImage(image, topLeftX, topLeftY, imgW, imgH);
+        }
+
+        return canvas;
     }
 
     private updateRenderer() {

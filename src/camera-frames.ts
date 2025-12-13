@@ -414,8 +414,12 @@ export class CameraFramesController {
         const rollDamping = damping * (this.scene.config?.controls?.dampingFactor ?? 1);
         this.applyingPose = true;
         try {
-            if (damping > 0) {
+            // navMode の切替は副作用が大きい（pivot/distance 再計算）ため、
+            // pose 適用前に「必要なときだけ」行う。
+            if (target.navMode !== camera.navMode) {
                 camera.setNavMode(target.navMode);
+            }
+            if (damping > 0) {
                 camera.setFocalPoint(new Vec3(target.focalPoint.x, target.focalPoint.y, target.focalPoint.z), damping);
                 camera.setAzimElev(target.azim, target.elev, damping);
                 camera.setDistance(target.distance, damping);
@@ -435,7 +439,6 @@ export class CameraFramesController {
                     elev: target.elev,
                     distance: target.distance,
                     roll: target.roll,
-                    navMode: target.navMode,
                     fpvPosition: target.fpvPosition,
                     ortho: target.ortho
                 });
@@ -1422,6 +1425,8 @@ export class CameraFramesController {
                     this.state.mainCameraPose = this.clonePoseSnapshot(currentPose);
                 }
                 this.state.enabled = false;
+                // 復元のため、viewport pose 適用前にフレーミングロックを解除しておく（orbit の揺れ抑止）
+                this.events.fire('camera.setLockFraming', false);
                 // ビューポート表示用にフラスタムを再計算しておく
                 this.rebuildBaseFrustum();
                 this.frustumDebugCache.points = null;
@@ -1442,7 +1447,12 @@ export class CameraFramesController {
                     this.state.mainCameraPose = this.clonePoseSnapshot(currentPose);
                 }
                 // ビューポート用ポーズがあれば戻す
-                const viewportPose = this.clonePoseSnapshot(this.viewportPoseRuntime);
+                let viewportPose = this.clonePoseSnapshot(this.viewportPoseRuntime);
+                if (!viewportPose && currentPose) {
+                    // undo/load 等で runtime pose が失われた場合は、少なくとも視点が崩れないよう現 pose を確保する
+                    this.viewportPoseRuntime = this.clonePoseSnapshot(currentPose);
+                    viewportPose = this.clonePoseSnapshot(this.viewportPoseRuntime);
+                }
                 if (viewportPose) {
                     this.applyCameraPose(viewportPose, { silent: true });
                 }
@@ -1454,7 +1464,6 @@ export class CameraFramesController {
                 this.requestRender();
                 this.emitViewportLensChanged();
             }
-            this.events.fire('camera.setLockFraming', this.state.enabled);
             this.events.fire('cameraFrames.enabled', this.state.enabled);
             this.events.fire('cameraFrames.stateChanged', this.snapshot());
             this.updateFovInfo();
@@ -3022,18 +3031,26 @@ export class CameraFramesController {
         return canvas;
     }
 
-    private includeReferenceImageForExport() {
-        const refState = this.events.invoke('referenceImage.state') as { enabled?: boolean; visible?: boolean; includeInRender?: boolean; } | null;
-        return !!(refState && refState.enabled && refState.visible && refState.includeInRender);
-    }
-
     private async renderBase(width: number, height: number) {
-        const includeReferenceImage = this.includeReferenceImageForExport();
-        const pixels = await this.events.invoke('render.offscreen', width, height, includeReferenceImage ? { includeReferenceImage } : undefined) as Uint8Array;
+        // ベース描画には下絵を混ぜない（PSD で独立レイヤー化し、PNG も CPU 合成で制御する）
+        const pixels = await this.events.invoke('render.offscreen', width, height) as Uint8Array;
         if (!pixels) {
             throw new Error('render.offscreen returned empty buffer');
         }
         return pixels;
+    }
+
+    private renderReferenceLayer(width: number, height: number): { layer: 'back' | 'front'; canvas: HTMLCanvasElement; } | null {
+        const refState = this.events.invoke('referenceImage.state') as { enabled?: boolean; visible?: boolean; includeInRender?: boolean; layer?: 'back' | 'front'; } | null;
+        if (!refState || !refState.enabled || !refState.visible || !refState.includeInRender) {
+            return null;
+        }
+        const canvas = this.events.invoke('referenceImage.renderExportLayer', width, height) as HTMLCanvasElement | null;
+        if (!canvas) {
+            return null;
+        }
+        const layer: 'back' | 'front' = refState.layer === 'front' ? 'front' : 'back';
+        return { layer, canvas };
     }
 
     private async renderOverlayLayer(width: number, height: number, options: { includeGrid?: boolean; includeEyeLevel?: boolean; }): Promise<HTMLCanvasElement | null> {
@@ -3299,8 +3316,8 @@ export class CameraFramesController {
         return result.buffer;
     }
 
-    private async renderPng(params: { basePixels: Uint8Array; frameOverlay: HTMLCanvasElement; gridOverlay?: HTMLCanvasElement | null; eyeLevelOverlay?: HTMLCanvasElement | null; width: number; height: number; filename: string; }) {
-        const { basePixels, frameOverlay, gridOverlay, eyeLevelOverlay, width, height, filename } = params;
+    private async renderPng(params: { basePixels: Uint8Array; referenceLayer?: { layer: 'back' | 'front'; canvas: HTMLCanvasElement; } | null; frameOverlay: HTMLCanvasElement; gridOverlay?: HTMLCanvasElement | null; eyeLevelOverlay?: HTMLCanvasElement | null; width: number; height: number; filename: string; }) {
+        const { basePixels, referenceLayer, frameOverlay, gridOverlay, eyeLevelOverlay, width, height, filename } = params;
         const canvas = document.createElement('canvas');
         canvas.width = width;
         canvas.height = height;
@@ -3316,6 +3333,13 @@ export class CameraFramesController {
             ctx.drawImage(gridOverlay, 0, 0);
             ctx.globalCompositeOperation = 'source-over';
         }
+        if (referenceLayer?.layer === 'back') {
+            ctx.globalCompositeOperation = 'destination-over';
+            ctx.drawImage(referenceLayer.canvas, 0, 0);
+            ctx.globalCompositeOperation = 'source-over';
+        } else if (referenceLayer?.layer === 'front') {
+            ctx.drawImage(referenceLayer.canvas, 0, 0);
+        }
         if (eyeLevelOverlay) {
             ctx.drawImage(eyeLevelOverlay, 0, 0);
         }
@@ -3330,10 +3354,11 @@ export class CameraFramesController {
         this.downloadArrayBuffer(arrayBuffer, filename);
     }
 
-    private async renderPsd(params: { basePixels: Uint8ClampedArray; overlays: Array<{ name: string; canvas: HTMLCanvasElement; }>; width: number; height: number; filename: string; }) {
-        const { basePixels, overlays, width, height, filename } = params;
+    private async renderPsd(params: { basePixels: Uint8ClampedArray; underlays?: Array<{ name: string; canvas: HTMLCanvasElement; }>; overlays: Array<{ name: string; canvas: HTMLCanvasElement; }>; width: number; height: number; filename: string; }) {
+        const { basePixels, underlays, overlays, width, height, filename } = params;
         await exportPsd({
             basePixels,
+            underlays,
             overlays,
             width,
             height,
@@ -3362,18 +3387,24 @@ export class CameraFramesController {
             this.syncExportFrustum(width, height);
             const basePixels = await this.renderBase(width, height);
             const debugOverlays = await this.renderOverlayLayers(width, height);
+            const referenceLayer = this.renderReferenceLayer(width, height);
 
             if (format === 'psd') {
+                const underlays = referenceLayer?.layer === 'back' ?
+                    [{ name: 'Reference', canvas: referenceLayer.canvas }] :
+                    [];
                 const modelOverlays = await this.renderModelLayers(width, height);
                 const frameOverlays = this.renderFrameOverlaysByManagement(width, height);
                 const overlayLayers = [
                     ...(debugOverlays?.grid ? [{ name: localize('panel.camera-frames.export.grid-layer.grid'), canvas: debugOverlays.grid }] : []),
                     ...(debugOverlays?.eyeLevel ? [{ name: localize('panel.camera-frames.export.grid-layer.eye-level'), canvas: debugOverlays.eyeLevel }] : []),
                     ...modelOverlays,
+                    ...(referenceLayer?.layer === 'front' ? [{ name: 'Reference', canvas: referenceLayer.canvas }] : []),
                     ...frameOverlays
                 ];
                 await this.renderPsd({
                     basePixels: basePixels instanceof Uint8ClampedArray ? basePixels : new Uint8ClampedArray(basePixels),
+                    underlays,
                     overlays: overlayLayers,
                     width,
                     height,
@@ -3385,6 +3416,7 @@ export class CameraFramesController {
                 const eyeLevelOverlay = this.mergeOverlayCanvases(width, height, [debugOverlays?.eyeLevel]);
                 await this.renderPng({
                     basePixels,
+                    referenceLayer,
                     frameOverlay: overlay.canvas,
                     gridOverlay,
                     eyeLevelOverlay,

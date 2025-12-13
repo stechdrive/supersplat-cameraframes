@@ -7,6 +7,7 @@ type PsdOverlayLayer = {
 
 type PsdExportParams = {
     basePixels: Uint8ClampedArray;
+    underlays?: PsdOverlayLayer[];
     overlays: PsdOverlayLayer[];
     width: number;
     height: number;
@@ -40,6 +41,7 @@ const canvasFromPixels = (pixels: Uint8ClampedArray, width: number, height: numb
 
 const exportPsd = (params: PsdExportParams) => {
     const { basePixels, overlays, width, height, filename } = params;
+    const underlays = params.underlays ?? [];
 
     const baseCanvas = canvasFromPixels(basePixels, width, height);
     const overlayLayers = overlays;
@@ -53,6 +55,9 @@ const exportPsd = (params: PsdExportParams) => {
         if (!ctx) {
             throw new Error('Failed to acquire 2D context for PSD composite');
         }
+        underlays.forEach((layer) => {
+            ctx.drawImage(layer.canvas, 0, 0);
+        });
         ctx.drawImage(baseCanvas, 0, 0);
         overlayLayers.forEach((layer) => {
             ctx.drawImage(layer.canvas, 0, 0);
@@ -93,6 +98,10 @@ const exportPsd = (params: PsdExportParams) => {
             thumbnail
         },
         children: [
+            ...underlays.map(layer => ({
+                name: layer.name,
+                canvas: layer.canvas
+            })),
             {
                 name: 'Render',
                 canvas: baseCanvas
