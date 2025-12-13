@@ -6,7 +6,7 @@ import { Events } from './events';
 import { hitTestGizmo } from './gizmo-hit';
 import { Model } from './model';
 import { PngCompressor } from './png-compressor';
-import { exportPsd } from './psd-export';
+import { exportPsd, type PsdOverlayLayer } from './psd-export';
 import { Scene } from './scene';
 import { Crc } from './serialize/crc';
 import { localize } from './ui/localization';
@@ -226,6 +226,8 @@ export class CameraFramesController {
     } | null = null;
     private applyingHistory = false;
     private viewportPoseRuntime: CameraPoseSnapshot | null = null;
+    private viewportPoseRuntimeWorldDistance: number | null = null;
+    private hasEnteredViewportOnce = false;
     private applyingPose = false;
     private uiTarget: 'viewport' | 'main' = 'viewport';
     private mainCameraSelected = false;
@@ -414,8 +416,12 @@ export class CameraFramesController {
         const rollDamping = damping * (this.scene.config?.controls?.dampingFactor ?? 1);
         this.applyingPose = true;
         try {
-            if (damping > 0) {
+            // navMode の切替は副作用が大きい（pivot/distance 再計算）ため、
+            // pose 適用前に「必要なときだけ」行う。
+            if (target.navMode !== camera.navMode) {
                 camera.setNavMode(target.navMode);
+            }
+            if (damping > 0) {
                 camera.setFocalPoint(new Vec3(target.focalPoint.x, target.focalPoint.y, target.focalPoint.z), damping);
                 camera.setAzimElev(target.azim, target.elev, damping);
                 camera.setDistance(target.distance, damping);
@@ -435,7 +441,6 @@ export class CameraFramesController {
                     elev: target.elev,
                     distance: target.distance,
                     roll: target.roll,
-                    navMode: target.navMode,
                     fpvPosition: target.fpvPosition,
                     ortho: target.ortho
                 });
@@ -1003,6 +1008,7 @@ export class CameraFramesController {
                     }
                 } else {
                     this.viewportPoseRuntime = pose;
+                    this.viewportPoseRuntimeWorldDistance = (pose.navMode === 'orbit') ? this.getPoseWorldDistance(pose) : null;
                     this.emitViewportLensChanged();
                 }
             }
@@ -1015,6 +1021,8 @@ export class CameraFramesController {
         this.events.on('scene.clear', () => {
             this.state.mainCameraPose = null;
             this.viewportPoseRuntime = null;
+            this.viewportPoseRuntimeWorldDistance = null;
+            this.hasEnteredViewportOnce = !this.state.enabled;
             this.setUiTarget('viewport');
             this.frustumDragState = null;
             this.frustumDebugCache = {
@@ -1059,6 +1067,18 @@ export class CameraFramesController {
                 rectPx: mapping.rectPx,
                 rectNormRaw: mapping.rectNormRaw,
                 rectPxRaw: mapping.rectPxRaw
+            };
+        });
+
+        // 提供: レンダーボックスのビューポート情報（アンカー含む）
+        this.events.function('cameraFrames.viewportMapping', () => {
+            if (!this.state.enabled) {
+                return null;
+            }
+            const mapping = this.computeViewportMapping(false);
+            return {
+                ...mapping,
+                anchor: this.state.renderBox.anchor
             };
         });
 
@@ -1365,6 +1385,7 @@ export class CameraFramesController {
             if (value) {
                 // OFF -> ON
                 this.viewportPoseRuntime = this.clonePoseSnapshot(currentPose);
+                this.viewportPoseRuntimeWorldDistance = (this.viewportPoseRuntime?.navMode === 'orbit') ? this.getPoseWorldDistance(this.viewportPoseRuntime) : null;
                 if (this.viewportFovRuntime === null || this.viewportFovRuntime === undefined) {
                     const currentFov = this.events.invoke('camera.fov');
                     if (typeof currentFov === 'number' && isFinite(currentFov)) {
@@ -1410,6 +1431,8 @@ export class CameraFramesController {
                     this.state.mainCameraPose = this.clonePoseSnapshot(currentPose);
                 }
                 this.state.enabled = false;
+                // 復元のため、viewport pose 適用前にフレーミングロックを解除しておく（orbit の揺れ抑止）
+                this.events.fire('camera.setLockFraming', false);
                 // ビューポート表示用にフラスタムを再計算しておく
                 this.rebuildBaseFrustum();
                 this.frustumDebugCache.points = null;
@@ -1426,23 +1449,52 @@ export class CameraFramesController {
                         this.viewportFovRuntime = currentFov;
                     }
                 }
+                const vpFov = this.viewportFovRuntime ?? this.events.invoke('camera.fov');
+                if (typeof vpFov === 'number' && isFinite(vpFov)) {
+                    this.events.fire('camera.setFov', vpFov);
+                }
                 if (!this.state.mainCameraPose) {
                     this.state.mainCameraPose = this.clonePoseSnapshot(currentPose);
                 }
                 // ビューポート用ポーズがあれば戻す
-                const viewportPose = this.clonePoseSnapshot(this.viewportPoseRuntime);
-                if (viewportPose) {
-                    this.applyCameraPose(viewportPose, { silent: true });
+                const isFirstViewportEntry = !this.hasEnteredViewportOnce;
+                this.hasEnteredViewportOnce = true;
+
+                let viewportPose = this.clonePoseSnapshot(this.viewportPoseRuntime);
+                if (isFirstViewportEntry && currentPose) {
+                    const initPose = this.clonePoseSnapshot(currentPose);
+                    if (initPose) {
+                        initPose.lockFraming = false;
+                        this.viewportPoseRuntime = initPose;
+                        this.viewportPoseRuntimeWorldDistance = (initPose.navMode === 'orbit') ? this.getPoseWorldDistance(currentPose) : null;
+                        viewportPose = this.clonePoseSnapshot(this.viewportPoseRuntime);
+                    }
                 }
-                const vpFov = this.viewportFovRuntime ?? this.events.invoke('camera.fov');
-                if (typeof vpFov === 'number' && isFinite(vpFov)) {
-                    this.events.fire('camera.setFov', vpFov);
+                if (!viewportPose && currentPose) {
+                    // undo/load 等で runtime pose が失われた場合は、少なくとも視点が崩れないよう現 pose を確保する
+                    const fallbackPose = this.clonePoseSnapshot(currentPose);
+                    if (fallbackPose) {
+                        fallbackPose.lockFraming = false;
+                        this.viewportPoseRuntime = fallbackPose;
+                        this.viewportPoseRuntimeWorldDistance = (fallbackPose.navMode === 'orbit') ? this.getPoseWorldDistance(currentPose) : null;
+                    } else {
+                        this.viewportPoseRuntime = null;
+                        this.viewportPoseRuntimeWorldDistance = null;
+                    }
+                    viewportPose = this.clonePoseSnapshot(this.viewportPoseRuntime);
+                }
+                if (viewportPose) {
+                    const worldDistance = this.viewportPoseRuntimeWorldDistance;
+                    if (viewportPose.navMode === 'orbit' && typeof worldDistance === 'number' && isFinite(worldDistance) && worldDistance > 0) {
+                        viewportPose.lockFraming = false;
+                        viewportPose.distance = this.worldDistanceToNormalized(worldDistance, viewportPose);
+                    }
+                    this.applyCameraPose(viewportPose, { silent: true });
                 }
                 // 無効化中は追従ロジックを停止するが状態は保持
                 this.requestRender();
                 this.emitViewportLensChanged();
             }
-            this.events.fire('camera.setLockFraming', this.state.enabled);
             this.events.fire('cameraFrames.enabled', this.state.enabled);
             this.events.fire('cameraFrames.stateChanged', this.snapshot());
             this.updateFovInfo();
@@ -3011,11 +3063,26 @@ export class CameraFramesController {
     }
 
     private async renderBase(width: number, height: number) {
-        const pixels = await this.events.invoke('render.offscreen', width, height) as Uint8Array;
+        // ベース描画には下絵を混ぜない（PSD で独立レイヤー化し、PNG も CPU 合成で制御する）
+        const pixels = await this.events.invoke('render.offscreen', width, height, { includeReferenceImage: false }) as Uint8Array;
         if (!pixels) {
             throw new Error('render.offscreen returned empty buffer');
         }
         return pixels;
+    }
+
+    private async renderReferenceLayer(width: number, height: number, options?: { applyOpacity?: boolean; }): Promise<{ layer: 'back' | 'front'; canvas: HTMLCanvasElement; opacity: number; } | null> {
+        const refState = this.events.invoke('referenceImage.state') as { enabled?: boolean; visible?: boolean; includeInRender?: boolean; layer?: 'back' | 'front'; opacity?: number; } | null;
+        if (!refState || !refState.enabled || !refState.visible || !refState.includeInRender) {
+            return null;
+        }
+        const canvas = await this.events.invoke('referenceImage.renderExportLayer', width, height, options) as HTMLCanvasElement | null;
+        if (!canvas) {
+            return null;
+        }
+        const layer: 'back' | 'front' = refState.layer === 'front' ? 'front' : 'back';
+        const opacity = Math.max(0, Math.min(1, refState.opacity ?? 1));
+        return { layer, canvas, opacity };
     }
 
     private async renderOverlayLayer(width: number, height: number, options: { includeGrid?: boolean; includeEyeLevel?: boolean; }): Promise<HTMLCanvasElement | null> {
@@ -3281,8 +3348,8 @@ export class CameraFramesController {
         return result.buffer;
     }
 
-    private async renderPng(params: { basePixels: Uint8Array; frameOverlay: HTMLCanvasElement; gridOverlay?: HTMLCanvasElement | null; eyeLevelOverlay?: HTMLCanvasElement | null; width: number; height: number; filename: string; }) {
-        const { basePixels, frameOverlay, gridOverlay, eyeLevelOverlay, width, height, filename } = params;
+    private async renderPng(params: { basePixels: Uint8Array; referenceLayer?: { layer: 'back' | 'front'; canvas: HTMLCanvasElement; } | null; frameOverlay: HTMLCanvasElement; gridOverlay?: HTMLCanvasElement | null; eyeLevelOverlay?: HTMLCanvasElement | null; width: number; height: number; filename: string; }) {
+        const { basePixels, referenceLayer, frameOverlay, gridOverlay, eyeLevelOverlay, width, height, filename } = params;
         const canvas = document.createElement('canvas');
         canvas.width = width;
         canvas.height = height;
@@ -3298,6 +3365,13 @@ export class CameraFramesController {
             ctx.drawImage(gridOverlay, 0, 0);
             ctx.globalCompositeOperation = 'source-over';
         }
+        if (referenceLayer?.layer === 'back') {
+            ctx.globalCompositeOperation = 'destination-over';
+            ctx.drawImage(referenceLayer.canvas, 0, 0);
+            ctx.globalCompositeOperation = 'source-over';
+        } else if (referenceLayer?.layer === 'front') {
+            ctx.drawImage(referenceLayer.canvas, 0, 0);
+        }
         if (eyeLevelOverlay) {
             ctx.drawImage(eyeLevelOverlay, 0, 0);
         }
@@ -3312,10 +3386,11 @@ export class CameraFramesController {
         this.downloadArrayBuffer(arrayBuffer, filename);
     }
 
-    private async renderPsd(params: { basePixels: Uint8ClampedArray; overlays: Array<{ name: string; canvas: HTMLCanvasElement; }>; width: number; height: number; filename: string; }) {
-        const { basePixels, overlays, width, height, filename } = params;
+    private async renderPsd(params: { basePixels: Uint8ClampedArray; underlays?: PsdOverlayLayer[]; overlays: PsdOverlayLayer[]; width: number; height: number; filename: string; }) {
+        const { basePixels, underlays, overlays, width, height, filename } = params;
         await exportPsd({
             basePixels,
+            underlays,
             overlays,
             width,
             height,
@@ -3344,18 +3419,24 @@ export class CameraFramesController {
             this.syncExportFrustum(width, height);
             const basePixels = await this.renderBase(width, height);
             const debugOverlays = await this.renderOverlayLayers(width, height);
+            const referenceLayer = await this.renderReferenceLayer(width, height, { applyOpacity: format !== 'psd' });
 
             if (format === 'psd') {
+                const underlays = referenceLayer?.layer === 'back' ?
+                    [{ name: 'Reference', canvas: referenceLayer.canvas, opacity: referenceLayer.opacity }] :
+                    [];
                 const modelOverlays = await this.renderModelLayers(width, height);
                 const frameOverlays = this.renderFrameOverlaysByManagement(width, height);
                 const overlayLayers = [
                     ...(debugOverlays?.grid ? [{ name: localize('panel.camera-frames.export.grid-layer.grid'), canvas: debugOverlays.grid }] : []),
                     ...(debugOverlays?.eyeLevel ? [{ name: localize('panel.camera-frames.export.grid-layer.eye-level'), canvas: debugOverlays.eyeLevel }] : []),
                     ...modelOverlays,
+                    ...(referenceLayer?.layer === 'front' ? [{ name: 'Reference', canvas: referenceLayer.canvas, opacity: referenceLayer.opacity }] : []),
                     ...frameOverlays
                 ];
                 await this.renderPsd({
                     basePixels: basePixels instanceof Uint8ClampedArray ? basePixels : new Uint8ClampedArray(basePixels),
+                    underlays,
                     overlays: overlayLayers,
                     width,
                     height,
@@ -3367,6 +3448,7 @@ export class CameraFramesController {
                 const eyeLevelOverlay = this.mergeOverlayCanvases(width, height, [debugOverlays?.eyeLevel]);
                 await this.renderPng({
                     basePixels,
+                    referenceLayer,
                     frameOverlay: overlay.canvas,
                     gridOverlay,
                     eyeLevelOverlay,
@@ -3436,6 +3518,10 @@ export class CameraFramesController {
                 this.state.mainCameraPose = this.clonePoseSnapshot(this.captureCameraPose());
             }
             this.viewportPoseRuntime = null;
+            this.viewportPoseRuntimeWorldDistance = null;
+            if (!this.state.enabled) {
+                this.hasEnteredViewportOnce = true;
+            }
             this.selectedId = this.state.frames.find(f => f.selected)?.id ?? null;
             this.state.nearClip = this.computeSafeNearClip(this.state.nearClip);
             this.state.exportGridOverlay = !!this.state.exportGridOverlay;
@@ -3491,6 +3577,8 @@ export class CameraFramesController {
             };
             this.selectedId = null;
             this.viewportPoseRuntime = null;
+            this.viewportPoseRuntimeWorldDistance = null;
+            this.hasEnteredViewportOnce = false;
             this.rebuildBaseFrustum();
             if (this.state.enabled && this.state.mainCameraPose) {
                 this.applyCameraPose(this.state.mainCameraPose, { silent: true });
@@ -3611,6 +3699,8 @@ export class CameraFramesController {
 
         this.overlay.style.pointerEvents = 'none';
         this.viewportPoseRuntime = null;
+        this.viewportPoseRuntimeWorldDistance = null;
+        this.hasEnteredViewportOnce = !this.state.enabled;
 
         this.selectedId = (docState && Object.prototype.hasOwnProperty.call(docState, 'selectedId')) ?
             docState.selectedId :

@@ -4,6 +4,7 @@ dist
 .npmrc
 .vscode
 /loft/
+/test/
 AGENTS.md
 src/build-info.ts
 .cursorrules

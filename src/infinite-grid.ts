@@ -73,7 +73,7 @@ class InfiniteGrid extends Element {
 
                 device.setBlendState(blendState);
                 device.setCullMode(CULLFACE_NONE);
-                device.setDepthState(DepthState.WRITEDEPTH);
+                device.setDepthState(this.depthState);
                 device.setStencilState(null, null);
 
                 // select the correctly plane in orthographic mode

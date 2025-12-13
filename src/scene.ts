@@ -42,6 +42,8 @@ class Scene {
     overlayLayer: Layer;
     gizmoLayer: Layer;
     modelLightingLayer: Layer;
+    referenceBackLayer: Layer | null = null;
+    referenceFrontLayer: Layer | null = null;
     ambientFillLights: Entity[] = [];
     defaultAmbient = 0.5;
     sceneState = [new SceneState(), new SceneState()];
@@ -61,12 +63,14 @@ class Scene {
         eyeLevelLayerOverride: Layer | null;
         gridLayerOverride: Layer | null;
         hideBounds: boolean;
+        offscreenIncludeReferenceImage: boolean;
     } = {
             forceGridOverlay: false,
             forceEyeLevelOverlay: false,
             eyeLevelLayerOverride: null,
             gridLayerOverride: null,
-            hideBounds: false
+            hideBounds: false,
+            offscreenIncludeReferenceImage: false
         };
 
     canvasResize: { width: number; height: number } | null = null;
@@ -233,16 +237,16 @@ class Scene {
             transparentSortMode: SORTMODE_NONE
         });
 
-        const layers = this.app.scene.layers;
-        const worldLayer = layers.getLayerByName('World');
-        const idx = layers.getOpaqueIndex(worldLayer);
-        layers.insert(this.backgroundLayer, idx);
-        layers.insert(this.shadowLayer, idx + 1);
-        layers.insert(this.modelLightingLayer, idx + 2);
-        layers.insert(this.debugLayer, idx + 1);
-        layers.insert(this.exportOverlayLayer, idx + 3);
-        layers.push(this.overlayLayer);
-        layers.push(this.gizmoLayer);
+        const worldLayer = this.app.scene.layers.getLayerByName('World');
+        this.insertLayerBefore(this.backgroundLayer, worldLayer);
+        this.insertLayerBefore(this.shadowLayer, worldLayer);
+        this.insertLayerBefore(this.modelLightingLayer, worldLayer);
+        this.insertLayerBefore(this.debugLayer, worldLayer);
+        this.insertLayerBefore(this.exportOverlayLayer, worldLayer);
+        // NOTE: Overlay/Gizmo は World(Transparent=gsplat) の後ろに来る必要がある。
+        // Gizmo(clearDepthBuffer) が World の透明パス直前に入ると、GLB の深度が消えて見えなくなる。
+        this.insertLayerAfter(this.overlayLayer, worldLayer);
+        this.insertLayerAfter(this.gizmoLayer, this.overlayLayer);
 
         // Ambient fallback (環境マップ未設定時の視認性確保)
         this.app.scene.ambientLight.set(0.5, 0.5, 0.5);
@@ -292,6 +296,29 @@ class Scene {
         this.add(this.outline);
         this.underlay = new Underlay();
         this.add(this.underlay);
+    }
+
+    insertLayerBefore(layer: Layer, target: Layer | string | null | undefined) {
+        if (!layer) return;
+        const layers = this.app.scene.layers;
+        const targetLayer = typeof target === 'string' ? layers.getLayerByName(target) : target;
+        const idx = targetLayer ? layers.getOpaqueIndex(targetLayer) : -1;
+        const insertIndex = idx >= 0 ? idx : layers.layerList.length;
+        layers.insert(layer, insertIndex);
+    }
+
+    insertLayerAfter(layer: Layer, target: Layer | string | null | undefined) {
+        if (!layer) return;
+        const layers = this.app.scene.layers;
+        const targetLayer = typeof target === 'string' ? layers.getLayerByName(target) : target;
+        // Insert after the *whole* target layer (opaque + transparent). Using the opaque index can
+        // split the target layer and/or place the new layer before the target's transparent pass.
+        // That can break depth ordering (e.g. clearing depth before World transparent splats).
+        const transparentIdx = targetLayer ? layers.getTransparentIndex(targetLayer) : -1;
+        const opaqueIdx = targetLayer ? layers.getOpaqueIndex(targetLayer) : -1;
+        const baseIdx = transparentIdx >= 0 ? transparentIdx : opaqueIdx;
+        const insertIndex = baseIdx >= 0 ? baseIdx + 1 : layers.layerList.length;
+        layers.insert(layer, insertIndex);
     }
 
     private createAmbientFillLights() {

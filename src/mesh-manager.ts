@@ -1,4 +1,4 @@
-import { GraphNode } from 'playcanvas';
+import { GraphNode, Material } from 'playcanvas';
 
 import { Element, ElementType } from './element';
 import { Events } from './events';
@@ -77,6 +77,7 @@ class MeshManager {
 
         this.models.add(model);
         this.applyLayers(model);
+        this.applyDepthWriteFix(model);
         const nodes = new Set<GraphNode>();
         const collect = (node: GraphNode) => {
             nodes.add(node);
@@ -102,6 +103,38 @@ class MeshManager {
         }
 
         model.setLayers(layers);
+    }
+
+    private applyDepthWriteFix(model: Model) {
+        // GLB が透明マテリアルの場合、depthWrite が無効だと gsplat(PLY) が常に上に重なり
+        // 「PLYを非表示にしないとGLBが見えない」状態になりやすい。
+        // ここでは透明マテリアルに限り depthWrite を有効化し、深度統合を安定させる。
+        const changed = new Set<Material>();
+
+        const visit = (node: GraphNode) => {
+            const entity = node as any;
+            const meshInstances = entity?.render?.meshInstances as { material?: Material }[] | undefined;
+            if (meshInstances && meshInstances.length > 0) {
+                meshInstances.forEach((meshInstance) => {
+                    const material = meshInstance.material;
+                    if (!material) {
+                        return;
+                    }
+                    if (material.transparent && !material.depthWrite) {
+                        material.depthTest = true;
+                        material.depthWrite = true;
+                        changed.add(material);
+                    }
+                });
+            }
+            node?.children?.forEach((child: GraphNode) => visit(child));
+        };
+
+        visit(model.entity);
+
+        changed.forEach((material) => {
+            material.update();
+        });
     }
 
     private unregister(model: Model) {

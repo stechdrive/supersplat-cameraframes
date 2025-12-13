@@ -3,10 +3,12 @@ import { writePsd, type Psd } from 'ag-psd';
 type PsdOverlayLayer = {
     name: string;
     canvas: HTMLCanvasElement;
+    opacity?: number;
 };
 
 type PsdExportParams = {
     basePixels: Uint8ClampedArray;
+    underlays?: PsdOverlayLayer[];
     overlays: PsdOverlayLayer[];
     width: number;
     height: number;
@@ -40,6 +42,7 @@ const canvasFromPixels = (pixels: Uint8ClampedArray, width: number, height: numb
 
 const exportPsd = (params: PsdExportParams) => {
     const { basePixels, overlays, width, height, filename } = params;
+    const underlays = params.underlays ?? [];
 
     const baseCanvas = canvasFromPixels(basePixels, width, height);
     const overlayLayers = overlays;
@@ -53,10 +56,20 @@ const exportPsd = (params: PsdExportParams) => {
         if (!ctx) {
             throw new Error('Failed to acquire 2D context for PSD composite');
         }
-        ctx.drawImage(baseCanvas, 0, 0);
-        overlayLayers.forEach((layer) => {
+        const clampOpacity = (opacity?: number) => {
+            return Math.max(0, Math.min(1, typeof opacity === 'number' ? opacity : 1));
+        };
+        underlays.forEach((layer) => {
+            ctx.globalAlpha = clampOpacity(layer.opacity);
             ctx.drawImage(layer.canvas, 0, 0);
         });
+        ctx.globalAlpha = 1;
+        ctx.drawImage(baseCanvas, 0, 0);
+        overlayLayers.forEach((layer) => {
+            ctx.globalAlpha = clampOpacity(layer.opacity);
+            ctx.drawImage(layer.canvas, 0, 0);
+        });
+        ctx.globalAlpha = 1;
         return canvas;
     })();
 
@@ -93,13 +106,19 @@ const exportPsd = (params: PsdExportParams) => {
             thumbnail
         },
         children: [
+            ...underlays.map(layer => ({
+                name: layer.name,
+                canvas: layer.canvas,
+                opacity: Math.max(0, Math.min(1, typeof layer.opacity === 'number' ? layer.opacity : 1))
+            })),
             {
                 name: 'Render',
                 canvas: baseCanvas
             },
             ...overlayLayers.map(layer => ({
                 name: layer.name,
-                canvas: layer.canvas
+                canvas: layer.canvas,
+                opacity: Math.max(0, Math.min(1, typeof layer.opacity === 'number' ? layer.opacity : 1))
             }))
         ]
     };

@@ -342,6 +342,20 @@ const initFileHandler = (scene: Scene, events: Events, dropTarget: HTMLElement) 
     const importFiles = async (files: ImportFile[], animationFrame = false) => {
         const filenames = files.map(f => f.filename.toLowerCase());
 
+        const isSingleImage = files.length === 1 && /\.(?:png|jpe?g|webp)$/i.test(filenames[0]);
+        if (isSingleImage) {
+            const file = files[0];
+            let blob = file.contents as Blob;
+            if (!blob && file.url) {
+                const response = await fetch(file.url);
+                blob = await response.blob();
+            }
+            if (blob instanceof Blob) {
+                await events.invoke('referenceImage.loadBlob', blob, file.filename);
+                return [];
+            }
+        }
+
         const result = [];
 
         if (isPlySequence(filenames)) {

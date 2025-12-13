@@ -1,0 +1,116 @@
+@use 'colors.scss' as *;
+
+#reference-image-panel {
+    top: 50%;
+    transform: translate(0, -50%);
+    right: 480px;
+    width: 360px;
+    flex-direction: column;
+    gap: 8px;
+    z-index: 5;
+    overflow: visible;
+
+    .panel-header {
+        cursor: move;
+        user-select: none;
+        touch-action: none;
+    }
+
+    &.dragging {
+        opacity: 0.98;
+    }
+
+    &:not(.pcui-hidden) {
+        display: flex;
+    }
+
+    .reference-image-body {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        padding: 8px;
+    }
+
+    .reference-image-position-group {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+    }
+
+    .reference-image-info-row {
+        align-items: center;
+        min-height: 32px;
+        gap: 6px;
+    }
+
+    .reference-image-info-row .pcui-button.icon-button {
+        flex: 0 0 auto;
+    }
+
+    .reference-image-offset-row {
+        align-items: center;
+        gap: 4px;
+        flex-wrap: nowrap;
+    }
+
+    .reference-image-transform-row {
+        align-items: center;
+        gap: 12px;
+        flex-wrap: nowrap;
+        padding-left: 6px;
+    }
+
+    .reference-image-transform-group {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        min-width: 0;
+
+        .control-label {
+            width: auto;
+            margin: 0;
+            white-space: nowrap;
+        }
+    }
+
+    .reference-image-flags-row {
+        align-items: center;
+        gap: 12px;
+        flex-wrap: nowrap;
+        padding-left: 6px;
+
+        .control-label {
+            width: auto;
+            margin: 0;
+            white-space: nowrap;
+        }
+
+        .control-element.pcui-boolean-input {
+            margin-top: 0;
+        }
+    }
+
+    .reference-image-center-button {
+        display: grid;
+        place-items: center;
+    }
+
+    .reference-image-center-button svg {
+        width: 24px;
+        height: 24px;
+        display: block;
+    }
+
+    .reference-image-info {
+        min-width: 0;
+        margin: 0 6px;
+        line-height: 16px;
+        word-break: break-all;
+    }
+
+    .panel-header-icon svg {
+        width: 13px;
+        height: 13px;
+        display: block;
+    }
+}

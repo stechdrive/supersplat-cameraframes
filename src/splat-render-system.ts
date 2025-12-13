@@ -476,6 +476,11 @@ class SplatRenderSystem {
                 material.setParameter('splatParamsDim', [tex.width, tex.width * tex.height]);
             }
         }
+
+        // GSplat は他の描画（GLB等）と深度統合するため、深度テストは常に有効化し、
+        // 深度書き込みは無効のまま維持する。
+        material.depthTest = true;
+        material.depthWrite = false;
         material.update();
     }
 

@@ -13,6 +13,8 @@ import { registerIframeApi } from './iframe-api';
 import { MeshManager } from './mesh-manager';
 import { registerPlySequenceEvents } from './ply-sequence';
 import { registerPublishEvents } from './publish';
+import { registerReferenceImage } from './reference-image-controller';
+import { ReferenceImageHistory } from './reference-image-history';
 import { registerRenderEvents } from './render';
 import { Scene } from './scene';
 import { getSceneConfig } from './scene-config';
@@ -273,6 +275,13 @@ const main = async () => {
         snapshot => cameraFramesController.applySnapshot(snapshot)
     );
     cameraFramesController.setHistory(cameraFramesHistory);
+    const referenceImageController = registerReferenceImage(events, scene);
+    const referenceImageHistory = new ReferenceImageHistory(
+        events,
+        () => referenceImageController.snapshot(),
+        snapshot => referenceImageController.applySnapshot(snapshot)
+    );
+    referenceImageController.setHistory(referenceImageHistory);
     registerDocEvents(scene, events);
     registerRenderEvents(scene, events);
     registerIframeApi(events);
@@ -282,8 +291,8 @@ const main = async () => {
     // wait until the first safe render before forcing FPV navigation and camera frames
     const fpvReadyHandle = events.on('postrender', () => {
         fpvReadyHandle.off();
-        events.fire('camera.setNavMode', 'fpv');
         events.fire('cameraFrames.setEnabled', true);
+        events.fire('camera.setNavMode', 'fpv');
     });
 
     // load async models
