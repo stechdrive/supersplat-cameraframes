@@ -45,6 +45,17 @@
         gap: 6px;
     }
 
+    .reference-image-center-button {
+        display: grid;
+        place-items: center;
+    }
+
+    .reference-image-center-button svg {
+        width: 24px;
+        height: 24px;
+        display: block;
+    }
+
     .reference-image-info {
         min-width: 0;
         margin: 0 6px;

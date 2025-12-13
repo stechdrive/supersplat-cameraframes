@@ -183,7 +183,7 @@ class ReferenceImagePanel extends Container {
         offsetRow.append(offsetX);
         offsetRow.append(offsetY);
 
-        const centerButton = new Button({ class: ['icon-button'], text: '' });
+        const centerButton = new Button({ class: ['icon-button', 'reference-image-center-button'], text: '' });
         centerButton.dom.appendChild(createSvg(undoSvg));
         centerButton.dom.title = localize('panel.reference-image.center');
         centerButton.dom.setAttribute('aria-label', localize('panel.reference-image.center'));
