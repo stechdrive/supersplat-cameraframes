@@ -2,6 +2,16 @@ import { BooleanInput, Button, Container, Label, NumericInput, SelectInput, Slid
 
 import { Events } from '../events';
 import { formatInteger, localize } from './localization';
+import referenceImageSvg from './svg/reference-image.svg';
+
+const createSvg = (svgString: string) => {
+    let markup = svgString;
+    const prefix = 'data:image/svg+xml,';
+    if (svgString.startsWith(prefix)) {
+        markup = decodeURIComponent(svgString.substring(prefix.length));
+    }
+    return new DOMParser().parseFromString(markup, 'image/svg+xml').documentElement;
+};
 
 type ReferenceImageState = {
     enabled: boolean;
@@ -35,7 +45,8 @@ class ReferenceImagePanel extends Container {
         let suppress = false;
 
         const panelHeader = new Container({ class: 'panel-header' });
-        const panelIcon = new Label({ class: 'panel-header-icon', text: '\uE3B6' });
+        const panelIcon = new Container({ class: 'panel-header-icon' });
+        panelIcon.dom.appendChild(createSvg(referenceImageSvg));
         const panelTitle = new Label({ class: 'panel-header-label', text: localize('panel.reference-image.title') });
         panelHeader.append(panelIcon);
         panelHeader.append(panelTitle);
@@ -44,7 +55,12 @@ class ReferenceImagePanel extends Container {
 
         const infoLabel = new Label({ class: ['control-element-expand', 'reference-image-info'], text: localize('panel.reference-image.empty') });
 
-        const loadButton = new Button({ class: 'icon-button', text: localize('panel.reference-image.load') });
+        const loadButton = new Button({ class: ['icon-button', 'reference-image-load-button'], text: '' });
+        loadButton.dom.appendChild(createSvg(referenceImageSvg));
+        const loadLabel = document.createElement('span');
+        loadLabel.textContent = localize('panel.reference-image.load');
+        loadButton.dom.appendChild(loadLabel);
+        loadButton.dom.setAttribute('aria-label', localize('panel.reference-image.load'));
         const clearButton = new Button({ class: ['icon-button', 'danger-icon'], text: localize('panel.reference-image.clear') });
         const buttonRow = new Container({ class: ['control-parent', 'button-row'] });
         buttonRow.append(loadButton);

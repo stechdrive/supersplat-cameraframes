@@ -9,9 +9,9 @@ import deleteSvg from './svg/delete.svg';
 import exportSvg from './svg/export.svg';
 import cameraPanelSvg from './svg/fpv-nav.svg';
 import hiddenSvg from './svg/hidden.svg';
-import importSvg from './svg/import.svg';
 import newSvg from './svg/new.svg';
 import orbitSvg from './svg/orbit-nav.svg';
+import referenceImageSvg from './svg/reference-image.svg';
 import lockSvg from './svg/select-lock.svg';
 import separateSvg from './svg/select-separate.svg';
 import unlockSvg from './svg/select-unlock.svg';
@@ -246,7 +246,7 @@ class CameraFramesPanel extends Panel {
             class: ['panel-header-button', 'camera-frames-reference-image'],
             text: ''
         });
-        referenceImageHeaderButton.dom.appendChild(createSvg(importSvg));
+        referenceImageHeaderButton.dom.appendChild(createSvg(referenceImageSvg));
         referenceImageHeaderButton.dom.title = localize('panel.reference-image.toggle');
         referenceImageHeaderButton.dom.setAttribute('aria-label', localize('panel.reference-image.toggle'));
         referenceImageHeaderButton.dom.setAttribute('aria-pressed', 'false');

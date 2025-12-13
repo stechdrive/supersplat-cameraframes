@@ -44,7 +44,10 @@
         }
 
         &.active {
-            background-color: rgba($clr-hilight, 0.12);
+            svg {
+                color: $clr-icon-hilight;
+                filter: drop-shadow(0 0 2px rgba($clr-hilight, 0.6));
+            }
         }
     }
 
