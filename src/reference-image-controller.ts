@@ -1,6 +1,7 @@
 import { Texture } from 'playcanvas';
 
 import { Events } from './events';
+import { DEFAULT_REFERENCE_IMAGE_FILENAME, normalizeReferenceImageFilename } from './reference-image-filename';
 import { ReferenceImageHistory } from './reference-image-history';
 import { ReferenceImageLoader } from './reference-image-loader';
 import { ReferenceImageRenderer } from './reference-image-renderer';
@@ -24,14 +25,17 @@ class ReferenceImageController {
     private history: ReferenceImageHistory | null = null;
     private applyingHistory = false;
     private state: ReferenceImageState = { ...DEFAULT_REFERENCE_IMAGE_STATE };
-    private runtime: { texture: Texture | null; blob: Blob | null; objectUrl: string | null; canvas: HTMLCanvasElement | null; } = {
+    private runtime: { texture: Texture | null; blob: Blob | null; previewCanvas: HTMLCanvasElement | null; sourceKey: string | null; } = {
         texture: null,
         blob: null,
-        objectUrl: null,
-        canvas: null
+        previewCanvas: null,
+        sourceKey: null
     };
-    private sourceCache = new Map<string, { blob: Blob; canvas: HTMLCanvasElement; }>();
+    private sourceCache = new Map<string, { blob: Blob; previewCanvas: HTMLCanvasElement; }>();
     private sourceCacheOrder: string[] = [];
+    private exportWorkKey: string | null = null;
+    private exportWorkCanvas: HTMLCanvasElement | null = null;
+    private exportWorkPromise: Promise<HTMLCanvasElement> | null = null;
 
     constructor(events: Events, scene: Scene) {
         this.events = events;
@@ -65,13 +69,24 @@ class ReferenceImageController {
         this.events.on('referenceImage.setIncludeInRender', (value: boolean) => this.setIncludeInRender(value));
         this.events.on('referenceImage.historyBegin', (label: string) => this.historyBegin(label));
         this.events.on('referenceImage.historyCommit', (label?: string) => this.historyCommit(label));
-        this.events.function('referenceImage.renderExportLayer', (width: number, height: number, options?: { applyOpacity?: boolean; }) => {
-            return this.renderExportLayer(width, height, options);
+        this.events.function('referenceImage.renderExportLayer', async (width: number, height: number, options?: { applyOpacity?: boolean; }) => {
+            return await this.renderExportLayer(width, height, options);
         });
         this.events.on('referenceImage.clear', () => this.clearWithHistory());
         this.events.function('referenceImage.loadBlob', async (blob: Blob, filename?: string) => {
-            await this.loadFromBlob(blob, filename);
-            return true;
+            try {
+                await this.loadFromBlob(blob, filename);
+                return true;
+            } catch (error) {
+                console.error('referenceImage.loadBlob failed', error);
+                const message = (error as Error)?.message ?? `${error}`;
+                await this.events.invoke('showPopup', {
+                    type: 'error',
+                    header: 'Reference Image',
+                    message: `'${message}'`
+                });
+                return false;
+            }
         });
         this.events.function('docSerialize.referenceImage', () => this.serializeDoc());
         this.events.function('docDeserialize.referenceImage', async (docState: any, blob?: Blob | null) => {
@@ -120,12 +135,19 @@ class ReferenceImageController {
             this.state.scaleK = this.state.scalePct / 100;
             if (!this.state.source) {
                 this.destroyTexture();
-                this.runtime = { texture: null, blob: null, objectUrl: null, canvas: null };
+                this.runtime = { texture: null, blob: null, previewCanvas: null, sourceKey: null };
+                this.clearExportWork();
             } else {
-                if (!this.runtime.texture && this.runtime.canvas && this.scene) {
-                    this.runtime.texture = this.loader.createTexture(this.scene.app.graphicsDevice, this.runtime.canvas, this.state.pixelPerfectEligible);
+                const desiredKey = this.sourceKey(this.state.source);
+                if (desiredKey && desiredKey !== this.runtime.sourceKey) {
+                    this.destroyTexture();
+                    this.runtime = { texture: null, blob: null, previewCanvas: null, sourceKey: null };
+                    this.clearExportWork();
                 }
-                if (!this.runtime.texture || !this.runtime.blob || !this.runtime.canvas) {
+                if (!this.runtime.texture && this.runtime.previewCanvas && this.scene) {
+                    this.runtime.texture = this.loader.createTexture(this.scene.app.graphicsDevice, this.runtime.previewCanvas, this.state.pixelPerfectEligible);
+                }
+                if (!this.runtime.texture || !this.runtime.blob || !this.runtime.previewCanvas || (desiredKey && this.runtime.sourceKey !== desiredKey)) {
                     this.restoreRuntimeFromCache(this.state.source);
                 }
             }
@@ -213,12 +235,12 @@ class ReferenceImageController {
         ].join('|');
     }
 
-    private rememberSource(source: ReferenceImageSourceMeta | null, blob: Blob | null, canvas: HTMLCanvasElement | null) {
+    private rememberSource(source: ReferenceImageSourceMeta | null, blob: Blob | null, previewCanvas: HTMLCanvasElement | null) {
         const key = this.sourceKey(source);
-        if (!key || !blob || !canvas) {
+        if (!key || !blob || !previewCanvas) {
             return;
         }
-        this.sourceCache.set(key, { blob, canvas });
+        this.sourceCache.set(key, { blob, previewCanvas });
         this.sourceCacheOrder = this.sourceCacheOrder.filter(k => k !== key);
         this.sourceCacheOrder.push(key);
         const MAX_CACHE = 4;
@@ -240,9 +262,10 @@ class ReferenceImageController {
             return;
         }
         this.runtime.blob = cached.blob;
-        this.runtime.canvas = cached.canvas;
-        if (!this.runtime.texture && cached.canvas) {
-            this.runtime.texture = this.loader.createTexture(this.scene.app.graphicsDevice, cached.canvas, this.state.pixelPerfectEligible);
+        this.runtime.previewCanvas = cached.previewCanvas;
+        this.runtime.sourceKey = key;
+        if (!this.runtime.texture && cached.previewCanvas) {
+            this.runtime.texture = this.loader.createTexture(this.scene.app.graphicsDevice, cached.previewCanvas, this.state.pixelPerfectEligible);
         }
     }
 
@@ -283,13 +306,63 @@ class ReferenceImageController {
         };
     }
 
-    private renderExportLayer(width: number, height: number, options?: { applyOpacity?: boolean; }) {
+    private clearExportWork() {
+        this.exportWorkKey = null;
+        this.exportWorkCanvas = null;
+        this.exportWorkPromise = null;
+    }
+
+    private async getExportWorkCanvas(source: ReferenceImageSourceMeta, blob: Blob) {
+        const key = this.sourceKey(source);
+        if (!key) {
+            return null;
+        }
+        if (this.exportWorkKey === key && this.exportWorkCanvas) {
+            return this.exportWorkCanvas;
+        }
+        if (this.exportWorkKey === key && this.exportWorkPromise) {
+            return await this.exportWorkPromise;
+        }
+
+        const promise = this.loader.decode(blob, source.filename).then(decoded => decoded.canvas);
+        this.exportWorkKey = key;
+        this.exportWorkCanvas = null;
+        this.exportWorkPromise = promise;
+        try {
+            const canvas = await promise;
+            if (this.exportWorkKey === key) {
+                this.exportWorkCanvas = canvas;
+            }
+            return canvas;
+        } catch (error) {
+            if (this.exportWorkKey === key) {
+                this.exportWorkKey = null;
+                this.exportWorkCanvas = null;
+                this.exportWorkPromise = null;
+            }
+            throw error;
+        } finally {
+            if (this.exportWorkKey === key) {
+                this.exportWorkPromise = null;
+            }
+        }
+    }
+
+    private async renderExportLayer(width: number, height: number, options?: { applyOpacity?: boolean; }) {
         if (!this.state.enabled || !this.state.visible || !this.state.includeInRender) {
             return null;
         }
         const source = this.state.source;
-        const image = this.runtime.canvas;
-        if (!source || !image) {
+        const blob = this.runtime.blob;
+        if (!source || !blob) {
+            return null;
+        }
+        const key = this.sourceKey(source);
+        if (!key) {
+            return null;
+        }
+        const image = await this.getExportWorkCanvas(source, blob);
+        if (!image || this.sourceKey(this.state.source) !== key) {
             return null;
         }
         const outW = Math.max(1, Math.round(width));
@@ -485,16 +558,14 @@ class ReferenceImageController {
     }
 
     private clear(revokeObjectUrl: boolean, resetState = true, preserveSource = false) {
-        this.rememberSource(this.state.source, this.runtime.blob, this.runtime.canvas);
+        this.rememberSource(this.state.source, this.runtime.blob, this.runtime.previewCanvas);
         this.destroyTexture();
-        if (revokeObjectUrl) {
-            this.loader.revoke(this.runtime.objectUrl);
-        }
+        this.clearExportWork();
         this.runtime = {
             texture: null,
             blob: preserveSource ? this.runtime.blob : null,
-            objectUrl: null,
-            canvas: preserveSource ? this.runtime.canvas : null
+            previewCanvas: preserveSource ? this.runtime.previewCanvas : null,
+            sourceKey: preserveSource ? this.runtime.sourceKey : null
         };
         if (resetState) {
             this.state = {
@@ -521,22 +592,28 @@ class ReferenceImageController {
     }
 
     private async loadFromBlob(blob: Blob, filename?: string, recordHistory = true) {
-        this.rememberSource(this.state.source, this.runtime.blob, this.runtime.canvas);
-        this.loader.revoke(this.runtime.objectUrl);
-        const decoded = await this.loader.decode(blob, filename);
-        this.destroyTexture();
-
-        const texture = this.loader.createTexture(this.scene.app.graphicsDevice, decoded.canvas, this.state.pixelPerfectEligible);
-        this.runtime = {
-            texture,
-            blob,
-            objectUrl: decoded.source.objectUrl ?? null,
-            canvas: decoded.canvas
-        };
-        this.rememberSource(decoded.source, blob, decoded.canvas);
+        const normalizedFilename = normalizeReferenceImageFilename(filename ?? DEFAULT_REFERENCE_IMAGE_FILENAME);
+        const device = this.scene.app.graphicsDevice;
+        const deviceMaxTextureSize = (typeof device.maxTextureSize === 'number' && isFinite(device.maxTextureSize) && device.maxTextureSize > 0) ?
+            device.maxTextureSize :
+            4096;
+        const maxPreviewDim = Math.max(1, Math.min(4096, deviceMaxTextureSize));
+        const decoded = await this.loader.decode(blob, normalizedFilename, maxPreviewDim);
+        const texture = this.loader.createTexture(device, decoded.canvas, this.state.pixelPerfectEligible);
+        const nextKey = this.sourceKey(decoded.source);
 
         const apply = () => {
+            this.rememberSource(this.state.source, this.runtime.blob, this.runtime.previewCanvas);
+            this.destroyTexture();
+            this.clearExportWork();
             this.state.source = decoded.source;
+            this.runtime = {
+                texture,
+                blob,
+                previewCanvas: decoded.canvas,
+                sourceKey: nextKey
+            };
+            this.rememberSource(decoded.source, blob, decoded.canvas);
             this.state.enabled = true;
             this.state.visible = true;
             this.state.scalePct = 100;
@@ -560,6 +637,9 @@ class ReferenceImageController {
             return null;
         }
         const snapshot = this.snapshot();
+        if (snapshot.source?.filename) {
+            snapshot.source.filename = normalizeReferenceImageFilename(snapshot.source.filename);
+        }
         if (snapshot.source && 'objectUrl' in snapshot.source) {
             delete (snapshot.source as any).objectUrl;
         }
@@ -581,10 +661,14 @@ class ReferenceImageController {
             this.sourceCacheOrder = [];
             return;
         }
-        await this.loadFromBlob(blob, docState?.source?.filename ?? 'reference-image', false);
+        const normalizedFilename = normalizeReferenceImageFilename(docState?.source?.filename ?? DEFAULT_REFERENCE_IMAGE_FILENAME);
+        await this.loadFromBlob(blob, normalizedFilename, false);
+        const normalizedDocState = docState?.source ? { ...docState, source: { ...docState.source, filename: normalizedFilename } } : docState;
+        const loaded = this.snapshot();
         this.applySnapshot({
-            ...this.snapshot(),
-            ...docState
+            ...loaded,
+            ...normalizedDocState,
+            source: loaded.source
         });
     }
 }

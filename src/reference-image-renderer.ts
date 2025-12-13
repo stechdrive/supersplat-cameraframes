@@ -33,6 +33,10 @@ class ReferenceImageRenderer extends Element {
     referenceFrontLayer: Layer | null = null;
     private shader: Shader | null = null;
     private quadRender: QuadRender | null = null;
+    private readonly blendState = new BlendState(true,
+        BLENDEQUATION_ADD, BLENDMODE_SRC_ALPHA, BLENDMODE_ONE_MINUS_SRC_ALPHA,
+        BLENDEQUATION_ADD, BLENDMODE_SRC_ALPHA, BLENDMODE_ONE_MINUS_SRC_ALPHA
+    );
     private params: { back: RenderParams | null; front: RenderParams | null; } = { back: null, front: null };
     private targetSize: { w: number; h: number; } = { w: 1, h: 1 };
     private lastPixelPerfect = false;
@@ -218,11 +222,7 @@ class ReferenceImageRenderer extends Element {
             return;
         }
         const device = this.scene.app.graphicsDevice;
-        const blendState = new BlendState(true,
-            BLENDEQUATION_ADD, BLENDMODE_SRC_ALPHA, BLENDMODE_ONE_MINUS_SRC_ALPHA,
-            BLENDEQUATION_ADD, BLENDMODE_SRC_ALPHA, BLENDMODE_ONE_MINUS_SRC_ALPHA
-        );
-        device.setBlendState(blendState);
+        device.setBlendState(this.blendState);
         device.setCullMode(CULLFACE_NONE);
         device.setDepthState(DepthState.NODEPTH);
         device.setStencilState(null, null);

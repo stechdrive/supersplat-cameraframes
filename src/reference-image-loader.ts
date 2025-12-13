@@ -7,6 +7,7 @@ import {
     Texture
 } from 'playcanvas';
 
+import { DEFAULT_REFERENCE_IMAGE_FILENAME, normalizeReferenceImageFilename } from './reference-image-filename';
 import type { ReferenceImageSourceMeta } from './reference-image-types';
 
 const MAX_APPLIED_DIM = 16000;
@@ -24,18 +25,30 @@ type LoadedImage = {
     source: ReferenceImageSourceMeta;
     canvas: HTMLCanvasElement;
     blob: Blob;
-    objectUrl: string | null;
 };
 
 class ReferenceImageLoader {
-    async decode(blob: Blob, filename?: string): Promise<LoadedImage> {
-        const objectUrl = URL.createObjectURL(blob);
+    async decode(blob: Blob, filename?: string, maxCanvasDim?: number): Promise<LoadedImage> {
         let image: ImageBitmap | HTMLImageElement | null = null;
+        let cleanup: (() => void) | null = null;
         try {
             try {
                 image = await createImageBitmap(blob);
+                cleanup = () => {
+                    if ('close' in image && typeof (image as ImageBitmap).close === 'function') {
+                        (image as ImageBitmap).close();
+                    }
+                };
             } catch {
-                image = await loadImageElement(objectUrl);
+                const objectUrl = URL.createObjectURL(blob);
+                cleanup = () => URL.revokeObjectURL(objectUrl);
+                try {
+                    image = await loadImageElement(objectUrl);
+                } catch (error) {
+                    cleanup();
+                    cleanup = null;
+                    throw error;
+                }
             }
             const originalSize = {
                 w: image.width,
@@ -47,38 +60,42 @@ class ReferenceImageLoader {
                 w: Math.max(1, Math.round(originalSize.w * scale)),
                 h: Math.max(1, Math.round(originalSize.h * scale))
             };
+            const appliedMaxDim = Math.max(appliedSize.w, appliedSize.h);
+            const maxCanvas = (typeof maxCanvasDim === 'number' && isFinite(maxCanvasDim) && maxCanvasDim > 0) ?
+                maxCanvasDim :
+                appliedMaxDim;
+            const previewScale = appliedMaxDim > maxCanvas ? (maxCanvas / appliedMaxDim) : 1;
+            const canvasSize = {
+                w: Math.max(1, Math.round(appliedSize.w * previewScale)),
+                h: Math.max(1, Math.round(appliedSize.h * previewScale))
+            };
             const canvas = document.createElement('canvas');
-            canvas.width = appliedSize.w;
-            canvas.height = appliedSize.h;
+            canvas.width = canvasSize.w;
+            canvas.height = canvasSize.h;
             const ctx = canvas.getContext('2d');
             if (!ctx) {
                 throw new Error('Failed to acquire 2D context for reference image');
             }
-            ctx.drawImage(image, 0, 0, appliedSize.w, appliedSize.h);
-
-            if ('close' in image && typeof (image as ImageBitmap).close === 'function') {
-                (image as ImageBitmap).close();
-            }
+            ctx.drawImage(image, 0, 0, canvasSize.w, canvasSize.h);
 
             const source: ReferenceImageSourceMeta = {
-                filename: filename ?? 'reference-image',
+                filename: normalizeReferenceImageFilename(filename ?? DEFAULT_REFERENCE_IMAGE_FILENAME),
                 mime: blob.type || 'application/octet-stream',
                 originalSize,
                 appliedSize,
                 pixelRatio: appliedSize.w / Math.max(1, originalSize.w),
-                usedOriginal: scale >= 0.999,
-                objectUrl
+                usedOriginal: scale >= 0.999
             };
 
             return {
                 source,
                 canvas,
-                blob,
-                objectUrl
+                blob
             };
-        } catch (error) {
-            URL.revokeObjectURL(objectUrl);
-            throw error;
+        } finally {
+            if (cleanup) {
+                cleanup();
+            }
         }
     }
 
@@ -100,12 +117,6 @@ class ReferenceImageLoader {
     destroyTexture(texture: Texture | null | undefined) {
         if (texture) {
             texture.destroy();
-        }
-    }
-
-    revoke(objectUrl: string | null | undefined) {
-        if (objectUrl) {
-            URL.revokeObjectURL(objectUrl);
         }
     }
 }
