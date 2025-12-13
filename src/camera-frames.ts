@@ -226,6 +226,8 @@ export class CameraFramesController {
     } | null = null;
     private applyingHistory = false;
     private viewportPoseRuntime: CameraPoseSnapshot | null = null;
+    private viewportPoseRuntimeWorldDistance: number | null = null;
+    private hasEnteredViewportOnce = false;
     private applyingPose = false;
     private uiTarget: 'viewport' | 'main' = 'viewport';
     private mainCameraSelected = false;
@@ -1006,6 +1008,7 @@ export class CameraFramesController {
                     }
                 } else {
                     this.viewportPoseRuntime = pose;
+                    this.viewportPoseRuntimeWorldDistance = (pose.navMode === 'orbit') ? this.getPoseWorldDistance(pose) : null;
                     this.emitViewportLensChanged();
                 }
             }
@@ -1018,6 +1021,8 @@ export class CameraFramesController {
         this.events.on('scene.clear', () => {
             this.state.mainCameraPose = null;
             this.viewportPoseRuntime = null;
+            this.viewportPoseRuntimeWorldDistance = null;
+            this.hasEnteredViewportOnce = !this.state.enabled;
             this.setUiTarget('viewport');
             this.frustumDragState = null;
             this.frustumDebugCache = {
@@ -1380,6 +1385,7 @@ export class CameraFramesController {
             if (value) {
                 // OFF -> ON
                 this.viewportPoseRuntime = this.clonePoseSnapshot(currentPose);
+                this.viewportPoseRuntimeWorldDistance = (this.viewportPoseRuntime?.navMode === 'orbit') ? this.getPoseWorldDistance(this.viewportPoseRuntime) : null;
                 if (this.viewportFovRuntime === null || this.viewportFovRuntime === undefined) {
                     const currentFov = this.events.invoke('camera.fov');
                     if (typeof currentFov === 'number' && isFinite(currentFov)) {
@@ -1443,22 +1449,47 @@ export class CameraFramesController {
                         this.viewportFovRuntime = currentFov;
                     }
                 }
+                const vpFov = this.viewportFovRuntime ?? this.events.invoke('camera.fov');
+                if (typeof vpFov === 'number' && isFinite(vpFov)) {
+                    this.events.fire('camera.setFov', vpFov);
+                }
                 if (!this.state.mainCameraPose) {
                     this.state.mainCameraPose = this.clonePoseSnapshot(currentPose);
                 }
                 // ビューポート用ポーズがあれば戻す
+                const isFirstViewportEntry = !this.hasEnteredViewportOnce;
+                this.hasEnteredViewportOnce = true;
+
                 let viewportPose = this.clonePoseSnapshot(this.viewportPoseRuntime);
+                if (isFirstViewportEntry && currentPose) {
+                    const initPose = this.clonePoseSnapshot(currentPose);
+                    if (initPose) {
+                        initPose.lockFraming = false;
+                        this.viewportPoseRuntime = initPose;
+                        this.viewportPoseRuntimeWorldDistance = (initPose.navMode === 'orbit') ? this.getPoseWorldDistance(currentPose) : null;
+                        viewportPose = this.clonePoseSnapshot(this.viewportPoseRuntime);
+                    }
+                }
                 if (!viewportPose && currentPose) {
                     // undo/load 等で runtime pose が失われた場合は、少なくとも視点が崩れないよう現 pose を確保する
-                    this.viewportPoseRuntime = this.clonePoseSnapshot(currentPose);
+                    const fallbackPose = this.clonePoseSnapshot(currentPose);
+                    if (fallbackPose) {
+                        fallbackPose.lockFraming = false;
+                        this.viewportPoseRuntime = fallbackPose;
+                        this.viewportPoseRuntimeWorldDistance = (fallbackPose.navMode === 'orbit') ? this.getPoseWorldDistance(currentPose) : null;
+                    } else {
+                        this.viewportPoseRuntime = null;
+                        this.viewportPoseRuntimeWorldDistance = null;
+                    }
                     viewportPose = this.clonePoseSnapshot(this.viewportPoseRuntime);
                 }
                 if (viewportPose) {
+                    const worldDistance = this.viewportPoseRuntimeWorldDistance;
+                    if (viewportPose.navMode === 'orbit' && typeof worldDistance === 'number' && isFinite(worldDistance) && worldDistance > 0) {
+                        viewportPose.lockFraming = false;
+                        viewportPose.distance = this.worldDistanceToNormalized(worldDistance, viewportPose);
+                    }
                     this.applyCameraPose(viewportPose, { silent: true });
-                }
-                const vpFov = this.viewportFovRuntime ?? this.events.invoke('camera.fov');
-                if (typeof vpFov === 'number' && isFinite(vpFov)) {
-                    this.events.fire('camera.setFov', vpFov);
                 }
                 // 無効化中は追従ロジックを停止するが状態は保持
                 this.requestRender();
@@ -3486,6 +3517,10 @@ export class CameraFramesController {
                 this.state.mainCameraPose = this.clonePoseSnapshot(this.captureCameraPose());
             }
             this.viewportPoseRuntime = null;
+            this.viewportPoseRuntimeWorldDistance = null;
+            if (!this.state.enabled) {
+                this.hasEnteredViewportOnce = true;
+            }
             this.selectedId = this.state.frames.find(f => f.selected)?.id ?? null;
             this.state.nearClip = this.computeSafeNearClip(this.state.nearClip);
             this.state.exportGridOverlay = !!this.state.exportGridOverlay;
@@ -3541,6 +3576,8 @@ export class CameraFramesController {
             };
             this.selectedId = null;
             this.viewportPoseRuntime = null;
+            this.viewportPoseRuntimeWorldDistance = null;
+            this.hasEnteredViewportOnce = false;
             this.rebuildBaseFrustum();
             if (this.state.enabled && this.state.mainCameraPose) {
                 this.applyCameraPose(this.state.mainCameraPose, { silent: true });
@@ -3661,6 +3698,8 @@ export class CameraFramesController {
 
         this.overlay.style.pointerEvents = 'none';
         this.viewportPoseRuntime = null;
+        this.viewportPoseRuntimeWorldDistance = null;
+        this.hasEnteredViewportOnce = !this.state.enabled;
 
         this.selectedId = (docState && Object.prototype.hasOwnProperty.call(docState, 'selectedId')) ?
             docState.selectedId :
