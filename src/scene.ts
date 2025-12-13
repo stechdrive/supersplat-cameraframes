@@ -241,6 +241,8 @@ class Scene {
         this.insertLayerBefore(this.modelLightingLayer, worldLayer);
         this.insertLayerBefore(this.debugLayer, worldLayer);
         this.insertLayerBefore(this.exportOverlayLayer, worldLayer);
+        // NOTE: Overlay/Gizmo は World(Transparent=gsplat) の後ろに来る必要がある。
+        // Gizmo(clearDepthBuffer) が World の透明パス直前に入ると、GLB の深度が消えて見えなくなる。
         this.insertLayerAfter(this.overlayLayer, worldLayer);
         this.insertLayerAfter(this.gizmoLayer, this.overlayLayer);
 
