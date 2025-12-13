@@ -39,7 +39,7 @@ type ReferenceImageRuntime = {
 const DEFAULT_REFERENCE_IMAGE_STATE: ReferenceImageState = {
     enabled: false,
     visible: false,
-    layer: 'back',
+    layer: 'front',
     opacity: 0.7,
     scalePct: 100,
     scaleK: 1,

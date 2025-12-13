@@ -8,6 +8,7 @@
     flex-direction: column;
     gap: 8px;
     z-index: 5;
+    overflow: visible;
 
     .panel-header {
         cursor: move;
@@ -30,6 +31,12 @@
         padding: 8px;
     }
 
+    .reference-image-position-group {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+    }
+
     .reference-image-info-row {
         align-items: center;
         min-height: 32px;
@@ -42,7 +49,45 @@
 
     .reference-image-offset-row {
         align-items: center;
-        gap: 6px;
+        gap: 4px;
+        flex-wrap: nowrap;
+    }
+
+    .reference-image-transform-row {
+        align-items: center;
+        gap: 12px;
+        flex-wrap: nowrap;
+        padding-left: 6px;
+    }
+
+    .reference-image-transform-group {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        min-width: 0;
+
+        .control-label {
+            width: auto;
+            margin: 0;
+            white-space: nowrap;
+        }
+    }
+
+    .reference-image-flags-row {
+        align-items: center;
+        gap: 12px;
+        flex-wrap: nowrap;
+        padding-left: 6px;
+
+        .control-label {
+            width: auto;
+            margin: 0;
+            white-space: nowrap;
+        }
+
+        .control-element.pcui-boolean-input {
+            margin-top: 0;
+        }
     }
 
     .reference-image-center-button {

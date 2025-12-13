@@ -1,4 +1,4 @@
-import { BooleanInput, Button, Container, Label, NumericInput, SelectInput, SliderInput } from '@playcanvas/pcui';
+import { BooleanInput, Button, Container, Label, NumericInput, SelectInput } from '@playcanvas/pcui';
 
 import { Events } from '../events';
 import { formatInteger, localize } from './localization';
@@ -127,21 +127,19 @@ class ReferenceImagePanel extends Container {
         infoRow.append(loadButton);
         infoRow.append(clearButton);
 
-        const visibleRow = new Container({ class: 'control-parent' });
-        visibleRow.append(new Label({ class: 'control-label', text: localize('panel.reference-image.visible') }));
         const visibleToggle = new BooleanInput({ type: 'toggle', class: 'control-element', value: false });
-        visibleRow.append(visibleToggle);
-
-        const includeRow = new Container({ class: 'control-parent' });
-        includeRow.append(new Label({ class: 'control-label', text: localize('panel.reference-image.include') }));
         const includeToggle = new BooleanInput({ type: 'toggle', class: 'control-element', value: false });
-        includeRow.append(includeToggle);
+        const flagsRow = new Container({ class: ['control-parent', 'reference-image-flags-row'] });
+        flagsRow.append(new Label({ class: 'control-label', text: localize('panel.reference-image.visible') }));
+        flagsRow.append(visibleToggle);
+        flagsRow.append(new Label({ class: 'control-label', text: localize('panel.reference-image.include') }));
+        flagsRow.append(includeToggle);
 
         const layerRow = new Container({ class: 'control-parent' });
         layerRow.append(new Label({ class: 'control-label', text: localize('panel.reference-image.layer') }));
         const layerSelect = new SelectInput({
             class: 'control-element',
-            defaultValue: 'back',
+            defaultValue: 'front',
             options: [
                 { v: 'back', t: localize('panel.reference-image.layer-back') },
                 { v: 'front', t: localize('panel.reference-image.layer-front') }
@@ -149,37 +147,16 @@ class ReferenceImagePanel extends Container {
         });
         layerRow.append(layerSelect);
 
-        const opacityRow = new Container({ class: 'control-parent' });
-        opacityRow.append(new Label({ class: 'control-label', text: localize('panel.reference-image.opacity') }));
-        const opacitySlider = new SliderInput({
-            class: 'control-element-expand',
-            min: 0,
-            max: 100,
-            precision: 0,
-            value: 70
-        });
-        opacityRow.append(opacitySlider);
-
-        const scaleRow = new Container({ class: 'control-parent' });
-        scaleRow.append(new Label({ class: 'control-label', text: localize('panel.reference-image.scale') }));
-        const scaleInput = new NumericInput({
-            class: 'control-element',
-            min: 10,
-            max: 400,
-            step: 1,
-            precision: 0,
-            value: 100
-        });
-        scaleRow.append(scaleInput);
+        const positionGroup = new Container({ class: 'reference-image-position-group' });
 
         const offsetRow = new Container({ class: ['control-parent', 'reference-image-offset-row'] });
         offsetRow.append(new Label({ class: 'control-label', text: localize('panel.reference-image.offset') }));
         const offsetX = new NumericInput({ class: 'control-element', step: 1, precision: 0, value: 0 });
         const offsetY = new NumericInput({ class: 'control-element', step: 1, precision: 0, value: 0 });
-        offsetX.dom.title = `${localize('panel.reference-image.offset')} X`;
-        offsetY.dom.title = `${localize('panel.reference-image.offset')} Y`;
-        offsetX.dom.setAttribute('aria-label', `${localize('panel.reference-image.offset')} X`);
-        offsetY.dom.setAttribute('aria-label', `${localize('panel.reference-image.offset')} Y`);
+        offsetX.dom.title = `${localize('panel.reference-image.offset')}X`;
+        offsetY.dom.title = `${localize('panel.reference-image.offset')}Y`;
+        offsetX.dom.setAttribute('aria-label', `${localize('panel.reference-image.offset')}X`);
+        offsetY.dom.setAttribute('aria-label', `${localize('panel.reference-image.offset')}Y`);
         offsetRow.append(offsetX);
         offsetRow.append(offsetY);
 
@@ -189,7 +166,46 @@ class ReferenceImagePanel extends Container {
         centerButton.dom.setAttribute('aria-label', localize('panel.reference-image.center'));
         offsetRow.append(centerButton);
 
-        const pixelPerfectLabel = new Label({ class: 'control-element-expand', text: '' });
+        const transformRow = new Container({ class: ['control-parent', 'reference-image-transform-row'] });
+
+        const scaleGroup = new Container({ class: 'reference-image-transform-group' });
+        const scaleLabel = new Label({ class: 'control-label', text: localize('panel.reference-image.scale') });
+        scaleGroup.append(scaleLabel);
+
+        const scaleInput = new NumericInput({
+            class: 'control-element',
+            min: 10,
+            max: 400,
+            step: 1,
+            precision: 0,
+            value: 100,
+            style: 'width: 60px'
+        });
+        scaleInput.dom.title = localize('panel.reference-image.scale');
+        scaleInput.dom.setAttribute('aria-label', localize('panel.reference-image.scale'));
+        scaleGroup.append(scaleInput);
+        transformRow.append(scaleGroup);
+
+        const opacityGroup = new Container({ class: 'reference-image-transform-group' });
+        const opacityLabel = new Label({ class: 'control-label', text: localize('panel.reference-image.opacity') });
+        opacityGroup.append(opacityLabel);
+
+        const opacityInput = new NumericInput({
+            class: 'control-element',
+            min: 0,
+            max: 100,
+            step: 1,
+            precision: 0,
+            value: 70,
+            style: 'width: 60px'
+        });
+        opacityInput.dom.title = localize('panel.reference-image.opacity');
+        opacityInput.dom.setAttribute('aria-label', localize('panel.reference-image.opacity'));
+        opacityGroup.append(opacityInput);
+        transformRow.append(opacityGroup);
+
+        positionGroup.append(offsetRow);
+        positionGroup.append(transformRow);
 
         const fileInput = document.createElement('input');
         fileInput.type = 'file';
@@ -216,7 +232,7 @@ class ReferenceImagePanel extends Container {
             if (suppress) return;
             events.fire('referenceImage.setLayer', value);
         });
-        opacitySlider.on('change', (value: number) => {
+        opacityInput.on('change', (value: number) => {
             if (suppress) return;
             events.fire('referenceImage.setOpacity', value / 100);
         });
@@ -225,7 +241,7 @@ class ReferenceImagePanel extends Container {
             events.fire('referenceImage.setScale', value);
         });
         const applyOffset = () => {
-            events.fire('referenceImage.setOffset', { x: offsetX.value, y: offsetY.value });
+            events.fire('referenceImage.setOffset', { x: -offsetX.value, y: -offsetY.value });
         };
         offsetX.on('change', () => {
             if (suppress) return;
@@ -246,11 +262,11 @@ class ReferenceImagePanel extends Container {
             const active = !!(state?.source);
             visibleToggle.value = !!state?.visible;
             includeToggle.value = !!state?.includeInRender;
-            layerSelect.value = (state?.layer ?? 'back') as any;
-            opacitySlider.value = Math.round((state?.opacity ?? 0.7) * 100);
+            layerSelect.value = (state?.layer ?? 'front') as any;
+            opacityInput.value = Math.round((state?.opacity ?? 0.7) * 100);
             scaleInput.value = state?.scalePct ?? 100;
-            offsetX.value = state?.offsetPx?.x ?? 0;
-            offsetY.value = state?.offsetPx?.y ?? 0;
+            offsetX.value = -(state?.offsetPx?.x ?? 0);
+            offsetY.value = -(state?.offsetPx?.y ?? 0);
             centerButton.enabled = active;
             const infoParts = [];
             if (state?.source?.filename) {
@@ -260,7 +276,6 @@ class ReferenceImagePanel extends Container {
                 infoParts.push(`${formatInteger(state.source.appliedSize.w)}×${formatInteger(state.source.appliedSize.h)}${state.source.usedOriginal ? '' : ` (${localize('panel.reference-image.scaled')})`}`);
             }
             infoLabel.text = active ? infoParts.join(' / ') : localize('panel.reference-image.empty');
-            pixelPerfectLabel.text = state?.pixelPerfectEligible ? localize('panel.reference-image.pixel-perfect') : localize('panel.reference-image.pixel-off');
             suppress = false;
         };
 
@@ -296,13 +311,9 @@ class ReferenceImagePanel extends Container {
         });
 
         body.append(infoRow);
-        body.append(offsetRow);
-        body.append(visibleRow);
-        body.append(includeRow);
+        body.append(positionGroup);
+        body.append(flagsRow);
         body.append(layerRow);
-        body.append(opacityRow);
-        body.append(scaleRow);
-        body.append(pixelPerfectLabel);
 
         this.append(panelHeader);
         this.append(body);
