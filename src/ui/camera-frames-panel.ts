@@ -9,6 +9,7 @@ import deleteSvg from './svg/delete.svg';
 import exportSvg from './svg/export.svg';
 import cameraPanelSvg from './svg/fpv-nav.svg';
 import hiddenSvg from './svg/hidden.svg';
+import importSvg from './svg/import.svg';
 import newSvg from './svg/new.svg';
 import orbitSvg from './svg/orbit-nav.svg';
 import lockSvg from './svg/select-lock.svg';
@@ -211,23 +212,6 @@ class CameraFramesPanel extends Panel {
         };
         collapseButton.on('click', toggleCompact);
 
-        const referenceImageButtonRow = new Container({ class: 'control-parent' });
-        const referenceImageButton = new Button({
-            class: ['control-element-expand', 'reference-image-open-button'],
-            text: localize('panel.reference-image.title')
-        });
-        referenceImageButton.dom.title = localize('panel.reference-image.title');
-        referenceImageButton.on('click', () => {
-            events.fire('referenceImagePanel.toggleVisible');
-        });
-        referenceImageButtonRow.append(referenceImageButton);
-        const setReferenceButtonState = (visible: boolean) => {
-            referenceImageButton.class[visible ? 'add' : 'remove']('active');
-            referenceImageButton.dom.setAttribute('aria-pressed', visible ? 'true' : 'false');
-        };
-        setReferenceButtonState(false);
-        events.on('referenceImagePanel.visible', (visible: boolean) => setReferenceButtonState(!!visible));
-
         // header toggle (Mode Switch)
         const headerToggle = new Container({ class: ['header-toggle-group'] });
         ['pointerdown', 'pointerup', 'click'].forEach((evt) => {
@@ -258,7 +242,30 @@ class CameraFramesPanel extends Panel {
             }
         });
 
+        const referenceImageHeaderButton = new Button({
+            class: ['panel-header-button', 'camera-frames-reference-image'],
+            text: ''
+        });
+        referenceImageHeaderButton.dom.appendChild(createSvg(importSvg));
+        referenceImageHeaderButton.dom.title = localize('panel.reference-image.toggle');
+        referenceImageHeaderButton.dom.setAttribute('aria-label', localize('panel.reference-image.toggle'));
+        referenceImageHeaderButton.dom.setAttribute('aria-pressed', 'false');
+        ['pointerdown', 'pointerup', 'click'].forEach((evt) => {
+            referenceImageHeaderButton.dom.addEventListener(evt, (e: Event) => e.stopPropagation());
+        });
+        referenceImageHeaderButton.on('click', () => {
+            events.fire('referenceImagePanel.toggleVisible');
+        });
+
+        const setReferenceButtonState = (visible: boolean) => {
+            referenceImageHeaderButton.class[visible ? 'add' : 'remove']('active');
+            referenceImageHeaderButton.dom.setAttribute('aria-pressed', visible ? 'true' : 'false');
+        };
+        setReferenceButtonState(false);
+        events.on('referenceImagePanel.visible', (visible: boolean) => setReferenceButtonState(!!visible));
+
         this.header.append(headerToggle);
+        this.header.append(referenceImageHeaderButton);
         this.header.append(collapseButton);
         setCompact(false);
 
@@ -1005,7 +1012,6 @@ class CameraFramesPanel extends Panel {
         [sliderR, sliderU, sliderF].forEach(hideSliderInputs);
 
         // assemble
-        this.content.append(referenceImageButtonRow);
         this.content.append(layoutGroup);
         this.content.append(outputRow);
         this.content.append(filenameRow);

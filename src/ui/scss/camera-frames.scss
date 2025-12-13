@@ -33,6 +33,21 @@
         }
     }
 
+    .camera-frames-reference-image {
+        display: grid;
+        place-items: center;
+
+        svg {
+            width: 16px;
+            height: 16px;
+            pointer-events: none;
+        }
+
+        &.active {
+            background-color: rgba($clr-hilight, 0.12);
+        }
+    }
+
     &.compact {
         width: 52px;
         height: 52px;

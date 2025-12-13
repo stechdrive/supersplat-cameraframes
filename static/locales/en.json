@@ -132,6 +132,7 @@
     "panel.camera-frames.transform.orbit": "Orbit navigation",
     "panel.camera-frames.transform.fpv": "FPV navigation",
     "panel.reference-image.title": "Reference Image",
+    "panel.reference-image.toggle": "Toggle Reference Image Panel",
     "panel.reference-image.empty": "No reference image loaded",
     "panel.reference-image.load": "Load / Replace",
     "panel.reference-image.clear": "Remove",
