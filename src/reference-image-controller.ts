@@ -11,6 +11,7 @@ type ViewportMapping = {
     logicalW: number;
     logicalH: number;
     rectPxRaw: { x: number; y: number; w: number; h: number; };
+    rectNormRaw: { x: number; y: number; w: number; h: number; };
 };
 
 type RenderBoxAnchor = { ax: number; ay: number; };
@@ -29,7 +30,6 @@ class ReferenceImageController {
         objectUrl: null,
         canvas: null
     };
-    private renderBoxAnchor: RenderBoxAnchor = { ax: 0.5, ay: 0.5 };
     private sourceCache = new Map<string, { blob: Blob; canvas: HTMLCanvasElement; }>();
     private sourceCacheOrder: string[] = [];
 
@@ -42,6 +42,10 @@ class ReferenceImageController {
         this.events.on('cameraFrames.stateChanged', (cfState: any) => this.onCameraFramesState(cfState));
         this.events.on('prerender', () => this.updateRenderer());
         this.events.on('scene.clear', () => this.reset());
+    }
+
+    private requestRender() {
+        this.scene.forceRender = true;
     }
 
     setHistory(history: ReferenceImageHistory) {
@@ -108,7 +112,6 @@ class ReferenceImageController {
                 ...(snapshot ?? {})
             };
             this.state.scaleK = this.state.scalePct / 100;
-            this.renderBoxAnchor = snapshot?.anchor ?? this.renderBoxAnchor;
             if (!this.state.source) {
                 this.destroyTexture();
                 this.runtime = { texture: null, blob: null, objectUrl: null, canvas: null };
@@ -121,6 +124,7 @@ class ReferenceImageController {
                 }
             }
             this.updateRenderer();
+            this.requestRender();
             this.events.fire('referenceImage.stateChanged', this.snapshot());
         } finally {
             this.applyingHistory = false;
@@ -138,10 +142,7 @@ class ReferenceImageController {
         if (!cfState?.renderBox?.anchor) {
             return;
         }
-        this.renderBoxAnchor = cfState.renderBox.anchor;
-        if (!this.applyingHistory) {
-            this.setAnchor(cfState.renderBox.anchor, true);
-        }
+        this.requestRender();
     }
 
     private getViewportMapping(): ViewportMapping | null {
@@ -149,14 +150,35 @@ class ReferenceImageController {
         if (!mapping || !mapping.rectPxRaw) {
             return null;
         }
-        if (mapping.anchor) {
-            this.renderBoxAnchor = mapping.anchor;
-        }
         return {
             logicalW: mapping.logicalW,
             logicalH: mapping.logicalH,
-            rectPxRaw: mapping.rectPxRaw
+            rectPxRaw: mapping.rectPxRaw,
+            rectNormRaw: mapping.rectNormRaw
         };
+    }
+
+    private computeMappingViewportSize(mapping: ViewportMapping | null) {
+        const rectPxRaw = mapping?.rectPxRaw;
+        const rectNormRaw = mapping?.rectNormRaw;
+        if (!rectPxRaw || !rectNormRaw) {
+            return null;
+        }
+        const vw = rectNormRaw.w !== 0 ? (rectPxRaw.w / rectNormRaw.w) : null;
+        const vh = rectNormRaw.h !== 0 ? (rectPxRaw.h / rectNormRaw.h) : null;
+        if (typeof vw !== 'number' || typeof vh !== 'number' || !isFinite(vw) || !isFinite(vh) || vw <= 0 || vh <= 0) {
+            return null;
+        }
+        return { vw, vh };
+    }
+
+    private getRenderTargetSize() {
+        const rt = this.scene.camera.entity.camera.renderTarget;
+        if (rt && rt.width > 0 && rt.height > 0) {
+            return { w: rt.width, h: rt.height };
+        }
+        const device = this.scene.app.graphicsDevice;
+        return { w: device.width, h: device.height };
     }
 
     private computePixelPerfect(mapping: ViewportMapping | null) {
@@ -228,18 +250,31 @@ class ReferenceImageController {
         if (!isFinite(viewScale) || viewScale <= 0) {
             return null;
         }
-        const anchor = this.state.anchor ?? this.renderBoxAnchor;
+        const anchor = this.state.anchor;
         const logicalAnchorX = mapping.logicalW * anchor.ax;
         const logicalAnchorY = mapping.logicalH * anchor.ay;
         const imgW = source.appliedSize.w * this.state.scaleK;
         const imgH = source.appliedSize.h * this.state.scaleK;
         const topLeftX = logicalAnchorX - anchor.ax * imgW - this.state.offsetPx.x;
         const topLeftY = logicalAnchorY - anchor.ay * imgH - this.state.offsetPx.y;
-        return {
+        const rect = {
             x: mapping.rectPxRaw.x + topLeftX * viewScale,
             y: mapping.rectPxRaw.y + topLeftY * viewScale,
             w: imgW * viewScale,
             h: imgH * viewScale
+        };
+        const viewport = this.computeMappingViewportSize(mapping);
+        const rtSize = this.getRenderTargetSize();
+        if (!viewport) {
+            return rect;
+        }
+        const sx = viewport.vw > 0 ? (rtSize.w / viewport.vw) : 1;
+        const sy = viewport.vh > 0 ? (rtSize.h / viewport.vh) : 1;
+        return {
+            x: rect.x * sx,
+            y: rect.y * sy,
+            w: rect.w * sx,
+            h: rect.h * sy
         };
     }
 
@@ -268,6 +303,7 @@ class ReferenceImageController {
         this.historyRecord('referenceImage.enabled', () => {
             this.state.enabled = next;
             this.updateRenderer();
+            this.requestRender();
             this.events.fire('referenceImage.stateChanged', this.snapshot());
         });
     }
@@ -278,6 +314,7 @@ class ReferenceImageController {
         this.historyRecord('referenceImage.visible', () => {
             this.state.visible = next;
             this.updateRenderer();
+            this.requestRender();
             this.events.fire('referenceImage.stateChanged', this.snapshot());
         });
     }
@@ -290,6 +327,7 @@ class ReferenceImageController {
         this.historyRecord('referenceImage.layer', () => {
             this.state.layer = layer;
             this.updateRenderer();
+            this.requestRender();
             this.events.fire('referenceImage.stateChanged', this.snapshot());
         });
     }
@@ -302,6 +340,7 @@ class ReferenceImageController {
         this.historyRecord('referenceImage.opacity', () => {
             this.state.opacity = clamped;
             this.updateRenderer();
+            this.requestRender();
             this.events.fire('referenceImage.stateChanged', this.snapshot());
         });
     }
@@ -315,6 +354,7 @@ class ReferenceImageController {
             this.state.scalePct = clamped;
             this.state.scaleK = clamped / 100;
             this.updateRenderer();
+            this.requestRender();
             this.events.fire('referenceImage.stateChanged', this.snapshot());
         });
     }
@@ -330,6 +370,7 @@ class ReferenceImageController {
         this.historyRecord('referenceImage.offset', () => {
             this.state.offsetPx = next;
             this.updateRenderer();
+            this.requestRender();
             this.events.fire('referenceImage.stateChanged', this.snapshot());
         });
     }
@@ -344,6 +385,7 @@ class ReferenceImageController {
             this.state.anchor = next;
             this.renderBoxAnchor = next;
             this.updateRenderer();
+            this.requestRender();
         };
         if (silent) {
             apply();
@@ -360,6 +402,7 @@ class ReferenceImageController {
         if (next === this.state.includeInRender) return;
         this.historyRecord('referenceImage.includeInRender', () => {
             this.state.includeInRender = next;
+            this.requestRender();
             this.events.fire('referenceImage.stateChanged', this.snapshot());
         });
     }
@@ -388,7 +431,7 @@ class ReferenceImageController {
                 ...this.state,
                 ...DEFAULT_REFERENCE_IMAGE_STATE,
                 layer: this.state.layer,
-                anchor: this.renderBoxAnchor
+                anchor: this.state.anchor
             };
         } else {
             this.state.source = null;
@@ -396,11 +439,13 @@ class ReferenceImageController {
         }
         this.renderer.clearParams();
         this.updateRenderer();
+        this.requestRender();
     }
 
     private clearWithHistory() {
         this.historyRecord('referenceImage.clear', () => {
             this.clear(true, true, true);
+            this.requestRender();
             this.events.fire('referenceImage.stateChanged', this.snapshot());
         });
     }
@@ -427,8 +472,10 @@ class ReferenceImageController {
             this.state.scalePct = 100;
             this.state.scaleK = 1;
             this.state.offsetPx = { x: 0, y: 0 };
+            this.state.anchor = { ax: 0.5, ay: 0.5 };
             this.computePixelPerfect(this.getViewportMapping());
             this.updateRenderer();
+            this.requestRender();
             this.events.fire('referenceImage.stateChanged', this.snapshot());
         };
         if (recordHistory) {

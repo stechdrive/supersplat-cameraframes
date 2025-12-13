@@ -2,16 +2,15 @@ import {
     BLENDEQUATION_ADD,
     BLENDMODE_ONE_MINUS_SRC_ALPHA,
     BLENDMODE_SRC_ALPHA,
+    CULLFACE_NONE,
     SEMANTIC_POSITION,
     BlendState,
-    Entity,
+    DepthState,
     Layer,
-    Mat4,
     QuadRender,
     Shader,
     ShaderUtils,
     Texture,
-    WebglGraphicsDevice,
     FILTER_LINEAR,
     FILTER_NEAREST
 } from 'playcanvas';
@@ -34,11 +33,16 @@ class ReferenceImageRenderer extends Element {
     referenceFrontLayer: Layer | null = null;
     private shader: Shader | null = null;
     private quadRender: QuadRender | null = null;
-    private backEntity: Entity | null = null;
-    private frontEntity: Entity | null = null;
     private params: { back: RenderParams | null; front: RenderParams | null; } = { back: null, front: null };
     private targetSize: { w: number; h: number; } = { w: 1, h: 1 };
     private lastPixelPerfect = false;
+    private mainCameraHandlers: {
+        preRenderLayer: ((layer: Layer, transparent: boolean) => void) | null;
+        postRenderLayer: ((layer: Layer, transparent: boolean) => void) | null;
+    } = { preRenderLayer: null, postRenderLayer: null };
+    private worldLayer: Layer | null = null;
+    private drawnBack = false;
+    private drawnFront = false;
 
     constructor() {
         super(ElementType.other);
@@ -71,22 +75,64 @@ class ReferenceImageRenderer extends Element {
             clearDepthBuffer: false
         });
 
-        this.backEntity = this.createEntity(this.referenceBackLayer, 'back');
-        this.frontEntity = this.createEntity(this.referenceFrontLayer, 'front');
-
         const { referenceBackLayer, referenceFrontLayer } = this;
-        if (referenceBackLayer) {
-            this.scene.insertLayerBefore(referenceBackLayer, 'World');
-        }
-        if (referenceFrontLayer) {
-            this.scene.insertLayerBefore(referenceFrontLayer, this.scene.overlayLayer);
-        }
+        if (referenceBackLayer) this.scene.insertLayerBefore(referenceBackLayer, 'World');
+        if (referenceFrontLayer) this.scene.insertLayerBefore(referenceFrontLayer, this.scene.overlayLayer);
 
         this.scene.referenceBackLayer = referenceBackLayer;
         this.scene.referenceFrontLayer = referenceFrontLayer;
+
+        this.worldLayer = this.scene.app.scene.layers.getLayerByName('World');
+        const mainCamera = this.scene.camera.entity.camera;
+
+        this.mainCameraHandlers.preRenderLayer = (layer: Layer, transparent: boolean) => {
+            if (transparent || this.drawnBack) {
+                return;
+            }
+            if (!this.params.back || !this.referenceBackLayer?.enabled) {
+                return;
+            }
+            const scene = this.scene;
+            const isEarlyLayer = layer === scene.backgroundLayer || layer === scene.shadowLayer || layer === scene.modelLightingLayer;
+            const isWorldFallback = !!this.worldLayer && layer === this.worldLayer;
+            if (!isEarlyLayer && !isWorldFallback) {
+                return;
+            }
+            this.drawnBack = true;
+            this.draw('back');
+        };
+
+        this.mainCameraHandlers.postRenderLayer = (layer: Layer, transparent: boolean) => {
+            if (!transparent || this.drawnFront) {
+                return;
+            }
+            if (!this.params.front || !this.referenceFrontLayer?.enabled) {
+                return;
+            }
+            if (!this.worldLayer || layer !== this.worldLayer) {
+                return;
+            }
+            this.drawnFront = true;
+            this.draw('front');
+        };
+
+        mainCamera.on('preRenderLayer', this.mainCameraHandlers.preRenderLayer);
+        mainCamera.on('postRenderLayer', this.mainCameraHandlers.postRenderLayer);
     }
 
     remove() {
+        const mainCamera = this.scene?.camera?.entity?.camera;
+        if (mainCamera) {
+            if (this.mainCameraHandlers.preRenderLayer) {
+                mainCamera.off('preRenderLayer', this.mainCameraHandlers.preRenderLayer);
+            }
+            if (this.mainCameraHandlers.postRenderLayer) {
+                mainCamera.off('postRenderLayer', this.mainCameraHandlers.postRenderLayer);
+            }
+        }
+        this.mainCameraHandlers.preRenderLayer = null;
+        this.mainCameraHandlers.postRenderLayer = null;
+
         const layers = this.scene?.app?.scene?.layers;
         [this.referenceBackLayer, this.referenceFrontLayer].forEach((layer) => {
             if (layer && layers) {
@@ -95,10 +141,6 @@ class ReferenceImageRenderer extends Element {
         });
         this.scene.referenceBackLayer = null;
         this.scene.referenceFrontLayer = null;
-        this.backEntity?.destroy();
-        this.frontEntity?.destroy();
-        this.backEntity = null;
-        this.frontEntity = null;
         this.quadRender = null;
         this.shader = null;
     }
@@ -138,48 +180,16 @@ class ReferenceImageRenderer extends Element {
         if (!this.scene || !this.scene.camera || !this.quadRender) {
             return;
         }
+        this.drawnBack = false;
+        this.drawnFront = false;
         const device = this.scene.app.graphicsDevice;
-        this.targetSize = {
-            w: device.width,
-            h: device.height
-        };
-        const targetSizeOverride = this.scene.camera.targetSize;
-        if (targetSizeOverride) {
-            this.targetSize = { w: targetSizeOverride.width, h: targetSizeOverride.height };
+        const rt = this.scene.camera.entity.camera.renderTarget;
+        if (rt && rt.width > 0 && rt.height > 0) {
+            this.targetSize = { w: rt.width, h: rt.height };
+        } else {
+            this.targetSize = { w: device.width, h: device.height };
         }
 
-        const copyProjection = (entity: Entity | null) => {
-            if (!entity) return;
-            const src = this.scene.camera.entity.camera;
-            const dst = entity.camera;
-
-            dst.projection = src.projection;
-            dst.horizontalFov = src.horizontalFov;
-            dst.fov = src.fov;
-            dst.nearClip = src.nearClip;
-            dst.farClip = src.farClip;
-            dst.orthoHeight = src.orthoHeight;
-            const customFrustum = this.scene.camera.getCustomFrustum();
-            if (customFrustum) {
-                dst.calculateProjection = (projMat: Mat4) => {
-                    projMat.setFrustum(
-                        customFrustum.left,
-                        customFrustum.right,
-                        customFrustum.bottom,
-                        customFrustum.top,
-                        customFrustum.near,
-                        customFrustum.far
-                    );
-                };
-            } else {
-                dst.calculateProjection = null;
-            }
-            (dst as any)._projMatDirty = true;
-            dst.renderTarget = this.scene.camera.entity.camera.renderTarget ?? this.scene.camera.workRenderTarget;
-        };
-
-        copyProjection(this.backEntity);
-        copyProjection(this.frontEntity);
     }
 
     private applyParams(params: RenderParams | null) {
@@ -200,41 +210,23 @@ class ReferenceImageRenderer extends Element {
     }
 
     private draw(kind: ReferenceImageLayer) {
-        const layer = kind === 'back' ? this.referenceBackLayer : this.referenceFrontLayer;
         const params = kind === 'back' ? this.params.back : this.params.front;
-        const entity = kind === 'back' ? this.backEntity : this.frontEntity;
-        if (!layer || !entity || !params || !this.scene || !this.quadRender) {
+        if (!params || !this.scene || !this.quadRender) {
             return;
         }
         if (!this.applyParams(params)) {
             return;
         }
-        const device = this.scene.app.graphicsDevice as WebglGraphicsDevice;
+        const device = this.scene.app.graphicsDevice;
         const blendState = new BlendState(true,
             BLENDEQUATION_ADD, BLENDMODE_SRC_ALPHA, BLENDMODE_ONE_MINUS_SRC_ALPHA,
             BLENDEQUATION_ADD, BLENDMODE_SRC_ALPHA, BLENDMODE_ONE_MINUS_SRC_ALPHA
         );
         device.setBlendState(blendState);
-        device.setRenderTarget(this.scene.camera.entity.camera.renderTarget ?? null);
-        device.updateBegin();
+        device.setCullMode(CULLFACE_NONE);
+        device.setDepthState(DepthState.NODEPTH);
+        device.setStencilState(null, null);
         this.quadRender.render();
-        device.updateEnd();
-    }
-
-    private createEntity(layer: Layer | null, kind: ReferenceImageLayer) {
-        const entity = new Entity(kind === 'back' ? 'referenceBackCamera' : 'referenceFrontCamera');
-        entity.addComponent('camera');
-        entity.camera.clearColor.set(0, 0, 0, 0);
-        entity.camera.setShaderPass('REFERENCE_IMAGE');
-        entity.camera.layers = layer ? [layer.id] : [];
-        entity.camera.on('postRenderLayer', (renderLayer: Layer, transparent: boolean) => {
-            if (renderLayer !== layer || !transparent) {
-                return;
-            }
-            this.draw(kind);
-        });
-        this.scene.camera.entity.addChild(entity);
-        return entity;
     }
 }
 
