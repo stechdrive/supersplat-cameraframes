@@ -2,6 +2,7 @@ import { BooleanInput, Button, Container, Label, NumericInput, SelectInput, Slid
 
 import { Events } from '../events';
 import { formatInteger, localize } from './localization';
+import deleteSvg from './svg/delete.svg';
 import referenceImageSvg from './svg/reference-image.svg';
 
 const createSvg = (svgString: string) => {
@@ -110,18 +111,20 @@ class ReferenceImagePanel extends Container {
 
         const body = new Container({ class: 'reference-image-body' });
 
+        const infoRow = new Container({ class: ['control-parent', 'reference-image-info-row'] });
         const infoLabel = new Label({ class: ['control-element-expand', 'reference-image-info'], text: localize('panel.reference-image.empty') });
 
-        const loadButton = new Button({ class: ['icon-button', 'reference-image-load-button'], text: '' });
+        const loadButton = new Button({ class: ['icon-button'], text: '' });
         loadButton.dom.appendChild(createSvg(referenceImageSvg));
-        const loadLabel = document.createElement('span');
-        loadLabel.textContent = localize('panel.reference-image.load');
-        loadButton.dom.appendChild(loadLabel);
+        loadButton.dom.title = localize('panel.reference-image.load');
         loadButton.dom.setAttribute('aria-label', localize('panel.reference-image.load'));
-        const clearButton = new Button({ class: ['icon-button', 'danger-icon'], text: localize('panel.reference-image.clear') });
-        const buttonRow = new Container({ class: ['control-parent', 'button-row'] });
-        buttonRow.append(loadButton);
-        buttonRow.append(clearButton);
+        const clearButton = new Button({ class: ['icon-button', 'danger-icon'], text: '' });
+        clearButton.dom.appendChild(createSvg(deleteSvg));
+        clearButton.dom.title = localize('panel.reference-image.clear');
+        clearButton.dom.setAttribute('aria-label', localize('panel.reference-image.clear'));
+        infoRow.append(infoLabel);
+        infoRow.append(loadButton);
+        infoRow.append(clearButton);
 
         const visibleRow = new Container({ class: 'control-parent' });
         visibleRow.append(new Label({ class: 'control-label', text: localize('panel.reference-image.visible') }));
@@ -168,10 +171,14 @@ class ReferenceImagePanel extends Container {
         });
         scaleRow.append(scaleInput);
 
-        const offsetRow = new Container({ class: 'control-parent' });
+        const offsetRow = new Container({ class: ['control-parent', 'reference-image-offset-row'] });
         offsetRow.append(new Label({ class: 'control-label', text: localize('panel.reference-image.offset') }));
         const offsetX = new NumericInput({ class: 'control-element', step: 1, precision: 0, value: 0 });
         const offsetY = new NumericInput({ class: 'control-element', step: 1, precision: 0, value: 0 });
+        offsetX.dom.title = `${localize('panel.reference-image.offset')} X`;
+        offsetY.dom.title = `${localize('panel.reference-image.offset')} Y`;
+        offsetX.dom.setAttribute('aria-label', `${localize('panel.reference-image.offset')} X`);
+        offsetY.dom.setAttribute('aria-label', `${localize('panel.reference-image.offset')} Y`);
         offsetRow.append(offsetX);
         offsetRow.append(offsetY);
 
@@ -275,14 +282,13 @@ class ReferenceImagePanel extends Container {
             }
         });
 
-        body.append(buttonRow);
-        body.append(infoLabel);
+        body.append(infoRow);
+        body.append(offsetRow);
         body.append(visibleRow);
         body.append(includeRow);
         body.append(layerRow);
         body.append(opacityRow);
         body.append(scaleRow);
-        body.append(offsetRow);
         body.append(pixelPerfectLabel);
 
         this.append(panelHeader);

@@ -30,7 +30,24 @@
         padding: 8px;
     }
 
+    .reference-image-info-row {
+        align-items: center;
+        min-height: 32px;
+        gap: 6px;
+    }
+
+    .reference-image-info-row .pcui-button.icon-button {
+        flex: 0 0 auto;
+    }
+
+    .reference-image-offset-row {
+        align-items: center;
+        gap: 6px;
+    }
+
     .reference-image-info {
+        min-width: 0;
+        margin: 0 6px;
         line-height: 16px;
         word-break: break-all;
     }
@@ -39,12 +56,5 @@
         width: 13px;
         height: 13px;
         display: block;
-    }
-
-    .reference-image-load-button {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        gap: 6px;
     }
 }
