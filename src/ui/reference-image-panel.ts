@@ -38,7 +38,7 @@ class ReferenceImagePanel extends Container {
             hidden: true
         });
 
-        ['pointerdown', 'pointerup', 'click', 'wheel'].forEach((evt) => {
+        ['pointerdown', 'pointerup', 'pointermove', 'click', 'wheel', 'dblclick'].forEach((evt) => {
             this.dom.addEventListener(evt, (e: Event) => e.stopPropagation());
         });
 
@@ -50,6 +50,63 @@ class ReferenceImagePanel extends Container {
         const panelTitle = new Label({ class: 'panel-header-label', text: localize('panel.reference-image.title') });
         panelHeader.append(panelIcon);
         panelHeader.append(panelTitle);
+
+        // パネルをドラッグで移動できるようにする
+        let dragOffset: { x: number; y: number } | null = null;
+        let currentPosition: { left: number; top: number } | null = null;
+
+        const clampPosition = (left: number, top: number) => {
+            const maxLeft = Math.max(0, window.innerWidth - this.dom.offsetWidth);
+            const maxTop = Math.max(0, window.innerHeight - this.dom.offsetHeight);
+            return {
+                left: Math.min(Math.max(0, left), maxLeft),
+                top: Math.min(Math.max(0, top), maxTop)
+            };
+        };
+
+        const applyPosition = (left: number, top: number) => {
+            const pos = clampPosition(left, top);
+            this.dom.style.left = `${pos.left}px`;
+            this.dom.style.top = `${pos.top}px`;
+            this.dom.style.right = 'auto';
+            this.dom.style.transform = 'none';
+            currentPosition = pos;
+        };
+
+        const onPointerMove = (event: PointerEvent) => {
+            if (!dragOffset) return;
+            applyPosition(event.clientX - dragOffset.x, event.clientY - dragOffset.y);
+        };
+
+        const stopDrag = () => {
+            if (!dragOffset) return;
+            window.removeEventListener('pointermove', onPointerMove, true);
+            window.removeEventListener('pointerup', stopDrag, true);
+            window.removeEventListener('pointercancel', stopDrag, true);
+            this.dom.classList.remove('dragging');
+            dragOffset = null;
+        };
+
+        panelHeader.dom.addEventListener('pointerdown', (event: PointerEvent) => {
+            if (event.button !== 0) return;
+            event.stopPropagation();
+
+            const rect = this.dom.getBoundingClientRect();
+            dragOffset = { x: event.clientX - rect.left, y: event.clientY - rect.top };
+
+            applyPosition(rect.left, rect.top); // 右寄せ→left/top基準に切り替え
+
+            this.dom.classList.add('dragging');
+
+            window.addEventListener('pointermove', onPointerMove, true);
+            window.addEventListener('pointerup', stopDrag, true);
+            window.addEventListener('pointercancel', stopDrag, true);
+        });
+
+        window.addEventListener('resize', () => {
+            if (!currentPosition) return;
+            applyPosition(currentPosition.left, currentPosition.top);
+        });
 
         const body = new Container({ class: 'reference-image-body' });
 

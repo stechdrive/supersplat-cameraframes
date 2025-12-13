@@ -9,6 +9,16 @@
     gap: 8px;
     z-index: 5;
 
+    .panel-header {
+        cursor: move;
+        user-select: none;
+        touch-action: none;
+    }
+
+    &.dragging {
+        opacity: 0.98;
+    }
+
     &:not(.pcui-hidden) {
         display: flex;
     }
