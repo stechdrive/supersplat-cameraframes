@@ -36,10 +36,11 @@
     .camera-frames-reference-image {
         display: grid;
         place-items: center;
+        padding: 2px;
 
         svg {
-            width: 16px;
-            height: 16px;
+            width: 24px;
+            height: 24px;
             pointer-events: none;
         }
 
@@ -47,6 +48,32 @@
             svg {
                 color: $clr-icon-hilight;
                 filter: drop-shadow(0 0 2px rgba($clr-hilight, 0.6));
+            }
+        }
+    }
+
+    .camera-frames-reference-visibility {
+        display: grid;
+        place-items: center;
+        padding: 2px;
+
+        svg {
+            width: 24px;
+            height: 24px;
+            pointer-events: none;
+        }
+
+        &.active {
+            svg {
+                color: $clr-icon-hilight;
+                filter: drop-shadow(0 0 2px rgba($clr-hilight, 0.6));
+            }
+        }
+
+        &.pcui-disabled {
+            svg {
+                color: $text-darkest;
+                filter: none;
             }
         }
     }

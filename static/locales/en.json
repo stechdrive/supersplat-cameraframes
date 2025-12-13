@@ -134,6 +134,8 @@
     "panel.reference-image.title": "Reference Image",
     "panel.reference-image.toggle": "Toggle Reference Image Panel",
     "panel.reference-image.empty": "No reference image loaded",
+    "panel.reference-image.show": "Show reference image",
+    "panel.reference-image.hide": "Hide reference image",
     "panel.reference-image.load": "Load / Replace",
     "panel.reference-image.clear": "Remove",
     "panel.reference-image.visible": "Visible",

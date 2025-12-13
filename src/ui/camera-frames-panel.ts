@@ -79,6 +79,11 @@ type FovInfo = {
     maxEqMm: number;
 };
 
+type ReferenceImageState = {
+    visible: boolean;
+    source: unknown | null;
+};
+
 const anchorKey = (ax: number, ay: number) => `${ax},${ay}`;
 const createSvg = (svgString: string) => {
     let markup = svgString;
@@ -188,6 +193,9 @@ class CameraFramesPanel extends Panel {
         let compact = false;
         const framesActive = () => framesEnabled || uiTarget === 'main';
 
+        let referenceImageLoaded = false;
+        let referenceImageVisible = false;
+
         const collapseButton = new Button({
             class: ['panel-header-button', 'camera-frames-collapse'],
             text: ''
@@ -264,8 +272,50 @@ class CameraFramesPanel extends Panel {
         setReferenceButtonState(false);
         events.on('referenceImagePanel.visible', (visible: boolean) => setReferenceButtonState(!!visible));
 
+        const referenceVisibilityButton = new Button({
+            class: ['panel-header-button', 'camera-frames-reference-visibility'],
+            text: ''
+        });
+        referenceVisibilityButton.dom.appendChild(createSvg(hiddenSvg));
+        referenceVisibilityButton.dom.setAttribute('aria-pressed', 'false');
+        ['pointerdown', 'pointerup', 'click'].forEach((evt) => {
+            referenceVisibilityButton.dom.addEventListener(evt, (e: Event) => e.stopPropagation());
+        });
+
+        const updateReferenceVisibilityButton = () => {
+            referenceVisibilityButton.dom.innerHTML = '';
+            referenceVisibilityButton.dom.appendChild(createSvg(referenceImageLoaded && referenceImageVisible ? shownSvg : hiddenSvg));
+            referenceVisibilityButton.enabled = referenceImageLoaded;
+            referenceVisibilityButton.class[referenceImageLoaded && referenceImageVisible ? 'add' : 'remove']('active');
+            referenceVisibilityButton.dom.setAttribute('aria-pressed', (referenceImageLoaded && referenceImageVisible).toString());
+            const label = !referenceImageLoaded ?
+                localize('panel.reference-image.empty') :
+                (referenceImageVisible ? localize('panel.reference-image.hide') : localize('panel.reference-image.show'));
+            referenceVisibilityButton.dom.title = label;
+            referenceVisibilityButton.dom.setAttribute('aria-label', label);
+        };
+
+        const applyReferenceImageState = (state?: Partial<ReferenceImageState> | null) => {
+            referenceImageLoaded = !!state?.source;
+            referenceImageVisible = !!state?.visible;
+            updateReferenceVisibilityButton();
+        };
+        applyReferenceImageState((events.invoke('referenceImage.state') as ReferenceImageState | null) ?? null);
+        events.on('referenceImage.stateChanged', (state: ReferenceImageState) => applyReferenceImageState(state));
+
+        referenceVisibilityButton.on('click', () => {
+            if (!referenceImageLoaded) {
+                return;
+            }
+            const nextVisible = !referenceImageVisible;
+            referenceImageVisible = nextVisible;
+            events.fire('referenceImage.setVisible', nextVisible);
+            updateReferenceVisibilityButton();
+        });
+
         this.header.append(headerToggle);
         this.header.append(referenceImageHeaderButton);
+        this.header.append(referenceVisibilityButton);
         this.header.append(collapseButton);
         setCompact(false);
 
