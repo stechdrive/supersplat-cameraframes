@@ -11,6 +11,8 @@ import { serializePly } from './splat-serialize';
 import { Transform } from './transform';
 import { localize } from './ui/localization';
 
+// NOTE: This fork extends the upstream ssproj format, but we keep the on-disk
+// `document.json.version` as 0 to maximize the chance that upstream can load it.
 const DOC_VERSION = 4;
 const SUPPORTED_DOC_VERSIONS = new Set([0, 1, 2, 3, 4]);
 const ZIP64_MARGIN_BYTES = 1800n * 1024n * 1024n;   // 約1.8GB (GiB基準)
@@ -293,8 +295,11 @@ const registerDocEvents = (scene: Scene, events: Events) => {
                 };
             });
 
-            const createDocumentPayload = (version: number, zip64: boolean) => ({
-                version,
+            const createDocumentPayload = (zip64: boolean) => ({
+                // keep version compatible with upstream (playcanvas/supersplat)
+                version: 0,
+                // internal schema marker for this fork (upstream will ignore unknown keys)
+                schemaVersion: DOC_VERSION,
                 ...(zip64 ? { zip64: true } : {}),
                 camera: scene.camera.docSerialize(),
                 view: events.invoke('docSerialize.view'),
@@ -308,11 +313,10 @@ const registerDocEvents = (scene: Scene, events: Events) => {
             });
 
             // 予測用のペイロードを使って ZIP64 が必要か判定
-            const provisionalDoc = createDocumentPayload(DOC_VERSION, true);
+            const provisionalDoc = createDocumentPayload(true);
             const estimate = estimateDocumentSize(provisionalDoc, splats, models, model => scene.assetLoader.getSourceBlob(model), referenceImageSize);
             const useZip64 = estimate.total >= ZIP64_MARGIN_BYTES || estimate.total > ZIP32_LIMIT;
-            const docVersion = DOC_VERSION;
-            const document = createDocumentPayload(docVersion, useZip64);
+            const document = createDocumentPayload(useZip64);
 
             if (!options.stream && useZip64 && !hasFileSystemAccess()) {
                 await events.invoke('showPopup', {

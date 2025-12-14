@@ -176,7 +176,7 @@ class Menu extends Container {
         }, {
             text: localize('menu.file.save-as', { ellipsis: true }),
             icon: createSvg(sceneSave),
-            isEnabled: () => !events.invoke('scene.empty'),
+            isEnabled: () => true,
             onSelect: async () => await events.invoke('doc.saveAs')
         }, {
             // separator
