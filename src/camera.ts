@@ -48,7 +48,6 @@ const calcForwardVec = (result: Vec3, azim: number, elev: number) => {
 };
 
 // work globals
-const forwardVec = new Vec3();
 const cameraPosition = new Vec3();
 const plane = new Plane();
 const ray = new Ray();
@@ -603,6 +602,40 @@ class Camera extends Element {
         this.scene.events.fire('camera.resize', { width, height });
     }
 
+    private getCameraPositionWorldFromState(out: Vec3, mode: 'orbit' | 'fpv' = this.navMode): Vec3 {
+        if (mode === 'fpv') {
+            out.copy(this.fpvPosition);
+            return out;
+        }
+
+        const azimElev = this.azimElevTween.value;
+        const distNorm = this.distanceTween.value.distance;
+        const framingFactor = this.getFramingFactor();
+
+        calcForwardVec(out, azimElev.azim, azimElev.elev);
+        out.mulScalar(distNorm * this.sceneRadius / framingFactor);
+        out.add(this.focalPointTween.value);
+        return out;
+    }
+
+    private syncEntityTransformFromState() {
+        const azimElev = this.azimElevTween.value;
+        const roll = this.rollTween.value.roll;
+
+        this.getCameraPositionWorldFromState(cameraPosition);
+        this.entity.setLocalPosition(cameraPosition);
+        this.applyOrientation(azimElev, roll);
+
+        this.fitClippingPlanes(this.entity.getLocalPosition(), this.entity.forward);
+
+        const framingFactor = this.getFramingFactor();
+        const { camera } = this.entity;
+        if (!this.lockFraming && this.navMode !== 'fpv') {
+            camera.orthoHeight = this.distanceTween.value.distance * this.sceneRadius / framingFactor * (this.fov / 90) * (camera.horizontalFov ? this.scene.targetSize.height / this.scene.targetSize.width : 1);
+        }
+        camera.camera._updateViewProjMat();
+    }
+
     onUpdate(deltaTime: number) {
         // controller update
         this.controller.update(deltaTime);
@@ -612,35 +645,7 @@ class Camera extends Element {
         this.azimElevTween.update(deltaTime);
         this.distanceTween.update(deltaTime);
         this.rollTween.update(deltaTime);
-
-        const azimElev = this.azimElevTween.value;
-        const distance = this.distanceTween.value;
-        const roll = this.rollTween.value.roll;
-
-        const framingFactor = this.getFramingFactor();
-
-        calcForwardVec(forwardVec, azimElev.azim, azimElev.elev);
-
-        if (this.navMode === 'fpv') {
-            // FPV: position is maintained directly, no pivot/distance
-            cameraPosition.copy(this.fpvPosition);
-            this.entity.setLocalPosition(cameraPosition);
-            this.applyOrientation(azimElev, roll);
-        } else {
-            cameraPosition.copy(forwardVec);
-            cameraPosition.mulScalar(distance.distance * this.sceneRadius / framingFactor);
-            cameraPosition.add(this.focalPointTween.value);
-            this.entity.setLocalPosition(cameraPosition);
-            this.applyOrientation(azimElev, roll);
-        }
-
-        this.fitClippingPlanes(this.entity.getLocalPosition(), this.entity.forward);
-
-        const { camera } = this.entity;
-        if (!this.lockFraming && this.navMode !== 'fpv') {
-            camera.orthoHeight = this.distanceTween.value.distance * this.sceneRadius / framingFactor * (this.fov / 90) * (camera.horizontalFov ? this.scene.targetSize.height / this.scene.targetSize.width : 1);
-        }
-        camera.camera._updateViewProjMat();
+        this.syncEntityTransformFromState();
 
         // push live transform for UI sync (only when変化あり＆間引き)
         this.emitTransform();
@@ -1075,17 +1080,19 @@ class Camera extends Element {
         if (next === this.navMode) {
             return;
         }
+        this.getCameraPositionWorldFromState(cameraPosition, this.navMode);
+
         this.navMode = next;
         if (this.navMode === 'fpv') {
             // ensure perspective
             this.ortho = false;
             // sync fpv position to current camera location
-            this.fpvPosition.copy(this.entity.getPosition());
-            const currentDist = this.distanceTween.value.distance || this.distanceTween.target.distance || 1;
-            this.lastOrbitDistance = currentDist;
-            this.lastOrbitPivot.copy(this.focalPointTween.target as any);
+            this.fpvPosition.copy(cameraPosition);
+            const currentDist = this.distanceTween.value.distance;
+            this.lastOrbitDistance = (typeof currentDist === 'number' && isFinite(currentDist) && currentDist > 0) ? currentDist : 1;
+            this.lastOrbitPivot.copy(this.focalPointTween.value);
             const framingFactor = this.getFramingFactor();
-            this.lastOrbitWorldDistance = currentDist * this.sceneRadius / framingFactor;
+            this.lastOrbitWorldDistance = this.lastOrbitDistance * this.sceneRadius / framingFactor;
         } else {
             // when returning to orbit, keep the camera position fixed and reuse the previous orbit distance
             const controls = this.scene.config.controls;
@@ -1102,7 +1109,8 @@ class Camera extends Element {
 
             // forward (pivot -> camera) using current view
             calcForwardVec(vec, currentAngles.azim, currentAngles.elev);
-            const pivot = this.entity.getPosition().clone().sub(vec.mulScalar(worldDist));
+            va.copy(cameraPosition).sub(vec.mulScalar(worldDist));
+            const pivot = va;
 
             this.setFocalPoint(pivot, 0);
             this.setDistance(distNorm, 0);
@@ -1396,8 +1404,8 @@ class Camera extends Element {
         }
         if (this.navMode === 'fpv' && settings.fpvPosition) {
             this.fpvPosition.copy(toVec3(settings.fpvPosition, this.fpvPosition));
-            this.entity.setLocalPosition(this.fpvPosition);
         }
+        this.syncEntityTransformFromState();
     }
 
     // offscreen render mode
