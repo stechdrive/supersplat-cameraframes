@@ -1371,9 +1371,9 @@ export class CameraFramesController {
         // 初期化時は現ビューポート基準でフィットを再計算
         this.computeViewportMapping(true);
 
-        // フレーム未生成ならデフォルト 1 枚を追加
+        // フレーム未生成ならデフォルト 1 枚を追加（非選択）
         if (this.state.frames.length === 0) {
-            this.addFrame();
+            this.addFrame(false);
         }
     }
 
@@ -1718,7 +1718,7 @@ export class CameraFramesController {
         });
     }
 
-    private addFrame() {
+    private addFrame(select = true) {
         this.historyRecord('cameraFrames.addFrame', () => {
             const frames = this.state.frames;
             if (frames.length >= 20) {
@@ -1741,7 +1741,9 @@ export class CameraFramesController {
                 anchor: { ...pos }
             };
             frames.push(frame);
-            this.selectFrame(id);
+            if (select) {
+                this.selectFrame(id);
+            }
             this.requestRender();
             this.events.fire('cameraFrames.stateChanged', this.snapshot());
             this.updatePointerFromLast();
