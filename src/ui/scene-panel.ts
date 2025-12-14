@@ -9,6 +9,7 @@ import { SplatList } from './splat-list';
 import cameraResetSvg from './svg/camera-reset.svg';
 import hiddenSvg from './svg/hidden.svg';
 import sceneImportSvg from './svg/import.svg';
+import lightSettingSvg from './svg/light-setting.svg';
 import sceneNewSvg from './svg/new.svg';
 import selectPickerSvg from './svg/select-picker.svg';
 import shownSvg from './svg/shown.svg';
@@ -116,10 +117,10 @@ class ScenePanel extends Container {
             class: 'panel-header'
         });
 
-        const lightIcon = new Label({
-            text: '\uE3F0',
+        const lightIcon = new Container({
             class: 'panel-header-icon'
         });
+        lightIcon.dom.appendChild(createSvg(lightSettingSvg));
 
         const lightLabel = new Label({
             text: localize('panel.scene-manager.lighting'),
