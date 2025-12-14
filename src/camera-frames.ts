@@ -156,6 +156,7 @@ const RAD2DEG = 180 / Math.PI;
 const MIN_VIEW_ZOOM_PCT = 25;
 const MAX_VIEW_ZOOM_PCT = 100;
 const PAN_MARGIN_PX = 0;
+const FRAME_OUTLINE_WIDTH_PX = 2;
 const FRUSTUM_DEBUG_COLOR = new Color(0, 1, 1, 1);
 const FRUSTUM_SELECTED_COLOR = new Color(1, 0, 1, 1);
 const FRUSTUM_DEBUG_CACHE_VERSION = 2;
@@ -2392,6 +2393,24 @@ export class CameraFramesController {
         return { x: center.x - rotated.x, y: center.y - rotated.y };
     }
 
+    private strokeFrameOutlinePath(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number) {
+        const expand = FRAME_OUTLINE_WIDTH_PX * 0.5;
+        ctx.strokeRect(x - expand, y - expand, w + expand * 2, h + expand * 2);
+    }
+
+    private snapAxisAlignedRect(centerX: number, centerY: number, w: number, h: number) {
+        const left = Math.round(centerX - w * 0.5);
+        const right = Math.round(centerX + w * 0.5);
+        const top = Math.round(centerY - h * 0.5);
+        const bottom = Math.round(centerY + h * 0.5);
+        return {
+            x: left,
+            y: top,
+            w: Math.max(0, right - left),
+            h: Math.max(0, bottom - top)
+        };
+    }
+
     private drawMask(rects: ReturnType<CameraFramesController['frameRectsScreen']>) {
         const { mask } = this.state;
         if (!mask?.enabled || rects.length === 0) {
@@ -2459,23 +2478,21 @@ export class CameraFramesController {
         this.drawMask(rects);
 
         // frames
-        rects.forEach(({ frame, cornersScreen }) => {
-            if (!cornersScreen?.length) {
-                return;
-            }
+        rects.forEach((r) => {
+            const wScreen = r.frameW * r.effectiveScale;
+            const hScreen = r.frameH * r.effectiveScale;
             ctx.save();
-            ctx.beginPath();
-            ctx.moveTo(cornersScreen[0].x, cornersScreen[0].y);
-            cornersScreen.slice(1).forEach(p => ctx.lineTo(p.x, p.y));
-            ctx.closePath();
-            ctx.lineWidth = 2;
+            ctx.translate(r.centerScreen.x, r.centerScreen.y);
+            ctx.rotate(r.rotationRad);
             ctx.strokeStyle = '#ff0000';
-            ctx.stroke();
-            if (frame.selected) {
+            ctx.lineWidth = FRAME_OUTLINE_WIDTH_PX;
+            ctx.setLineDash([]);
+            this.strokeFrameOutlinePath(ctx, -wScreen * 0.5, -hScreen * 0.5, wScreen, hScreen);
+            if (r.frame.selected) {
                 ctx.strokeStyle = 'rgba(255,255,255,0.7)';
                 ctx.setLineDash([3, 2]);
                 ctx.lineWidth = 1;
-                ctx.stroke();
+                this.strokeFrameOutlinePath(ctx, -wScreen * 0.5, -hScreen * 0.5, wScreen, hScreen);
             }
             ctx.restore();
         });
@@ -3016,7 +3033,7 @@ export class CameraFramesController {
             const centerX = width * 0.5 + (frame.pos.x - 0.5) * logicalW;
             const centerY = height * 0.5 + (frame.pos.y - 0.5) * logicalH;
             const rotationRad = this.frameRotationRad(frame);
-            const lineWidth = 2;
+            const lineWidth = FRAME_OUTLINE_WIDTH_PX;
             ctx.save();
             ctx.strokeStyle = '#ff0000';
             ctx.lineWidth = lineWidth;
@@ -3031,15 +3048,12 @@ export class CameraFramesController {
                 const swap = (Math.abs(nearestQuarter) % 2) === 1;
                 const w = swap ? frameH : frameW;
                 const h = swap ? frameW : frameH;
-                const left = Math.round(centerX - w * 0.5);
-                const top = Math.round(centerY - h * 0.5);
-                const snapW = Math.round(w);
-                const snapH = Math.round(h);
-                ctx.strokeRect(left, top, snapW, snapH);
+                const snapped = this.snapAxisAlignedRect(centerX, centerY, w, h);
+                this.strokeFrameOutlinePath(ctx, snapped.x, snapped.y, snapped.w, snapped.h);
             } else {
                 ctx.translate(centerX, centerY);
                 ctx.rotate(rotationRad);
-                ctx.strokeRect(-frameW * 0.5, -frameH * 0.5, frameW, frameH);
+                this.strokeFrameOutlinePath(ctx, -frameW * 0.5, -frameH * 0.5, frameW, frameH);
             }
             ctx.restore();
         });
