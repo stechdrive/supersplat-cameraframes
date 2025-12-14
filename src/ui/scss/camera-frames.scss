@@ -277,12 +277,6 @@
         width: 20px;
         height: 20px;
     }
-
-    &.active {
-        border-color: $clr-hilight;
-        color: $clr-hilight;
-        background-color: rgba($clr-hilight, 0.12);
-    }
 }
 
 .export-row .render-spinner {
@@ -381,6 +375,43 @@
     border-color: #a33434;
 }
 
+#camera-frames-panel .pcui-button.icon-button {
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    color: $text-secondary;
+}
+
+#camera-frames-panel .pcui-button.icon-button:hover:not(.pcui-disabled) {
+    background: transparent;
+    color: $text-primary;
+}
+
+#camera-frames-panel .pcui-button.icon-button:focus-visible {
+    background: transparent;
+    outline: 2px solid rgba($clr-hilight, 0.7);
+    outline-offset: 2px;
+}
+
+#camera-frames-panel .pcui-button.icon-button.active {
+    background: transparent;
+    color: $clr-hilight;
+    filter: drop-shadow(0 0 2px rgba($clr-hilight, 0.35));
+}
+
+#camera-frames-panel .pcui-button.icon-button.danger-icon {
+    color: #a33434;
+}
+
+#camera-frames-panel .pcui-button.icon-button.danger-icon:hover:not(.pcui-disabled) {
+    background: transparent;
+    color: #d64f4f;
+}
+
+#camera-frames-panel .pcui-button.icon-button.pcui-disabled {
+    opacity: 0.35;
+}
+
 .cam-nav-controls {
     margin-left: auto;
     display: flex;
@@ -413,8 +444,9 @@
     display: grid;
     place-items: center;
     padding: 2px;
-    background-color: $bcg-dark;
-    border: 1px solid $bcg-light;
+    background: transparent;
+    border: none;
+    box-shadow: none;
     border-radius: 4px;
     color: $text-secondary;
 
@@ -426,8 +458,18 @@
 }
 
 .roll-lock-btn.active {
-    border-color: $clr-hilight;
     color: $clr-hilight;
+}
+
+#camera-frames-panel .roll-lock-btn:hover:not(.pcui-disabled) {
+    background: transparent;
+    color: $text-primary;
+}
+
+#camera-frames-panel .roll-lock-btn:focus-visible {
+    background: transparent;
+    outline: 2px solid rgba($clr-hilight, 0.7);
+    outline-offset: 2px;
 }
 
 .list-container {
