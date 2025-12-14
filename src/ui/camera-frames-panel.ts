@@ -8,12 +8,12 @@ import collapseSvg from './svg/collapse.svg';
 import deleteSvg from './svg/delete.svg';
 import exportSvg from './svg/export.svg';
 import cameraPanelSvg from './svg/fpv-nav.svg';
+import glbOutputSvg from './svg/glb-output.svg';
 import hiddenSvg from './svg/hidden.svg';
 import newSvg from './svg/new.svg';
 import orbitSvg from './svg/orbit-nav.svg';
 import referenceImageSvg from './svg/reference-image.svg';
 import lockSvg from './svg/select-lock.svg';
-import separateSvg from './svg/select-separate.svg';
 import unlockSvg from './svg/select-unlock.svg';
 import shownSvg from './svg/shown.svg';
 import viewportSvg from './svg/viewport.svg';
@@ -82,6 +82,7 @@ type FovInfo = {
 type ReferenceImageState = {
     visible: boolean;
     source: unknown | null;
+    includeInRender?: boolean;
 };
 
 const anchorKey = (ax: number, ay: number) => `${ax},${ay}`;
@@ -192,6 +193,11 @@ class CameraFramesPanel extends Panel {
         let transformEditingDepth = 0;
         let compact = false;
         const framesActive = () => framesEnabled || uiTarget === 'main';
+
+        let maskDetailsCollapsed = true;
+        let exportDetailsCollapsed = true;
+        let framesSectionCollapsed = true;
+        let referenceIncludeEnabled = false;
 
         let referenceImageLoaded = false;
         let referenceImageVisible = false;
@@ -331,8 +337,10 @@ class CameraFramesPanel extends Panel {
         const layoutHeader = new Container({ class: ['layout-header', 'collapsible-header'] });
         const layoutArrow = new Label({ class: 'collapsible-arrow', text: '▶' });
         const layoutTitle = new Label({ class: 'control-label', text: localize('panel.camera-frames.layout.title') });
+        const layoutSummary = new Label({ class: 'layout-summary', text: '-' });
         layoutHeader.append(layoutArrow);
         layoutHeader.append(layoutTitle);
+        layoutHeader.append(layoutSummary);
         layoutGroup.append(layoutHeader);
         const layoutBody = new Container({});
         layoutBody.dom.style.display = 'none';
@@ -400,13 +408,6 @@ class CameraFramesPanel extends Panel {
         };
         layoutHeader.on('click', toggleLayout);
 
-        // output resolution
-        const outputRow = new Container({ class: 'control-parent' });
-        const outputLabel = new Label({ class: 'control-label', text: localize('panel.camera-frames.output.label') });
-        const outputValue = new Label({ class: 'control-element-expand', text: '-' });
-        outputRow.append(outputLabel);
-        outputRow.append(outputValue);
-
         // FOV (35mm換算)
         const fovRow = new Container({ class: 'control-parent' });
         const fovLabel = new Label({ class: 'control-label', text: localize('panel.camera-frames.fov') });
@@ -446,7 +447,6 @@ class CameraFramesPanel extends Panel {
         viewportLensRow.append(viewportLensControl);
 
         // canvas zoom
-        const canvasZoomRow = new Container({ class: 'control-parent' });
         const canvasZoomLabel = new Label({ class: 'control-label', text: localize('panel.camera-frames.canvas-zoom') });
         const canvasZoomInput = new NumericInput({
             class: 'control-element',
@@ -456,10 +456,7 @@ class CameraFramesPanel extends Panel {
             step: 1,
             value: 100
         });
-        canvasZoomRow.append(canvasZoomLabel);
-        canvasZoomRow.append(canvasZoomInput);
 
-        layoutBody.append(canvasZoomRow);
         layoutGroup.append(layoutBody);
 
         // export options
@@ -472,7 +469,6 @@ class CameraFramesPanel extends Panel {
         filenameRow.append(filenameLabel);
         filenameRow.append(filenameInput);
 
-        const formatRow = new Container({ class: 'control-parent' });
         const formatLabel = new Label({ class: 'control-label', text: localize('panel.camera-frames.export.format') });
         const formatSelect = new SelectInput({
             class: 'control-element',
@@ -487,28 +483,86 @@ class CameraFramesPanel extends Panel {
         gridToggle.dom.title = localize('panel.camera-frames.export.grid-tooltip');
         gridToggle.dom.setAttribute('aria-pressed', 'false');
         const modelLayerToggle = new Button({ class: ['icon-button', 'model-layer-toggle-button'], text: '' });
-        modelLayerToggle.dom.appendChild(createSvg(separateSvg));
+        modelLayerToggle.dom.appendChild(createSvg(glbOutputSvg));
         modelLayerToggle.dom.title = localize('panel.camera-frames.export.model-layer-tooltip');
         modelLayerToggle.dom.setAttribute('aria-pressed', 'false');
+        const referenceIncludeToggle = new Button({ class: ['icon-button', 'reference-include-toggle-button'], text: '' });
+        referenceIncludeToggle.dom.appendChild(createSvg(referenceImageSvg));
+        referenceIncludeToggle.dom.title = localize('panel.camera-frames.export.reference-image-tooltip');
+        referenceIncludeToggle.dom.setAttribute('aria-label', localize('panel.camera-frames.export.reference-image-tooltip'));
+        referenceIncludeToggle.dom.setAttribute('aria-pressed', 'false');
         const toggleGroup = new Container({ class: 'format-toggle-group' });
         toggleGroup.dom.style.display = 'flex';
         toggleGroup.dom.style.alignItems = 'center';
         toggleGroup.dom.style.gap = '6px';
         toggleGroup.append(gridToggle);
         toggleGroup.append(modelLayerToggle);
-        const renderButton = new Button({ class: ['icon-button'], text: '' });
+        toggleGroup.append(referenceIncludeToggle);
+        const renderButton = new Button({ class: ['icon-button', 'export-render-button'], text: '' });
         renderButton.dom.appendChild(createSvg(exportSvg));
         renderButton.dom.title = localize('panel.camera-frames.export.render');
-        const formatGroup = new Container({ class: 'format-row' });
-        formatGroup.append(formatLabel);
-        formatGroup.append(formatSelect);
-        formatGroup.append(toggleGroup);
-        formatGroup.append(renderButton);
         const renderSpinner = new Container({ class: 'render-spinner', hidden: true });
-        formatGroup.append(renderSpinner);
+        const exportDetailsToggle = new Button({ class: ['icon-button', 'details-toggle-button'], text: '▶' });
+        exportDetailsToggle.dom.title = localize('panel.camera-frames.export.details');
+        exportDetailsToggle.dom.setAttribute('aria-label', localize('panel.camera-frames.export.details'));
+        exportDetailsToggle.dom.setAttribute('aria-expanded', 'false');
 
-        // frame list
-        const frameListLabel = new Label({ class: 'control-label', text: localize('panel.camera-frames.frames') });
+        const exportControls = new Container({ class: ['export-controls', 'control-element-expand'] });
+        exportControls.dom.style.display = 'flex';
+        exportControls.dom.style.alignItems = 'center';
+        exportControls.dom.style.gap = '6px';
+        exportControls.append(formatSelect);
+        exportControls.append(toggleGroup);
+        exportControls.append(renderButton);
+        exportControls.append(renderSpinner);
+        exportControls.append(exportDetailsToggle);
+        exportDetailsToggle.dom.style.marginLeft = 'auto';
+
+        const exportRow = new Container({ class: ['control-parent', 'export-row'] });
+        exportRow.append(formatLabel);
+        exportRow.append(exportControls);
+
+        const exportDetails = new Container({ class: ['inline-details', 'export-details'] });
+        exportDetails.dom.style.display = 'none';
+        exportDetails.dom.style.flexDirection = 'column';
+        exportDetails.dom.style.gap = '6px';
+        exportDetails.append(filenameRow);
+        exportDetails.append(new Container({ class: 'export-details-extra' }));
+
+        const updateExportDetailsVisibility = () => {
+            exportDetails.dom.style.display = exportDetailsCollapsed ? 'none' : 'flex';
+            exportDetailsToggle.text = exportDetailsCollapsed ? '▶' : '▼';
+            exportDetailsToggle.dom.setAttribute('aria-expanded', (!exportDetailsCollapsed).toString());
+        };
+        updateExportDetailsVisibility();
+        exportDetailsToggle.on('click', () => {
+            exportDetailsCollapsed = !exportDetailsCollapsed;
+            updateExportDetailsVisibility();
+        });
+
+        const updateReferenceIncludeToggle = () => {
+            referenceIncludeToggle.class[referenceIncludeEnabled ? 'add' : 'remove']('active');
+            referenceIncludeToggle.dom.setAttribute('aria-pressed', referenceIncludeEnabled ? 'true' : 'false');
+        };
+        updateReferenceIncludeToggle();
+
+        const applyReferenceIncludeState = (state?: Partial<ReferenceImageState> | null) => {
+            if (typeof state?.includeInRender !== 'boolean') return;
+            referenceIncludeEnabled = state.includeInRender;
+            updateReferenceIncludeToggle();
+        };
+        applyReferenceIncludeState((events.invoke('referenceImage.state') as ReferenceImageState | null) ?? null);
+        events.on('referenceImage.stateChanged', (state: ReferenceImageState) => applyReferenceIncludeState(state));
+
+        referenceIncludeToggle.on('click', () => {
+            if (suppress) return;
+            const next = !referenceIncludeEnabled;
+            referenceIncludeEnabled = next;
+            updateReferenceIncludeToggle();
+            events.fire('referenceImage.setIncludeInRender', next);
+        });
+
+        // frames section
         const frameActions = new Container({ class: 'frame-actions' });
         const addButton = new Button({ class: ['icon-button'], text: '' });
         addButton.dom.appendChild(createSvg(newSvg));
@@ -518,9 +572,19 @@ class CameraFramesPanel extends Panel {
         deleteBtn.dom.title = localize('panel.camera-frames.frames.delete');
         frameActions.append(addButton);
         frameActions.append(deleteBtn);
-        const frameListHeader = new Container({ class: 'frame-list-header' });
-        frameListHeader.append(frameListLabel);
-        frameListHeader.append(frameActions);
+        [addButton, deleteBtn].forEach((button) => {
+            ['pointerdown', 'pointerup', 'click'].forEach((evt) => {
+                button.dom.addEventListener(evt, (e: Event) => e.stopPropagation());
+            });
+        });
+
+        const framesSectionHeader = new Container({ class: ['control-parent', 'collapsible-header', 'frames-section-header'] });
+        const framesSectionArrow = new Label({ class: 'collapsible-arrow', text: '▶' });
+        const framesSectionLabel = new Label({ class: 'control-label', text: localize('panel.camera-frames.frames.section') });
+        framesSectionHeader.append(framesSectionArrow);
+        framesSectionHeader.append(framesSectionLabel);
+        framesSectionHeader.append(frameActions);
+
         const frameList = new Container({ id: 'camera-frames-list', class: 'list-container' });
 
         const frameScaleRow = new Container({ class: 'control-parent' });
@@ -535,10 +599,33 @@ class CameraFramesPanel extends Panel {
         });
         frameScaleRow.append(frameScaleInput);
 
+        const framesSectionBody = new Container({ class: ['collapsible-body', 'frames-section-body'] });
+        framesSectionBody.append(frameList);
+        framesSectionBody.append(frameScaleRow);
+        framesSectionBody.dom.style.display = 'none';
+        framesSectionBody.dom.style.flexDirection = 'column';
+        framesSectionBody.dom.style.gap = '6px';
+
+        const updateFramesSectionVisibility = () => {
+            framesSectionBody.dom.style.display = framesSectionCollapsed ? 'none' : 'flex';
+            framesSectionArrow.text = framesSectionCollapsed ? '▶' : '▼';
+            framesSectionHeader.class[framesSectionCollapsed ? 'remove' : 'add']('active');
+            framesSectionHeader.dom.setAttribute('aria-expanded', (!framesSectionCollapsed).toString());
+        };
+        updateFramesSectionVisibility();
+        framesSectionHeader.on('click', () => {
+            framesSectionCollapsed = !framesSectionCollapsed;
+            updateFramesSectionVisibility();
+        });
+
         // mask controls
-        const maskRow = new Container({ class: ['control-parent', 'mask-row'] });
         const maskLabel = new Label({ class: ['control-label', 'mask-label'], text: localize('panel.camera-frames.mask') });
         const maskToggle = new BooleanInput({ type: 'toggle', class: 'control-element', value: false });
+        const maskDetailsToggle = new Button({ class: ['icon-button', 'details-toggle-button'], text: '▶' });
+        maskDetailsToggle.dom.title = localize('panel.camera-frames.mask.details');
+        maskDetailsToggle.dom.setAttribute('aria-label', localize('panel.camera-frames.mask.details'));
+        maskDetailsToggle.dom.setAttribute('aria-expanded', 'false');
+
         const maskScopeLabel = new Label({ class: ['control-label', 'mask-scope-label'], text: localize('panel.camera-frames.mask.scope') });
         const maskScopeSelect = new SelectInput({
             class: ['control-element', 'mask-scope-select'],
@@ -557,12 +644,47 @@ class CameraFramesPanel extends Panel {
             step: 1,
             value: 80
         });
-        maskRow.append(maskLabel);
-        maskRow.append(maskToggle);
-        maskRow.append(maskScopeLabel);
-        maskRow.append(maskScopeSelect);
-        maskRow.append(maskOpacityLabel);
-        maskRow.append(maskOpacityInput);
+
+        const zoomMaskRow = new Container({ class: ['control-parent', 'zoom-mask-row'] });
+        const zoomGroup = new Container({ class: 'zoom-group' });
+        zoomGroup.dom.style.display = 'flex';
+        zoomGroup.dom.style.alignItems = 'center';
+        zoomGroup.dom.style.gap = '6px';
+        zoomGroup.append(canvasZoomLabel);
+        zoomGroup.append(canvasZoomInput);
+        const maskGroup = new Container({ class: 'mask-group' });
+        maskGroup.dom.style.display = 'flex';
+        maskGroup.dom.style.alignItems = 'center';
+        maskGroup.dom.style.gap = '6px';
+        maskGroup.append(maskLabel);
+        maskGroup.append(maskToggle);
+        maskGroup.append(maskDetailsToggle);
+        zoomMaskRow.append(zoomGroup);
+        zoomMaskRow.append(maskGroup);
+
+        const maskDetails = new Container({ class: ['inline-details', 'mask-details'] });
+        maskDetails.dom.style.display = 'none';
+        maskDetails.dom.style.flexDirection = 'column';
+        maskDetails.dom.style.gap = '6px';
+        const maskScopeRow = new Container({ class: 'control-parent' });
+        maskScopeRow.append(maskScopeLabel);
+        maskScopeRow.append(maskScopeSelect);
+        const maskOpacityRow = new Container({ class: 'control-parent' });
+        maskOpacityRow.append(maskOpacityLabel);
+        maskOpacityRow.append(maskOpacityInput);
+        maskDetails.append(maskScopeRow);
+        maskDetails.append(maskOpacityRow);
+
+        const updateMaskDetailsVisibility = () => {
+            maskDetails.dom.style.display = maskDetailsCollapsed ? 'none' : 'flex';
+            maskDetailsToggle.text = maskDetailsCollapsed ? '▶' : '▼';
+            maskDetailsToggle.dom.setAttribute('aria-expanded', (!maskDetailsCollapsed).toString());
+        };
+        updateMaskDetailsVisibility();
+        maskDetailsToggle.on('click', () => {
+            maskDetailsCollapsed = !maskDetailsCollapsed;
+            updateMaskDetailsVisibility();
+        });
 
         const resolveTargetAvailability = () => {
             const availability = events.invoke('cameraFrames.uiTargetAvailability') as { canSelectMain?: boolean } | null;
@@ -1062,16 +1184,15 @@ class CameraFramesPanel extends Panel {
         [sliderR, sliderU, sliderF].forEach(hideSliderInputs);
 
         // assemble
-        this.content.append(layoutGroup);
-        this.content.append(outputRow);
-        this.content.append(filenameRow);
-        this.content.append(formatGroup);
-        this.content.append(frameListHeader);
-        this.content.append(frameList);
-        this.content.append(frameScaleRow);
-        this.content.append(maskRow);
         this.content.append(fovRow);
         this.content.append(viewportLensRow);
+        this.content.append(zoomMaskRow);
+        this.content.append(maskDetails);
+        this.content.append(exportRow);
+        this.content.append(exportDetails);
+        this.content.append(framesSectionHeader);
+        this.content.append(framesSectionBody);
+        this.content.append(layoutGroup);
         this.content.append(camTransformHeader);
         this.content.append(camTransformBody);
 
@@ -1159,14 +1280,18 @@ class CameraFramesPanel extends Panel {
             const rectBottom = rectTop + displayH;
             const overflowX = vpW > 0 ? (rectLeft < -0.5 || rectRight > vpW + 0.5) : false;
             const overflowY = vpH > 0 ? (rectTop < -0.5 || rectBottom > vpH + 0.5) : false;
-            const overflowNote = (overflowX || overflowY) ? localize('panel.camera-frames.output.viewport-overflow') : '';
-            outputValue.text = localize('panel.camera-frames.output.value', {
+            const hasOverflow = overflowX || overflowY;
+            const overflowNote = hasOverflow ? localize('panel.camera-frames.output.viewport-overflow') : '';
+            const outputDetail = localize('panel.camera-frames.output.value', {
                 outW: formatInteger(outW),
                 outH: formatInteger(outH),
                 a4x: state.renderBox.scale.kx.toFixed(2),
                 a4y: state.renderBox.scale.ky.toFixed(2),
                 overflow: overflowNote
             });
+            layoutSummary.text = `${formatInteger(outW)}×${formatInteger(outH)}`;
+            layoutSummary.dom.title = outputDetail;
+            layoutSummary.class[hasOverflow ? 'add' : 'remove']('warning');
 
             updateAnchorUI(state.renderBox.anchor.ax, state.renderBox.anchor.ay);
 

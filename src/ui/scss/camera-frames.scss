@@ -164,12 +164,6 @@
     width: 100%;
     display: flex;
     flex-direction: column;
-    gap: 8px;
-    padding: 8px;
-    border: 1px solid $bcg-light;
-    background-color: rgba($bcg-dark, 0.6);
-    border-radius: 4px;
-    box-sizing: border-box;
 }
 
 .pcui-numeric-input.control-element {
@@ -186,6 +180,17 @@
 .layout-header {
     display: flex;
     align-items: center;
+}
+
+.layout-summary {
+    margin-left: auto;
+    font-size: 12px;
+    color: $text-secondary;
+    white-space: nowrap;
+
+    &.warning {
+        color: $clr-hilight;
+    }
 }
 
 .layout-body {
@@ -227,46 +232,69 @@
     }
 }
 
-.button-row .pcui-button {
-    flex: 1 1 auto;
+.zoom-mask-row {
+    align-items: center;
+    gap: 8px;
+    flex-wrap: nowrap;
+
+    .control-label {
+        width: auto;
+        margin: 0 4px 0 6px;
+    }
+
+    .control-element.pcui-boolean-input {
+        margin-top: 0;
+    }
+}
+
+.zoom-mask-row .mask-group {
+    margin-left: auto;
+}
+
+.export-row {
+    align-items: center;
+
+    .control-label {
+        width: auto;
+    }
+}
+
+.export-controls {
     min-width: 0;
+    flex-wrap: nowrap;
 }
 
-.button-row {
-    align-items: center;
-    gap: 8px;
+.export-controls .pcui-select-input {
+    width: 78px;
 }
 
-.format-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-.format-row .icon-button {
-    width: 32px;
-    height: 32px;
-}
-
-.format-row .grid-toggle-button,
-.format-row .model-layer-toggle-button {
-    width: 36px;
-    height: 36px;
+.export-row .grid-toggle-button,
+.export-row .model-layer-toggle-button,
+.export-row .reference-include-toggle-button {
     padding: 3px;
 
     svg {
-        width: 24px;
-        height: 24px;
-    }
-
-    &.active {
-        border-color: $clr-hilight;
-        color: $clr-hilight;
-        background-color: rgba($clr-hilight, 0.12);
+        width: 20px;
+        height: 20px;
     }
 }
 
-.button-row .render-spinner {
+.export-row .grid-toggle-button svg {
+    width: 24px;
+    height: 24px;
+}
+
+.export-row .export-render-button svg {
+    width: 16px;
+    height: 16px;
+}
+
+.frame-actions .icon-button svg {
+    width: 16px;
+    height: 16px;
+}
+
+.export-row .render-spinner {
     width: 16px;
     height: 16px;
     border: 2px solid rgba(255, 255, 255, 0.25);
@@ -274,7 +302,6 @@
     border-radius: 50%;
     animation: camera-frames-spin 0.8s linear infinite;
     flex-shrink: 0;
-    margin-left: 6px;
 }
 
 @keyframes camera-frames-spin {
@@ -287,46 +314,31 @@
     }
 }
 
-.format-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
+.details-toggle-button.icon-button {
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    font-size: 14px;
+    line-height: 1;
+    color: $text-secondary;
 }
 
-.format-row .icon-button {
-    width: 32px;
-    height: 32px;
+.inline-details {
+    padding: 6px 8px 8px 12px;
+    margin-left: 8px;
+    margin-bottom: 8px;
+    border-left: 2px solid rgba($bcg-light, 0.6);
+    background-color: rgba($bcg-dark, 0.35);
+    border-radius: 4px;
 }
 
-.mask-row {
-    align-items: center;
-    gap: 3px;
-    flex-wrap: nowrap;
-
-    .control-label {
-        width: auto;
-        margin: 0 2px 0 0;
-        padding-left: 4px;
-    }
-}
-
-.mask-label {
-    width: 40px;
-    margin-right: 2px;
-}
-
-.mask-scope-label {
-    width: 30px;
-    margin-right: 2px;
-}
-
-.mask-opacity-label {
-    width: 48px;
-}
-
-.mask-scope-select.pcui-select-input {
-    width: 78px;
-    min-width: 0;
+.frames-section-body {
+    padding: 6px 8px 8px 12px;
+    margin-left: 8px;
+    margin-bottom: 8px;
+    border-left: 2px solid rgba($bcg-light, 0.6);
+    background-color: rgba($bcg-dark, 0.35);
+    border-radius: 4px;
 }
 
 .collapsible-header {
@@ -344,7 +356,8 @@
     text-align: center;
 }
 
-.frame-list-header {
+.frame-list-header,
+.frames-section-header {
     display: flex;
     align-items: center;
     gap: 8px;
@@ -375,6 +388,43 @@
 
 .icon-button.danger-icon {
     border-color: #a33434;
+}
+
+#camera-frames-panel .pcui-button.icon-button {
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    color: $text-secondary;
+}
+
+#camera-frames-panel .pcui-button.icon-button:hover:not(.pcui-disabled) {
+    background: transparent;
+    color: $text-primary;
+}
+
+#camera-frames-panel .pcui-button.icon-button:focus-visible {
+    background: transparent;
+    outline: 2px solid rgba($clr-hilight, 0.7);
+    outline-offset: 2px;
+}
+
+#camera-frames-panel .pcui-button.icon-button.active {
+    background: transparent;
+    color: $clr-hilight;
+    filter: drop-shadow(0 0 2px rgba($clr-hilight, 0.35));
+}
+
+#camera-frames-panel .pcui-button.icon-button.danger-icon {
+    color: #a33434;
+}
+
+#camera-frames-panel .pcui-button.icon-button.danger-icon:hover:not(.pcui-disabled) {
+    background: transparent;
+    color: #d64f4f;
+}
+
+#camera-frames-panel .pcui-button.icon-button.pcui-disabled {
+    opacity: 0.35;
 }
 
 .cam-nav-controls {
@@ -409,8 +459,9 @@
     display: grid;
     place-items: center;
     padding: 2px;
-    background-color: $bcg-dark;
-    border: 1px solid $bcg-light;
+    background: transparent;
+    border: none;
+    box-shadow: none;
     border-radius: 4px;
     color: $text-secondary;
 
@@ -422,8 +473,18 @@
 }
 
 .roll-lock-btn.active {
-    border-color: $clr-hilight;
     color: $clr-hilight;
+}
+
+#camera-frames-panel .roll-lock-btn:hover:not(.pcui-disabled) {
+    background: transparent;
+    color: $text-primary;
+}
+
+#camera-frames-panel .roll-lock-btn:focus-visible {
+    background: transparent;
+    outline: 2px solid rgba($clr-hilight, 0.7);
+    outline-offset: 2px;
 }
 
 .list-container {
