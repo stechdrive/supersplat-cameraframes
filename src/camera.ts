@@ -340,7 +340,7 @@ class Camera extends Element {
         const elev = Math.asin(vec.y / l) * math.RAD_TO_DEG;
         this.setFocalPoint(target, dampingFactorFactor);
         this.setAzimElev(azim, elev, dampingFactorFactor);
-        this.setDistance(l / this.sceneRadius * this.fovFactor, dampingFactorFactor);
+        this.setDistance(l / this.sceneRadius * this.getFramingFactor(), dampingFactorFactor);
     }
 
     // transform the world space coordinate to normalized screen coordinate
@@ -617,7 +617,7 @@ class Camera extends Element {
         const distance = this.distanceTween.value;
         const roll = this.rollTween.value.roll;
 
-        const framingFactor = this.lockFraming ? 1 : this.fovFactor;
+        const framingFactor = this.getFramingFactor();
 
         calcForwardVec(forwardVec, azimElev.azim, azimElev.elev);
 
@@ -845,7 +845,7 @@ class Camera extends Element {
         // sync camera distance and focal point to the current pivot interaction
         // this prevents the camera from jumping when switching back to normal orbit or
         // when the pivot scale is much smaller than the scene bound
-        const framingFactor = this.lockFraming ? 1 : this.fovFactor;
+        const framingFactor = this.getFramingFactor();
         const newDistNorm = radius / this.sceneRadius * framingFactor;
 
         this.setAzimElev(nextAzim, nextElev, 0);
@@ -881,7 +881,7 @@ class Camera extends Element {
             // keep distance/pivot consistent: set position, recompute pivot from forward and distance
             const forward = this.entity.forward.clone();
             const distNorm = this.distanceTween.target.distance || 1;
-            const worldDist = distNorm * this.sceneRadius / this.fovFactor;
+            const worldDist = distNorm * this.sceneRadius / this.getFramingFactor();
             const pivot = pos.clone().add(forward.clone().mulScalar(worldDist));
             this.setFocalPoint(pivot, 0);
             this.setDistance(distNorm, 0);
@@ -916,7 +916,7 @@ class Camera extends Element {
         // orbit needs pivot/distance to remain consistent with new forward
         if (this.navMode === 'orbit') {
             const distNorm = this.distanceTween.target.distance || 1;
-            const worldDist = distNorm * this.sceneRadius / this.fovFactor;
+            const worldDist = distNorm * this.sceneRadius / this.getFramingFactor();
             const forward = this.entity.forward.clone();
             const pos = this.entity.getPosition();
             const pivot = pos.clone().add(forward.mulScalar(worldDist));
@@ -1062,6 +1062,14 @@ class Camera extends Element {
         return Math.sin(fov * 0.5);
     }
 
+    private getFramingFactor() {
+        if (this.lockFraming) {
+            return 1;
+        }
+        const factor = this.fovFactor;
+        return (typeof factor === 'number' && isFinite(factor) && factor > 1e-6) ? factor : 1;
+    }
+
     setNavMode(mode: 'orbit' | 'fpv') {
         const next = mode ?? 'orbit';
         if (next === this.navMode) {
@@ -1076,29 +1084,32 @@ class Camera extends Element {
             const currentDist = this.distanceTween.value.distance || this.distanceTween.target.distance || 1;
             this.lastOrbitDistance = currentDist;
             this.lastOrbitPivot.copy(this.focalPointTween.target as any);
-            const currentFovFactor = this.fovFactor || 1;
-            this.lastOrbitWorldDistance = currentDist * this.sceneRadius / currentFovFactor;
+            const framingFactor = this.getFramingFactor();
+            this.lastOrbitWorldDistance = currentDist * this.sceneRadius / framingFactor;
         } else {
-            // when returning to orbit, place pivot very close along the view ray to minimize visible shift
+            // when returning to orbit, keep the camera position fixed and reuse the previous orbit distance
             const controls = this.scene.config.controls;
             const currentAngles = { azim: this.azimElevTween.value.azim, elev: this.azimElevTween.value.elev };
             // freeze tweens to current values
             this.azimElevTween.goto(currentAngles, 0);
 
             const minDistNorm = Math.max(controls.minZoom ?? 1e-6, 1e-6);
-            const currentFovFactor = this.fovFactor || 1;
-            const worldDist = minDistNorm * this.sceneRadius / currentFovFactor;
+            const maxDistNorm = Math.max(controls.maxZoom ?? minDistNorm, minDistNorm);
+            const rawDistNorm = (typeof this.lastOrbitDistance === 'number' && isFinite(this.lastOrbitDistance)) ? this.lastOrbitDistance : minDistNorm;
+            const distNorm = Math.max(minDistNorm, Math.min(maxDistNorm, rawDistNorm));
+            const framingFactor = this.getFramingFactor();
+            const worldDist = distNorm * this.sceneRadius / framingFactor;
 
             // forward (pivot -> camera) using current view
             calcForwardVec(vec, currentAngles.azim, currentAngles.elev);
             const pivot = this.entity.getPosition().clone().sub(vec.mulScalar(worldDist));
 
             this.setFocalPoint(pivot, 0);
-            this.setDistance(minDistNorm, 0);
+            this.setDistance(distNorm, 0);
 
             // remember latest orbit params for future round-trips
             this.lastOrbitWorldDistance = worldDist;
-            this.lastOrbitDistance = minDistNorm;
+            this.lastOrbitDistance = distNorm;
             this.lastOrbitPivot.copy(pivot);
         }
 
@@ -1209,7 +1220,7 @@ class Camera extends Element {
             const targetElement = (result.element as Element) ?? (result.splat as Element) ?? (result.model as Element) ?? null;
 
             this.setFocalPoint(result.position);
-            this.setDistance(result.distance / this.sceneRadius * this.fovFactor);
+            this.setDistance(result.distance / this.sceneRadius * this.getFramingFactor());
             scene.events.fire('camera.focalPointPicked', {
                 camera: this,
                 splat: result.splat,
