@@ -618,6 +618,61 @@ class Camera extends Element {
         return out;
     }
 
+    private getOpticalAxisScreenPoint(): { x: number, y: number } | null {
+        const canvas = this.scene?.canvas;
+        const w = canvas?.clientWidth ?? 0;
+        const h = canvas?.clientHeight ?? 0;
+        if (!(w > 0 && h > 0)) {
+            return null;
+        }
+
+        let xNdc = 0;
+        let yNdc = 0;
+
+        if (this.customFrustum) {
+            const { left, right, bottom, top } = this.customFrustum;
+            const dx = right - left;
+            const dy = top - bottom;
+            if (typeof dx === 'number' && isFinite(dx) && Math.abs(dx) > 1e-6) {
+                xNdc = -(right + left) / dx;
+            }
+            if (typeof dy === 'number' && isFinite(dy) && Math.abs(dy) > 1e-6) {
+                yNdc = -(top + bottom) / dy;
+            }
+            if (!isFinite(xNdc)) xNdc = 0;
+            if (!isFinite(yNdc)) yNdc = 0;
+        }
+
+        const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
+        const x = clamp((xNdc * 0.5 + 0.5) * w, 0, w - 1);
+        const y = clamp((0.5 - yNdc * 0.5) * h, 0, h - 1);
+
+        return { x, y };
+    }
+
+    private pickForwardHit(): { pivot: Vec3, worldDist: number } | null {
+        if (!this.picker) {
+            return null;
+        }
+
+        const pt = this.getOpticalAxisScreenPoint();
+        if (!pt) {
+            return null;
+        }
+
+        const hit = this.intersect(pt.x, pt.y);
+        if (!hit) {
+            return null;
+        }
+
+        const worldDist = hit.distance;
+        if (typeof worldDist !== 'number' || !isFinite(worldDist) || worldDist <= 1e-6) {
+            return null;
+        }
+
+        return { pivot: hit.position, worldDist };
+    }
+
     private syncEntityTransformFromState() {
         const azimElev = this.azimElevTween.value;
         const roll = this.rollTween.value.roll;
@@ -1102,10 +1157,32 @@ class Camera extends Element {
 
             const minDistNorm = Math.max(controls.minZoom ?? 1e-6, 1e-6);
             const maxDistNorm = Math.max(controls.maxZoom ?? minDistNorm, minDistNorm);
-            const rawDistNorm = (typeof this.lastOrbitDistance === 'number' && isFinite(this.lastOrbitDistance)) ? this.lastOrbitDistance : minDistNorm;
-            const distNorm = Math.max(minDistNorm, Math.min(maxDistNorm, rawDistNorm));
             const framingFactor = this.getFramingFactor();
-            const worldDist = distNorm * this.sceneRadius / framingFactor;
+
+            const rawBaseDistNorm = (typeof this.lastOrbitDistance === 'number' && isFinite(this.lastOrbitDistance)) ? this.lastOrbitDistance : NaN;
+            const baseInvalid = !(typeof rawBaseDistNorm === 'number' && isFinite(rawBaseDistNorm) && rawBaseDistNorm > 0);
+            const baseDistNorm = baseInvalid ? minDistNorm : Math.max(minDistNorm, Math.min(maxDistNorm, rawBaseDistNorm));
+            let distNorm = baseDistNorm;
+            let worldDist = distNorm * this.sceneRadius / framingFactor;
+
+            const RATIO_TRIGGER = 4;
+            const ABS_TRIGGER = 50;
+            const absThreshold = this.sceneRadius * ABS_TRIGGER;
+
+            const candidate = this.pickForwardHit();
+            if (candidate) {
+                const candidateThreshold = candidate.worldDist * RATIO_TRIGGER;
+                if (baseInvalid || worldDist > candidateThreshold || worldDist > absThreshold) {
+                    const desiredDistNorm = candidate.worldDist / this.sceneRadius * framingFactor;
+                    distNorm = Math.max(minDistNorm, Math.min(maxDistNorm, desiredDistNorm));
+                    worldDist = distNorm * this.sceneRadius / framingFactor;
+                }
+            } else if (baseInvalid || worldDist > absThreshold) {
+                const fallbackWorldDist = this.sceneRadius * 2;
+                const desiredDistNorm = fallbackWorldDist / this.sceneRadius * framingFactor;
+                distNorm = Math.max(minDistNorm, Math.min(maxDistNorm, desiredDistNorm));
+                worldDist = distNorm * this.sceneRadius / framingFactor;
+            }
 
             // forward (pivot -> camera) using current view
             calcForwardVec(vec, currentAngles.azim, currentAngles.elev);
