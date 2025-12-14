@@ -80,17 +80,11 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
     });
 
     // camera.navMode (orbit / fpv)
-    let navMode: 'orbit' | 'fpv' = (scene.config.controls.navMode as ('orbit' | 'fpv')) ?? 'orbit';
-    const setNavMode = (mode: 'orbit' | 'fpv') => {
-        const next = mode ?? 'orbit';
-        if (next === navMode) return;
-        navMode = next;
-        scene.camera.setNavMode(navMode);
-        events.fire('camera.navMode', navMode);
-    };
-    events.function('camera.navMode', () => navMode);
-    events.on('camera.setNavMode', (mode: 'orbit' | 'fpv') => setNavMode(mode));
-    events.on('camera.toggleNavMode', () => setNavMode(navMode === 'orbit' ? 'fpv' : 'orbit'));
+    events.function('camera.navMode', () => scene.camera.navMode ?? 'orbit');
+    events.on('camera.toggleNavMode', () => {
+        const current = scene.camera.navMode ?? 'orbit';
+        events.fire('camera.setNavMode', current === 'orbit' ? 'fpv' : 'orbit');
+    });
 
     events.on('camera.splatSize', () => {
         scene.forceRender = true;
@@ -666,9 +660,6 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
     events.on('camera.toggleOverlay', () => {
         setCameraOverlay(!events.invoke('camera.overlay'));
     });
-
-    // nav mode initial fire for UI sync
-    setNavMode(navMode);
 
     // camera transform (position / rotation / nudge)
     events.on('camera.setPositionWorld', (pos: { x: number, y: number, z: number }) => {

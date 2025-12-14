@@ -384,7 +384,7 @@ class Camera extends Element {
         this.scene.events.on('camera.setLockFraming', this.lockFramingHandler);
         this.scene.events.on('camera.setLockFovAxis', this.lockFovAxisHandler);
         this.scene.events.on('camera.setNavMode', (mode: 'orbit' | 'fpv') => {
-            this.navMode = mode ?? 'orbit';
+            this.setNavMode(mode ?? 'orbit');
         });
 
         // apply scene config
@@ -1063,7 +1063,11 @@ class Camera extends Element {
     }
 
     setNavMode(mode: 'orbit' | 'fpv') {
-        this.navMode = mode ?? 'orbit';
+        const next = mode ?? 'orbit';
+        if (next === this.navMode) {
+            return;
+        }
+        this.navMode = next;
         if (this.navMode === 'fpv') {
             // ensure perspective
             this.ortho = false;
@@ -1097,6 +1101,8 @@ class Camera extends Element {
             this.lastOrbitDistance = minDistNorm;
             this.lastOrbitPivot.copy(pivot);
         }
+
+        this.scene.events.fire('camera.navMode', this.navMode);
     }
 
     getRay(screenX: number, screenY: number, ray: Ray) {
