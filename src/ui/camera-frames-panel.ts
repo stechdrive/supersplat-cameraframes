@@ -498,7 +498,7 @@ class CameraFramesPanel extends Panel {
         toggleGroup.append(gridToggle);
         toggleGroup.append(modelLayerToggle);
         toggleGroup.append(referenceIncludeToggle);
-        const renderButton = new Button({ class: ['icon-button'], text: '' });
+        const renderButton = new Button({ class: ['icon-button', 'export-render-button'], text: '' });
         renderButton.dom.appendChild(createSvg(exportSvg));
         renderButton.dom.title = localize('panel.camera-frames.export.render');
         const renderSpinner = new Container({ class: 'render-spinner', hidden: true });
