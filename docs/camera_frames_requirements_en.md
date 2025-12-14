@@ -3,7 +3,7 @@
 ## 0. Version and References
 
 - Base code: `src/camera-frames.ts` / `src/ui/camera-frames-panel.ts` / `src/camera.ts` / `src/scene.ts` / `src/render.ts` (package version 2.16.0 / as of HEAD).
-- CAMERA FRAMES individual version: `cameraFramesVersion` = **v2.6.0** (from `package.json`, appended as `| CAMERA FRAMES v2.6.0` to `#app-label`).
+- CAMERA FRAMES individual version: `cameraFramesVersion` = **v2.6.1** (from `package.json`, appended as `| CAMERA FRAMES v2.6.1` to `#app-label`).
 - This document replaces v7 with the **implementation-aligned v8**. Updates:
   - Added `scope: 'all' | 'selected'` to masks, reflecting scope selection and opacity (%) in UI/history/persistence (default 80% / all).
   - Made target switching explicit with radio-style buttons. When CAMERA FRAMES is ON both Main/Viewport show locked; when OFF only main can be selected (if mainCameraPose is retained). Main debug frustum colors: selected = magenta / not selected = cyan.
