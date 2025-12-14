@@ -60,13 +60,13 @@
 - `fitScale` = viewZoom=100% 時に論理サイズをビューポートへフィットさせる係数。`viewScale = fitScale * (viewZoomPct / 100)` がオーバーレイの実スケール。
 
 ### 2.3 フレーム（Frame / 赤枠）
-- 基準サイズ: `1536 × 864 px`。`scalePct`（10?400%）で等比拡縮。
-- `pos` はレンダーボックスローカル 0?1（範囲外も許容）。`rotationDeg` は 0?360 正規化。
+- 基準サイズ: `1536 × 864 px`。`scalePct`（10-400%）で等比拡縮。
+- `pos` はレンダーボックスローカル 0-1（範囲外も許容）。`rotationDeg` は 0-360 正規化。
 - `anchor` はフレーム個別の基準点（デフォルト pos と同一）。Alt+リサイズや回転時の固定点になる。
 - `order` が小さいものから描画し、ヒットテストは前面優先。
 
 ### 2.4 マスク
-- `mask.enabled` で有効化。不透明度 0.0?1.0（UI は % 表示）。
+- `mask.enabled` で有効化。不透明度 0.0-1.0（UI は % 表示）。
 - `scope: 'all' | 'selected'`。selected 指定で選択フレームのみを対象（選択が無い場合は全フレームへフォールバック）。
 - 全フレームの回転後スクリーン外接矩形外を黒マスクで塗る。プレビュー専用、PNG/PSD には含めない。
 
@@ -126,7 +126,7 @@ type CameraFramesState = {
 - `anchor: { ax: 0.5, ay: 0.5 }`
 - `center: { cx: 0, cy: 0 }`（有効化時にビューポート中央へ初期化）
 - `fitScale: 1`（初回/リサイズ時に AutoFit を再計算）
-- `viewZoomPct: 100`（25?100 にクランプ）
+- `viewZoomPct: 100`（25..100 にクランプ）
 - `lastViewport: { vw: 1, vh: 1 }`
 - `projection: { type: 'perspective', baseFov: 60 }`（`type: 'ortho'` / `orthoHalfHeight` にも対応、保存時も水平基準で保持）
 
