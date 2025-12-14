@@ -672,10 +672,137 @@ class Camera extends Element {
                 far = desiredNear * 2;
             }
             near = desiredNear;
+        } else if (
+            this.customFrustum === null &&
+            this.targetSize === null &&
+            this.scene.getElementsByType(ElementType.splat).length === 0
+        ) {
+            const nearCap = this.computeNoSplatNearCap(cameraPosition, forwardVec);
+            if (typeof nearCap === 'number' && isFinite(nearCap) && nearCap > 1e-6) {
+                near = Math.min(near, nearCap);
+            }
+
+            const farMin = this.computeNoSplatFarMin(cameraPosition, forwardVec, dist, boundRadius);
+            if (typeof farMin === 'number' && isFinite(farMin) && farMin > 0) {
+                far = Math.max(far, farMin);
+            }
+
+            if (far <= near) {
+                far = Math.max(near * 2, 1e-3);
+            }
+        }
+
+        near = Math.max(1e-6, near);
+        if (far <= near) {
+            far = Math.max(near * 2, 1e-3);
         }
 
         this.far = far;
         this.near = near;
+    }
+
+    private getInfiniteGridPlaneIndex(): 0 | 1 | 2 {
+        if (!this.ortho) {
+            return 1;
+        }
+
+        const cmp = (a: Vec3, b: Vec3) => 1.0 - Math.abs(a.dot(b)) < 1e-03;
+        const z = this.entity.getWorldTransform().getZ();
+        return cmp(z, Vec3.RIGHT) ? 0 : (cmp(z, Vec3.BACK) ? 2 : 1);
+    }
+
+    private tryGetMainCameraPosition(result: Vec3): boolean {
+        const events = this.scene?.events;
+        if (!events || !events.functions?.has('cameraFrames.mainTransform')) {
+            return false;
+        }
+
+        const transform = events.invoke('cameraFrames.mainTransform') as any;
+        const pos = transform?.position;
+        const x = pos?.x;
+        const y = pos?.y;
+        const z = pos?.z;
+        if (typeof x !== 'number' || typeof y !== 'number' || typeof z !== 'number') {
+            return false;
+        }
+        if (!isFinite(x) || !isFinite(y) || !isFinite(z)) {
+            return false;
+        }
+        result.set(x, y, z);
+        return true;
+    }
+
+    private computeMainCameraDepth(cameraPosition: Vec3, forwardVec: Vec3): number | null {
+        if (!this.tryGetMainCameraPosition(va)) {
+            return null;
+        }
+
+        vecb.sub2(va, cameraPosition);
+        const dMain = vecb.dot(forwardVec);
+        if (!isFinite(dMain) || dMain <= 0) {
+            return null;
+        }
+        return dMain;
+    }
+
+    private computeNoSplatNearCap(cameraPosition: Vec3, forwardVec: Vec3): number | null {
+        let cap: number | null = null;
+
+        const w = this.scene?.canvas?.clientWidth ?? 0;
+        const h = this.scene?.canvas?.clientHeight ?? 0;
+        if (w > 0 && h > 0) {
+            const screenX = w * 0.5;
+            const screenY = Math.max(0, h - 1);
+
+            this.getRay(screenX, screenY, ray);
+
+            const planeIndex = this.getInfiniteGridPlaneIndex();
+            const planeNormal = planeIndex === 0 ? Vec3.RIGHT : (planeIndex === 2 ? Vec3.BACK : Vec3.UP);
+            plane.setFromPointNormal(Vec3.ZERO, planeNormal);
+
+            if (plane.intersectsRay(ray, vec)) {
+                vecb.sub2(vec, cameraPosition);
+                const tBottom = vecb.dot(forwardVec);
+                if (isFinite(tBottom) && tBottom > 0) {
+                    cap = Math.max(1e-6, tBottom * 0.99);
+                }
+            }
+        }
+
+        const dMain = this.computeMainCameraDepth(cameraPosition, forwardVec);
+        if (typeof dMain === 'number') {
+            const mainCap = Math.max(1e-6, dMain * 0.99);
+            cap = (cap === null) ? mainCap : Math.min(cap, mainCap);
+        }
+
+        if (cap === null) {
+            return 0.1;
+        }
+
+        return cap;
+    }
+
+    private computeNoSplatFarMin(cameraPosition: Vec3, forwardVec: Vec3, dist: number, boundRadius: number): number | null {
+        const candidates: number[] = [];
+
+        const dMain = this.computeMainCameraDepth(cameraPosition, forwardVec);
+        if (typeof dMain === 'number') {
+            const frustumMargin = 5;
+            candidates.push(dMain + frustumMargin);
+        }
+
+        if (dist <= 0) {
+            vec.sub2(this.scene.bound.center, cameraPosition);
+            const farMinBound = vec.length() + boundRadius;
+            if (isFinite(farMinBound) && farMinBound > 0) {
+                candidates.push(farMinBound);
+            }
+        }
+
+        if (candidates.length === 0) {
+            return null;
+        }
+        return Math.max(...candidates);
     }
 
     // ピボット点を中心にカメラを回転させる（FPVオービット用）
