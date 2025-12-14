@@ -2124,6 +2124,11 @@
   font-size: 13px;
   color: #f60;
 }
+.panel > .panel-header > .panel-header-icon svg {
+  width: 13px;
+  height: 13px;
+  display: block;
+}
 .panel > .panel-header > .panel-header-label {
   color: #fff;
   font-weight: bold;
