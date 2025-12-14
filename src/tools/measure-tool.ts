@@ -1,6 +1,7 @@
 import { Container, Label, NumericInput } from '@playcanvas/pcui';
 import { Entity, Mat4, Quat, TranslateGizmo, Vec3 } from 'playcanvas';
 
+import { createGizmoCamera } from './gizmo-camera-adapter';
 import { EntityTransformOp } from '../edit-ops';
 import { Events } from '../events';
 import { Scene } from '../scene';
@@ -94,7 +95,7 @@ class MeasureTool {
         selectToolbar.append(lengthInput);
         canvasContainer.append(selectToolbar);
 
-        const gizmo = new TranslateGizmo(scene.camera.entity.camera, scene.gizmoLayer);
+        const gizmo = new TranslateGizmo(createGizmoCamera(scene.camera.entity.camera), scene.gizmoLayer);
         const entity = new Entity('measureGizmoPivot');
         const transformHandler = new MeasureTransformHandler();
 

@@ -4,6 +4,7 @@ import { TranslateGizmo, Vec3 } from 'playcanvas';
 import { Events } from '../events';
 import { Scene } from '../scene';
 import { SphereShape } from '../sphere-shape';
+import { createGizmoCamera } from './gizmo-camera-adapter';
 
 class SphereSelection {
     activate: () => void;
@@ -14,7 +15,7 @@ class SphereSelection {
     constructor(events: Events, scene: Scene, canvasContainer: Container) {
         const sphere = new SphereShape();
 
-        const gizmo = new TranslateGizmo(scene.camera.entity.camera, scene.gizmoLayer);
+        const gizmo = new TranslateGizmo(createGizmoCamera(scene.camera.entity.camera), scene.gizmoLayer);
 
         gizmo.on('render:update', () => {
             scene.forceRender = true;
