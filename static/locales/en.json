@@ -102,7 +102,7 @@
     "panel.camera-frames.fov": "Main Camera (mm)",
     "panel.camera-frames.canvas-zoom": "Canvas Zoom (%)",
     "panel.camera-frames.export.filename": "Filename",
-    "panel.camera-frames.export.format": "PSD/PNG",
+    "panel.camera-frames.export.format": "Export",
     "panel.camera-frames.export.grid": "Grid / Eye Level",
     "panel.camera-frames.export.grid-tooltip": "Include grid & eye level in the exported image",
     "panel.camera-frames.export.grid-layer.grid": "Grid",
