@@ -6,21 +6,21 @@
     <meta charset="utf-8" />
     <meta http-equiv="Cache-Control" content="no-cache, must-revalidate">
     <base href="/supersplat-cameraframes/">
-    <link rel="manifest" href="./manifest.json?v=v2.6.1-1765896568">
-    <link rel="stylesheet" href="./index.css?v=v2.6.1-1765896568">
+    <link rel="manifest" href="./manifest.json?v=v2.6.2-1765897583">
+    <link rel="stylesheet" href="./index.css?v=v2.6.2-1765897583">
     <link rel="shortcut icon" href="#">
     <meta name="description"
         content="SuperSplat is an advanced browser-based editor for manipulating and optimizing 3D Gaussian Splats. It is open source and engine agnostic. Camera Frames is the composition-safe camera workflow for renders. It keeps a reference render box anchored while you zoom the UI, preview extra scene area, and export matching images." />
     <meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0" />
 
     <!-- jszip -->
-    <script src="jszip.js?v=v2.6.1-1765896568"></script>
+    <script src="jszip.js?v=v2.6.2-1765897583"></script>
 
     <!-- Service worker -->
     <script>
         const sw = navigator.serviceWorker;
         if (sw) {
-            sw.register('./sw.js?v=v2.6.1-1765896568', { updateViaCache: 'none' })
+            sw.register('./sw.js?v=v2.6.2-1765897583', { updateViaCache: 'none' })
                 .then(reg => console.log('service worker registered', reg))
                 .catch(err => console.log('failed to register service worker', err));
         }
@@ -28,7 +28,7 @@
 </head>
 
 <body>
-    <script type="module" src="./index.js?v=v2.6.1-1765896568"></script>
+    <script type="module" src="./index.js?v=v2.6.2-1765897583"></script>
 </body>
 
 </html>
