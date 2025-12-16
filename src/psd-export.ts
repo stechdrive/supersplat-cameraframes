@@ -123,7 +123,7 @@ const exportPsd = (params: PsdExportParams) => {
         ]
     };
 
-    const buffer = writePsd(psd, { compress: true });
+    const buffer = writePsd(psd, { compress: false });
     downloadBinary(buffer, filename);
 };
 
