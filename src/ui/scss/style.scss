@@ -23,6 +23,7 @@
 @use 'timeline-panel.scss';
 @use 'tool.scss';
 @use 'camera-frames.scss';
+@use 'camera-frames-help.scss';
 @use 'reference-image.scss';
 
 * {
@@ -43,6 +44,8 @@ body {
     background-color: black;
     overflow: hidden;
     touch-action: none;
+    --camera-frames-help-offset-left: 0px;
+    --camera-frames-help-offset-right: 0px;
 }
 
 #app-container {

@@ -9,6 +9,7 @@ import deleteSvg from './svg/delete.svg';
 import exportSvg from './svg/export.svg';
 import cameraPanelSvg from './svg/fpv-nav.svg';
 import glbOutputSvg from './svg/glb-output.svg';
+import helpSvg from './svg/help.svg';
 import hiddenSvg from './svg/hidden.svg';
 import newSvg from './svg/new.svg';
 import orbitSvg from './svg/orbit-nav.svg';
@@ -319,9 +320,32 @@ class CameraFramesPanel extends Panel {
             updateReferenceVisibilityButton();
         });
 
+        const helpHeaderButton = new Button({
+            class: ['panel-header-button', 'camera-frames-help'],
+            text: ''
+        });
+        helpHeaderButton.dom.appendChild(createSvg(helpSvg));
+        helpHeaderButton.dom.title = localize('panel.camera-frames.help.toggle');
+        helpHeaderButton.dom.setAttribute('aria-label', localize('panel.camera-frames.help.toggle'));
+        helpHeaderButton.dom.setAttribute('aria-pressed', 'false');
+        ['pointerdown', 'pointerup', 'click'].forEach((evt) => {
+            helpHeaderButton.dom.addEventListener(evt, (e: Event) => e.stopPropagation());
+        });
+        helpHeaderButton.on('click', () => {
+            events.fire('cameraFramesHelpPanel.toggleVisible');
+        });
+
+        const setHelpButtonState = (visible: boolean) => {
+            helpHeaderButton.class[visible ? 'add' : 'remove']('active');
+            helpHeaderButton.dom.setAttribute('aria-pressed', visible ? 'true' : 'false');
+        };
+        setHelpButtonState(false);
+        events.on('cameraFramesHelpPanel.visible', (visible: boolean) => setHelpButtonState(!!visible));
+
         this.header.append(headerToggle);
         this.header.append(referenceImageHeaderButton);
         this.header.append(referenceVisibilityButton);
+        this.header.append(helpHeaderButton);
         this.header.append(collapseButton);
         setCompact(false);
 

@@ -4,6 +4,7 @@ import { Mat4, path, Vec3 } from 'playcanvas';
 import { DataPanel } from './data-panel';
 import { Events } from '../events';
 import { BottomToolbar } from './bottom-toolbar';
+import { CameraFramesHelpPanel } from './camera-frames-help-panel';
 import { CameraFramesPanel } from './camera-frames-panel';
 import { ColorPanel } from './color-panel';
 import { ExportPopup } from './export-popup';
@@ -125,6 +126,7 @@ class EditorUI {
         const colorPanel = new ColorPanel(events, tooltips);
         const referenceImagePanel = new ReferenceImagePanel(events);
         const cameraFramesPanel = new CameraFramesPanel(events);
+        const cameraFramesHelpPanel = new CameraFramesHelpPanel(events);
         const bottomToolbar = new BottomToolbar(events, tooltips);
         const rightToolbar = new RightToolbar(events, tooltips);
         const modeToggle = new ModeToggle(events, tooltips);
@@ -138,6 +140,7 @@ class EditorUI {
         canvasContainer.append(viewPanel);
         canvasContainer.append(colorPanel);
         canvasContainer.append(cameraFramesPanel);
+        canvasContainer.append(cameraFramesHelpPanel);
         canvasContainer.append(referenceImagePanel);
         canvasContainer.append(bottomToolbar);
         canvasContainer.append(rightToolbar);

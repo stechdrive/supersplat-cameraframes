@@ -3,7 +3,7 @@
 #color-panel {
     top: 50%;
     transform: translate(0, -50%);
-    right: 102px;
+    right: calc(102px + var(--camera-frames-help-offset-right, 0px));
     width: 320px;
     flex-direction: column;
 

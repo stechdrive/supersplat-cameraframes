@@ -2,7 +2,7 @@
 
 #camera-frames-panel {
     position: absolute;
-    right: 102px;
+    right: calc(102px + var(--camera-frames-help-offset-right, 0px));
     top: 50%;
     transform: translate(0, -50%);
     width: 360px;
@@ -52,6 +52,25 @@
         }
     }
 
+    .camera-frames-help {
+        display: grid;
+        place-items: center;
+        padding: 2px;
+
+        svg {
+            width: 24px;
+            height: 24px;
+            pointer-events: none;
+        }
+
+        &.active {
+            svg {
+                color: $clr-icon-hilight;
+                filter: drop-shadow(0 0 2px rgba($clr-hilight, 0.6));
+            }
+        }
+    }
+
     .camera-frames-reference-visibility {
         display: grid;
         place-items: center;
@@ -81,7 +100,7 @@
     &.compact {
         width: 52px;
         height: 52px;
-        right: 24px;
+        right: calc(24px + var(--camera-frames-help-offset-right, 0px));
 
         .pcui-panel-header {
             justify-content: center;

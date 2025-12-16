@@ -76,6 +76,7 @@ const application = {
                 },
                 { src: 'src/manifest.json' },
                 { src: 'node_modules/jszip/dist/jszip.js' },
+                { src: 'docs/camera_frames_manual.html', dest: 'help' },
                 { src: 'static/images', dest: 'static' },
                 { src: 'static/icons', dest: 'static' },
                 { src: 'static/lib', dest: 'static' },

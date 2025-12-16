@@ -2,7 +2,7 @@
 
 #scene-panel {
     top: 102px;
-    left: 24px;
+    left: calc(24px + var(--camera-frames-help-offset-left, 0px));
     width: 320px;
 }
 

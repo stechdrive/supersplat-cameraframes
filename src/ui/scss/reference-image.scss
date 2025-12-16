@@ -3,7 +3,7 @@
 #reference-image-panel {
     top: 50%;
     transform: translate(0, -50%);
-    right: 480px;
+    right: calc(480px + var(--camera-frames-help-offset-right, 0px));
     width: 360px;
     flex-direction: column;
     gap: 8px;

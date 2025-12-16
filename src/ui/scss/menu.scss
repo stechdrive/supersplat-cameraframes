@@ -9,7 +9,7 @@
 
     position: absolute;
     top: 24px;
-    left: 24px;
+    left: calc(24px + var(--camera-frames-help-offset-left, 0px));
     height: 50px;
     border-radius: 8px;
 

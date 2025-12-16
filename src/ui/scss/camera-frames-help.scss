@@ -1,0 +1,36 @@
+@use 'colors.scss' as *;
+
+#camera-frames-help-panel {
+    top: 24px;
+    bottom: 24px;
+    left: 0px;
+    right: auto;
+    width: 420px;
+    z-index: 6;
+
+    &:not(.pcui-hidden) {
+        display: flex;
+        flex-direction: column;
+    }
+
+    .camera-frames-help-body {
+        flex: 1 1 auto;
+        min-height: 0;
+    }
+
+    .camera-frames-help-iframe {
+        width: 100%;
+        height: 100%;
+        border: 0;
+        display: block;
+        background-color: white;
+    }
+
+    .camera-frames-help-open svg,
+    .camera-frames-help-close svg {
+        width: 16px;
+        height: 16px;
+        display: block;
+        pointer-events: none;
+    }
+}
