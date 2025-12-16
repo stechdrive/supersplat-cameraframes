@@ -2247,7 +2247,7 @@
   transition: width 0.1s ease;
   position: absolute;
   top: 24px;
-  left: 24px;
+  left: calc(24px + var(--camera-frames-help-offset-left, 0px));
   height: 50px;
   border-radius: 8px;
   overflow: hidden;
@@ -2324,7 +2324,7 @@
 
 #scene-panel {
   top: 102px;
-  left: 24px;
+  left: calc(24px + var(--camera-frames-help-offset-left, 0px));
   width: 320px;
 }
 
@@ -2359,7 +2359,7 @@
 #view-panel {
   top: 50%;
   transform: translate(0, -50%);
-  right: 102px;
+  right: calc(102px + var(--camera-frames-help-offset-right, 0px));
   width: 320px;
   flex-direction: column;
 }
@@ -2414,7 +2414,7 @@
 #color-panel {
   top: 50%;
   transform: translate(0, -50%);
-  right: 102px;
+  right: calc(102px + var(--camera-frames-help-offset-right, 0px));
   width: 320px;
   flex-direction: column;
 }
@@ -3434,7 +3434,7 @@
 
 #camera-frames-panel {
   position: absolute;
-  right: 102px;
+  right: calc(102px + var(--camera-frames-help-offset-right, 0px));
   top: 50%;
   transform: translate(0, -50%);
   width: 360px;
@@ -3476,6 +3476,20 @@
   color: #FFAF50;
   filter: drop-shadow(0 0 2px rgba(255, 102, 0, 0.6));
 }
+#camera-frames-panel .camera-frames-help {
+  display: grid;
+  place-items: center;
+  padding: 2px;
+}
+#camera-frames-panel .camera-frames-help svg {
+  width: 24px;
+  height: 24px;
+  pointer-events: none;
+}
+#camera-frames-panel .camera-frames-help.active svg {
+  color: #FFAF50;
+  filter: drop-shadow(0 0 2px rgba(255, 102, 0, 0.6));
+}
 #camera-frames-panel .camera-frames-reference-visibility {
   display: grid;
   place-items: center;
@@ -3497,7 +3511,7 @@
 #camera-frames-panel.compact {
   width: 52px;
   height: 52px;
-  right: 24px;
+  right: calc(24px + var(--camera-frames-help-offset-right, 0px));
 }
 #camera-frames-panel.compact .pcui-panel-header {
   justify-content: center;
@@ -3951,10 +3965,41 @@ body.collapsed #camera-frames-panel {
   cursor: not-allowed;
 }
 
+#camera-frames-help-panel {
+  top: 24px;
+  bottom: 24px;
+  left: 0px;
+  right: auto;
+  width: 420px;
+  z-index: 6;
+}
+#camera-frames-help-panel:not(.pcui-hidden) {
+  display: flex;
+  flex-direction: column;
+}
+#camera-frames-help-panel .camera-frames-help-body {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+#camera-frames-help-panel .camera-frames-help-iframe {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  display: block;
+  background-color: white;
+}
+#camera-frames-help-panel .camera-frames-help-open svg,
+#camera-frames-help-panel .camera-frames-help-close svg {
+  width: 16px;
+  height: 16px;
+  display: block;
+  pointer-events: none;
+}
+
 #reference-image-panel {
   top: 50%;
   transform: translate(0, -50%);
-  right: 480px;
+  right: calc(480px + var(--camera-frames-help-offset-right, 0px));
   width: 360px;
   flex-direction: column;
   gap: 8px;
@@ -4070,6 +4115,8 @@ body {
   background-color: black;
   overflow: hidden;
   touch-action: none;
+  --camera-frames-help-offset-left: 0px;
+  --camera-frames-help-offset-right: 0px;
 }
 
 #app-container {

@@ -1,5 +1,5 @@
 const buildInfo = {
-    version: 'v2.6.2-1765897583'
+    version: 'v2.6.2-1765910664'
 };
 
 const cacheName = `superSplat-cFrames-${buildInfo.version}`;
@@ -15,6 +15,7 @@ const versionedAssets = [
 ].map(path => withVersion(path));
 const staticAssets = [
     './index.js.map',
+    './help/camera_frames_manual.html',
     './static/icons/logo-192.png',
     './static/icons/logo-512.png',
     './static/images/header.webp',
