@@ -137,7 +137,7 @@ type CameraFramesState = {
 ### 3.5 Other defaults
 - `mainCameraPose`: snapshot and keep the current camera pose (if missing, capture on enable).
 - `nearClip`: null (calculate a safe value from the camera on enable and fix it)
-- `exportName`: `'yc4_00_000_CGLO'`
+- `exportName`: `'cf-output'`
 - `exportFormat`: initial state is `psd`. When initializing from unsaved document (`docState=null`), set to `png` and overwrite through UI sync.
 - `exportGridOverlay`: false
 - `exportModelLayers`: false

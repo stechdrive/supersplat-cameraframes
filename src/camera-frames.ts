@@ -183,7 +183,7 @@ export class CameraFramesController {
         mask: { ...DEFAULT_MASK },
         mainCameraPose: null,
         nearClip: null,
-        exportName: 'yc4_00_000_CGLO',
+        exportName: 'cf-output',
         exportFormat: 'psd',
         exportGridOverlay: false,
         exportModelLayers: false
@@ -1317,7 +1317,7 @@ export class CameraFramesController {
     }
 
     private resolveFilename(name: string | undefined, format: ExportFormat) {
-        const fallback = 'camera-frames';
+        const fallback = 'cf-output';
         const trimmed = name?.trim();
         const base = trimmed && trimmed.length > 0 ? trimmed : fallback;
         const hasExtension = /\.[^./\\]+$/.test(base);
@@ -3586,7 +3586,7 @@ export class CameraFramesController {
                 mask: { ...DEFAULT_MASK },
                 mainCameraPose: this.clonePoseSnapshot(initialPose),
                 nearClip: null,
-                exportName: 'yc4_00_000_CGLO',
+                exportName: 'cf-output',
                 exportFormat: 'png',
                 exportGridOverlay: false,
                 exportModelLayers: false
@@ -3609,7 +3609,7 @@ export class CameraFramesController {
         const _stateVersion = docState.version ?? 0; // reserved for future migrations
 
         const rb = docState.renderBox ?? DEFAULT_RENDERBOX();
-        const exportName = typeof docState.exportName === 'string' ? docState.exportName : 'yc4_00_000_CGLO';
+        const exportName = typeof docState.exportName === 'string' ? docState.exportName : 'cf-output';
         const exportFormat = this.normalizeFormat(docState.exportFormat ?? 'psd');
         const exportGridOverlay = !!docState.exportGridOverlay;
         const exportModelLayers = !!docState.exportModelLayers;
