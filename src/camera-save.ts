@@ -49,6 +49,11 @@ type CameraSaveFileV1 = {
     cameraFramesState: CameraFramesState;
 };
 
+type FilePickerAcceptTypeCompat = {
+    description?: string;
+    accept: Record<`${string}/${string}`, `.${string}` | `.${string}`[]>;
+};
+
 const isObject = (value: unknown): value is Record<string, unknown> => (
     typeof value === 'object' && value !== null && !Array.isArray(value)
 );
@@ -317,12 +322,12 @@ const normalizeProjectionIntoState = (state: CameraFramesState, projection: Proj
 };
 
 const registerCameraSave = (events: Events, scene: Scene, cameraFramesController: CameraFramesController, cameraFramesHistory: CameraFramesHistory) => {
-    const fileTypes = [
+    const fileTypes: FilePickerAcceptTypeCompat[] = [
         {
             description: 'Main Camera (.sscam)',
             accept: { 'application/json': ['.sscam'] }
         }
-    ] as const;
+    ];
 
     events.function('cameraSave.exportMainCamera', async () => {
         const now = new Date();
