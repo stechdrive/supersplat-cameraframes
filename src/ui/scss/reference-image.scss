@@ -63,6 +63,7 @@
         align-items: center;
         gap: 4px;
         padding: 2px 2px;
+        min-height: 28px;
         border-radius: 4px;
         cursor: pointer;
 
@@ -82,9 +83,11 @@
 
     .reference-image-item .pcui-button.icon-button {
         flex: 0 0 auto;
+        margin: 0;
         padding: 0;
         width: 24px;
         height: 24px;
+        line-height: 0;
     }
 
     .reference-image-item-reorder svg {
