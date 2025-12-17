@@ -171,8 +171,10 @@ class ReferenceImagePanel extends Container {
         const rebuildList = (state: ReferenceImagesState) => {
             const activeId = state?.activeId ?? null;
             const items = Array.isArray(state?.items) ? state.items : [];
-            const backItems = items.filter(i => i.group === 'back').slice().sort((a, b) => a.order - b.order);
-            const frontItems = items.filter(i => i.group === 'front').slice().sort((a, b) => a.order - b.order);
+            // UIリストは「上が優先(手前)」になるよう、order が大きいものを上に表示する
+            const compareOrderDesc = (a: ReferenceImageItemState, b: ReferenceImageItemState) => (b.order - a.order) || a.id.localeCompare(b.id);
+            const backItems = items.filter(i => i.group === 'back').slice().sort(compareOrderDesc);
+            const frontItems = items.filter(i => i.group === 'front').slice().sort(compareOrderDesc);
 
             backList.clear();
             frontList.clear();
@@ -187,8 +189,9 @@ class ReferenceImagePanel extends Container {
 
                     const up = createReorderButton('up', localize('panel.reference-image.reorder-up'));
                     const down = createReorderButton('down', localize('panel.reference-image.reorder-down'));
-                    up.enabled = item.order > 0;
-                    down.enabled = item.order < groupItems.length - 1;
+                    // 内部 order は「低いほど下(奥)」「高いほど上(手前)」
+                    up.enabled = item.order < groupItems.length - 1;
+                    down.enabled = item.order > 0;
 
                     const visibilityButton = new Button({ class: ['icon-button', 'reference-image-item-visibility'], text: '' });
                     visibilityButton.dom.appendChild(createSvg(item.visible ? shownSvg : hiddenSvg));
@@ -221,10 +224,10 @@ class ReferenceImagePanel extends Container {
                     [up, down, visibilityButton, exportButton, removeButton].forEach(stop);
 
                     up.on('click', () => {
-                        events.fire('referenceImages.reorder', { id: item.id, group: item.group, toIndex: item.order - 1 });
+                        events.fire('referenceImages.reorder', { id: item.id, group: item.group, toIndex: item.order + 1 });
                     });
                     down.on('click', () => {
-                        events.fire('referenceImages.reorder', { id: item.id, group: item.group, toIndex: item.order + 1 });
+                        events.fire('referenceImages.reorder', { id: item.id, group: item.group, toIndex: item.order - 1 });
                     });
                     visibilityButton.on('click', () => {
                         events.fire('referenceImages.update', item.id, { visible: !item.visible });
