@@ -290,6 +290,17 @@
             <li><span class="control">レンダリング</span>: 現在の構図でファイルに画像を出力します。</li>
         </ul>
 
+        <p style="text-align: left; font-size: 1.0em; color: #5a5a5a;">
+            <span class="control">カメラデータ保存</span> は、<span class="keyword">メインカメラの構図</span>と Camera Frames の設定（大判指定・赤枠フレーム・ニアクリップ等）を、軽量ファイル<span
+                class="control">.sscam</span>として書き出し/読み込みする機能です。複数のカメラ構図をファイルで管理して切り替える、別プロジェクトで同じワールド座標のカメラを再現する、といった用途で使えます。
+        </p>
+        <ul class="operation-list">
+            <li><span class="control">書き出し（.sscam）</span>: 行右側の<span class="control">エクスポートアイコン</span>で、現在のメインカメラ構図をファイルに保存します。</li>
+            <li><span class="control">読み込み（.sscam）</span>: 行右側の<span class="control">インポートアイコン</span>で、保存済みのカメラデータを読み込み、現在の設定を上書きします（必要ならUndoで戻せます）。</li>
+            <li><span class="keyword">注意</span>: <span class="control">.sscam</span>には、読み込んでいる<span class="keyword">ロケ地データ（.ply/.splat）や3Dモデル（.glb）</span>は保存されません。アセットの差し替え・移動/回転/スケールなどを行うと、同じカメラでも画が合わない場合があります。構図を固定したい場合は、アセット側を変えないか、編集後に再度<span
+                    class="control">書き出し</span>してください（シーン全体の保存は<span class="keyword">.ssproj</span>を利用します）。</li>
+        </ul>
+
         <h3>1-3. 撮影フレーム（フレーム一覧）</h3>
         <ul class="operation-list">
             <li><span class="control">フレーム追加</span>/<span class="control">フレーム削除</span>: 新しい撮影フレームを追加（最大20個）/削除します。</li>
