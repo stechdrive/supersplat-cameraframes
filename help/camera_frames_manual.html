@@ -170,7 +170,7 @@
             <li><span class="control">フレーム一覧</span>で撮影フレームを追加し、ビューポート上で位置・回転・拡縮を調整します。</li>
             <li><span class="control">メインカメラ表示</span>で構図を仕上げ、必要に応じて<span class="control">編集カメラ表示</span>から別視点で確認できます。
             </li>
-            <li><span class="control">エクスポート</span>で PSD/PNG を<span class="control">レンダリング</span>して書き出します。</li>
+            <li><span class="control">書き出し</span>で PSD/PNG を<span class="control">レンダリング</span>して書き出します。</li>
         </ul>
 
         <h2>0. ファイルの読み込み</h2>
@@ -250,6 +250,16 @@
                 </td>
             </tr>
             <tr>
+                <td><span class="control">ヘルプ</span></td>
+                <td>ヘルプパネルの表示</td>
+                <td>
+                    <ul>
+                        <li>パネルヘッダーの<span class="control">？アイコン</span>で、ヘルプパネルを開きます。</li>
+                        <li>現在開いているヘルプパネルの開閉ができます。</li>
+                    </ul>
+                </td>
+            </tr>
+            <tr>
                 <td><span class="control">コンパクト切替</span></td>
                 <td>パネルの折りたたみ</td>
                 <td>
@@ -321,6 +331,24 @@
                     class="control">背面</span>で重なり順を切り替えます。</li>
             <li><span class="control">スケール</span>/<span class="control">不透明度</span>/<span class="control">オフセット</span>:
                 見やすい状態に調整します。<span class="control">センタリング</span>でオフセットを戻せます。</li>
+        </ul>
+
+        <h3>1-7. シーンマネージャー（ロケ地データ/3Dモデルの表示・移動）</h3>
+        <p style="text-align: left; font-size: 1.0em; color: #5a5a5a;">
+            既存のPLYなどのロケ地データや、読み込んだGLBモデルは<span class="control">シーンマネージャー</span>で管理できます。表示の切り替えや、位置・回転・拡縮の調整を行いたい場合は次の手順で操作します。
+        </p>
+        <ul class="operation-list">
+            <li><span class="control">メニューを展開</span>: 画面左上の<span class="control">「＞」</span>をクリックして折りたたみを解除します（<span
+                    class="control">シーンマネージャー</span>と画面下部の<span class="control">ツールバー</span>が表示されます）。</li>
+            <li><span class="control">オブジェクトを選択</span>: <span class="control">シーンマネージャー</span>の一覧から、操作したい<span
+                    class="keyword">ロケ地データ（.ply/.splat など）</span>や<span class="keyword">3Dモデル（.glb）</span>の名前をクリックします。</li>
+            <li><span class="control">表示/非表示</span>: 一覧の<span class="control">目アイコン</span>をクリックして切り替えます。</li>
+            <li><span class="control">移動/回転/スケール</span>: 画面下部のツールバーから<span class="control">移動 ( 1 )</span> / <span
+                    class="control">回転 ( 2 )</span> / <span class="control">スケール ( 3 )</span>を選び、表示されるギズモをドラッグします。</li>
+            <li><span class="control">数値で微調整</span>: <span class="control">シーンマネージャー</span>内の<span
+                    class="control">トランスフォーム</span>（位置/回転/スケール）で数値入力して精密に調整できます。</li>
+            <li><span class="control">座標系・基準点</span>: ツールバーの<span class="control">ローカル/ワールド</span>切替や<span
+                    class="control">中心/バウンディング中心</span>切替で、操作の感覚を合わせられます。</li>
         </ul>
 
         <hr>
