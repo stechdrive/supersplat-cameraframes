@@ -15,7 +15,6 @@ import importSvg from './svg/import.svg';
 import newSvg from './svg/new.svg';
 import orbitSvg from './svg/orbit-nav.svg';
 import referenceImageSvg from './svg/reference-image.svg';
-import saveSvg from './svg/save.svg';
 import lockSvg from './svg/select-lock.svg';
 import unlockSvg from './svg/select-unlock.svg';
 import shownSvg from './svg/shown.svg';
@@ -557,7 +556,7 @@ class CameraFramesPanel extends Panel {
 
         const mainCameraFileLabel = new Label({ class: 'control-label', text: localize('panel.camera-frames.main-camera-file') });
         const mainCameraExportBtn = new Button({ class: ['icon-button', 'main-camera-export-button'], text: '' });
-        mainCameraExportBtn.dom.appendChild(createSvg(saveSvg));
+        mainCameraExportBtn.dom.appendChild(createSvg(exportSvg));
         mainCameraExportBtn.dom.title = localize('panel.camera-frames.main-camera-file.export');
         mainCameraExportBtn.dom.setAttribute('aria-label', localize('panel.camera-frames.main-camera-file.export'));
         const mainCameraImportBtn = new Button({ class: ['icon-button', 'main-camera-import-button'], text: '' });

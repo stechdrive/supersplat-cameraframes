@@ -117,7 +117,7 @@
     "panel.camera-frames.export.model-layer": "モデル: {{name}}",
     "panel.camera-frames.export.render": "レンダリング",
     "panel.camera-frames.export.details": "書き出し詳細",
-    "panel.camera-frames.main-camera-file": "メインカメラ(.sscam)",
+    "panel.camera-frames.main-camera-file": "カメラデータ保存",
     "panel.camera-frames.main-camera-file.export": "メインカメラを書き出し",
     "panel.camera-frames.main-camera-file.import": "メインカメラを読み込み",
     "panel.camera-frames.frames": "フレーム一覧",
