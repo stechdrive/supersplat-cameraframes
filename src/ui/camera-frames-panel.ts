@@ -81,10 +81,9 @@ type FovInfo = {
     maxEqMm: number;
 };
 
-type ReferenceImageState = {
-    visible: boolean;
-    source: unknown | null;
-    includeInRender?: boolean;
+type ReferenceImagesState = {
+    masterVisible?: boolean;
+    items?: Array<{ includeInRender?: boolean }>;
 };
 
 const anchorKey = (ax: number, ay: number) => `${ax},${ay}`;
@@ -303,22 +302,19 @@ class CameraFramesPanel extends Panel {
             referenceVisibilityButton.dom.setAttribute('aria-label', label);
         };
 
-        const applyReferenceImageState = (state?: Partial<ReferenceImageState> | null) => {
-            referenceImageLoaded = !!state?.source;
-            referenceImageVisible = !!state?.visible;
+        const applyReferenceImageState = (state?: Partial<ReferenceImagesState> | null) => {
+            referenceImageLoaded = Array.isArray(state?.items) && state.items.length > 0;
+            referenceImageVisible = referenceImageLoaded && !!state?.masterVisible;
             updateReferenceVisibilityButton();
         };
-        applyReferenceImageState((events.invoke('referenceImage.state') as ReferenceImageState | null) ?? null);
-        events.on('referenceImage.stateChanged', (state: ReferenceImageState) => applyReferenceImageState(state));
+        applyReferenceImageState((events.invoke('referenceImages.state') as ReferenceImagesState | null) ?? null);
+        events.on('referenceImages.stateChanged', (state: ReferenceImagesState) => applyReferenceImageState(state));
 
         referenceVisibilityButton.on('click', () => {
             if (!referenceImageLoaded) {
                 return;
             }
-            const nextVisible = !referenceImageVisible;
-            referenceImageVisible = nextVisible;
-            events.fire('referenceImage.setVisible', nextVisible);
-            updateReferenceVisibilityButton();
+            events.fire('referenceImages.toggleMasterVisible');
         });
 
         const helpHeaderButton = new Button({
@@ -598,23 +594,25 @@ class CameraFramesPanel extends Panel {
         const updateReferenceIncludeToggle = () => {
             referenceIncludeToggle.class[referenceIncludeEnabled ? 'add' : 'remove']('active');
             referenceIncludeToggle.dom.setAttribute('aria-pressed', referenceIncludeEnabled ? 'true' : 'false');
+            referenceIncludeToggle.enabled = referenceImageLoaded;
+            const label = referenceImageLoaded ?
+                localize('panel.camera-frames.export.reference-image-tooltip') :
+                localize('panel.reference-image.empty');
+            referenceIncludeToggle.dom.title = label;
+            referenceIncludeToggle.dom.setAttribute('aria-label', label);
         };
         updateReferenceIncludeToggle();
 
-        const applyReferenceIncludeState = (state?: Partial<ReferenceImageState> | null) => {
-            if (typeof state?.includeInRender !== 'boolean') return;
-            referenceIncludeEnabled = state.includeInRender;
+        const applyReferenceIncludeState = (state?: Partial<ReferenceImagesState> | null) => {
+            referenceIncludeEnabled = Array.isArray(state?.items) && state.items.some(i => !!i?.includeInRender);
             updateReferenceIncludeToggle();
         };
-        applyReferenceIncludeState((events.invoke('referenceImage.state') as ReferenceImageState | null) ?? null);
-        events.on('referenceImage.stateChanged', (state: ReferenceImageState) => applyReferenceIncludeState(state));
+        applyReferenceIncludeState((events.invoke('referenceImages.state') as ReferenceImagesState | null) ?? null);
+        events.on('referenceImages.stateChanged', (state: ReferenceImagesState) => applyReferenceIncludeState(state));
 
         referenceIncludeToggle.on('click', () => {
             if (suppress) return;
-            const next = !referenceIncludeEnabled;
-            referenceIncludeEnabled = next;
-            updateReferenceIncludeToggle();
-            events.fire('referenceImage.setIncludeInRender', next);
+            events.fire('referenceImagePanel.setVisible', true);
         });
 
         // frames section

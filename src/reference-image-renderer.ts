@@ -37,9 +37,8 @@ class ReferenceImageRenderer extends Element {
         BLENDEQUATION_ADD, BLENDMODE_SRC_ALPHA, BLENDMODE_ONE_MINUS_SRC_ALPHA,
         BLENDEQUATION_ADD, BLENDMODE_SRC_ALPHA, BLENDMODE_ONE_MINUS_SRC_ALPHA
     );
-    private params: { back: RenderParams | null; front: RenderParams | null; } = { back: null, front: null };
+    private params: { back: RenderParams[]; front: RenderParams[]; } = { back: [], front: [] };
     private targetSize: { w: number; h: number; } = { w: 1, h: 1 };
-    private lastPixelPerfect = false;
     private mainCameraHandlers: {
         preRenderLayer: ((layer: Layer, transparent: boolean) => void) | null;
         postRenderLayer: ((layer: Layer, transparent: boolean) => void) | null;
@@ -93,7 +92,7 @@ class ReferenceImageRenderer extends Element {
             if (transparent || this.drawnBack) {
                 return;
             }
-            if (!this.params.back || !this.referenceBackLayer?.enabled) {
+            if (this.params.back.length === 0 || !this.referenceBackLayer?.enabled) {
                 return;
             }
             const scene = this.scene;
@@ -110,7 +109,7 @@ class ReferenceImageRenderer extends Element {
             if (!transparent || this.drawnFront) {
                 return;
             }
-            if (!this.params.front || !this.referenceFrontLayer?.enabled) {
+            if (this.params.front.length === 0 || !this.referenceFrontLayer?.enabled) {
                 return;
             }
             if (!this.worldLayer || layer !== this.worldLayer) {
@@ -149,29 +148,37 @@ class ReferenceImageRenderer extends Element {
         this.shader = null;
     }
 
-    setParams(layer: ReferenceImageLayer, params: RenderParams | null) {
+    setParamsList(layer: ReferenceImageLayer, paramsList: RenderParams[]) {
+        const safeList = Array.isArray(paramsList) ? paramsList : [];
         if (layer === 'back') {
-            this.params.back = params;
+            this.params.back = safeList;
             if (this.referenceBackLayer) {
-                this.referenceBackLayer.enabled = !!params;
+                this.referenceBackLayer.enabled = safeList.length > 0;
             }
         } else {
-            this.params.front = params;
+            this.params.front = safeList;
             if (this.referenceFrontLayer) {
-                this.referenceFrontLayer.enabled = !!params;
+                this.referenceFrontLayer.enabled = safeList.length > 0;
             }
         }
-        if (params?.texture) {
+        safeList.forEach((params) => {
+            if (!params?.texture) {
+                return;
+            }
             const filter = params.pixelPerfect ? FILTER_NEAREST : FILTER_LINEAR;
             params.texture.minFilter = filter;
             params.texture.magFilter = filter;
-            this.lastPixelPerfect = params.pixelPerfect;
-        }
+        });
+    }
+
+    // backward-compatible single item setter
+    setParams(layer: ReferenceImageLayer, params: RenderParams | null) {
+        this.setParamsList(layer, params ? [params] : []);
     }
 
     clearParams() {
-        this.setParams('back', null);
-        this.setParams('front', null);
+        this.setParamsList('back', []);
+        this.setParamsList('front', []);
     }
 
     setTargetSize(width: number, height: number) {
@@ -214,11 +221,8 @@ class ReferenceImageRenderer extends Element {
     }
 
     private draw(kind: ReferenceImageLayer) {
-        const params = kind === 'back' ? this.params.back : this.params.front;
-        if (!params || !this.scene || !this.quadRender) {
-            return;
-        }
-        if (!this.applyParams(params)) {
+        const paramsList = kind === 'back' ? this.params.back : this.params.front;
+        if (paramsList.length === 0 || !this.scene || !this.quadRender) {
             return;
         }
         const device = this.scene.app.graphicsDevice;
@@ -226,7 +230,12 @@ class ReferenceImageRenderer extends Element {
         device.setCullMode(CULLFACE_NONE);
         device.setDepthState(DepthState.NODEPTH);
         device.setStencilState(null, null);
-        this.quadRender.render();
+        for (const params of paramsList) {
+            if (!this.applyParams(params)) {
+                continue;
+            }
+            this.quadRender.render();
+        }
     }
 }
 

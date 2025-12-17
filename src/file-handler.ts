@@ -342,18 +342,38 @@ const initFileHandler = (scene: Scene, events: Events, dropTarget: HTMLElement) 
     const importFiles = async (files: ImportFile[], animationFrame = false) => {
         const filenames = files.map(f => f.filename.toLowerCase());
 
-        const isSingleImage = files.length === 1 && /\.(?:png|jpe?g|webp)$/i.test(filenames[0]);
-        if (isSingleImage) {
-            const file = files[0];
+        const isReferenceImageFile = (filename: string) => /\.(?:png|jpe?g|webp|psd)$/i.test(filename ?? '');
+        const resolveBlob = async (file: ImportFile) => {
             let blob = file.contents as Blob;
             if (!blob && file.url) {
                 const response = await fetch(file.url);
                 blob = await response.blob();
             }
-            if (blob instanceof Blob) {
-                await events.invoke('referenceImage.loadBlob', blob, file.filename);
-                return [];
+            return blob instanceof Blob ? blob : null;
+        };
+
+        const importReferenceImages = async (imageFiles: ImportFile[]) => {
+            const addList: Array<{ blob: Blob; filename?: string }> = [];
+            for (const file of imageFiles) {
+                const blob = await resolveBlob(file);
+                if (!blob) {
+                    continue;
+                }
+                if (file.filename.toLowerCase().endsWith('.psd')) {
+                    await events.invoke('referenceImages.importPsd', blob, file.filename, { group: 'front' });
+                } else {
+                    addList.push({ blob, filename: file.filename });
+                }
             }
+            if (addList.length > 0) {
+                await events.invoke('referenceImages.addBlobs', addList, { group: 'front' });
+            }
+        };
+
+        const isOnlyReferenceImages = files.length > 0 && filenames.every(isReferenceImageFile);
+        if (isOnlyReferenceImages) {
+            await importReferenceImages(files);
+            return [];
         }
 
         const result = [];
@@ -372,15 +392,38 @@ const initFileHandler = (scene: Scene, events: Events, dropTarget: HTMLElement) 
             // check for unrecognized file types
             for (let i = 0; i < filenames.length; i++) {
                 const filename = filenames[i].toLowerCase();
-                if (['.ssproj', '.ply', '.splat', '.sog', '.webp', 'images.txt', '.json', '.glb'].every(ext => !filename.endsWith(ext))) {
+                if (['.ssproj', '.ply', '.splat', '.sog', '.webp', '.png', '.jpg', '.jpeg', '.psd', 'images.txt', '.json', '.glb', '.lcc', 'meta.json'].every(ext => !filename.endsWith(ext))) {
                     await showLoadError('Unrecognized file type', filename);
                     return;
                 }
             }
 
-            // handle multiple files as independent imports
+            // ssproj は他のファイルより先に読み込む（読み込み時にシーンがリセットされるため）
+            const ssprojIndexes = filenames.map((name, i) => (name.endsWith('.ssproj') ? i : -1)).filter(i => i >= 0);
+            const ssprojIndex = ssprojIndexes[0] ?? -1;
+            if (ssprojIndex >= 0) {
+                const ssproj = files[ssprojIndex];
+                await events.invoke('doc.load', ssproj.contents ?? (await fetch(ssproj.url)).arrayBuffer(), ssproj.handle);
+                if (ssprojIndexes.length > 1) {
+                    console.warn(`Multiple .ssproj files dropped; loaded '${ssproj.filename}' and skipped ${ssprojIndexes.length - 1} additional document(s).`);
+                }
+            }
+
+            // 参照画像(下絵)候補を先に取り込む（ただし SOG/LCC 等のセットはこの分岐に来ない）
+            const referenceCandidates = files.filter((_, i) => isReferenceImageFile(filenames[i]));
+            if (referenceCandidates.length > 0) {
+                await importReferenceImages(referenceCandidates);
+            }
+
+            // handle multiple files as independent imports (excluding ssproj / reference images)
             for (let i = 0; i < files.length; i++) {
                 const filename = filenames[i].toLowerCase();
+                if (filename.endsWith('.ssproj')) {
+                    continue;
+                }
+                if (isReferenceImageFile(filename)) {
+                    continue;
+                }
 
                 if (filename.endsWith('.ssproj')) {
                     // load ssproj document

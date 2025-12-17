@@ -173,10 +173,10 @@
             <li><span class="control">書き出し</span>で PSD/PNG を<span class="control">レンダリング</span>して書き出します。</li>
         </ul>
 
-        <h2>0. ファイルの読み込み</h2>
-        <p style="text-align: left; font-size: 1.1em; color: #5a5a5a;">
-            ブラウザへドラッグ・アンド・ドロップすると読み込みできます（複数ファイル可）。画像ファイルを1枚だけドロップした場合は、<span class="keyword">下絵</span>として読み込まれます。
-        </p>
+	        <h2>0. ファイルの読み込み</h2>
+	        <p style="text-align: left; font-size: 1.1em; color: #5a5a5a;">
+	            ブラウザへドラッグ・アンド・ドロップすると読み込みできます（複数ファイル可）。画像ファイル（<span class="control">.png / .jpg / .jpeg / .webp / .psd</span>）のみをドロップした場合は、<span class="keyword">下絵（参考画像）</span>として読み込まれます（複数可）。
+	        </p>
 
         <table>
             <tr>
@@ -199,12 +199,12 @@
                 <td><span class="control">.ssproj</span></td>
                 <td>カメラや撮影フレーム、マスク、下絵などを含めて再現できます。</td>
             </tr>
-            <tr>
-                <td>下絵（画像）</td>
-                <td><span class="control">.png / .jpg / .jpeg / .webp</span></td>
-                <td>基準用紙に重ねて表示し、位置合わせのガイドにできます。</td>
-            </tr>
-        </table>
+	            <tr>
+	                <td>下絵（画像）</td>
+	                <td><span class="control">.png / .jpg / .jpeg / .webp / .psd</span></td>
+	                <td>基準用紙に重ねて表示し、位置合わせのガイドにできます（PSD はレイヤーごとに分割して下絵として読み込み）。</td>
+	            </tr>
+	        </table>
 
 
         <hr>
@@ -239,16 +239,16 @@
                     </ul>
                 </td>
             </tr>
-            <tr>
-                <td><span class="control">下絵</span></td>
-                <td>下絵パネルの表示</td>
-                <td>
-                    <ul>
-                        <li>パネルヘッダーの<span class="control">下絵アイコン</span>で、下絵パネルを開きます。</li>
-                        <li>下絵を読み込むと、<span class="control">下絵表示/非表示</span>アイコンが操作できるようになります。</li>
-                    </ul>
-                </td>
-            </tr>
+	            <tr>
+	                <td><span class="control">下絵</span></td>
+	                <td>下絵パネルの表示</td>
+	                <td>
+	                    <ul>
+	                        <li>パネルヘッダーの<span class="control">下絵アイコン</span>で、下絵パネルを開きます。</li>
+	                        <li>その隣の<span class="control">目アイコン</span>で、下絵（全体）の表示/非表示を切り替えます（下絵があるときのみ有効）。</li>
+	                    </ul>
+	                </td>
+	            </tr>
             <tr>
                 <td><span class="control">ヘルプ</span></td>
                 <td>ヘルプパネルの表示</td>
@@ -280,15 +280,15 @@
             <li><span class="control">出力解像度</span>: 実際に画像として出力される縦横のピクセル数です。</li>
         </ul>
 
-        <h3>1-2. 書き出し（PSD/PNG書き出し）</h3>
-        <ul class="operation-list">
-            <li><span class="control">書き出し</span>: PSD/PNG形式を選びます。</li>
-            <li><span class="control">グリッド/アイレベル</span>: グリッドとアイレベルを出力画像に含めます（PNGは合成、PSDは個別レイヤー）。</li>
-            <li><span class="control">モデルレイヤー</span>: PSD時のみ有効。GLBモデルをモデル単位でレイヤー出力します（シーンが重い場合は時間がかかります）。</li>
-            <li><span class="control">下絵を出力</span>: 下絵を出力に含めます（下絵パネルの<span class="control">出力</span>と同じ設定です）。</li>
-            <li><span class="control">書き出し詳細</span>: <span class="control">ファイル名</span>を編集できます。</li>
-            <li><span class="control">レンダリング</span>: 現在の構図でファイルに画像を出力します。</li>
-        </ul>
+	        <h3>1-2. 書き出し（PSD/PNG書き出し）</h3>
+	        <ul class="operation-list">
+	            <li><span class="control">書き出し</span>: PSD/PNG形式を選びます。</li>
+	            <li><span class="control">グリッド/アイレベル</span>: グリッドとアイレベルを出力画像に含めます（PNGは合成、PSDは個別レイヤー）。</li>
+	            <li><span class="control">モデルレイヤー</span>: PSD時のみ有効。GLBモデルをモデル単位でレイヤー出力します（シーンが重い場合は時間がかかります）。</li>
+	            <li><span class="control">下絵（出力）</span>: 出力対象の下絵があるとアイコンが有効/点灯します。クリックで下絵パネルを開き、各下絵の<span class="control">出力</span>を切り替えます（PSDはレイヤー、PNGは合成）。</li>
+	            <li><span class="control">書き出し詳細</span>: <span class="control">ファイル名</span>を編集できます。</li>
+	            <li><span class="control">レンダリング</span>: 現在の構図でファイルに画像を出力します。</li>
+	        </ul>
 
         <p style="text-align: left; font-size: 1.0em; color: #5a5a5a;">
             <span class="control">カメラデータ保存</span> は、<span class="keyword">メインカメラの構図</span>と Camera Frames の設定（大判指定・赤枠フレーム・ニアクリップ等）を、軽量ファイル<span
@@ -329,20 +329,21 @@
             <li><span class="control">ニアクリップ</span>: カメラに近い邪魔なものを写さないための表示カット距離（m）です。</li>
         </ul>
 
-        <h3>1-6. 下絵（参考画像）</h3>
-        <p style="text-align: left; font-size: 1.0em; color: #5a5a5a;">
-            下絵は、基準用紙に重ねて表示できる画像です。LOテンプレやレイアウトのガイド画像を読み込み、カメラやフレームの位置合わせに使えます。
-        </p>
-        <ul class="operation-list">
-            <li><span class="control">下絵パネルを開く</span>: カメラフレームパネルのヘッダーにある<span class="control">下絵アイコン</span>をクリックします。
-            </li>
-            <li><span class="control">読み込み/差し替え</span>: 画像を選択して読み込みます（.png/.jpg/.webp）。ドラッグ&ドロップでも読み込みできます。</li>
-            <li><span class="control">表示</span>: 下絵の表示/非表示を切り替えます（ヘッダーの表示アイコンからも切替可）。</li>
-            <li><span class="control">配置</span>: <span class="control">前面</span>/<span
-                    class="control">背面</span>で重なり順を切り替えます。</li>
-            <li><span class="control">スケール</span>/<span class="control">不透明度</span>/<span class="control">オフセット</span>:
-                見やすい状態に調整します。<span class="control">センタリング</span>でオフセットを戻せます。</li>
-        </ul>
+	        <h3>1-6. 下絵（参考画像）</h3>
+	        <p style="text-align: left; font-size: 1.0em; color: #5a5a5a;">
+	            下絵は、基準用紙に重ねて表示できるガイド画像です。LOテンプレやレイアウトのガイド画像を読み込み、カメラやフレームの位置合わせに使えます。複数登録でき、PSD を読み込むとレイヤーごとに下絵として展開されます。
+	        </p>
+	        <ul class="operation-list">
+	            <li><span class="control">下絵パネルを開く</span>: カメラフレームパネルのヘッダーにある<span class="control">下絵アイコン</span>をクリックします（書き出し欄の下絵アイコンからも開けます）。
+	            </li>
+	            <li><span class="control">読み込み（複数可）</span>: 下絵パネルの<span class="control">＋</span>から画像を選択して読み込みます（<span class="control">.png / .jpg / .webp / .psd</span>）。ブラウザへのドラッグ&ドロップでも読み込みできます。</li>
+	            <li><span class="control">PSD読み込み</span>: PSD はレイヤーごとに下絵として追加されます（レイヤー名/不透明度/表示状態を反映。隠しレイヤーは非表示で取り込み）。</li>
+	            <li><span class="control">表示</span>: 各行の<span class="control">目アイコン</span>で表示/非表示を切り替えます。ヘッダーの<span class="control">目アイコン</span>で下絵（全体）も一括表示/非表示できます。</li>
+	            <li><span class="control">前面/背面</span>: 下絵パネル内は<span class="control">前面</span>（3Dの上に重ねる）/ <span class="control">背面</span>（3Dの後ろに敷く）の2リストに分かれます。</li>
+	            <li><span class="control">並び順（優先順位）</span>: リストの<span class="keyword">上側が優先（手前）</span>です。矢印ボタンで順序を変えられます。</li>
+	            <li><span class="control">出力</span>: 各行の<span class="control">出力アイコン</span>で、書き出しに含めるかを切り替えます（PSDはレイヤー、PNGは合成）。</li>
+	            <li><span class="control">調整</span>: 選択した下絵の<span class="control">スケール</span>/<span class="control">不透明度</span>/<span class="control">オフセット</span>を調整します。<span class="control">センタリング</span>で位置を戻せます。</li>
+	        </ul>
 
         <h3>1-7. シーンマネージャー（ロケ地データ/3Dモデルの表示・移動）</h3>
         <p style="text-align: left; font-size: 1.0em; color: #5a5a5a;">
@@ -470,13 +471,16 @@
             <li>
                 <span class="keyword">自動フィット</span>: ウィンドウサイズ変更などで、レイアウト用紙全体が画面に収まるように自動的に表示倍率が調整されます。
             </li>
-            <li>
-                <span class="keyword">プレビュー＝書き出し</span>: プレビューで見えている用紙サイズ内が指定解像度で出力されます。マスクはプレビュー専用でPNG/PSDには含まれません。
-            </li>
-            <li>
-                <span class="keyword">複数PLY/SPLAT/GLBの統合レンダリング</span>: 複数の3Dデータを読み込んでも、<span
-                    class="keyword">深度順に統合して描画</span>されるため、ビューポート・書き出しともに<span class="keyword">正しく遮蔽が効きます</span>。
-            </li>
+	            <li>
+	                <span class="keyword">プレビュー＝書き出し</span>: プレビューで見えている用紙サイズ内が指定解像度で出力されます。マスクはプレビュー専用でPNG/PSDには含まれません。
+	            </li>
+	            <li>
+	                <span class="keyword">更新が反映されない</span>: PWA/サービスワーカーのキャッシュの影響で表示が古い場合があります。<span class="control">Ctrl+Shift+R</span>でハードリロードするか、ブラウザのサイトデータ（キャッシュ）を削除してください。
+	            </li>
+	            <li>
+	                <span class="keyword">複数PLY/SPLAT/GLBの統合レンダリング</span>: 複数の3Dデータを読み込んでも、<span
+	                    class="keyword">深度順に統合して描画</span>されるため、ビューポート・書き出しともに<span class="keyword">正しく遮蔽が効きます</span>。
+	            </li>
             <li>
                 <span class="keyword">GLB読み込み</span>:
                 シーンパネルのインポートやブラウザへのドラッグ&ドロップでGLBを読み込み、スプラットと並べてレイアウト確認が可能です。GLB形式に変換するにはBlenderでモデルを読み込んで、ファイルメニュー＞エクスポートからglTF2.0という形式を選んで出力してください。
