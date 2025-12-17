@@ -1,4 +1,4 @@
-import { BooleanInput, Button, Container, Label, NumericInput, SelectInput } from '@playcanvas/pcui';
+import { Button, Container, Label, NumericInput, SelectInput } from '@playcanvas/pcui';
 
 import { Events } from '../events';
 import { formatInteger, localize } from './localization';
@@ -258,16 +258,6 @@ class ReferenceImagePanel extends Container {
         };
 
         // properties (active item)
-        const flagsRow = new Container({ class: ['control-parent', 'reference-image-flags-row'] });
-
-        flagsRow.append(new Label({ class: 'control-label', text: localize('panel.reference-image.visible') }));
-        const visibleToggle = new BooleanInput({ class: 'control-element', type: 'toggle', value: false });
-        flagsRow.append(visibleToggle);
-
-        flagsRow.append(new Label({ class: 'control-label', text: localize('panel.reference-image.include') }));
-        const includeToggle = new BooleanInput({ class: 'control-element', type: 'toggle', value: false });
-        flagsRow.append(includeToggle);
-
         const groupRow = new Container({ class: ['control-parent'] });
         groupRow.append(new Label({ class: 'control-label', text: localize('panel.reference-image.layer') }));
         const groupSelect = new SelectInput({
@@ -437,14 +427,6 @@ class ReferenceImagePanel extends Container {
             events.fire('referenceImages.update', activeId, patch);
         };
 
-        visibleToggle.on('change', (value: boolean) => {
-            if (suppress) return;
-            applyActivePatch({ visible: value });
-        });
-        includeToggle.on('change', (value: boolean) => {
-            if (suppress) return;
-            applyActivePatch({ includeInRender: value });
-        });
         groupSelect.on('change', (value: 'back' | 'front') => {
             if (suppress) return;
             applyActivePatch({ group: value });
@@ -491,8 +473,6 @@ class ReferenceImagePanel extends Container {
             const hasItems = items.length > 0;
             clearAllButton.enabled = hasItems;
 
-            visibleToggle.enabled = !!active;
-            includeToggle.enabled = !!active;
             groupSelect.enabled = !!active;
             opacityInput.enabled = !!active;
             scaleInput.enabled = !!active;
@@ -500,8 +480,6 @@ class ReferenceImagePanel extends Container {
             offsetY.enabled = !!active;
             centerButton.enabled = !!active;
 
-            visibleToggle.value = !!active?.visible;
-            includeToggle.value = !!active?.includeInRender;
             groupSelect.value = (active?.group ?? 'front') as any;
             opacityInput.value = Math.round((active?.opacity ?? 0.7) * 100);
             scaleInput.value = active?.scalePct ?? 100;
@@ -556,7 +534,6 @@ class ReferenceImagePanel extends Container {
         body.append(actionsRow);
         body.append(lists);
         body.append(positionGroup);
-        body.append(flagsRow);
         body.append(groupRow);
 
         this.append(panelHeader);
