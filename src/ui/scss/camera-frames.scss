@@ -278,6 +278,27 @@
     }
 }
 
+.main-camera-file-row {
+    align-items: center;
+
+    .control-label {
+        width: auto;
+    }
+}
+
+.main-camera-file-controls {
+    margin-left: auto;
+}
+
+.main-camera-file-row .icon-button {
+    padding: 3px;
+
+    svg {
+        width: 16px;
+        height: 16px;
+    }
+}
+
 .export-controls {
     min-width: 0;
     flex-wrap: nowrap;

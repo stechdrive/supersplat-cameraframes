@@ -11,6 +11,7 @@ import cameraPanelSvg from './svg/fpv-nav.svg';
 import glbOutputSvg from './svg/glb-output.svg';
 import helpSvg from './svg/help.svg';
 import hiddenSvg from './svg/hidden.svg';
+import importSvg from './svg/import.svg';
 import newSvg from './svg/new.svg';
 import orbitSvg from './svg/orbit-nav.svg';
 import referenceImageSvg from './svg/reference-image.svg';
@@ -552,6 +553,36 @@ class CameraFramesPanel extends Panel {
         exportDetails.dom.style.gap = '6px';
         exportDetails.append(filenameRow);
         exportDetails.append(new Container({ class: 'export-details-extra' }));
+
+        const mainCameraFileLabel = new Label({ class: 'control-label', text: localize('panel.camera-frames.main-camera-file') });
+        const mainCameraExportBtn = new Button({ class: ['icon-button', 'main-camera-export-button'], text: '' });
+        mainCameraExportBtn.dom.appendChild(createSvg(exportSvg));
+        mainCameraExportBtn.dom.title = localize('panel.camera-frames.main-camera-file.export');
+        mainCameraExportBtn.dom.setAttribute('aria-label', localize('panel.camera-frames.main-camera-file.export'));
+        const mainCameraImportBtn = new Button({ class: ['icon-button', 'main-camera-import-button'], text: '' });
+        mainCameraImportBtn.dom.appendChild(createSvg(importSvg));
+        mainCameraImportBtn.dom.title = localize('panel.camera-frames.main-camera-file.import');
+        mainCameraImportBtn.dom.setAttribute('aria-label', localize('panel.camera-frames.main-camera-file.import'));
+
+        mainCameraExportBtn.on('click', () => {
+            if (suppress) return;
+            events.invoke('cameraSave.exportMainCamera');
+        });
+        mainCameraImportBtn.on('click', () => {
+            if (suppress) return;
+            events.invoke('cameraSave.importMainCamera');
+        });
+
+        const mainCameraFileControls = new Container({ class: 'main-camera-file-controls' });
+        mainCameraFileControls.dom.style.display = 'flex';
+        mainCameraFileControls.dom.style.alignItems = 'center';
+        mainCameraFileControls.dom.style.gap = '6px';
+        mainCameraFileControls.append(mainCameraExportBtn);
+        mainCameraFileControls.append(mainCameraImportBtn);
+
+        const mainCameraFileRow = new Container({ class: ['control-parent', 'main-camera-file-row'] });
+        mainCameraFileRow.append(mainCameraFileLabel);
+        mainCameraFileRow.append(mainCameraFileControls);
 
         const updateExportDetailsVisibility = () => {
             exportDetails.dom.style.display = exportDetailsCollapsed ? 'none' : 'flex';
@@ -1214,6 +1245,7 @@ class CameraFramesPanel extends Panel {
         this.content.append(maskDetails);
         this.content.append(exportRow);
         this.content.append(exportDetails);
+        this.content.append(mainCameraFileRow);
         this.content.append(framesSectionHeader);
         this.content.append(framesSectionBody);
         this.content.append(layoutGroup);
