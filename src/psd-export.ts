@@ -4,6 +4,7 @@ type PsdOverlayLayer = {
     name: string;
     canvas: HTMLCanvasElement;
     opacity?: number;
+    bounds?: { left: number; top: number; right: number; bottom: number; };
 };
 
 type PsdExportParams = {
@@ -61,13 +62,15 @@ const exportPsd = (params: PsdExportParams) => {
         };
         underlays.forEach((layer) => {
             ctx.globalAlpha = clampOpacity(layer.opacity);
-            ctx.drawImage(layer.canvas, 0, 0);
+            const bounds = layer.bounds;
+            ctx.drawImage(layer.canvas, bounds?.left ?? 0, bounds?.top ?? 0);
         });
         ctx.globalAlpha = 1;
         ctx.drawImage(baseCanvas, 0, 0);
         overlayLayers.forEach((layer) => {
             ctx.globalAlpha = clampOpacity(layer.opacity);
-            ctx.drawImage(layer.canvas, 0, 0);
+            const bounds = layer.bounds;
+            ctx.drawImage(layer.canvas, bounds?.left ?? 0, bounds?.top ?? 0);
         });
         ctx.globalAlpha = 1;
         return canvas;
@@ -106,20 +109,28 @@ const exportPsd = (params: PsdExportParams) => {
             thumbnail
         },
         children: [
-            ...underlays.map(layer => ({
-                name: layer.name,
-                canvas: layer.canvas,
-                opacity: Math.max(0, Math.min(1, typeof layer.opacity === 'number' ? layer.opacity : 1))
-            })),
+            ...underlays.map((layer) => {
+                const bounds = layer.bounds;
+                return {
+                    name: layer.name,
+                    canvas: layer.canvas,
+                    opacity: Math.max(0, Math.min(1, typeof layer.opacity === 'number' ? layer.opacity : 1)),
+                    ...(bounds ? { left: bounds.left, top: bounds.top, right: bounds.right, bottom: bounds.bottom } : {})
+                };
+            }),
             {
                 name: 'Render',
                 canvas: baseCanvas
             },
-            ...overlayLayers.map(layer => ({
-                name: layer.name,
-                canvas: layer.canvas,
-                opacity: Math.max(0, Math.min(1, typeof layer.opacity === 'number' ? layer.opacity : 1))
-            }))
+            ...overlayLayers.map((layer) => {
+                const bounds = layer.bounds;
+                return {
+                    name: layer.name,
+                    canvas: layer.canvas,
+                    opacity: Math.max(0, Math.min(1, typeof layer.opacity === 'number' ? layer.opacity : 1)),
+                    ...(bounds ? { left: bounds.left, top: bounds.top, right: bounds.right, bottom: bounds.bottom } : {})
+                };
+            })
         ]
     };
 

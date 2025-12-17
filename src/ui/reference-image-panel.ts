@@ -2,8 +2,12 @@ import { BooleanInput, Button, Container, Label, NumericInput, SelectInput } fro
 
 import { Events } from '../events';
 import { formatInteger, localize } from './localization';
+import arrowSvg from './svg/arrow.svg';
 import deleteSvg from './svg/delete.svg';
+import exportSvg from './svg/export.svg';
+import hiddenSvg from './svg/hidden.svg';
 import referenceImageSvg from './svg/reference-image.svg';
+import shownSvg from './svg/shown.svg';
 import undoSvg from './svg/undo.svg';
 
 const createSvg = (svgString: string) => {
@@ -15,20 +19,27 @@ const createSvg = (svgString: string) => {
     return new DOMParser().parseFromString(markup, 'image/svg+xml').documentElement;
 };
 
-type ReferenceImageState = {
-    enabled: boolean;
+type ReferenceImageItemState = {
+    id: string;
+    name: string;
+    group: 'back' | 'front';
+    order: number;
     visible: boolean;
-    layer: 'back' | 'front';
+    includeInRender: boolean;
     opacity: number;
     scalePct: number;
     offsetPx: { x: number; y: number; };
-    includeInRender: boolean;
     source?: {
         filename: string;
         appliedSize?: { w: number; h: number; };
         usedOriginal?: boolean;
     } | null;
-    pixelPerfectEligible?: boolean;
+};
+
+type ReferenceImagesState = {
+    masterVisible: boolean;
+    activeId: string | null;
+    items: ReferenceImageItemState[];
 };
 
 class ReferenceImagePanel extends Container {
@@ -112,40 +123,159 @@ class ReferenceImagePanel extends Container {
 
         const body = new Container({ class: 'reference-image-body' });
 
-        const infoRow = new Container({ class: ['control-parent', 'reference-image-info-row'] });
+        // actions row
+        const actionsRow = new Container({ class: ['control-parent', 'reference-image-actions-row'] });
         const infoLabel = new Label({ class: ['control-element-expand', 'reference-image-info'], text: localize('panel.reference-image.empty') });
+        const addButton = new Button({ class: ['icon-button'], text: '' });
+        addButton.dom.appendChild(createSvg(referenceImageSvg));
+        addButton.dom.title = localize('panel.reference-image.load');
+        addButton.dom.setAttribute('aria-label', localize('panel.reference-image.load'));
+        const clearAllButton = new Button({ class: ['icon-button', 'danger-icon'], text: '' });
+        clearAllButton.dom.appendChild(createSvg(deleteSvg));
+        clearAllButton.dom.title = localize('panel.reference-image.clear-all');
+        clearAllButton.dom.setAttribute('aria-label', localize('panel.reference-image.clear-all'));
+        actionsRow.append(infoLabel);
+        actionsRow.append(addButton);
+        actionsRow.append(clearAllButton);
+        [addButton, clearAllButton].forEach((button) => {
+            ['pointerdown', 'pointerup', 'click'].forEach((evt) => {
+                button.dom.addEventListener(evt, (e: Event) => e.stopPropagation());
+            });
+        });
 
-        const loadButton = new Button({ class: ['icon-button'], text: '' });
-        loadButton.dom.appendChild(createSvg(referenceImageSvg));
-        loadButton.dom.title = localize('panel.reference-image.load');
-        loadButton.dom.setAttribute('aria-label', localize('panel.reference-image.load'));
-        const clearButton = new Button({ class: ['icon-button', 'danger-icon'], text: '' });
-        clearButton.dom.appendChild(createSvg(deleteSvg));
-        clearButton.dom.title = localize('panel.reference-image.clear');
-        clearButton.dom.setAttribute('aria-label', localize('panel.reference-image.clear'));
-        infoRow.append(infoLabel);
-        infoRow.append(loadButton);
-        infoRow.append(clearButton);
+        // list (back/front)
+        const lists = new Container({ class: 'reference-image-lists' });
+        const backGroup = new Container({ class: 'reference-image-group' });
+        const backHeader = new Label({ class: 'reference-image-group-title', text: localize('panel.reference-image.layer-back') });
+        const backList = new Container({ class: 'reference-image-list' });
+        backGroup.append(backHeader);
+        backGroup.append(backList);
 
-        const visibleToggle = new BooleanInput({ type: 'toggle', class: 'control-element', value: false });
-        const includeToggle = new BooleanInput({ type: 'toggle', class: 'control-element', value: false });
+        const frontGroup = new Container({ class: 'reference-image-group' });
+        const frontHeader = new Label({ class: 'reference-image-group-title', text: localize('panel.reference-image.layer-front') });
+        const frontList = new Container({ class: 'reference-image-list' });
+        frontGroup.append(frontHeader);
+        frontGroup.append(frontList);
+
+        lists.append(backGroup);
+        lists.append(frontGroup);
+
+        const createReorderButton = (className: string, title: string) => {
+            const btn = new Button({ class: ['icon-button', 'reference-image-item-reorder', className], text: '' });
+            btn.dom.appendChild(createSvg(arrowSvg));
+            btn.dom.title = title;
+            btn.dom.setAttribute('aria-label', title);
+            return btn;
+        };
+
+        const rebuildList = (state: ReferenceImagesState) => {
+            const activeId = state?.activeId ?? null;
+            const items = Array.isArray(state?.items) ? state.items : [];
+            const backItems = items.filter(i => i.group === 'back').slice().sort((a, b) => a.order - b.order);
+            const frontItems = items.filter(i => i.group === 'front').slice().sort((a, b) => a.order - b.order);
+
+            backList.clear();
+            frontList.clear();
+
+            const addRows = (list: Container, groupItems: ReferenceImageItemState[]) => {
+                groupItems.forEach((item) => {
+                    const classes = ['reference-image-item'];
+                    if (activeId === item.id) {
+                        classes.push('active');
+                    }
+                    const row = new Container({ class: classes });
+
+                    const up = createReorderButton('up', localize('panel.reference-image.reorder-up'));
+                    const down = createReorderButton('down', localize('panel.reference-image.reorder-down'));
+                    up.enabled = item.order > 0;
+                    down.enabled = item.order < groupItems.length - 1;
+
+                    const visibilityButton = new Button({ class: ['icon-button', 'reference-image-item-visibility'], text: '' });
+                    visibilityButton.dom.appendChild(createSvg(item.visible ? shownSvg : hiddenSvg));
+                    visibilityButton.class[item.visible ? 'add' : 'remove']('active');
+                    const visibilityLabel = item.visible ? localize('panel.reference-image.hide') : localize('panel.reference-image.show');
+                    visibilityButton.dom.title = visibilityLabel;
+                    visibilityButton.dom.setAttribute('aria-label', visibilityLabel);
+
+                    const exportButton = new Button({ class: ['icon-button', 'reference-image-item-export'], text: '' });
+                    exportButton.dom.appendChild(createSvg(exportSvg));
+                    exportButton.class[item.includeInRender ? 'add' : 'remove']('active');
+                    exportButton.dom.title = localize('panel.reference-image.export-toggle');
+                    exportButton.dom.setAttribute('aria-label', localize('panel.reference-image.export-toggle'));
+
+                    const name = new Label({
+                        class: 'reference-image-item-name',
+                        text: item.name || item.source?.filename || localize('panel.reference-image.empty')
+                    });
+
+                    const removeButton = new Button({ class: ['icon-button', 'danger-icon', 'reference-image-item-delete'], text: '' });
+                    removeButton.dom.appendChild(createSvg(deleteSvg));
+                    removeButton.dom.title = localize('panel.reference-image.delete-item');
+                    removeButton.dom.setAttribute('aria-label', localize('panel.reference-image.delete-item'));
+
+                    const stop = (button: Button) => {
+                        ['pointerdown', 'pointerup', 'click'].forEach((evt) => {
+                            button.dom.addEventListener(evt, (e: Event) => e.stopPropagation());
+                        });
+                    };
+                    [up, down, visibilityButton, exportButton, removeButton].forEach(stop);
+
+                    up.on('click', () => {
+                        events.fire('referenceImages.reorder', { id: item.id, group: item.group, toIndex: item.order - 1 });
+                    });
+                    down.on('click', () => {
+                        events.fire('referenceImages.reorder', { id: item.id, group: item.group, toIndex: item.order + 1 });
+                    });
+                    visibilityButton.on('click', () => {
+                        events.fire('referenceImages.update', item.id, { visible: !item.visible });
+                    });
+                    exportButton.on('click', () => {
+                        events.fire('referenceImages.update', item.id, { includeInRender: !item.includeInRender });
+                    });
+                    removeButton.on('click', () => {
+                        events.fire('referenceImages.remove', item.id);
+                    });
+
+                    row.dom.addEventListener('click', () => {
+                        events.fire('referenceImages.setActive', item.id);
+                    });
+
+                    row.append(up);
+                    row.append(down);
+                    row.append(visibilityButton);
+                    row.append(exportButton);
+                    row.append(name);
+                    row.append(removeButton);
+                    list.append(row);
+                });
+            };
+
+            addRows(backList, backItems);
+            addRows(frontList, frontItems);
+        };
+
+        // properties (active item)
         const flagsRow = new Container({ class: ['control-parent', 'reference-image-flags-row'] });
+
         flagsRow.append(new Label({ class: 'control-label', text: localize('panel.reference-image.visible') }));
+        const visibleToggle = new BooleanInput({ class: 'control-element', type: 'toggle', value: false });
         flagsRow.append(visibleToggle);
+
         flagsRow.append(new Label({ class: 'control-label', text: localize('panel.reference-image.include') }));
+        const includeToggle = new BooleanInput({ class: 'control-element', type: 'toggle', value: false });
         flagsRow.append(includeToggle);
 
-        const layerRow = new Container({ class: 'control-parent' });
-        layerRow.append(new Label({ class: 'control-label', text: localize('panel.reference-image.layer') }));
-        const layerSelect = new SelectInput({
+        const groupRow = new Container({ class: ['control-parent'] });
+        groupRow.append(new Label({ class: 'control-label', text: localize('panel.reference-image.layer') }));
+        const groupSelect = new SelectInput({
             class: 'control-element',
             defaultValue: 'front',
             options: [
-                { v: 'back', t: localize('panel.reference-image.layer-back') },
-                { v: 'front', t: localize('panel.reference-image.layer-front') }
+                { v: 'front', t: localize('panel.reference-image.layer-front') },
+                { v: 'back', t: localize('panel.reference-image.layer-back') }
             ]
         });
-        layerRow.append(layerSelect);
+        groupRow.append(groupSelect);
 
         const positionGroup = new Container({ class: 'reference-image-position-group' });
 
@@ -212,7 +342,7 @@ class ReferenceImagePanel extends Container {
                     return;
                 }
                 active = true;
-                events.fire('referenceImage.historyBegin', label);
+                events.fire('referenceImages.historyBegin', label);
             };
 
             const commit = () => {
@@ -220,7 +350,7 @@ class ReferenceImagePanel extends Container {
                     return;
                 }
                 active = false;
-                events.fire('referenceImage.historyCommit', label);
+                events.fire('referenceImages.historyCommit', label);
             };
 
             input.on('slider:mousedown', begin);
@@ -242,49 +372,90 @@ class ReferenceImagePanel extends Container {
             }, true);
         };
 
-        registerUndoGroup(offsetX, 'referenceImage.offset');
-        registerUndoGroup(offsetY, 'referenceImage.offset');
-        registerUndoGroup(scaleInput, 'referenceImage.scale');
-        registerUndoGroup(opacityInput, 'referenceImage.opacity');
+        registerUndoGroup(offsetX, 'referenceImages.offset');
+        registerUndoGroup(offsetY, 'referenceImages.offset');
+        registerUndoGroup(scaleInput, 'referenceImages.scale');
+        registerUndoGroup(opacityInput, 'referenceImages.opacity');
 
         positionGroup.append(offsetRow);
         positionGroup.append(transformRow);
 
         const fileInput = document.createElement('input');
         fileInput.type = 'file';
-        fileInput.accept = 'image/png,image/jpeg,image/webp';
+        fileInput.multiple = true;
+        fileInput.accept = 'image/png,image/jpeg,image/webp,.psd';
+
+        const getDefaultGroup = (state: ReferenceImagesState) => {
+            const active = state.items.find(i => i.id === state.activeId) ?? null;
+            return (active?.group === 'back' || active?.group === 'front') ? active.group : 'front';
+        };
+
         fileInput.addEventListener('change', async () => {
-            if (fileInput.files?.length) {
-                await events.invoke('referenceImage.loadBlob', fileInput.files[0], fileInput.files[0].name);
-            }
+            const files = Array.from(fileInput.files ?? []);
             fileInput.value = '';
+            if (files.length === 0) {
+                return;
+            }
+            const state = (events.invoke('referenceImages.state') as ReferenceImagesState | null) ?? { masterVisible: true, activeId: null, items: [] };
+            const group = getDefaultGroup(state);
+            const images: Array<{ blob: Blob; filename?: string }> = [];
+            for (const file of files) {
+                const lower = file.name.toLowerCase();
+                if (lower.endsWith('.psd')) {
+                    await events.invoke('referenceImages.importPsd', file, file.name, { group });
+                } else {
+                    images.push({ blob: file, filename: file.name });
+                }
+            }
+            if (images.length > 0) {
+                await events.invoke('referenceImages.addBlobs', images, { group });
+            }
         });
 
-        loadButton.on('click', () => fileInput.click());
-        clearButton.on('click', () => events.fire('referenceImage.clear'));
+        addButton.on('click', () => fileInput.click());
+        clearAllButton.on('click', async () => {
+            if (suppress) return;
+            const result = await events.invoke('showPopup', {
+                type: 'yesno',
+                header: localize('panel.reference-image.title'),
+                message: localize('panel.reference-image.clear-all-confirm')
+            });
+            if (result.action === 'yes') {
+                events.fire('referenceImages.clearAll');
+            }
+        });
+
+        const applyActivePatch = (patch: any) => {
+            const state = events.invoke('referenceImages.state') as ReferenceImagesState | null;
+            const activeId = state?.activeId ?? null;
+            if (!activeId) {
+                return;
+            }
+            events.fire('referenceImages.update', activeId, patch);
+        };
 
         visibleToggle.on('change', (value: boolean) => {
             if (suppress) return;
-            events.fire('referenceImage.setVisible', value);
+            applyActivePatch({ visible: value });
         });
         includeToggle.on('change', (value: boolean) => {
             if (suppress) return;
-            events.fire('referenceImage.setIncludeInRender', value);
+            applyActivePatch({ includeInRender: value });
         });
-        layerSelect.on('change', (value: 'back' | 'front') => {
+        groupSelect.on('change', (value: 'back' | 'front') => {
             if (suppress) return;
-            events.fire('referenceImage.setLayer', value);
+            applyActivePatch({ group: value });
         });
         opacityInput.on('change', (value: number) => {
             if (suppress) return;
-            events.fire('referenceImage.setOpacity', value / 100);
+            applyActivePatch({ opacity: value / 100 });
         });
         scaleInput.on('change', (value: number) => {
             if (suppress) return;
-            events.fire('referenceImage.setScale', value);
+            applyActivePatch({ scalePct: value });
         });
         const applyOffset = () => {
-            events.fire('referenceImage.setOffset', { x: -offsetX.value, y: -offsetY.value });
+            applyActivePatch({ offsetPx: { x: -offsetX.value, y: -offsetY.value } });
         };
         offsetX.on('change', () => {
             if (suppress) return;
@@ -297,34 +468,60 @@ class ReferenceImagePanel extends Container {
 
         centerButton.on('click', () => {
             if (suppress) return;
-            events.fire('referenceImage.center');
+            const state = events.invoke('referenceImages.state') as ReferenceImagesState | null;
+            const activeId = state?.activeId ?? null;
+            if (activeId) {
+                events.fire('referenceImages.center', activeId);
+            }
         });
 
-        const applyState = (state?: ReferenceImageState | null) => {
+        const applyState = (state?: ReferenceImagesState | null) => {
             suppress = true;
-            const active = !!(state?.source);
-            visibleToggle.value = !!state?.visible;
-            includeToggle.value = !!state?.includeInRender;
-            layerSelect.value = (state?.layer ?? 'front') as any;
-            opacityInput.value = Math.round((state?.opacity ?? 0.7) * 100);
-            scaleInput.value = state?.scalePct ?? 100;
-            offsetX.value = -(state?.offsetPx?.x ?? 0);
-            offsetY.value = -(state?.offsetPx?.y ?? 0);
-            centerButton.enabled = active;
+
+            const safeState = state ?? { masterVisible: true, activeId: null, items: [] };
+            const items = Array.isArray(safeState.items) ? safeState.items : [];
+            const activeId = safeState.activeId ?? null;
+            const active = activeId ? items.find(i => i.id === activeId) ?? null : null;
+
+            rebuildList(safeState);
+
+            const hasItems = items.length > 0;
+            clearAllButton.enabled = hasItems;
+
+            visibleToggle.enabled = !!active;
+            includeToggle.enabled = !!active;
+            groupSelect.enabled = !!active;
+            opacityInput.enabled = !!active;
+            scaleInput.enabled = !!active;
+            offsetX.enabled = !!active;
+            offsetY.enabled = !!active;
+            centerButton.enabled = !!active;
+
+            visibleToggle.value = !!active?.visible;
+            includeToggle.value = !!active?.includeInRender;
+            groupSelect.value = (active?.group ?? 'front') as any;
+            opacityInput.value = Math.round((active?.opacity ?? 0.7) * 100);
+            scaleInput.value = active?.scalePct ?? 100;
+            offsetX.value = -(active?.offsetPx?.x ?? 0);
+            offsetY.value = -(active?.offsetPx?.y ?? 0);
+
             const infoParts = [];
-            if (state?.source?.filename) {
-                infoParts.push(state.source.filename);
+            if (active?.source?.filename) {
+                infoParts.push(active.source.filename);
+            } else if (active?.name) {
+                infoParts.push(active.name);
             }
-            if (state?.source?.appliedSize) {
-                infoParts.push(`${formatInteger(state.source.appliedSize.w)}×${formatInteger(state.source.appliedSize.h)}${state.source.usedOriginal ? '' : ` (${localize('panel.reference-image.scaled')})`}`);
+            if (active?.source?.appliedSize) {
+                infoParts.push(`${formatInteger(active.source.appliedSize.w)}×${formatInteger(active.source.appliedSize.h)}${active.source.usedOriginal ? '' : ` (${localize('panel.reference-image.scaled')})`}`);
             }
             infoLabel.text = active ? infoParts.join(' / ') : localize('panel.reference-image.empty');
+
             suppress = false;
         };
 
-        const initialState = events.invoke('referenceImage.state') as ReferenceImageState;
+        const initialState = events.invoke('referenceImages.state') as ReferenceImagesState;
         applyState(initialState);
-        events.on('referenceImage.stateChanged', (state: ReferenceImageState) => applyState(state));
+        events.on('referenceImages.stateChanged', (state: ReferenceImagesState) => applyState(state));
 
         const setVisible = (visible: boolean) => {
             const nextHidden = !visible;
@@ -353,10 +550,11 @@ class ReferenceImagePanel extends Container {
             }
         });
 
-        body.append(infoRow);
+        body.append(actionsRow);
+        body.append(lists);
         body.append(positionGroup);
         body.append(flagsRow);
-        body.append(layerRow);
+        body.append(groupRow);
 
         this.append(panelHeader);
         this.append(body);

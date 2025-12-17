@@ -14,8 +14,8 @@ import { registerIframeApi } from './iframe-api';
 import { MeshManager } from './mesh-manager';
 import { registerPlySequenceEvents } from './ply-sequence';
 import { registerPublishEvents } from './publish';
-import { registerReferenceImage } from './reference-image-controller';
-import { ReferenceImageHistory } from './reference-image-history';
+import { registerReferenceImages } from './reference-images-controller';
+import { ReferenceImagesHistory } from './reference-images-history';
 import { registerRenderEvents } from './render';
 import { Scene } from './scene';
 import { getSceneConfig } from './scene-config';
@@ -277,13 +277,13 @@ const main = async () => {
     );
     cameraFramesController.setHistory(cameraFramesHistory);
     registerCameraSave(events, scene, cameraFramesController, cameraFramesHistory);
-    const referenceImageController = registerReferenceImage(events, scene);
-    const referenceImageHistory = new ReferenceImageHistory(
+    const referenceImagesController = registerReferenceImages(events, scene);
+    const referenceImagesHistory = new ReferenceImagesHistory(
         events,
-        () => referenceImageController.snapshot(),
-        snapshot => referenceImageController.applySnapshot(snapshot)
+        () => referenceImagesController.snapshot(),
+        snapshot => referenceImagesController.applySnapshot(snapshot)
     );
-    referenceImageController.setHistory(referenceImageHistory);
+    referenceImagesController.setHistory(referenceImagesHistory);
     registerDocEvents(scene, events);
     registerRenderEvents(scene, events);
     registerIframeApi(events);

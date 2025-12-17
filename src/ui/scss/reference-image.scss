@@ -31,20 +31,80 @@
         padding: 8px;
     }
 
-    .reference-image-position-group {
-        display: flex;
-        flex-direction: column;
-        gap: 6px;
-    }
-
-    .reference-image-info-row {
+    .reference-image-actions-row {
         align-items: center;
         min-height: 32px;
         gap: 6px;
     }
 
-    .reference-image-info-row .pcui-button.icon-button {
+    .reference-image-lists {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .reference-image-group-title {
+        margin: 0;
+        font-size: 12px;
+        opacity: 0.9;
+    }
+
+    .reference-image-list {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        max-height: 180px;
+        overflow-y: auto;
+        padding-right: 2px;
+    }
+
+    .reference-image-item {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        padding: 2px 2px;
+        border-radius: 4px;
+        cursor: pointer;
+
+        &.active {
+            background: rgba($text-primary, 0.08);
+        }
+    }
+
+    .reference-image-item-name {
+        min-width: 0;
+        margin: 0 6px;
+        line-height: 16px;
+        word-break: break-all;
+        flex: 1 1 auto;
+        pointer-events: none;
+    }
+
+    .reference-image-item .pcui-button.icon-button {
         flex: 0 0 auto;
+        padding: 0;
+        width: 24px;
+        height: 24px;
+    }
+
+    .reference-image-item-reorder svg {
+        width: 12px;
+        height: 12px;
+        display: block;
+    }
+
+    .reference-image-item-reorder.up svg {
+        transform: rotate(-90deg);
+    }
+
+    .reference-image-item-reorder.down svg {
+        transform: rotate(90deg);
+    }
+
+    .reference-image-position-group {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
     }
 
     .reference-image-offset-row {

@@ -75,18 +75,18 @@ const estimateSplatPlySize = (splat: Splat) => {
     return headerBytes + perPointBytes * gaussianCount;
 };
 
-const estimateDocumentSize = (documentData: any, splats: Splat[], models: Model[], resolveBlob: (model: Model) => Blob | null, referenceImageSize: bigint = 0n) => {
+const estimateDocumentSize = (documentData: any, splats: Splat[], models: Model[], resolveBlob: (model: Model) => Blob | null, referenceImagesBytes: bigint = 0n, referenceImagesEntryCount: bigint = 0n) => {
     const encoder = new TextEncoder();
     const docSize = BigInt(encoder.encode(JSON.stringify(documentData)).length);
     const splatSize = splats.reduce((sum, splat) => sum + estimateSplatPlySize(splat), 0n);
     const modelSize = models.reduce((sum, model) => sum + BigInt(resolveBlob(model)?.size ?? 0), 0n);
-    const entryCount = BigInt(1 + splats.length + models.length + (referenceImageSize > 0n ? 1 : 0));
+    const entryCount = BigInt(1 + splats.length + models.length) + referenceImagesEntryCount;
     const overhead = entryCount * ZIP_ENTRY_OVERHEAD;
     return {
         docSize,
         splatSize,
         modelSize,
-        total: docSize + splatSize + modelSize + referenceImageSize + overhead
+        total: docSize + splatSize + modelSize + referenceImagesBytes + overhead
     };
 };
 
@@ -202,17 +202,31 @@ const registerDocEvents = (scene: Scene, events: Events) => {
             events.invoke('docDeserialize.cameraFrames', document.cameraFrames ?? null);
             scene.camera.docDeserialize(document.camera ?? null);
             scene.docDeserializeLighting(document.lighting ?? null);
-            const referenceImageState = document.referenceImage ?? null;
-            let referenceImageBlob: Blob | null = null;
-            if (referenceImageState?.source?.filename) {
-                const refPath = `reference-image/${referenceImageState.source.filename}`;
+            const referenceDocState = document.referenceImages ?? document.referenceImage ?? null;
+            const referenceBlobs = new Map<string, Blob>();
+            if (referenceDocState?.items && Array.isArray(referenceDocState.items)) {
+                for (const item of referenceDocState.items) {
+                    const id = item?.id;
+                    const filename = item?.source?.filename;
+                    if (typeof id !== 'string' || !id || typeof filename !== 'string' || !filename) {
+                        continue;
+                    }
+                    const refPath = `reference-images/${id}/${filename}`;
+                    try {
+                        referenceBlobs.set(refPath, await zip.blob(refPath));
+                    } catch (error) {
+                        console.warn(`reference image missing: ${refPath}`, error);
+                    }
+                }
+            } else if (referenceDocState?.source?.filename) {
+                const refPath = `reference-image/${referenceDocState.source.filename}`;
                 try {
-                    referenceImageBlob = await zip.blob(refPath);
+                    referenceBlobs.set(refPath, await zip.blob(refPath));
                 } catch (error) {
                     console.warn(`reference image missing: ${refPath}`, error);
                 }
             }
-            await events.invoke('docDeserialize.referenceImage', referenceImageState, referenceImageBlob);
+            await events.invoke('docDeserialize.referenceImages', referenceDocState, referenceBlobs);
 
             // refresh the pivot to reflect the loaded transform
             const currentSelection = events.invoke('selection');
@@ -283,9 +297,10 @@ const registerDocEvents = (scene: Scene, events: Events) => {
         try {
             const splats = events.invoke('scene.allSplats') as Splat[];
             const models = scene.getElementsByType(ElementType.model) as Model[];
-            const referenceImageState = events.invoke('docSerialize.referenceImage');
-            const referenceImageAsset = events.invoke('referenceImage.docAsset') as { blob: Blob; filename: string } | null;
-            const referenceImageSize = BigInt(referenceImageAsset?.blob?.size ?? 0);
+            const referenceImagesState = events.invoke('docSerialize.referenceImages');
+            const referenceImagesAssets = (events.invoke('referenceImages.docAssets') as Array<{ path: string; blob: Blob }> | null) ?? [];
+            const referenceImagesBytes = referenceImagesAssets.reduce((sum, a) => sum + BigInt(a?.blob?.size ?? 0), 0n);
+            const referenceImagesEntryCount = BigInt(referenceImagesAssets.length);
 
             const modelDocs = models.map((model, i) => {
                 const serialized = model.docSerialize();
@@ -306,7 +321,7 @@ const registerDocEvents = (scene: Scene, events: Events) => {
                 poseSets: events.invoke('docSerialize.poseSets'),
                 timeline: events.invoke('docSerialize.timeline'),
                 cameraFrames: events.invoke('docSerialize.cameraFrames'),
-                referenceImage: referenceImageState ?? undefined,
+                referenceImages: referenceImagesState ?? undefined,
                 splats: splats.map(s => s.docSerialize()),
                 models: modelDocs,
                 lighting: scene.docSerializeLighting()
@@ -314,7 +329,7 @@ const registerDocEvents = (scene: Scene, events: Events) => {
 
             // 予測用のペイロードを使って ZIP64 が必要か判定
             const provisionalDoc = createDocumentPayload(true);
-            const estimate = estimateDocumentSize(provisionalDoc, splats, models, model => scene.assetLoader.getSourceBlob(model), referenceImageSize);
+            const estimate = estimateDocumentSize(provisionalDoc, splats, models, model => scene.assetLoader.getSourceBlob(model), referenceImagesBytes, referenceImagesEntryCount);
             const useZip64 = estimate.total >= ZIP64_MARGIN_BYTES || estimate.total > ZIP32_LIMIT;
             const document = createDocumentPayload(useZip64);
 
@@ -348,9 +363,11 @@ const registerDocEvents = (scene: Scene, events: Events) => {
                 const blob = await getModelBlob(models[i]);
                 await writeBlobToZip(zipWriter, modelDocs[i].filename, blob);
             }
-            if (referenceImageAsset?.blob) {
-                const safeName = (referenceImageAsset.filename ?? 'reference-image').split(/[\\/]/).pop() ?? 'reference-image';
-                await writeBlobToZip(zipWriter, `reference-image/${safeName}`, referenceImageAsset.blob);
+            for (const asset of referenceImagesAssets) {
+                if (!asset?.blob || typeof asset?.path !== 'string' || !asset.path) {
+                    continue;
+                }
+                await writeBlobToZip(zipWriter, asset.path, asset.blob);
             }
             await zipWriter.close();
             await writer.close();

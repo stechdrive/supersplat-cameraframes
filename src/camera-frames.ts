@@ -45,6 +45,14 @@ type FrameMaskState = {
     scope: 'all' | 'selected';
 };
 
+type ReferenceExportLayer = {
+    group: 'back' | 'front';
+    name: string;
+    opacity: number;
+    canvas: HTMLCanvasElement;
+    bounds?: { left: number; top: number; right: number; bottom: number; };
+};
+
 export type CameraFramesState = {
     enabled: boolean;
     renderBox: RenderBoxState;
@@ -3087,18 +3095,9 @@ export class CameraFramesController {
         return pixels;
     }
 
-    private async renderReferenceLayer(width: number, height: number, options?: { applyOpacity?: boolean; }): Promise<{ layer: 'back' | 'front'; canvas: HTMLCanvasElement; opacity: number; } | null> {
-        const refState = this.events.invoke('referenceImage.state') as { enabled?: boolean; visible?: boolean; includeInRender?: boolean; layer?: 'back' | 'front'; opacity?: number; } | null;
-        if (!refState || !refState.enabled || !refState.visible || !refState.includeInRender) {
-            return null;
-        }
-        const canvas = await this.events.invoke('referenceImage.renderExportLayer', width, height, options) as HTMLCanvasElement | null;
-        if (!canvas) {
-            return null;
-        }
-        const layer: 'back' | 'front' = refState.layer === 'front' ? 'front' : 'back';
-        const opacity = Math.max(0, Math.min(1, refState.opacity ?? 1));
-        return { layer, canvas, opacity };
+    private async renderReferenceLayers(width: number, height: number, options?: { applyOpacity?: boolean; }): Promise<ReferenceExportLayer[]> {
+        const layers = await this.events.invoke('referenceImages.renderExportLayers', width, height, options) as ReferenceExportLayer[] | null;
+        return Array.isArray(layers) ? layers : [];
     }
 
     private async renderOverlayLayer(width: number, height: number, options: { includeGrid?: boolean; includeEyeLevel?: boolean; }): Promise<HTMLCanvasElement | null> {
@@ -3364,8 +3363,8 @@ export class CameraFramesController {
         return result.buffer;
     }
 
-    private async renderPng(params: { basePixels: Uint8Array; referenceLayer?: { layer: 'back' | 'front'; canvas: HTMLCanvasElement; } | null; frameOverlay: HTMLCanvasElement; gridOverlay?: HTMLCanvasElement | null; eyeLevelOverlay?: HTMLCanvasElement | null; width: number; height: number; filename: string; }) {
-        const { basePixels, referenceLayer, frameOverlay, gridOverlay, eyeLevelOverlay, width, height, filename } = params;
+    private async renderPng(params: { basePixels: Uint8Array; referenceLayers?: ReferenceExportLayer[]; frameOverlay: HTMLCanvasElement; gridOverlay?: HTMLCanvasElement | null; eyeLevelOverlay?: HTMLCanvasElement | null; width: number; height: number; filename: string; }) {
+        const { basePixels, referenceLayers, frameOverlay, gridOverlay, eyeLevelOverlay, width, height, filename } = params;
         const canvas = document.createElement('canvas');
         canvas.width = width;
         canvas.height = height;
@@ -3381,13 +3380,21 @@ export class CameraFramesController {
             ctx.drawImage(gridOverlay, 0, 0);
             ctx.globalCompositeOperation = 'source-over';
         }
-        if (referenceLayer?.layer === 'back') {
+        const refLayers = Array.isArray(referenceLayers) ? referenceLayers : [];
+        const backLayers = refLayers.filter(l => l?.group === 'back');
+        const frontLayers = refLayers.filter(l => l?.group === 'front');
+        if (backLayers.length > 0) {
             ctx.globalCompositeOperation = 'destination-over';
-            ctx.drawImage(referenceLayer.canvas, 0, 0);
+            backLayers.slice().reverse().forEach((layer) => {
+                const bounds = layer.bounds;
+                ctx.drawImage(layer.canvas, bounds?.left ?? 0, bounds?.top ?? 0);
+            });
             ctx.globalCompositeOperation = 'source-over';
-        } else if (referenceLayer?.layer === 'front') {
-            ctx.drawImage(referenceLayer.canvas, 0, 0);
         }
+        frontLayers.forEach((layer) => {
+            const bounds = layer.bounds;
+            ctx.drawImage(layer.canvas, bounds?.left ?? 0, bounds?.top ?? 0);
+        });
         if (eyeLevelOverlay) {
             ctx.drawImage(eyeLevelOverlay, 0, 0);
         }
@@ -3435,24 +3442,27 @@ export class CameraFramesController {
             this.syncExportFrustum(width, height);
             const basePixels = await this.renderBase(width, height);
             const debugOverlays = await this.renderOverlayLayers(width, height);
-            const referenceLayer = await this.renderReferenceLayer(width, height, { applyOpacity: format !== 'psd' });
+            const referenceLayers = await this.renderReferenceLayers(width, height, { applyOpacity: format !== 'psd' });
 
             if (format === 'psd') {
-                const underlays = referenceLayer?.layer === 'back' ?
-                    [{ name: 'Reference', canvas: referenceLayer.canvas, opacity: referenceLayer.opacity }] :
-                    [];
+                const referenceUnderlays: PsdOverlayLayer[] = referenceLayers
+                .filter(layer => layer.group === 'back')
+                .map(layer => ({ name: layer.name, canvas: layer.canvas, opacity: layer.opacity, bounds: layer.bounds }));
+                const referenceOverlays: PsdOverlayLayer[] = referenceLayers
+                .filter(layer => layer.group === 'front')
+                .map(layer => ({ name: layer.name, canvas: layer.canvas, opacity: layer.opacity, bounds: layer.bounds }));
                 const modelOverlays = await this.renderModelLayers(width, height);
                 const frameOverlays = this.renderFrameOverlaysByManagement(width, height);
                 const overlayLayers = [
                     ...(debugOverlays?.grid ? [{ name: localize('panel.camera-frames.export.grid-layer.grid'), canvas: debugOverlays.grid }] : []),
                     ...(debugOverlays?.eyeLevel ? [{ name: localize('panel.camera-frames.export.grid-layer.eye-level'), canvas: debugOverlays.eyeLevel }] : []),
                     ...modelOverlays,
-                    ...(referenceLayer?.layer === 'front' ? [{ name: 'Reference', canvas: referenceLayer.canvas, opacity: referenceLayer.opacity }] : []),
+                    ...referenceOverlays,
                     ...frameOverlays
                 ];
                 await this.renderPsd({
                     basePixels: basePixels instanceof Uint8ClampedArray ? basePixels : new Uint8ClampedArray(basePixels),
-                    underlays,
+                    underlays: referenceUnderlays.length > 0 ? referenceUnderlays : undefined,
                     overlays: overlayLayers,
                     width,
                     height,
@@ -3464,7 +3474,7 @@ export class CameraFramesController {
                 const eyeLevelOverlay = this.mergeOverlayCanvases(width, height, [debugOverlays?.eyeLevel]);
                 await this.renderPng({
                     basePixels,
-                    referenceLayer,
+                    referenceLayers,
                     frameOverlay: overlay.canvas,
                     gridOverlay,
                     eyeLevelOverlay,
