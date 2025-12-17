@@ -4,6 +4,7 @@ import { registerCameraFrames } from './camera-frames';
 import { CameraFramesHistory } from './camera-frames-history';
 import { registerCameraHistory } from './camera-history';
 import { registerCameraPosesEvents } from './camera-poses';
+import { registerCameraSave } from './camera-save';
 import { registerDocEvents } from './doc';
 import { EditHistory } from './edit-history';
 import { registerEditorEvents } from './editor';
@@ -275,6 +276,7 @@ const main = async () => {
         snapshot => cameraFramesController.applySnapshot(snapshot)
     );
     cameraFramesController.setHistory(cameraFramesHistory);
+    registerCameraSave(events, scene, cameraFramesController, cameraFramesHistory);
     const referenceImageController = registerReferenceImage(events, scene);
     const referenceImageHistory = new ReferenceImageHistory(
         events,
