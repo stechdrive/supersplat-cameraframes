@@ -160,7 +160,7 @@ class ReferenceImagesController {
     private renderer: ReferenceImageRenderer;
     private history: ReferenceImagesHistory | null = null;
     private applyingHistory = false;
-    private state: ReferenceImagesState = { ...DEFAULT_REFERENCE_IMAGES_STATE };
+    private state: ReferenceImagesState = { ...DEFAULT_REFERENCE_IMAGES_STATE, items: [] };
     private runtimeById = new Map<string, ReferenceImageItemRuntime>();
     private sourceCache = new Map<string, { blob: Blob; previewCanvas: HTMLCanvasElement; }>();
     private sourceCacheOrder: string[] = [];
@@ -293,7 +293,7 @@ class ReferenceImagesController {
         this.sourceCacheOrder = [];
         this.exportWorkBySourceKey.clear();
         this.exportWorkOrder = [];
-        this.applySnapshot({ ...DEFAULT_REFERENCE_IMAGES_STATE });
+        this.applySnapshot({ ...DEFAULT_REFERENCE_IMAGES_STATE, items: [] });
     }
 
     private registerEvents() {
@@ -742,7 +742,7 @@ class ReferenceImagesController {
             this.destroyRuntime(runtime);
         }
         this.runtimeById.clear();
-        this.state = { ...DEFAULT_REFERENCE_IMAGES_STATE, masterVisible: this.state.masterVisible };
+        this.state = { ...DEFAULT_REFERENCE_IMAGES_STATE, masterVisible: this.state.masterVisible, items: [] };
         this.renderer.clearParams();
         this.updateRenderer();
         this.requestRender();
@@ -1101,7 +1101,7 @@ class ReferenceImagesController {
             this.clearAllInternal();
             this.sourceCache.clear();
             this.sourceCacheOrder = [];
-            this.applySnapshot({ ...DEFAULT_REFERENCE_IMAGES_STATE });
+            this.applySnapshot({ ...DEFAULT_REFERENCE_IMAGES_STATE, items: [] });
             return;
         }
 
