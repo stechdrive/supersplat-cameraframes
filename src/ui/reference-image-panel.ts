@@ -29,6 +29,7 @@ type ReferenceImageItemState = {
     opacity: number;
     scalePct: number;
     offsetPx: { x: number; y: number; };
+    anchor: { ax: number; ay: number; };
     source?: {
         filename: string;
         appliedSize?: { w: number; h: number; };
@@ -57,6 +58,13 @@ type SelectionBase = {
     activeId: string | null;
     valuesById: Map<string, SelectionBaseEntry>;
 };
+
+type ViewportMapping = {
+    logicalW: number;
+    logicalH: number;
+};
+
+const isFiniteNumber = (value: unknown): value is number => typeof value === 'number' && isFinite(value);
 
 class ReferenceImagePanel extends Container {
     constructor(events: Events, args: any = {}) {
@@ -245,6 +253,57 @@ class ReferenceImagePanel extends Container {
             });
             return { activeId: state?.activeId ?? null, valuesById };
         };
+
+        const getViewportMapping = (): ViewportMapping | null => {
+            const mapping = events.invoke('cameraFrames.viewportMapping') as { logicalW?: number; logicalH?: number } | null;
+            if (!mapping || !isFiniteNumber(mapping.logicalW) || !isFiniteNumber(mapping.logicalH)) {
+                return null;
+            }
+            return { logicalW: mapping.logicalW, logicalH: mapping.logicalH };
+        };
+
+        const normalizeAnchor = (anchor?: { ax?: number; ay?: number }) => {
+            const ax = isFiniteNumber(anchor?.ax) ? anchor!.ax : 0.5;
+            const ay = isFiniteNumber(anchor?.ay) ? anchor!.ay : 0.5;
+            return { ax, ay };
+        };
+
+        const computeItemRect = (
+            mapping: ViewportMapping,
+            item: ReferenceImageItemState,
+            scalePct: number,
+            offsetPx: { x: number; y: number; }
+        ) => {
+            const size = item.source?.appliedSize;
+            if (!size || !isFiniteNumber(size.w) || !isFiniteNumber(size.h)) {
+                return null;
+            }
+            const anchor = normalizeAnchor(item.anchor);
+            const anchorX = mapping.logicalW * anchor.ax;
+            const anchorY = mapping.logicalH * anchor.ay;
+            const scaleK = scalePct / 100;
+            const imgW = size.w * scaleK;
+            const imgH = size.h * scaleK;
+            if (!isFiniteNumber(imgW) || !isFiniteNumber(imgH)) {
+                return null;
+            }
+            const topLeftX = anchorX - anchor.ax * imgW - offsetPx.x;
+            const topLeftY = anchorY - anchor.ay * imgH - offsetPx.y;
+            return {
+                topLeftX,
+                topLeftY,
+                imgW,
+                imgH,
+                centerX: topLeftX + imgW * 0.5,
+                centerY: topLeftY + imgH * 0.5,
+                anchor,
+                anchorX,
+                anchorY,
+                size
+            };
+        };
+
+        const clampScale = (value: number) => Math.min(400, Math.max(1, value));
 
         const beginRelative = (input: NumericInput) => {
             if (suppress || relativeInputs.has(input)) {
@@ -677,6 +736,104 @@ class ReferenceImagePanel extends Container {
             return true;
         };
 
+        const applyScaleWithGroupPivot = (
+            value: number,
+            state: ReferenceImagesState | null,
+            base: SelectionBase | null,
+            relative: boolean
+        ) => {
+            const ids = getSelectionIds(state);
+            if (ids.length < 2 || !state) {
+                return false;
+            }
+            const mapping = getViewportMapping();
+            if (!mapping) {
+                return false;
+            }
+            const itemsById = new Map(state.items.map(item => [item.id, item]));
+            const baseActiveScale = relative && base?.activeId ? base?.valuesById.get(base.activeId)?.scalePct : null;
+            if (relative && !isFiniteNumber(baseActiveScale)) {
+                return false;
+            }
+            const delta = relative ? value - (baseActiveScale as number) : 0;
+            const entries: Array<{
+                id: string;
+                baseScale: number;
+                baseCenterX: number;
+                baseCenterY: number;
+                anchor: { ax: number; ay: number };
+                anchorX: number;
+                anchorY: number;
+                size: { w: number; h: number };
+            }> = [];
+            let minX = Infinity;
+            let minY = Infinity;
+            let maxX = -Infinity;
+            let maxY = -Infinity;
+
+            for (const id of ids) {
+                const item = itemsById.get(id);
+                if (!item) {
+                    return false;
+                }
+                const baseEntry = base?.valuesById.get(id);
+                const baseScale = baseEntry?.scalePct ?? item.scalePct ?? 100;
+                if (!isFiniteNumber(baseScale) || baseScale <= 0) {
+                    return false;
+                }
+                const baseOffset = baseEntry ? { x: -baseEntry.offsetX, y: -baseEntry.offsetY } : item.offsetPx;
+                const rect = computeItemRect(mapping, item, baseScale, baseOffset);
+                if (!rect) {
+                    return false;
+                }
+                minX = Math.min(minX, rect.topLeftX);
+                minY = Math.min(minY, rect.topLeftY);
+                maxX = Math.max(maxX, rect.topLeftX + rect.imgW);
+                maxY = Math.max(maxY, rect.topLeftY + rect.imgH);
+                entries.push({
+                    id,
+                    baseScale,
+                    baseCenterX: rect.centerX,
+                    baseCenterY: rect.centerY,
+                    anchor: rect.anchor,
+                    anchorX: rect.anchorX,
+                    anchorY: rect.anchorY,
+                    size: rect.size
+                });
+            }
+
+            if (!isFiniteNumber(minX) || !isFiniteNumber(minY) || !isFiniteNumber(maxX) || !isFiniteNumber(maxY)) {
+                return false;
+            }
+            const groupCenterX = (minX + maxX) * 0.5;
+            const groupCenterY = (minY + maxY) * 0.5;
+
+            const updates: Array<{ id: string; patch: ReferenceImageItemPatch }> = [];
+            entries.forEach((entry) => {
+                const nextScale = clampScale(relative ? entry.baseScale + delta : value);
+                const ratio = entry.baseScale > 0 ? (nextScale / entry.baseScale) : 1;
+                const nextCenterX = groupCenterX + (entry.baseCenterX - groupCenterX) * ratio;
+                const nextCenterY = groupCenterY + (entry.baseCenterY - groupCenterY) * ratio;
+                const nextW = entry.size.w * (nextScale / 100);
+                const nextH = entry.size.h * (nextScale / 100);
+                const nextOffsetX = entry.anchorX + (0.5 - entry.anchor.ax) * nextW - nextCenterX;
+                const nextOffsetY = entry.anchorY + (0.5 - entry.anchor.ay) * nextH - nextCenterY;
+                updates.push({
+                    id: entry.id,
+                    patch: {
+                        scalePct: nextScale,
+                        offsetPx: { x: nextOffsetX, y: nextOffsetY }
+                    }
+                });
+            });
+
+            if (updates.length === 0) {
+                return false;
+            }
+            applySelectionUpdates(updates);
+            return true;
+        };
+
         groupSelect.on('change', (value: 'back' | 'front') => {
             if (suppress) return;
             applyActivePatch({ group: value });
@@ -697,7 +854,13 @@ class ReferenceImagePanel extends Container {
         });
         scaleInput.on('change', (value: number) => {
             if (suppress) return;
-            if (relativeInputs.has(scaleInput)) {
+            const state = events.invoke('referenceImages.state') as ReferenceImagesState | null;
+            const relative = relativeInputs.has(scaleInput);
+            const base = relative ? (selectionBaseByInput.get(scaleInput) ?? null) : null;
+            if (applyScaleWithGroupPivot(value, state, base, relative)) {
+                return;
+            }
+            if (relative) {
                 if (applyRelativeUpdates(
                     scaleInput,
                     value,
