@@ -808,7 +808,22 @@ class ReferenceImagePanel extends Container {
             const groupCenterX = (minX + maxX) * 0.5;
             const groupCenterY = (minY + maxY) * 0.5;
 
-            const updates: Array<{ id: string; patch: ReferenceImageItemPatch }> = [];
+            const nextEntries: Array<{
+                id: string;
+                nextScale: number;
+                nextOffsetX: number;
+                nextOffsetY: number;
+                nextW: number;
+                nextH: number;
+                anchor: { ax: number; ay: number };
+                anchorX: number;
+                anchorY: number;
+            }> = [];
+            let nextMinX = Infinity;
+            let nextMinY = Infinity;
+            let nextMaxX = -Infinity;
+            let nextMaxY = -Infinity;
+
             entries.forEach((entry) => {
                 const nextScale = clampScale(relative ? entry.baseScale + delta : value);
                 const ratio = entry.baseScale > 0 ? (nextScale / entry.baseScale) : 1;
@@ -818,11 +833,41 @@ class ReferenceImagePanel extends Container {
                 const nextH = entry.size.h * (nextScale / 100);
                 const nextOffsetX = entry.anchorX + (0.5 - entry.anchor.ax) * nextW - nextCenterX;
                 const nextOffsetY = entry.anchorY + (0.5 - entry.anchor.ay) * nextH - nextCenterY;
+                const nextTopLeftX = entry.anchorX - entry.anchor.ax * nextW - nextOffsetX;
+                const nextTopLeftY = entry.anchorY - entry.anchor.ay * nextH - nextOffsetY;
+                nextMinX = Math.min(nextMinX, nextTopLeftX);
+                nextMinY = Math.min(nextMinY, nextTopLeftY);
+                nextMaxX = Math.max(nextMaxX, nextTopLeftX + nextW);
+                nextMaxY = Math.max(nextMaxY, nextTopLeftY + nextH);
+                nextEntries.push({
+                    id: entry.id,
+                    nextScale,
+                    nextOffsetX,
+                    nextOffsetY,
+                    nextW,
+                    nextH,
+                    anchor: entry.anchor,
+                    anchorX: entry.anchorX,
+                    anchorY: entry.anchorY
+                });
+            });
+
+            if (!isFiniteNumber(nextMinX) || !isFiniteNumber(nextMinY) || !isFiniteNumber(nextMaxX) || !isFiniteNumber(nextMaxY)) {
+                return false;
+            }
+
+            const nextCenterX = (nextMinX + nextMaxX) * 0.5;
+            const nextCenterY = (nextMinY + nextMaxY) * 0.5;
+            const shiftX = isFiniteNumber(nextCenterX) ? (groupCenterX - nextCenterX) : 0;
+            const shiftY = isFiniteNumber(nextCenterY) ? (groupCenterY - nextCenterY) : 0;
+
+            const updates: Array<{ id: string; patch: ReferenceImageItemPatch }> = [];
+            nextEntries.forEach((entry) => {
                 updates.push({
                     id: entry.id,
                     patch: {
-                        scalePct: nextScale,
-                        offsetPx: { x: nextOffsetX, y: nextOffsetY }
+                        scalePct: entry.nextScale,
+                        offsetPx: { x: entry.nextOffsetX - shiftX, y: entry.nextOffsetY - shiftY }
                     }
                 });
             });
@@ -830,6 +875,7 @@ class ReferenceImagePanel extends Container {
             if (updates.length === 0) {
                 return false;
             }
+
             applySelectionUpdates(updates);
             return true;
         };
