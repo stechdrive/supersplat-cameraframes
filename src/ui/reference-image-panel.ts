@@ -479,74 +479,90 @@ class ReferenceImagePanel extends Container {
 
         const registerUndoGroup = (input: NumericInput, label: string) => {
             let active = false;
-            let pointerActive = false;
-            let pointerCommitHandler: (() => void) | null = null;
+            let pointerDown = false;
+            let pointerReleaseHandler: (() => void) | null = null;
 
-            const releasePointerCommit = () => {
-                if (!pointerActive) {
+            const releasePointerListener = () => {
+                if (!pointerReleaseHandler) {
                     return;
                 }
-                pointerActive = false;
-                if (pointerCommitHandler) {
-                    window.removeEventListener('pointerup', pointerCommitHandler, true);
-                    window.removeEventListener('pointercancel', pointerCommitHandler, true);
-                    pointerCommitHandler = null;
-                }
+                window.removeEventListener('pointerup', pointerReleaseHandler, true);
+                window.removeEventListener('pointercancel', pointerReleaseHandler, true);
+                pointerReleaseHandler = null;
             };
 
             const commit = () => {
                 if (!active) {
-                    releasePointerCommit();
                     return;
                 }
                 active = false;
                 events.fire('referenceImages.historyCommit', label);
                 endRelative(input);
-                releasePointerCommit();
             };
 
-            const begin = (fromPointer: boolean) => {
+            const begin = () => {
                 if (suppress || active) {
                     return;
                 }
                 active = true;
                 beginRelative(input);
                 events.fire('referenceImages.historyBegin', label);
-                if (fromPointer && !pointerActive) {
-                    pointerActive = true;
-                    pointerCommitHandler = () => commit();
-                    window.addEventListener('pointerup', pointerCommitHandler, true);
-                    window.addEventListener('pointercancel', pointerCommitHandler, true);
+            };
+
+            const handlePointerRelease = () => {
+                pointerDown = false;
+                if (active) {
+                    commit();
                 }
+                releasePointerListener();
+            };
+
+            const ensurePointerRelease = () => {
+                if (pointerReleaseHandler) {
+                    return;
+                }
+                pointerReleaseHandler = handlePointerRelease;
+                window.addEventListener('pointerup', pointerReleaseHandler, true);
+                window.addEventListener('pointercancel', pointerReleaseHandler, true);
             };
 
             const beginFromPointer = (event: PointerEvent) => {
                 if (event.button !== 0) {
                     return;
                 }
+                pointerDown = true;
+                ensurePointerRelease();
                 if (event.target === input.input) {
                     return;
                 }
-                begin(true);
+                begin();
+            };
+
+            const beginFromPointerChange = () => {
+                if (!pointerDown) {
+                    return;
+                }
+                begin();
             };
 
             const commitFromBlur = () => {
-                if (pointerActive) {
+                if (pointerDown) {
                     return;
                 }
                 commit();
             };
 
             input.dom.addEventListener('pointerdown', beginFromPointer, true);
-            input.on('slider:mousedown', () => begin(true));
+            input.on('slider:mousedown', () => begin());
             input.on('slider:mouseup', commit);
+            input.on('change', beginFromPointerChange);
             input.on('blur', commitFromBlur);
 
             // ArrowUp/ArrowDown は keydown 内で値が更新され 'change' が発火するため、
             // capture で先に begin して 1 操作としてまとめる。
             input.input.addEventListener('keydown', (event: KeyboardEvent) => {
                 if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
-                    begin(false);
+                    begin();
                 }
             }, true);
 
