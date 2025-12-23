@@ -524,13 +524,23 @@ class ReferenceImagePanel extends Container {
                 if (event.button !== 0) {
                     return;
                 }
+                if (event.target === input.input) {
+                    return;
+                }
                 begin(true);
+            };
+
+            const commitFromBlur = () => {
+                if (pointerActive) {
+                    return;
+                }
+                commit();
             };
 
             input.dom.addEventListener('pointerdown', beginFromPointer, true);
             input.on('slider:mousedown', () => begin(true));
             input.on('slider:mouseup', commit);
-            input.on('blur', commit);
+            input.on('blur', commitFromBlur);
 
             // ArrowUp/ArrowDown は keydown 内で値が更新され 'change' が発火するため、
             // capture で先に begin して 1 操作としてまとめる。
