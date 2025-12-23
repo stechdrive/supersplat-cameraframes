@@ -28,7 +28,10 @@ type ExportWorkEntry = {
     promise: Promise<HTMLCanvasElement> | null;
 };
 
-type ReferenceImageItemPatch = Partial<ReferenceImageItemState>;
+type ReferenceImageItemPatch = Partial<Omit<ReferenceImageItemState, 'offsetPx' | 'anchor'>> & {
+    offsetPx?: { x?: number; y?: number; };
+    anchor?: { ax?: number; ay?: number; };
+};
 
 type ReferenceImagesUpdateManyPayload = {
     ids?: string[];
@@ -431,7 +434,7 @@ class ReferenceImagesController {
         });
     }
 
-    private legacyUpdate(patch: Partial<ReferenceImageItemState>) {
+    private legacyUpdate(patch: ReferenceImageItemPatch) {
         const activeId = this.state.activeId;
         if (!activeId) {
             return;

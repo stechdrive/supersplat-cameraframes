@@ -36,6 +36,10 @@ type ReferenceImageItemState = {
     } | null;
 };
 
+type ReferenceImageItemPatch = Partial<Omit<ReferenceImageItemState, 'offsetPx'>> & {
+    offsetPx?: { x?: number; y?: number; };
+};
+
 type ReferenceImagesState = {
     masterVisible: boolean;
     activeId: string | null;
@@ -328,7 +332,7 @@ class ReferenceImagePanel extends Container {
                     down.on('click', () => {
                         events.fire('referenceImages.reorder', { id: item.id, group: item.group, toIndex: item.order - 1 });
                     });
-                    const applySelectionToggle = (patch: Partial<ReferenceImageItemState>) => {
+                    const applySelectionToggle = (patch: ReferenceImageItemPatch) => {
                         if (!selectedIds.has(item.id)) {
                             setSelection(new Set([item.id]));
                             selectionAnchorId = item.id;
@@ -566,7 +570,7 @@ class ReferenceImagePanel extends Container {
             }
         });
 
-        const applyActivePatch = (patch: Partial<ReferenceImageItemState>) => {
+        const applyActivePatch = (patch: ReferenceImageItemPatch) => {
             const state = events.invoke('referenceImages.state') as ReferenceImagesState | null;
             const activeId = state?.activeId ?? null;
             if (!activeId) {
@@ -575,14 +579,14 @@ class ReferenceImagePanel extends Container {
             events.fire('referenceImages.update', activeId, patch);
         };
 
-        const applySelectionUpdates = (updates: Array<{ id: string; patch: Partial<ReferenceImageItemState> }>) => {
+        const applySelectionUpdates = (updates: Array<{ id: string; patch: ReferenceImageItemPatch }>) => {
             if (updates.length === 0) {
                 return;
             }
             events.fire('referenceImages.updateMany', { updates });
         };
 
-        const applySelectionPatch = (patch: Partial<ReferenceImageItemState>) => {
+        const applySelectionPatch = (patch: ReferenceImageItemPatch) => {
             const state = events.invoke('referenceImages.state') as ReferenceImagesState | null;
             const ids = getSelectionIds(state);
             if (ids.length === 0) {
@@ -595,7 +599,7 @@ class ReferenceImagePanel extends Container {
             input: NumericInput,
             value: number,
             getBaseValue: (entry: SelectionBaseEntry) => number,
-            toPatch: (nextValue: number) => Partial<ReferenceImageItemState>
+            toPatch: (nextValue: number) => ReferenceImageItemPatch
         ) => {
             const base = selectionBaseByInput.get(input);
             if (!base || !base.activeId) {
@@ -606,7 +610,7 @@ class ReferenceImagePanel extends Container {
                 return false;
             }
             const delta = value - getBaseValue(activeBase);
-            const updates: Array<{ id: string; patch: Partial<ReferenceImageItemState> }> = [];
+            const updates: Array<{ id: string; patch: ReferenceImageItemPatch }> = [];
             base.valuesById.forEach((entry, id) => {
                 updates.push({ id, patch: toPatch(getBaseValue(entry) + delta) });
             });
