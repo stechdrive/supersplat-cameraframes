@@ -479,26 +479,56 @@ class ReferenceImagePanel extends Container {
 
         const registerUndoGroup = (input: NumericInput, label: string) => {
             let active = false;
+            let pointerActive = false;
+            let pointerCommitHandler: (() => void) | null = null;
 
-            const begin = () => {
+            const releasePointerCommit = () => {
+                if (!pointerActive) {
+                    return;
+                }
+                pointerActive = false;
+                if (pointerCommitHandler) {
+                    window.removeEventListener('pointerup', pointerCommitHandler, true);
+                    window.removeEventListener('pointercancel', pointerCommitHandler, true);
+                    pointerCommitHandler = null;
+                }
+            };
+
+            const commit = () => {
+                if (!active) {
+                    releasePointerCommit();
+                    return;
+                }
+                active = false;
+                events.fire('referenceImages.historyCommit', label);
+                endRelative(input);
+                releasePointerCommit();
+            };
+
+            const begin = (fromPointer: boolean) => {
                 if (suppress || active) {
                     return;
                 }
                 active = true;
                 beginRelative(input);
                 events.fire('referenceImages.historyBegin', label);
+                if (fromPointer && !pointerActive) {
+                    pointerActive = true;
+                    pointerCommitHandler = () => commit();
+                    window.addEventListener('pointerup', pointerCommitHandler, true);
+                    window.addEventListener('pointercancel', pointerCommitHandler, true);
+                }
             };
 
-            const commit = () => {
-                if (!active) {
+            const beginFromPointer = (event: PointerEvent) => {
+                if (event.button !== 0) {
                     return;
                 }
-                active = false;
-                events.fire('referenceImages.historyCommit', label);
-                endRelative(input);
+                begin(true);
             };
 
-            input.on('slider:mousedown', begin);
+            input.dom.addEventListener('pointerdown', beginFromPointer, true);
+            input.on('slider:mousedown', () => begin(true));
             input.on('slider:mouseup', commit);
             input.on('blur', commit);
 
@@ -506,7 +536,7 @@ class ReferenceImagePanel extends Container {
             // capture で先に begin して 1 操作としてまとめる。
             input.input.addEventListener('keydown', (event: KeyboardEvent) => {
                 if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
-                    begin();
+                    begin(false);
                 }
             }, true);
 
