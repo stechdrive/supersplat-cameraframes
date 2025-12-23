@@ -4076,8 +4076,13 @@ body.collapsed #camera-frames-panel {
   border-radius: 4px;
   cursor: pointer;
 }
+#reference-image-panel .reference-image-item.selected {
+  background: rgba(255, 255, 255, 0.04);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+}
 #reference-image-panel .reference-image-item.active {
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.2);
 }
 #reference-image-panel .reference-image-item-name {
   min-width: 0;
@@ -4162,6 +4167,31 @@ body.collapsed #camera-frames-panel {
   margin: 0 6px;
   line-height: 16px;
   word-break: break-all;
+}
+#reference-image-panel .pcui-input-element.mixed {
+  background: rgba(255, 255, 255, 0.04);
+  box-shadow: inset 0 0 0 1px rgba(170, 170, 170, 0.25);
+}
+#reference-image-panel .pcui-input-element.mixed > input {
+  color: transparent;
+}
+#reference-image-panel .pcui-input-element.mixed::before {
+  position: absolute;
+  padding: 0 8px;
+  content: "—";
+  white-space: nowrap;
+  top: 5px;
+  font-size: 12px;
+  color: rgba(170, 170, 170, 0.85);
+}
+#reference-image-panel .pcui-input-element.mixed:hover::before {
+  display: block;
+}
+#reference-image-panel .pcui-input-element.mixed.pcui-focus::before {
+  display: none;
+}
+#reference-image-panel .pcui-input-element.mixed.pcui-focus > input {
+  color: inherit;
 }
 #reference-image-panel .panel-header-icon svg {
   width: 13px;
