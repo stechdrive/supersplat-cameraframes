@@ -146,6 +146,7 @@
     "panel.reference-image.title": "下絵",
     "panel.reference-image.toggle": "下絵読み込み",
     "panel.reference-image.empty": "下絵が未読み込みです",
+    "panel.reference-image.multi-selected": "{count} 件選択",
     "panel.reference-image.show": "下絵を表示",
     "panel.reference-image.hide": "下絵を非表示",
     "panel.reference-image.load": "読み込み/差し替え",

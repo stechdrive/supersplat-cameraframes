@@ -28,6 +28,17 @@ type ExportWorkEntry = {
     promise: Promise<HTMLCanvasElement> | null;
 };
 
+type ReferenceImageItemPatch = Partial<Omit<ReferenceImageItemState, 'offsetPx' | 'anchor'>> & {
+    offsetPx?: { x?: number; y?: number; };
+    anchor?: { ax?: number; ay?: number; };
+};
+
+type ReferenceImagesUpdateManyPayload = {
+    ids?: string[];
+    patch?: ReferenceImageItemPatch;
+    updates?: Array<{ id: string; patch: ReferenceImageItemPatch; }>;
+};
+
 type PendingAdd = {
     id: string;
     decoded: Awaited<ReturnType<ReferenceImageLoader['decode']>>;
@@ -312,7 +323,8 @@ class ReferenceImagesController {
         this.events.on('referenceImages.remove', (id: string) => this.remove(id));
         this.events.on('referenceImages.clearAll', () => this.clearAllWithHistory());
         this.events.on('referenceImages.setActive', (id: string | null) => this.setActive(id));
-        this.events.on('referenceImages.update', (id: string, patch: Partial<ReferenceImageItemState>) => this.update(id, patch));
+        this.events.on('referenceImages.update', (id: string, patch: ReferenceImageItemPatch) => this.update(id, patch));
+        this.events.on('referenceImages.updateMany', (payload: ReferenceImagesUpdateManyPayload) => this.updateMany(payload));
         this.events.on('referenceImages.center', (id: string) => this.center(id));
         this.events.on('referenceImages.reorder', (payload: { id: string; group: ReferenceImageItemGroup; toIndex: number; }) => this.reorder(payload));
         this.events.on('referenceImages.historyBegin', (label: string) => this.historyBegin(label));
@@ -422,7 +434,7 @@ class ReferenceImagesController {
         });
     }
 
-    private legacyUpdate(patch: Partial<ReferenceImageItemState>) {
+    private legacyUpdate(patch: ReferenceImageItemPatch) {
         const activeId = this.state.activeId;
         if (!activeId) {
             return;
@@ -770,48 +782,68 @@ class ReferenceImagesController {
         this.fireStateChanged();
     }
 
-    private update(id: string, patch: Partial<ReferenceImageItemState>) {
-        if (typeof id !== 'string' || !id || !patch) {
+    private applyPatchToItem(item: ReferenceImageItemState, patch: ReferenceImageItemPatch) {
+        let groupChanged = false;
+        if (typeof patch.name === 'string' && patch.name.trim()) {
+            item.name = patch.name.trim();
+        }
+        if (typeof (patch as any).visible === 'boolean') {
+            item.visible = patch.visible as any;
+            if (item.visible && !this.state.masterVisible) {
+                this.state.masterVisible = true;
+            }
+        }
+        if (typeof (patch as any).includeInRender === 'boolean') {
+            item.includeInRender = patch.includeInRender as any;
+        }
+        if (typeof (patch as any).opacity === 'number') {
+            item.opacity = clamp(patch.opacity as any, 0, 1);
+        }
+        if (typeof (patch as any).scalePct === 'number') {
+            item.scalePct = clamp(patch.scalePct as any, 1, 400);
+        }
+        if ((patch as any).offsetPx && typeof (patch as any).offsetPx === 'object') {
+            item.offsetPx = normalizeOffset((patch as any).offsetPx, item.offsetPx);
+        }
+        if ((patch as any).anchor && typeof (patch as any).anchor === 'object') {
+            item.anchor = normalizeAnchor((patch as any).anchor, item.anchor);
+        }
+        if (typeof (patch as any).group === 'string' && isReferenceImageGroup((patch as any).group)) {
+            const nextGroup = patch.group as any;
+            if (nextGroup !== item.group) {
+                groupChanged = true;
+                item.group = nextGroup;
+                item.order = this.state.items.filter(i => i.group === nextGroup && i.id !== item.id).length;
+            }
+        }
+        return groupChanged;
+    }
+
+    private updateMany(payload: ReferenceImagesUpdateManyPayload) {
+        let updates: Array<{ id: string; patch: ReferenceImageItemPatch; }> = [];
+        if (Array.isArray(payload?.updates)) {
+            updates = payload.updates;
+        } else if (Array.isArray(payload?.ids)) {
+            updates = payload.ids.map(id => ({ id, patch: payload?.patch ?? {} }));
+        }
+        if (updates.length === 0) {
             return;
         }
-        const item = this.state.items.find(i => i.id === id);
-        if (!item) {
-            return;
-        }
+        const itemsById = new Map(this.state.items.map(item => [item.id, item]));
         this.historyRecord('referenceImages.update', () => {
             let groupChanged = false;
-            if (typeof patch.name === 'string' && patch.name.trim()) {
-                item.name = patch.name.trim();
-            }
-            if (typeof (patch as any).visible === 'boolean') {
-                item.visible = patch.visible as any;
-                if (item.visible && !this.state.masterVisible) {
-                    this.state.masterVisible = true;
+            updates.forEach((update) => {
+                if (!update?.id || !update.patch) {
+                    return;
                 }
-            }
-            if (typeof (patch as any).includeInRender === 'boolean') {
-                item.includeInRender = patch.includeInRender as any;
-            }
-            if (typeof (patch as any).opacity === 'number') {
-                item.opacity = clamp(patch.opacity as any, 0, 1);
-            }
-            if (typeof (patch as any).scalePct === 'number') {
-                item.scalePct = clamp(patch.scalePct as any, 1, 400);
-            }
-            if ((patch as any).offsetPx && typeof (patch as any).offsetPx === 'object') {
-                item.offsetPx = normalizeOffset((patch as any).offsetPx, item.offsetPx);
-            }
-            if ((patch as any).anchor && typeof (patch as any).anchor === 'object') {
-                item.anchor = normalizeAnchor((patch as any).anchor, item.anchor);
-            }
-            if (typeof (patch as any).group === 'string' && isReferenceImageGroup((patch as any).group)) {
-                const nextGroup = patch.group as any;
-                if (nextGroup !== item.group) {
+                const item = itemsById.get(update.id);
+                if (!item) {
+                    return;
+                }
+                if (this.applyPatchToItem(item, update.patch)) {
                     groupChanged = true;
-                    item.group = nextGroup;
-                    item.order = this.state.items.filter(i => i.group === nextGroup && i.id !== item.id).length;
                 }
-            }
+            });
             if (groupChanged) {
                 normalizeOrders(this.state.items);
             }
@@ -819,6 +851,13 @@ class ReferenceImagesController {
             this.requestRender();
             this.fireStateChanged();
         });
+    }
+
+    private update(id: string, patch: ReferenceImageItemPatch) {
+        if (typeof id !== 'string' || !id || !patch) {
+            return;
+        }
+        this.updateMany({ updates: [{ id, patch }] });
     }
 
     private center(id: string) {

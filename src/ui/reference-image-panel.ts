@@ -29,6 +29,7 @@ type ReferenceImageItemState = {
     opacity: number;
     scalePct: number;
     offsetPx: { x: number; y: number; };
+    anchor: { ax: number; ay: number; };
     source?: {
         filename: string;
         appliedSize?: { w: number; h: number; };
@@ -36,11 +37,34 @@ type ReferenceImageItemState = {
     } | null;
 };
 
+type ReferenceImageItemPatch = Partial<Omit<ReferenceImageItemState, 'offsetPx'>> & {
+    offsetPx?: { x?: number; y?: number; };
+};
+
 type ReferenceImagesState = {
     masterVisible: boolean;
     activeId: string | null;
     items: ReferenceImageItemState[];
 };
+
+type SelectionBaseEntry = {
+    offsetX: number;
+    offsetY: number;
+    scalePct: number;
+    opacityPct: number;
+};
+
+type SelectionBase = {
+    activeId: string | null;
+    valuesById: Map<string, SelectionBaseEntry>;
+};
+
+type ViewportMapping = {
+    logicalW: number;
+    logicalH: number;
+};
+
+const isFiniteNumber = (value: unknown): value is number => typeof value === 'number' && isFinite(value);
 
 class ReferenceImagePanel extends Container {
     constructor(events: Events, args: any = {}) {
@@ -56,6 +80,10 @@ class ReferenceImagePanel extends Container {
         });
 
         let suppress = false;
+        const selectedIds = new Set<string>();
+        let selectionAnchorId: string | null = null;
+        const relativeInputs = new Set<NumericInput>();
+        const selectionBaseByInput = new Map<NumericInput, SelectionBase>();
 
         const panelHeader = new Container({ class: 'panel-header' });
         const panelIcon = new Container({ class: 'panel-header-icon' });
@@ -168,9 +196,139 @@ class ReferenceImagePanel extends Container {
             return btn;
         };
 
+        const setSelection = (next: Set<string>) => {
+            selectedIds.clear();
+            next.forEach(id => selectedIds.add(id));
+        };
+
+        const normalizeSelection = (state: ReferenceImagesState) => {
+            const items = Array.isArray(state?.items) ? state.items : [];
+            const validIds = new Set(items.map(item => item.id));
+            Array.from(selectedIds).forEach((id) => {
+                if (!validIds.has(id)) {
+                    selectedIds.delete(id);
+                }
+            });
+            if (state.activeId && validIds.has(state.activeId)) {
+                selectedIds.add(state.activeId);
+            }
+            if (selectedIds.size === 0 && items.length > 0) {
+                selectedIds.add(state.activeId ?? items[0].id);
+            }
+            if (!selectionAnchorId || !validIds.has(selectionAnchorId)) {
+                selectionAnchorId = selectedIds.size > 0 ? (state.activeId ?? Array.from(selectedIds)[0] ?? null) : null;
+            }
+        };
+
+        const getSelectionIds = (state: ReferenceImagesState | null) => {
+            const items = Array.isArray(state?.items) ? state.items : [];
+            const validIds = new Set(items.map(item => item.id));
+            const ids = Array.from(selectedIds).filter(id => validIds.has(id));
+            if (ids.length === 0 && state?.activeId && validIds.has(state.activeId)) {
+                ids.push(state.activeId);
+            }
+            return ids;
+        };
+
+        const captureSelectionBase = (): SelectionBase | null => {
+            const state = events.invoke('referenceImages.state') as ReferenceImagesState | null;
+            const items = Array.isArray(state?.items) ? state.items : [];
+            const ids = getSelectionIds(state);
+            if (ids.length === 0) {
+                return null;
+            }
+            const itemsById = new Map(items.map(item => [item.id, item]));
+            const valuesById = new Map<string, SelectionBaseEntry>();
+            ids.forEach((id) => {
+                const item = itemsById.get(id);
+                if (!item) {
+                    return;
+                }
+                valuesById.set(id, {
+                    offsetX: -(item.offsetPx?.x ?? 0),
+                    offsetY: -(item.offsetPx?.y ?? 0),
+                    scalePct: item.scalePct ?? 100,
+                    opacityPct: Math.round((item.opacity ?? 0.7) * 100)
+                });
+            });
+            return { activeId: state?.activeId ?? null, valuesById };
+        };
+
+        const getViewportMapping = (): ViewportMapping | null => {
+            const mapping = events.invoke('cameraFrames.viewportMapping') as { logicalW?: number; logicalH?: number } | null;
+            if (!mapping || !isFiniteNumber(mapping.logicalW) || !isFiniteNumber(mapping.logicalH)) {
+                return null;
+            }
+            return { logicalW: mapping.logicalW, logicalH: mapping.logicalH };
+        };
+
+        const normalizeAnchor = (anchor?: { ax?: number; ay?: number }) => {
+            const ax = isFiniteNumber(anchor?.ax) ? anchor!.ax : 0.5;
+            const ay = isFiniteNumber(anchor?.ay) ? anchor!.ay : 0.5;
+            return { ax, ay };
+        };
+
+        const computeItemRect = (
+            mapping: ViewportMapping,
+            item: ReferenceImageItemState,
+            scalePct: number,
+            offsetPx: { x: number; y: number; }
+        ) => {
+            const size = item.source?.appliedSize;
+            if (!size || !isFiniteNumber(size.w) || !isFiniteNumber(size.h)) {
+                return null;
+            }
+            const anchor = normalizeAnchor(item.anchor);
+            const anchorX = mapping.logicalW * anchor.ax;
+            const anchorY = mapping.logicalH * anchor.ay;
+            const scaleK = scalePct / 100;
+            const imgW = size.w * scaleK;
+            const imgH = size.h * scaleK;
+            if (!isFiniteNumber(imgW) || !isFiniteNumber(imgH)) {
+                return null;
+            }
+            const topLeftX = anchorX - anchor.ax * imgW - offsetPx.x;
+            const topLeftY = anchorY - anchor.ay * imgH - offsetPx.y;
+            return {
+                topLeftX,
+                topLeftY,
+                imgW,
+                imgH,
+                centerX: topLeftX + imgW * 0.5,
+                centerY: topLeftY + imgH * 0.5,
+                anchor,
+                anchorX,
+                anchorY,
+                size
+            };
+        };
+
+        const clampScale = (value: number) => Math.min(400, Math.max(1, value));
+
+        const beginRelative = (input: NumericInput) => {
+            if (suppress || relativeInputs.has(input)) {
+                return;
+            }
+            const base = captureSelectionBase();
+            if (!base) {
+                return;
+            }
+            relativeInputs.add(input);
+            selectionBaseByInput.set(input, base);
+        };
+
+        const endRelative = (input: NumericInput) => {
+            if (!relativeInputs.has(input)) {
+                return;
+            }
+            relativeInputs.delete(input);
+            selectionBaseByInput.delete(input);
+        };
+
         const rebuildList = (state: ReferenceImagesState) => {
             const activeId = state?.activeId ?? null;
             const items = Array.isArray(state?.items) ? state.items : [];
+            const itemsById = new Map(items.map(item => [item.id, item]));
             // UIリストは「上が優先(手前)」になるよう、order が大きいものを上に表示する
             const compareOrderDesc = (a: ReferenceImageItemState, b: ReferenceImageItemState) => (b.order - a.order) || a.id.localeCompare(b.id);
             const backItems = items.filter(i => i.group === 'back').slice().sort(compareOrderDesc);
@@ -180,8 +338,12 @@ class ReferenceImagePanel extends Container {
             frontList.clear();
 
             const addRows = (list: Container, groupItems: ReferenceImageItemState[]) => {
+                const groupIds = groupItems.map(i => i.id);
                 groupItems.forEach((item) => {
                     const classes = ['reference-image-item'];
+                    if (selectedIds.has(item.id)) {
+                        classes.push('selected');
+                    }
                     if (activeId === item.id) {
                         classes.push('active');
                     }
@@ -229,17 +391,64 @@ class ReferenceImagePanel extends Container {
                     down.on('click', () => {
                         events.fire('referenceImages.reorder', { id: item.id, group: item.group, toIndex: item.order - 1 });
                     });
+                    const applySelectionToggle = (patch: ReferenceImageItemPatch) => {
+                        if (!selectedIds.has(item.id)) {
+                            setSelection(new Set([item.id]));
+                            selectionAnchorId = item.id;
+                            events.fire('referenceImages.setActive', item.id);
+                            events.fire('referenceImages.update', item.id, patch);
+                            return;
+                        }
+                        const ids = Array.from(selectedIds);
+                        if (ids.length === 0) {
+                            return;
+                        }
+                        events.fire('referenceImages.updateMany', { ids, patch });
+                    };
+
                     visibilityButton.on('click', () => {
-                        events.fire('referenceImages.update', item.id, { visible: !item.visible });
+                        applySelectionToggle({ visible: !item.visible });
                     });
                     exportButton.on('click', () => {
-                        events.fire('referenceImages.update', item.id, { includeInRender: !item.includeInRender });
+                        applySelectionToggle({ includeInRender: !item.includeInRender });
                     });
                     removeButton.on('click', () => {
                         events.fire('referenceImages.remove', item.id);
                     });
 
-                    row.dom.addEventListener('click', () => {
+                    row.dom.addEventListener('click', (event: MouseEvent) => {
+                        const toggleKey = event.metaKey || event.ctrlKey;
+                        const shiftKey = event.shiftKey;
+                        let nextSelection: Set<string> | null = null;
+                        if (shiftKey && selectionAnchorId) {
+                            const anchorItem = itemsById.get(selectionAnchorId);
+                            if (anchorItem && anchorItem.group === item.group) {
+                                const anchorIndex = groupIds.indexOf(selectionAnchorId);
+                                const clickedIndex = groupIds.indexOf(item.id);
+                                if (anchorIndex !== -1 && clickedIndex !== -1) {
+                                    const start = Math.min(anchorIndex, clickedIndex);
+                                    const end = Math.max(anchorIndex, clickedIndex);
+                                    nextSelection = new Set(groupIds.slice(start, end + 1));
+                                }
+                            }
+                        }
+                        if (!nextSelection) {
+                            if (toggleKey) {
+                                nextSelection = new Set(selectedIds);
+                                if (nextSelection.has(item.id)) {
+                                    nextSelection.delete(item.id);
+                                } else {
+                                    nextSelection.add(item.id);
+                                }
+                            } else {
+                                nextSelection = new Set([item.id]);
+                            }
+                        }
+                        if (nextSelection.size === 0) {
+                            nextSelection.add(item.id);
+                        }
+                        setSelection(nextSelection);
+                        selectionAnchorId = item.id;
                         events.fire('referenceImages.setActive', item.id);
                     });
 
@@ -329,13 +538,16 @@ class ReferenceImagePanel extends Container {
 
         const registerUndoGroup = (input: NumericInput, label: string) => {
             let active = false;
+            let pointerDown = false;
+            let pointerReleaseHandler: (() => void) | null = null;
 
-            const begin = () => {
-                if (suppress || active) {
+            const releasePointerListener = () => {
+                if (!pointerReleaseHandler) {
                     return;
                 }
-                active = true;
-                events.fire('referenceImages.historyBegin', label);
+                window.removeEventListener('pointerup', pointerReleaseHandler, true);
+                window.removeEventListener('pointercancel', pointerReleaseHandler, true);
+                pointerReleaseHandler = null;
             };
 
             const commit = () => {
@@ -344,11 +556,66 @@ class ReferenceImagePanel extends Container {
                 }
                 active = false;
                 events.fire('referenceImages.historyCommit', label);
+                endRelative(input);
             };
 
-            input.on('slider:mousedown', begin);
+            const begin = () => {
+                if (suppress || active) {
+                    return;
+                }
+                active = true;
+                beginRelative(input);
+                events.fire('referenceImages.historyBegin', label);
+            };
+
+            const handlePointerRelease = () => {
+                pointerDown = false;
+                if (active) {
+                    commit();
+                }
+                releasePointerListener();
+            };
+
+            const ensurePointerRelease = () => {
+                if (pointerReleaseHandler) {
+                    return;
+                }
+                pointerReleaseHandler = handlePointerRelease;
+                window.addEventListener('pointerup', pointerReleaseHandler, true);
+                window.addEventListener('pointercancel', pointerReleaseHandler, true);
+            };
+
+            const beginFromPointer = (event: PointerEvent) => {
+                if (event.button !== 0) {
+                    return;
+                }
+                pointerDown = true;
+                ensurePointerRelease();
+                if (event.target === input.input) {
+                    return;
+                }
+                begin();
+            };
+
+            const beginFromPointerChange = () => {
+                if (!pointerDown) {
+                    return;
+                }
+                begin();
+            };
+
+            const commitFromBlur = () => {
+                if (pointerDown) {
+                    return;
+                }
+                commit();
+            };
+
+            input.dom.addEventListener('pointerdown', beginFromPointer, true);
+            input.on('slider:mousedown', () => begin());
             input.on('slider:mouseup', commit);
-            input.on('blur', commit);
+            input.on('change', beginFromPointerChange);
+            input.on('blur', commitFromBlur);
 
             // ArrowUp/ArrowDown は keydown 内で値が更新され 'change' が発火するため、
             // capture で先に begin して 1 操作としてまとめる。
@@ -418,7 +685,7 @@ class ReferenceImagePanel extends Container {
             }
         });
 
-        const applyActivePatch = (patch: any) => {
+        const applyActivePatch = (patch: ReferenceImageItemPatch) => {
             const state = events.invoke('referenceImages.state') as ReferenceImagesState | null;
             const activeId = state?.activeId ?? null;
             if (!activeId) {
@@ -427,28 +694,257 @@ class ReferenceImagePanel extends Container {
             events.fire('referenceImages.update', activeId, patch);
         };
 
+        const applySelectionUpdates = (updates: Array<{ id: string; patch: ReferenceImageItemPatch }>) => {
+            if (updates.length === 0) {
+                return;
+            }
+            events.fire('referenceImages.updateMany', { updates });
+        };
+
+        const applySelectionPatch = (patch: ReferenceImageItemPatch) => {
+            const state = events.invoke('referenceImages.state') as ReferenceImagesState | null;
+            const ids = getSelectionIds(state);
+            if (ids.length === 0) {
+                return;
+            }
+            events.fire('referenceImages.updateMany', { ids, patch });
+        };
+
+        const applyRelativeUpdates = (
+            input: NumericInput,
+            value: number,
+            getBaseValue: (entry: SelectionBaseEntry) => number,
+            toPatch: (nextValue: number) => ReferenceImageItemPatch
+        ) => {
+            const base = selectionBaseByInput.get(input);
+            if (!base || !base.activeId) {
+                return false;
+            }
+            const activeBase = base.valuesById.get(base.activeId);
+            if (!activeBase) {
+                return false;
+            }
+            const delta = value - getBaseValue(activeBase);
+            const updates: Array<{ id: string; patch: ReferenceImageItemPatch }> = [];
+            base.valuesById.forEach((entry, id) => {
+                updates.push({ id, patch: toPatch(getBaseValue(entry) + delta) });
+            });
+            if (updates.length === 0) {
+                return false;
+            }
+            applySelectionUpdates(updates);
+            return true;
+        };
+
+        const applyScaleWithGroupPivot = (
+            value: number,
+            state: ReferenceImagesState | null,
+            base: SelectionBase | null,
+            relative: boolean
+        ) => {
+            const ids = getSelectionIds(state);
+            if (ids.length < 2 || !state) {
+                return false;
+            }
+            const mapping = getViewportMapping();
+            if (!mapping) {
+                return false;
+            }
+            const itemsById = new Map(state.items.map(item => [item.id, item]));
+            const baseActiveScale = relative && base?.activeId ? base?.valuesById.get(base.activeId)?.scalePct : null;
+            if (relative && !isFiniteNumber(baseActiveScale)) {
+                return false;
+            }
+            const delta = relative ? value - (baseActiveScale as number) : 0;
+            const entries: Array<{
+                id: string;
+                baseScale: number;
+                baseCenterX: number;
+                baseCenterY: number;
+                anchor: { ax: number; ay: number };
+                anchorX: number;
+                anchorY: number;
+                size: { w: number; h: number };
+            }> = [];
+            let minX = Infinity;
+            let minY = Infinity;
+            let maxX = -Infinity;
+            let maxY = -Infinity;
+
+            for (const id of ids) {
+                const item = itemsById.get(id);
+                if (!item) {
+                    return false;
+                }
+                const baseEntry = base?.valuesById.get(id);
+                const baseScale = baseEntry?.scalePct ?? item.scalePct ?? 100;
+                if (!isFiniteNumber(baseScale) || baseScale <= 0) {
+                    return false;
+                }
+                const baseOffset = baseEntry ? { x: -baseEntry.offsetX, y: -baseEntry.offsetY } : item.offsetPx;
+                const rect = computeItemRect(mapping, item, baseScale, baseOffset);
+                if (!rect) {
+                    return false;
+                }
+                minX = Math.min(minX, rect.topLeftX);
+                minY = Math.min(minY, rect.topLeftY);
+                maxX = Math.max(maxX, rect.topLeftX + rect.imgW);
+                maxY = Math.max(maxY, rect.topLeftY + rect.imgH);
+                entries.push({
+                    id,
+                    baseScale,
+                    baseCenterX: rect.centerX,
+                    baseCenterY: rect.centerY,
+                    anchor: rect.anchor,
+                    anchorX: rect.anchorX,
+                    anchorY: rect.anchorY,
+                    size: rect.size
+                });
+            }
+
+            if (!isFiniteNumber(minX) || !isFiniteNumber(minY) || !isFiniteNumber(maxX) || !isFiniteNumber(maxY)) {
+                return false;
+            }
+            const groupCenterX = (minX + maxX) * 0.5;
+            const groupCenterY = (minY + maxY) * 0.5;
+
+            const nextEntries: Array<{
+                id: string;
+                nextScale: number;
+                nextOffsetX: number;
+                nextOffsetY: number;
+                nextW: number;
+                nextH: number;
+                anchor: { ax: number; ay: number };
+                anchorX: number;
+                anchorY: number;
+            }> = [];
+            let nextMinX = Infinity;
+            let nextMinY = Infinity;
+            let nextMaxX = -Infinity;
+            let nextMaxY = -Infinity;
+
+            entries.forEach((entry) => {
+                const nextScale = clampScale(relative ? entry.baseScale + delta : value);
+                const ratio = entry.baseScale > 0 ? (nextScale / entry.baseScale) : 1;
+                const nextCenterX = groupCenterX + (entry.baseCenterX - groupCenterX) * ratio;
+                const nextCenterY = groupCenterY + (entry.baseCenterY - groupCenterY) * ratio;
+                const nextW = entry.size.w * (nextScale / 100);
+                const nextH = entry.size.h * (nextScale / 100);
+                const nextOffsetX = entry.anchorX + (0.5 - entry.anchor.ax) * nextW - nextCenterX;
+                const nextOffsetY = entry.anchorY + (0.5 - entry.anchor.ay) * nextH - nextCenterY;
+                const nextTopLeftX = entry.anchorX - entry.anchor.ax * nextW - nextOffsetX;
+                const nextTopLeftY = entry.anchorY - entry.anchor.ay * nextH - nextOffsetY;
+                nextMinX = Math.min(nextMinX, nextTopLeftX);
+                nextMinY = Math.min(nextMinY, nextTopLeftY);
+                nextMaxX = Math.max(nextMaxX, nextTopLeftX + nextW);
+                nextMaxY = Math.max(nextMaxY, nextTopLeftY + nextH);
+                nextEntries.push({
+                    id: entry.id,
+                    nextScale,
+                    nextOffsetX,
+                    nextOffsetY,
+                    nextW,
+                    nextH,
+                    anchor: entry.anchor,
+                    anchorX: entry.anchorX,
+                    anchorY: entry.anchorY
+                });
+            });
+
+            if (!isFiniteNumber(nextMinX) || !isFiniteNumber(nextMinY) || !isFiniteNumber(nextMaxX) || !isFiniteNumber(nextMaxY)) {
+                return false;
+            }
+
+            const nextCenterX = (nextMinX + nextMaxX) * 0.5;
+            const nextCenterY = (nextMinY + nextMaxY) * 0.5;
+            const shiftX = isFiniteNumber(nextCenterX) ? (groupCenterX - nextCenterX) : 0;
+            const shiftY = isFiniteNumber(nextCenterY) ? (groupCenterY - nextCenterY) : 0;
+
+            const updates: Array<{ id: string; patch: ReferenceImageItemPatch }> = [];
+            nextEntries.forEach((entry) => {
+                updates.push({
+                    id: entry.id,
+                    patch: {
+                        scalePct: entry.nextScale,
+                        offsetPx: { x: entry.nextOffsetX - shiftX, y: entry.nextOffsetY - shiftY }
+                    }
+                });
+            });
+
+            if (updates.length === 0) {
+                return false;
+            }
+
+            applySelectionUpdates(updates);
+            return true;
+        };
+
         groupSelect.on('change', (value: 'back' | 'front') => {
             if (suppress) return;
             applyActivePatch({ group: value });
         });
         opacityInput.on('change', (value: number) => {
             if (suppress) return;
-            applyActivePatch({ opacity: value / 100 });
+            if (relativeInputs.has(opacityInput)) {
+                if (applyRelativeUpdates(
+                    opacityInput,
+                    value,
+                    entry => entry.opacityPct,
+                    nextValue => ({ opacity: nextValue / 100 })
+                )) {
+                    return;
+                }
+            }
+            applySelectionPatch({ opacity: value / 100 });
         });
         scaleInput.on('change', (value: number) => {
             if (suppress) return;
-            applyActivePatch({ scalePct: value });
+            const state = events.invoke('referenceImages.state') as ReferenceImagesState | null;
+            const relative = relativeInputs.has(scaleInput);
+            const base = relative ? (selectionBaseByInput.get(scaleInput) ?? null) : null;
+            if (applyScaleWithGroupPivot(value, state, base, relative)) {
+                return;
+            }
+            if (relative) {
+                if (applyRelativeUpdates(
+                    scaleInput,
+                    value,
+                    entry => entry.scalePct,
+                    nextValue => ({ scalePct: nextValue })
+                )) {
+                    return;
+                }
+            }
+            applySelectionPatch({ scalePct: value });
         });
-        const applyOffset = () => {
-            applyActivePatch({ offsetPx: { x: -offsetX.value, y: -offsetY.value } });
-        };
-        offsetX.on('change', () => {
+        offsetX.on('change', (value: number) => {
             if (suppress) return;
-            applyOffset();
+            if (relativeInputs.has(offsetX)) {
+                if (applyRelativeUpdates(
+                    offsetX,
+                    value,
+                    entry => entry.offsetX,
+                    nextValue => ({ offsetPx: { x: -nextValue } })
+                )) {
+                    return;
+                }
+            }
+            applySelectionPatch({ offsetPx: { x: -value } });
         });
-        offsetY.on('change', () => {
+        offsetY.on('change', (value: number) => {
             if (suppress) return;
-            applyOffset();
+            if (relativeInputs.has(offsetY)) {
+                if (applyRelativeUpdates(
+                    offsetY,
+                    value,
+                    entry => entry.offsetY,
+                    nextValue => ({ offsetPx: { y: -nextValue } })
+                )) {
+                    return;
+                }
+            }
+            applySelectionPatch({ offsetPx: { y: -value } });
         });
 
         centerButton.on('click', () => {
@@ -468,23 +964,65 @@ class ReferenceImagePanel extends Container {
             const activeId = safeState.activeId ?? null;
             const active = activeId ? items.find(i => i.id === activeId) ?? null : null;
 
+            normalizeSelection(safeState);
             rebuildList(safeState);
 
             const hasItems = items.length > 0;
             clearAllButton.enabled = hasItems;
 
-            groupSelect.enabled = !!active;
-            opacityInput.enabled = !!active;
-            scaleInput.enabled = !!active;
-            offsetX.enabled = !!active;
-            offsetY.enabled = !!active;
-            centerButton.enabled = !!active;
+            const selectedItems = items.filter(item => selectedIds.has(item.id));
+            const selectionCount = selectedItems.length;
+            const hasSelection = selectionCount > 0;
+            const hasActive = !!active;
+
+            groupSelect.enabled = hasActive;
+            opacityInput.enabled = hasSelection;
+            scaleInput.enabled = hasSelection;
+            offsetX.enabled = hasSelection;
+            offsetY.enabled = hasSelection;
+            centerButton.enabled = hasActive;
 
             groupSelect.value = (active?.group ?? 'front') as any;
-            opacityInput.value = Math.round((active?.opacity ?? 0.7) * 100);
-            scaleInput.value = active?.scalePct ?? 100;
-            offsetX.value = -(active?.offsetPx?.x ?? 0);
-            offsetY.value = -(active?.offsetPx?.y ?? 0);
+
+            const isMixedValues = (values: number[]) => {
+                return values.length > 1 && values.some(value => Math.abs(value - values[0]) > 1e-3);
+            };
+
+            const setMixedValue = (input: NumericInput, value: number, mixed: boolean) => {
+                input.value = value;
+                if (mixed) {
+                    input.class.add('mixed');
+                } else {
+                    input.class.remove('mixed');
+                }
+            };
+
+            const activeOpacity = Math.round((active?.opacity ?? 0.7) * 100);
+            const activeScale = active?.scalePct ?? 100;
+            const activeOffsetX = -(active?.offsetPx?.x ?? 0);
+            const activeOffsetY = -(active?.offsetPx?.y ?? 0);
+
+            if (!hasSelection) {
+                setMixedValue(opacityInput, activeOpacity, false);
+                setMixedValue(scaleInput, activeScale, false);
+                setMixedValue(offsetX, activeOffsetX, false);
+                setMixedValue(offsetY, activeOffsetY, false);
+            } else {
+                const opacityValues = selectedItems.map(item => Math.round(item.opacity * 100));
+                const scaleValues = selectedItems.map(item => item.scalePct);
+                const offsetXValues = selectedItems.map(item => -item.offsetPx.x);
+                const offsetYValues = selectedItems.map(item => -item.offsetPx.y);
+
+                const opacityMixed = isMixedValues(opacityValues);
+                const scaleMixed = isMixedValues(scaleValues);
+                const offsetXMixed = isMixedValues(offsetXValues);
+                const offsetYMixed = isMixedValues(offsetYValues);
+
+                setMixedValue(opacityInput, opacityMixed ? activeOpacity : (opacityValues[0] ?? activeOpacity), opacityMixed);
+                setMixedValue(scaleInput, scaleMixed ? activeScale : (scaleValues[0] ?? activeScale), scaleMixed);
+                setMixedValue(offsetX, offsetXMixed ? activeOffsetX : (offsetXValues[0] ?? activeOffsetX), offsetXMixed);
+                setMixedValue(offsetY, offsetYMixed ? activeOffsetY : (offsetYValues[0] ?? activeOffsetY), offsetYMixed);
+            }
 
             const infoParts = [];
             if (active?.source?.filename) {
@@ -495,7 +1033,11 @@ class ReferenceImagePanel extends Container {
             if (active?.source?.appliedSize) {
                 infoParts.push(`${formatInteger(active.source.appliedSize.w)}×${formatInteger(active.source.appliedSize.h)}${active.source.usedOriginal ? '' : ` (${localize('panel.reference-image.scaled')})`}`);
             }
-            infoLabel.text = active ? infoParts.join(' / ') : localize('panel.reference-image.empty');
+            if (selectionCount > 1) {
+                infoLabel.text = localize('panel.reference-image.multi-selected', { count: formatInteger(selectionCount) });
+            } else {
+                infoLabel.text = active ? infoParts.join(' / ') : localize('panel.reference-image.empty');
+            }
 
             suppress = false;
         };
