@@ -29,6 +29,7 @@ import {
     BLEND_NONE
 } from 'playcanvas';
 
+import { MIN_NEAR_CLIP } from './clip-constants';
 import { PointerController } from './controllers';
 import { Element, ElementType } from './element';
 import { Model } from './model';
@@ -68,6 +69,24 @@ const quatOrbitPitch = new Quat();
 // modulo dealing with negative numbers
 const mod = (n: number, m: number) => ((n % m) + m) % m;
 
+type CameraCustomFrustum = { left: number, right: number, bottom: number, top: number, near: number, far: number };
+
+type CameraDoc = {
+    focalPoint: number[];
+    azim: number;
+    elev: number;
+    distance: number;
+    fov: number;
+    tonemapping: string;
+    roll: number;
+    navMode: 'orbit' | 'fpv';
+    ortho: boolean;
+    customFrustum: CameraCustomFrustum | null;
+    renderOverlays: boolean;
+    fpvPosition?: number[];
+    nearOverride?: number | null;
+};
+
 class Camera extends Element {
     controller: PointerController;
     entity: Entity;
@@ -96,7 +115,7 @@ class Camera extends Element {
 
     currentPickTarget: Splat | null = null;
 
-    private customFrustum: { left: number, right: number, bottom: number, top: number, near: number, far: number } | null = null;
+    private customFrustum: CameraCustomFrustum | null = null;
 
     // framing lock (CAMERA FRAMES 用): true のときオートフィットを抑止
     lockFraming = false;
@@ -116,6 +135,7 @@ class Camera extends Element {
     private transformSendIntervalMs = 33; // ~30Hz
 
     private nearOverride: number | null = null;
+    private nearOverrideTransient = false;
     private lastClipLog: {
         near: number;
         far: number;
@@ -215,7 +235,7 @@ class Camera extends Element {
         return this.entity.camera.farClip;
     }
 
-    setCustomFrustum(frustum: { left: number, right: number, bottom: number, top: number, near: number, far: number } | null) {
+    setCustomFrustum(frustum: CameraCustomFrustum | null) {
         this.customFrustum = frustum ? { ...frustum } : null;
         const cam = this.entity.camera;
         if (frustum) {
@@ -256,9 +276,10 @@ class Camera extends Element {
         return this.distanceTween.target.distance;
     }
 
-    setNearOverride(value: number | null | undefined) {
-        const sanitized = (typeof value === 'number' && isFinite(value)) ? Math.max(1e-6, value) : null;
+    setNearOverride(value: number | null | undefined, options?: { transient?: boolean }) {
+        const sanitized = (typeof value === 'number' && isFinite(value)) ? Math.max(MIN_NEAR_CLIP, value) : null;
         this.nearOverride = sanitized;
+        this.nearOverrideTransient = options?.transient === true;
 
         // すぐに反映して UI と同期させる
         this.fitClippingPlanes(this.entity.getLocalPosition(), this.entity.forward);
@@ -816,7 +837,7 @@ class Camera extends Element {
 
         if (this.nearOverride !== null) {
             // ユーザー指定の near を優先し、必要なら far を延長して成立させる
-            const desiredNear = Math.max(1e-6, this.nearOverride);
+            const desiredNear = Math.max(MIN_NEAR_CLIP, this.nearOverride);
             if (desiredNear >= far) {
                 far = desiredNear * 2;
             }
@@ -1494,10 +1515,10 @@ class Camera extends Element {
         this.entity.setRotation(quatFinal);
     }
 
-    docSerialize() {
+    docSerialize(): CameraDoc {
         const pack3 = (v: Vec3) => [v.x, v.y, v.z];
 
-        return {
+        const result: CameraDoc = {
             focalPoint: pack3(this.focalPointTween.target),
             azim: this.azim,
             elev: this.elevation,
@@ -1507,11 +1528,14 @@ class Camera extends Element {
             roll: this.rollTween.target.roll ?? 0,
             navMode: this.navMode,
             ortho: this.ortho,
-            nearOverride: this.getNearOverride(),
             customFrustum: this.getCustomFrustum(),
             renderOverlays: this.renderOverlays,
             fpvPosition: this.navMode === 'fpv' ? pack3(this.fpvPosition) : undefined
         };
+        if (!this.nearOverrideTransient) {
+            result.nearOverride = this.getNearOverride();
+        }
+        return result;
     }
 
     docDeserialize(settings: any) {
@@ -1558,7 +1582,7 @@ class Camera extends Element {
             this.ortho = !!settings.ortho;
         }
         if (settings.hasOwnProperty('nearOverride')) {
-            this.setNearOverride(settings.nearOverride);
+            this.setNearOverride(settings.nearOverride, { transient: false });
         }
         if (settings.hasOwnProperty('customFrustum')) {
             this.setCustomFrustum(settings.customFrustum);

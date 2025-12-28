@@ -1,5 +1,6 @@
 import { BooleanInput, Button, Container, Label, NumericInput, Panel, SelectInput, SliderInput, TextInput } from '@playcanvas/pcui';
 
+import { DEFAULT_NEAR_CLIP, MIN_NEAR_CLIP } from '../clip-constants';
 import { Events } from '../events';
 import { formatInteger, localize } from './localization';
 import mainCamSvg from './svg/camera-panel.svg';
@@ -952,12 +953,16 @@ class CameraFramesPanel extends Panel {
         nearClipRow.dom.style.columnGap = '6px';
         nearClipRow.dom.style.alignItems = 'center';
         const nearClipLabel = new Label({ class: 'control-label', text: localize('panel.camera-frames.near-clip') });
+        const nearStep = 0.01;
+        const nearStepAlt = 0.001;
+        const nearPrecision = 3;
+        const nearPrecisionAlt = 4;
         const nearClipInput = new NumericInput({
             class: 'control-element',
-            precision: 1,
-            step: 1,
-            min: 0.000001,
-            value: 0.01,
+            precision: nearPrecision,
+            step: nearStep,
+            min: MIN_NEAR_CLIP,
+            value: DEFAULT_NEAR_CLIP,
             style: 'width: 120px'
         });
         nearClipRow.append(nearClipLabel);
@@ -1163,8 +1168,8 @@ class CameraFramesPanel extends Panel {
         });
 
         const updateNearStep = () => {
-            const step = altSlow ? 0.1 : 1;
-            const precision = altSlow ? 3 : 1;
+            const step = altSlow ? nearStepAlt : nearStep;
+            const precision = altSlow ? nearPrecisionAlt : nearPrecision;
             nearClipInput.step = step;
             nearClipInput.precision = precision;
         };

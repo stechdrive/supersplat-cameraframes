@@ -1,0 +1,4 @@
+const MIN_NEAR_CLIP = 0.01;
+const DEFAULT_NEAR_CLIP = 0.1;
+
+export { MIN_NEAR_CLIP, DEFAULT_NEAR_CLIP };
