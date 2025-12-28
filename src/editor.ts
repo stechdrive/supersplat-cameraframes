@@ -697,8 +697,8 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
         return scene.camera.near;
     });
 
-    events.on('camera.setNearOverride', (value: number | null) => {
-        scene.camera.setNearOverride(value);
+    events.on('camera.setNearOverride', (value: number | null, opts?: { transient?: boolean }) => {
+        scene.camera.setNearOverride(value, opts);
     });
 
     events.on('camera.setCustomFrustum', (frustum: { left: number; right: number; bottom: number; top: number; near: number; far: number; } | null) => {

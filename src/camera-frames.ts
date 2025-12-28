@@ -1,6 +1,7 @@
 import { Color, Quat, Ray, Vec3 } from 'playcanvas';
 
 import { cameraFramesVersion } from './camera-frames-version';
+import { DEFAULT_NEAR_CLIP, MIN_NEAR_CLIP } from './clip-constants';
 import { ElementType } from './element';
 import { Events } from './events';
 import { hitTestGizmo } from './gizmo-hit';
@@ -153,8 +154,6 @@ const normalizeMaskScope = (scope: unknown, fallback: 'all' | 'selected' = 'all'
     return fallback;
 };
 
-const DEFAULT_NEAR_CLIP = 0.01;
-
 // constants for FOV <-> 35mm換算
 const W_35MM = 36;          // 35mmフィルムの横幅 [mm]
 const HFOV_MIN = 10;        // supersplat 制約
@@ -226,6 +225,11 @@ export class CameraFramesController {
     private baseFovRad: number = 60 * DEG2RAD;
     private pendingNearClipGuard = 0;
     private nearClipGuardSeed: number | null = null;
+    private viewportNearOverride: number | null = null;
+    private viewportNearOverrideActive = false;
+    private viewportNearDebounceId: number | null = null;
+    private viewportNearLastSampleTs = 0;
+    private viewportNearTargetSizeActive = false;
     private history: {
         begin(label: string): void;
         commit(label?: string): void;
@@ -305,6 +309,7 @@ export class CameraFramesController {
 
         // draw each frame
         this.events.on('postrender', () => {
+            this.updateViewportNearTargetSizeState();
             this.runPendingNearClipGuard();
             this.drawMainCameraFrustum();
             this.drawOverlay();
@@ -579,6 +584,11 @@ export class CameraFramesController {
         }
         if (selectionChanged) {
             this.requestRender();
+        }
+        if (resolved === 'main') {
+            this.clearViewportNearOverride();
+        } else if (!this.state.enabled && changed) {
+            this.applyViewportNearOverride();
         }
     }
 
@@ -991,10 +1001,17 @@ export class CameraFramesController {
         this.events.on('scene.elementAdded', (element: any) => {
             if (element?.type === ElementType.splat) {
                 this.scheduleNearClipGuard();
+                this.scheduleViewportNearOverride();
+            }
+        });
+        this.events.on('scene.elementRemoved', (element: any) => {
+            if (element?.type === ElementType.splat) {
+                this.scheduleViewportNearOverride();
             }
         });
         this.events.on('scene.boundChanged', () => {
             if (!this.state.enabled) {
+                this.scheduleViewportNearOverride();
                 return;
             }
             this.syncCameraFrustum();
@@ -1023,6 +1040,7 @@ export class CameraFramesController {
             }
             if (!this.state.enabled) {
                 this.emitViewportLensChanged();
+                this.scheduleViewportNearOverride();
                 return;
             }
             this.syncCameraFrustum();
@@ -1040,6 +1058,7 @@ export class CameraFramesController {
                 points: null,
                 version: FRUSTUM_DEBUG_CACHE_VERSION
             };
+            this.clearViewportNearOverride();
         });
 
         // enable / disable
@@ -1388,6 +1407,7 @@ export class CameraFramesController {
     private setEnabled(value: boolean) {
         this.historyRecord('cameraFrames.enabled', () => {
             if (value === this.state.enabled) return;
+            this.clearViewportNearOverride();
             const currentPose = this.captureCameraPose();
 
             this.setUiTarget('viewport');
@@ -1422,7 +1442,7 @@ export class CameraFramesController {
                 }
                 // ニアクリップの初期値を現在のカメラから引き継ぎ、固定値として適用
                 const baseNear = (this.state.nearClip === null || this.state.nearClip === undefined) ?
-                    this.events.invoke('camera.near') :
+                    DEFAULT_NEAR_CLIP :
                     this.state.nearClip;
                 this.state.nearClip = this.computeSafeNearClip(baseNear);
                 this.applyNearClipOverride();
@@ -1503,6 +1523,7 @@ export class CameraFramesController {
                 // 無効化中は追従ロジックを停止するが状態は保持
                 this.requestRender();
                 this.emitViewportLensChanged();
+                this.applyViewportNearOverride();
             }
             this.events.fire('cameraFrames.enabled', this.state.enabled);
             this.events.fire('cameraFrames.stateChanged', this.snapshot());
@@ -1526,7 +1547,7 @@ export class CameraFramesController {
 
     private setNearClip(value: number | null, suppressHistory = false) {
         const apply = () => {
-            const sanitized = (typeof value === 'number' && isFinite(value)) ? Math.max(1e-6, value) : null;
+            const sanitized = this.computeSafeNearClip(value);
             if (this.state.nearClip === sanitized) return;
             this.state.nearClip = sanitized;
             if (this.state.enabled) {
@@ -1551,27 +1572,150 @@ export class CameraFramesController {
 
     private computeSafeNearClip(value: number | null | undefined) {
         const raw = (typeof value === 'number' && isFinite(value)) ? value : NaN;
-        const far = this.scene?.camera?.far;
-        const boundRadius = this.scene?.bound?.halfExtents.length();
+        if (!isFinite(raw) || raw <= 0) {
+            return DEFAULT_NEAR_CLIP;
+        }
+        return Math.max(MIN_NEAR_CLIP, raw);
+    }
 
+    private updateViewportNearTargetSizeState() {
+        const active = !!this.scene.camera.targetSize;
+        if (active === this.viewportNearTargetSizeActive) {
+            return;
+        }
+        this.viewportNearTargetSizeActive = active;
+        this.clearViewportNearOverride();
+        if (!active) {
+            this.scheduleViewportNearOverride(0);
+        }
+    }
+
+    private shouldApplyViewportNearOverride() {
+        return !this.state.enabled && this.uiTarget === 'viewport' && !this.scene.camera.targetSize;
+    }
+
+    private clearViewportNearOverride() {
+        if (this.viewportNearDebounceId !== null) {
+            window.clearTimeout(this.viewportNearDebounceId);
+            this.viewportNearDebounceId = null;
+        }
+        if (this.viewportNearOverrideActive || this.viewportNearOverride !== null) {
+            this.viewportNearOverrideActive = false;
+            this.viewportNearOverride = null;
+            this.events.fire('camera.setNearOverride', null, { transient: true });
+        }
+    }
+
+    private scheduleViewportNearOverride(delayMs = 200) {
+        if (!this.shouldApplyViewportNearOverride()) {
+            return;
+        }
+        if (this.viewportNearDebounceId !== null) {
+            window.clearTimeout(this.viewportNearDebounceId);
+        }
+        this.viewportNearDebounceId = window.setTimeout(() => {
+            this.viewportNearDebounceId = null;
+            this.applyViewportNearOverride();
+        }, delayMs);
+    }
+
+    private applyViewportNearOverride() {
+        if (!this.shouldApplyViewportNearOverride()) {
+            return;
+        }
+        const now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+        if (now - this.viewportNearLastSampleTs < 100) {
+            return;
+        }
+        this.viewportNearLastSampleTs = now;
+
+        const candidate = this.computeViewportNearCandidate();
+        if (candidate === null) {
+            if (this.viewportNearOverrideActive) {
+                this.clearViewportNearOverride();
+            }
+            return;
+        }
+
+        const prev = this.viewportNearOverride;
+        if (prev !== null) {
+            const absDelta = Math.abs(candidate - prev);
+            const relDelta = absDelta / Math.max(prev, MIN_NEAR_CLIP);
+            if (absDelta < 1e-3 && relDelta < 0.2) {
+                return;
+            }
+        }
+
+        this.viewportNearOverride = candidate;
+        this.viewportNearOverrideActive = true;
+        this.events.fire('camera.setNearOverride', candidate, { transient: true });
+    }
+
+    private computeViewportNearCandidate(): number | null {
+        const canvas = this.scene?.canvas;
+        const targetSize = this.scene?.targetSize;
+        if (!canvas || !targetSize || targetSize.width <= 0 || targetSize.height <= 0) {
+            return null;
+        }
+        const w = canvas.clientWidth ?? 0;
+        const h = canvas.clientHeight ?? 0;
+        if (!(w > 0 && h > 0)) {
+            return null;
+        }
+        if (this.scene.getElementsByType(ElementType.splat).length === 0) {
+            return null;
+        }
+
+        const cx = w * 0.5;
+        const cy = h * 0.5;
+        const dx = w * 0.35;
+        const dy = h * 0.35;
+        const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
+        const samples = [
+            { x: cx, y: cy },
+            { x: cx + dx, y: cy },
+            { x: cx - dx, y: cy },
+            { x: cx, y: cy + dy },
+            { x: cx, y: cy - dy }
+        ];
+
+        let minDist: number | null = null;
+        for (const sample of samples) {
+            const x = clamp(sample.x, 0, w - 1);
+            const y = clamp(sample.y, 0, h - 1);
+            const hit = this.scene.camera.intersect(x, y);
+            const distance = hit?.distance;
+            if (typeof distance !== 'number' || !isFinite(distance) || distance <= 0) {
+                continue;
+            }
+            if (minDist === null || distance < minDist) {
+                minDist = distance;
+            }
+        }
+        if (minDist === null) {
+            return null;
+        }
+
+        const far = this.scene.camera.far;
+        const sceneRadius = this.scene.camera.sceneRadius;
         const maxCandidates: number[] = [];
         if (typeof far === 'number' && isFinite(far) && far > 0) {
             maxCandidates.push(far * 0.1);
         }
-        if (typeof boundRadius === 'number' && isFinite(boundRadius) && boundRadius > 0) {
-            maxCandidates.push(boundRadius * 0.5);
+        if (typeof sceneRadius === 'number' && isFinite(sceneRadius) && sceneRadius > 0) {
+            maxCandidates.push(sceneRadius * 0.1);
         }
         const maxNear = maxCandidates.length ? Math.min(...maxCandidates) : null;
 
-        const invalid = !isFinite(raw) ||
-            raw <= 0 ||
-            (maxNear !== null && raw > maxNear) ||
-            (typeof far === 'number' && isFinite(far) && raw >= far);
-
-        if (invalid) {
-            return DEFAULT_NEAR_CLIP;
+        let near = minDist * 0.05;
+        if (maxNear !== null && near > maxNear) {
+            near = maxNear;
         }
-        return Math.max(1e-6, raw);
+        near = Math.max(MIN_NEAR_CLIP, near);
+        if (!isFinite(near) || near <= 0) {
+            return null;
+        }
+        return near;
     }
 
     private enforceSafeNearClip() {
@@ -1999,7 +2143,7 @@ export class CameraFramesController {
 
         const nearRaw = this.state.nearClip ?? this.events.invoke('camera.near') ?? this.scene.camera.near;
         const farRaw = this.scene.camera.far;
-        const near = (typeof nearRaw === 'number' && isFinite(nearRaw)) ? Math.max(1e-6, nearRaw) : 0.1;
+        const near = (typeof nearRaw === 'number' && isFinite(nearRaw)) ? Math.max(MIN_NEAR_CLIP, nearRaw) : DEFAULT_NEAR_CLIP;
         const far = (typeof farRaw === 'number' && isFinite(farRaw)) ? farRaw : 1000;
 
         if (projection.type === 'ortho') {
@@ -3507,6 +3651,7 @@ export class CameraFramesController {
     private syncExportFrustum(width: number, height: number) {
         // 一時的に targetSize を設定して export モードの計算を行い、終わったら戻す
         // targetSize の切替はここに集約し、モード混在や累積誤差を防ぐ。
+        this.clearViewportNearOverride();
         const prevTarget = this.scene.camera.targetSize ? { ...this.scene.camera.targetSize } : null;
         this.scene.camera.targetSize = { width, height };
         this.syncCameraFrustum();
@@ -3710,7 +3855,7 @@ export class CameraFramesController {
                 ...(docState.mask ?? {}),
                 scope: maskScope
             },
-            nearClip: (typeof docState.nearClip === 'number' && isFinite(docState.nearClip)) ? Math.max(1e-6, docState.nearClip) : null,
+            nearClip: (typeof docState.nearClip === 'number' && isFinite(docState.nearClip)) ? docState.nearClip : null,
             exportName,
             exportFormat,
             exportGridOverlay,
