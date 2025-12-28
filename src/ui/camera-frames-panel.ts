@@ -176,6 +176,8 @@ class CameraFramesPanel extends Panel {
         });
 
         let suppress = false;
+        let appReady = false;
+        let pendingState: CameraFramesState | null = null;
         let selectedFrameId: string = null;
         let lastFovInfo: FovInfo | null = null;
         let lastState: CameraFramesState | null = null;
@@ -186,7 +188,7 @@ class CameraFramesPanel extends Panel {
         let modelLayerEnabled = false;
         let navMode: 'orbit' | 'fpv' = 'orbit';
         let viewportLensEnabled = false;
-        let uiTarget: 'viewport' | 'main' = (events.invoke('cameraFrames.uiTarget') as ('viewport' | 'main')) ?? 'viewport';
+        let uiTarget: 'viewport' | 'main' = 'viewport';
         let canSelectMain = false;
         let altSlow = false;
         let lastPose = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0 };
@@ -307,7 +309,6 @@ class CameraFramesPanel extends Panel {
             referenceImageVisible = referenceImageLoaded && !!state?.masterVisible;
             updateReferenceVisibilityButton();
         };
-        applyReferenceImageState((events.invoke('referenceImages.state') as ReferenceImagesState | null) ?? null);
         events.on('referenceImages.stateChanged', (state: ReferenceImagesState) => applyReferenceImageState(state));
 
         referenceVisibilityButton.on('click', () => {
@@ -607,7 +608,6 @@ class CameraFramesPanel extends Panel {
             referenceIncludeEnabled = Array.isArray(state?.items) && state.items.some(i => !!i?.includeInRender);
             updateReferenceIncludeToggle();
         };
-        applyReferenceIncludeState((events.invoke('referenceImages.state') as ReferenceImagesState | null) ?? null);
         events.on('referenceImages.stateChanged', (state: ReferenceImagesState) => applyReferenceIncludeState(state));
 
         referenceIncludeToggle.on('click', () => {
@@ -1397,6 +1397,11 @@ class CameraFramesPanel extends Panel {
         };
 
         events.on('cameraFrames.stateChanged', (state: CameraFramesState) => {
+            pendingState = state;
+            lastState = state;
+            if (!appReady) {
+                return;
+            }
             updateFromState(state);
         });
 
@@ -1405,6 +1410,9 @@ class CameraFramesPanel extends Panel {
         });
         events.on('cameraFrames.uiTargetChanged', (target: 'viewport' | 'main') => {
             uiTarget = target === 'main' ? 'main' : 'viewport';
+            if (!appReady) {
+                return;
+            }
             updateNearClipUI();
             updateTargetUI();
             updateFovUI();
@@ -1473,38 +1481,61 @@ class CameraFramesPanel extends Panel {
             applyTransformToInputs(t);
         });
 
-        const initialFovInfo = events.invoke('cameraFrames.fovInfo') as FovInfo;
-        if (initialFovInfo) {
-            updateFovUI(initialFovInfo);
-        }
-        applyViewportLensState();
-        updateTargetUI();
-
-        const initialNav = uiTarget === 'main' ?
-            (lastState?.mainCameraPose?.navMode ?? (events.invoke('camera.navMode') as ('orbit' | 'fpv'))) :
-            (events.invoke('camera.navMode') as ('orbit' | 'fpv'));
-        if (initialNav) {
-            if (uiTarget === 'viewport') {
-                events.fire('camera.navMode', initialNav);
-            } else {
-                setNavModeState(initialNav);
+        const syncFromModel = () => {
+            if (appReady) {
+                return;
             }
-        }
+            appReady = true;
 
-        const initialTransform = (uiTarget === 'main') ?
-            (events.invoke('cameraFrames.mainTransform') as any) :
-            (events.invoke('camera.transform') as any);
-        if (initialTransform) {
-            applyTransformToInputs(initialTransform);
-            lastPose = {
-                x: initialTransform.position.x,
-                y: initialTransform.position.y,
-                z: initialTransform.position.z,
-                yaw: initialTransform.rotation.yaw,
-                pitch: initialTransform.rotation.pitch,
-                roll: initialTransform.rotation.roll
-            };
-        }
+            const referenceState = (events.invoke('referenceImages.state') as ReferenceImagesState | null) ?? null;
+            applyReferenceImageState(referenceState);
+            applyReferenceIncludeState(referenceState);
+
+            uiTarget = (events.invoke('cameraFrames.uiTarget') as ('viewport' | 'main')) ?? 'viewport';
+
+            const initialFovInfo = events.invoke('cameraFrames.fovInfo') as FovInfo;
+            if (initialFovInfo) {
+                updateFovUI(initialFovInfo);
+            }
+
+            if (pendingState) {
+                updateFromState(pendingState);
+            } else {
+                updateNearClipUI();
+                updateTargetUI();
+                applyViewportLensState();
+            }
+
+            const initialNav = uiTarget === 'main' ?
+                (lastState?.mainCameraPose?.navMode ?? (events.invoke('camera.navMode') as ('orbit' | 'fpv'))) :
+                (events.invoke('camera.navMode') as ('orbit' | 'fpv'));
+            if (initialNav) {
+                if (uiTarget === 'viewport') {
+                    events.fire('camera.navMode', initialNav);
+                } else {
+                    setNavModeState(initialNav);
+                }
+            }
+
+            if (!transformEditing) {
+                const initialTransform = (uiTarget === 'main') ?
+                    (events.invoke('cameraFrames.mainTransform') as any) :
+                    (events.invoke('camera.transform') as any);
+                if (initialTransform) {
+                    applyTransformToInputs(initialTransform);
+                    lastPose = {
+                        x: initialTransform.position.x,
+                        y: initialTransform.position.y,
+                        z: initialTransform.position.z,
+                        yaw: initialTransform.rotation.yaw,
+                        pitch: initialTransform.rotation.pitch,
+                        roll: initialTransform.rotation.roll
+                    };
+                }
+            }
+        };
+
+        events.on('app.ready', syncFromModel);
     }
 }
 

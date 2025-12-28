@@ -19,10 +19,11 @@ class Ticks extends Container {
 
         this.append(workArea);
 
-        let addKey: (value: number) => void;
-        let removeKey: (index: number) => void;
-        let frameFromOffset: (offset: number) => number;
-        let moveCursor: (frame: number) => void;
+        let addKey = (_value: number) => {};
+        let removeKey = (_index: number) => {};
+        let frameFromOffset = (_offset: number) => 0;
+        let moveCursor = (_frame: number) => {};
+        let ready = false;
 
         // rebuild the timeline
         const rebuild = () => {
@@ -131,6 +132,9 @@ class Ticks extends Container {
         let scrubbing = false;
 
         workArea.dom.addEventListener('pointerdown', (event: PointerEvent) => {
+            if (!ready) {
+                return;
+            }
             if (!scrubbing && event.isPrimary) {
                 scrubbing = true;
                 workArea.dom.setPointerCapture(event.pointerId);
@@ -139,36 +143,50 @@ class Ticks extends Container {
         });
 
         workArea.dom.addEventListener('pointermove', (event: PointerEvent) => {
+            if (!ready) {
+                return;
+            }
             if (scrubbing) {
                 events.fire('timeline.setFrame', frameFromOffset(event.offsetX));
             }
         });
 
         workArea.dom.addEventListener('pointerup', (event: PointerEvent) => {
+            if (!ready) {
+                return;
+            }
             if (scrubbing && event.isPrimary) {
                 workArea.dom.releasePointerCapture(event.pointerId);
                 scrubbing = false;
             }
         });
 
-        // rebuild the timeline on dom resize
-        new ResizeObserver(() => rebuild()).observe(workArea.dom);
-
-        // rebuild when timeline frames change
-        events.on('timeline.frames', () => {
+        events.on('app.ready', () => {
+            if (ready) {
+                return;
+            }
+            ready = true;
             rebuild();
-        });
 
-        events.on('timeline.frame', (frame: number) => {
-            moveCursor(frame);
-        });
+            // rebuild the timeline on dom resize
+            new ResizeObserver(() => rebuild()).observe(workArea.dom);
 
-        events.on('timeline.keyAdded', (value: number) => {
-            addKey(value);
-        });
+            // rebuild when timeline frames change
+            events.on('timeline.frames', () => {
+                rebuild();
+            });
 
-        events.on('timeline.keyRemoved', (index: number) => {
-            removeKey(index);
+            events.on('timeline.frame', (frame: number) => {
+                moveCursor(frame);
+            });
+
+            events.on('timeline.keyAdded', (value: number) => {
+                addKey(value);
+            });
+
+            events.on('timeline.keyRemoved', (index: number) => {
+                removeKey(index);
+            });
         });
     }
 }
