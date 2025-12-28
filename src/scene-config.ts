@@ -44,7 +44,8 @@ const sceneConfig = {
         fpvLookSensitivity: 0.002
     },
     debug: {
-        showBound: false
+        showBound: false,
+        logClipPlanes: false
     }
 };
 

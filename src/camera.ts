@@ -116,6 +116,16 @@ class Camera extends Element {
     private transformSendIntervalMs = 33; // ~30Hz
 
     private nearOverride: number | null = null;
+    private lastClipLog: {
+        near: number;
+        far: number;
+        nearOverride: number | null;
+        customFrustum: boolean;
+        framesEnabled?: boolean;
+        uiTarget?: 'viewport' | 'main';
+    } | null = null;
+    private lastClipLogAt = 0;
+    private clipLogEnabled = false;
 
     private lockFramingHandler: (lock: boolean) => void;
     private lockFovAxisHandler: (axis: 'vertical' | 'horizontal' | undefined) => void;
@@ -706,6 +716,85 @@ class Camera extends Element {
         this.emitTransform();
     }
 
+    private isClipValueChanged(current: number, previous: number): boolean {
+        const absDelta = Math.abs(current - previous);
+        if (absDelta >= 1e-3) {
+            return true;
+        }
+        const denom = Math.max(Math.abs(previous), 1e-6);
+        return absDelta / denom >= 0.01;
+    }
+
+    private logClipPlanes(reason: string, near: number, far: number) {
+        const enabled = !!this.scene?.config?.debug?.logClipPlanes;
+        if (!enabled) {
+            if (this.clipLogEnabled) {
+                this.clipLogEnabled = false;
+                this.lastClipLog = null;
+                this.lastClipLogAt = 0;
+            }
+            return;
+        }
+
+        if (!this.clipLogEnabled) {
+            this.clipLogEnabled = true;
+            this.lastClipLog = null;
+            this.lastClipLogAt = 0;
+        }
+
+        const now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+        const minIntervalMs = 100;
+        const events = this.scene?.events;
+        const framesEnabled = events?.functions?.has('cameraFrames.enabled') ?
+            (events.invoke('cameraFrames.enabled') as boolean) :
+            undefined;
+        const uiTarget = events?.functions?.has('cameraFrames.uiTarget') ?
+            (events.invoke('cameraFrames.uiTarget') as ('viewport' | 'main')) :
+            undefined;
+
+        const last = this.lastClipLog;
+        const changed = !last ||
+            this.isClipValueChanged(near, last.near) ||
+            this.isClipValueChanged(far, last.far) ||
+            last.nearOverride !== this.nearOverride ||
+            last.customFrustum !== !!this.customFrustum ||
+            ((framesEnabled !== undefined || last.framesEnabled !== undefined) && framesEnabled !== last.framesEnabled) ||
+            ((uiTarget !== undefined || last.uiTarget !== undefined) && uiTarget !== last.uiTarget);
+
+        if (!changed) {
+            return;
+        }
+
+        if (now - this.lastClipLogAt < minIntervalMs) {
+            return;
+        }
+
+        this.lastClipLogAt = now;
+        this.lastClipLog = {
+            near,
+            far,
+            nearOverride: this.nearOverride,
+            customFrustum: !!this.customFrustum,
+            framesEnabled,
+            uiTarget
+        };
+
+        const payload: Record<string, unknown> = {
+            near,
+            far,
+            nearOverride: this.nearOverride,
+            customFrustum: !!this.customFrustum
+        };
+        if (framesEnabled !== undefined) {
+            payload.framesEnabled = framesEnabled;
+        }
+        if (uiTarget !== undefined) {
+            payload.uiTarget = uiTarget;
+        }
+
+        console.log(`[clip] ${reason}`, payload);
+    }
+
     fitClippingPlanes(cameraPosition: Vec3, forwardVec: Vec3) {
         const bound = this.scene.bound;
         const boundRadius = bound.halfExtents.length();
@@ -759,6 +848,7 @@ class Camera extends Element {
 
         this.far = far;
         this.near = near;
+        this.logClipPlanes('fit', near, far);
     }
 
     private getInfiniteGridPlaneIndex(): 0 | 1 | 2 {
