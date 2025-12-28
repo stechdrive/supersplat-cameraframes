@@ -1,6 +1,6 @@
 import { BooleanInput, Button, Container, Label, NumericInput, Panel, SelectInput, SliderInput, TextInput } from '@playcanvas/pcui';
 
-import { MIN_NEAR_CLIP } from '../clip-constants';
+import { DEFAULT_NEAR_CLIP, MIN_NEAR_CLIP } from '../clip-constants';
 import { Events } from '../events';
 import { formatInteger, localize } from './localization';
 import mainCamSvg from './svg/camera-panel.svg';
@@ -962,7 +962,7 @@ class CameraFramesPanel extends Panel {
             precision: nearPrecision,
             step: nearStep,
             min: MIN_NEAR_CLIP,
-            value: MIN_NEAR_CLIP,
+            value: DEFAULT_NEAR_CLIP,
             style: 'width: 120px'
         });
         nearClipRow.append(nearClipLabel);
