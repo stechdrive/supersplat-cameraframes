@@ -69,6 +69,24 @@ const quatOrbitPitch = new Quat();
 // modulo dealing with negative numbers
 const mod = (n: number, m: number) => ((n % m) + m) % m;
 
+type CameraCustomFrustum = { left: number, right: number, bottom: number, top: number, near: number, far: number };
+
+type CameraDoc = {
+    focalPoint: number[];
+    azim: number;
+    elev: number;
+    distance: number;
+    fov: number;
+    tonemapping: string;
+    roll: number;
+    navMode: 'orbit' | 'fpv';
+    ortho: boolean;
+    customFrustum: CameraCustomFrustum | null;
+    renderOverlays: boolean;
+    fpvPosition?: number[];
+    nearOverride?: number | null;
+};
+
 class Camera extends Element {
     controller: PointerController;
     entity: Entity;
@@ -97,7 +115,7 @@ class Camera extends Element {
 
     currentPickTarget: Splat | null = null;
 
-    private customFrustum: { left: number, right: number, bottom: number, top: number, near: number, far: number } | null = null;
+    private customFrustum: CameraCustomFrustum | null = null;
 
     // framing lock (CAMERA FRAMES 用): true のときオートフィットを抑止
     lockFraming = false;
@@ -217,7 +235,7 @@ class Camera extends Element {
         return this.entity.camera.farClip;
     }
 
-    setCustomFrustum(frustum: { left: number, right: number, bottom: number, top: number, near: number, far: number } | null) {
+    setCustomFrustum(frustum: CameraCustomFrustum | null) {
         this.customFrustum = frustum ? { ...frustum } : null;
         const cam = this.entity.camera;
         if (frustum) {
@@ -1497,10 +1515,10 @@ class Camera extends Element {
         this.entity.setRotation(quatFinal);
     }
 
-    docSerialize() {
+    docSerialize(): CameraDoc {
         const pack3 = (v: Vec3) => [v.x, v.y, v.z];
 
-        const result: Record<string, unknown> = {
+        const result: CameraDoc = {
             focalPoint: pack3(this.focalPointTween.target),
             azim: this.azim,
             elev: this.elevation,
