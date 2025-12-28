@@ -290,6 +290,8 @@ const main = async () => {
     initShortcuts(events);
     initFileHandler(scene, events, editorUI.appContainer.dom);
 
+    events.fire('app.ready');
+
     // wait until the first safe render before forcing FPV navigation and camera frames
     const fpvReadyHandle = events.on('postrender', () => {
         fpvReadyHandle.off();

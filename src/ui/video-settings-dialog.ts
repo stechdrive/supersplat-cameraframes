@@ -168,20 +168,38 @@ class VideoSettingsDialog extends Container {
 
         // frame range
 
-        const totalFrames = events.invoke('timeline.frames');
+        const defaultTotalFrames = 180;
         const frameRangeLabel = new Label({ class: 'label', text: localize('popup.render-video.frame-range') });
         const frameRangeInput = new VectorInput({
             class: 'vector-input',
             dimensions: 2,
             min: 0,
-            max: totalFrames - 1,
+            max: defaultTotalFrames - 1,
             placeholder: [localize('popup.render-video.frame-range-first'), localize('popup.render-video.frame-range-last')],
             precision: 0,
-            value: [0, totalFrames - 1]
+            value: [0, defaultTotalFrames - 1]
         });
         const frameRangeRow = new Container({ class: 'row' });
         frameRangeRow.append(frameRangeLabel);
         frameRangeRow.append(frameRangeInput);
+
+        let appReady = false;
+        const applyFrameRange = (totalFrames: number) => {
+            const max = Math.max(0, totalFrames - 1);
+            frameRangeInput.max = max;
+            frameRangeInput.value = [0, max];
+        };
+        const syncFrameRange = () => {
+            const totalFrames = events.invoke('timeline.frames');
+            applyFrameRange(totalFrames);
+        };
+        events.on('app.ready', () => {
+            if (appReady) {
+                return;
+            }
+            appReady = true;
+            syncFrameRange();
+        });
 
         // Validate frame range
         frameRangeInput.on('change', (value: number[]) => {
@@ -272,9 +290,11 @@ class VideoSettingsDialog extends Container {
 
         // reset UI and configure for current state
         const reset = () => {
-            const totalFrames = events.invoke('timeline.frames');
-            frameRangeInput.max = totalFrames - 1;
-            frameRangeInput.value = [0, totalFrames - 1];
+            if (appReady) {
+                syncFrameRange();
+            } else {
+                applyFrameRange(defaultTotalFrames);
+            }
         };
 
         // function implementations

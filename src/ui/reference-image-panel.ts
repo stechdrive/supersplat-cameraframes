@@ -1042,8 +1042,15 @@ class ReferenceImagePanel extends Container {
             suppress = false;
         };
 
-        const initialState = events.invoke('referenceImages.state') as ReferenceImagesState;
-        applyState(initialState);
+        let appReady = false;
+        events.on('app.ready', () => {
+            if (appReady) {
+                return;
+            }
+            appReady = true;
+            const initialState = events.invoke('referenceImages.state') as ReferenceImagesState | null;
+            applyState(initialState);
+        });
         events.on('referenceImages.stateChanged', (state: ReferenceImagesState) => applyState(state));
 
         const setVisible = (visible: boolean) => {
