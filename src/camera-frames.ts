@@ -5,7 +5,6 @@ import {
     DEFAULT_MASK,
     DEFAULT_RENDERBOX,
     DEG2RAD,
-    FRAME_OUTLINE_WIDTH_PX,
     FRUSTUM_DEBUG_CACHE_VERSION,
     FRUSTUM_DEBUG_COLOR,
     FRUSTUM_SELECTED_COLOR,
@@ -38,12 +37,14 @@ import {
     getHandleLogicalOffset as getHandleLogicalOffsetGeometry,
     getHandleLogicalPosition as getHandleLogicalPositionGeometry,
     getCursorForHit as getCursorForHitGeometry,
-    handleRects as handleRectsGeometry,
     hitTestFrameBorder as hitTestFrameBorderGeometry,
-    hitTestHandle as hitTestHandleGeometry,
-    isPointInRect as isPointInRectGeometry,
-    strokeFrameOutlinePath as strokeFrameOutlinePathGeometry
+    hitTestHandle as hitTestHandleGeometry
 } from './camera-frames-frame-geometry';
+import {
+    drawOverlay as drawOverlayOverlay,
+    renderFrameOverlay as renderFrameOverlayOverlay,
+    renderFrameOverlaysByManagement as renderFrameOverlaysByManagementOverlay
+} from './camera-frames-overlay';
 import { cameraFramesVersion } from './camera-frames-version';
 import { DEFAULT_NEAR_CLIP, MIN_NEAR_CLIP } from './clip-constants';
 import { ElementType } from './element';
@@ -2368,10 +2369,6 @@ export class CameraFramesController {
         );
     }
 
-    private handleRects(frameRect: ReturnType<CameraFramesController['frameRectsScreen']>[number]) {
-        return handleRectsGeometry(frameRect, this.state.renderBox, (x, y) => this.logicalToScreen(x, y));
-    }
-
     private frameAnchorLogical(frame: FrameState, logicalW: number, logicalH: number) {
         return frameAnchorLogicalGeometry(frame, this.state.renderBox, logicalW, logicalH);
     }
@@ -2398,14 +2395,6 @@ export class CameraFramesController {
         );
     }
 
-    private strokeFrameOutlinePath(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number) {
-        strokeFrameOutlinePathGeometry(ctx, x, y, w, h);
-    }
-
-    private isPointInRect(px: number, py: number, r: { x: number; y: number; w: number; h: number; }) {
-        return isPointInRectGeometry(px, py, r);
-    }
-
     private hitTestHandle(px: number, py: number) {
         return hitTestHandleGeometry(
             px,
@@ -2430,118 +2419,20 @@ export class CameraFramesController {
         );
     }
 
-    private snapAxisAlignedRect(centerX: number, centerY: number, w: number, h: number) {
-        const left = Math.round(centerX - w * 0.5);
-        const right = Math.round(centerX + w * 0.5);
-        const top = Math.round(centerY - h * 0.5);
-        const bottom = Math.round(centerY + h * 0.5);
-        return {
-            x: left,
-            y: top,
-            w: Math.max(0, right - left),
-            h: Math.max(0, bottom - top)
-        };
-    }
-
-    private drawMask(rects: ReturnType<CameraFramesController['frameRectsScreen']>) {
-        const { mask } = this.state;
-        if (!mask?.enabled || rects.length === 0) {
-            return;
-        }
-        const ctx = this.overlayCtx;
-        const { vw, vh } = this.viewport;
-
-        const filtered = mask.scope === 'selected' ? rects.filter(r => r.frame.selected) : rects;
-        const targetRects = filtered.length > 0 ? filtered : rects;
-        if (targetRects.length === 0) {
-            return;
-        }
-
-        // compute bounding box
-        let minX = Number.POSITIVE_INFINITY;
-        let minY = Number.POSITIVE_INFINITY;
-        let maxX = Number.NEGATIVE_INFINITY;
-        let maxY = Number.NEGATIVE_INFINITY;
-
-        targetRects.forEach((r) => {
-            const b = r.bounding;
-            minX = Math.min(minX, b.x);
-            minY = Math.min(minY, b.y);
-            maxX = Math.max(maxX, b.x + b.w);
-            maxY = Math.max(maxY, b.y + b.h);
-        });
-
-        ctx.save();
-        ctx.fillStyle = `rgba(0,0,0,${mask.opacity ?? 0.8})`;
-        ctx.beginPath();
-        ctx.rect(0, 0, vw, vh);
-        ctx.rect(minX, minY, maxX - minX, maxY - minY);
-        ctx.fill('evenodd');
-        ctx.restore();
-    }
-
     private drawOverlay() {
-        const ctx = this.overlayCtx;
-        const { vw, vh } = this.viewport;
-        ctx.clearRect(0, 0, vw, vh);
-
-        if (!this.state.enabled) {
-            return;
-        }
-
-        const rb = this.state.renderBox;
-        const mapping = this.computeViewportMapping();
-        const logicalW = mapping.logicalW;
-        const logicalH = mapping.logicalH;
-        const leftTop = this.logicalToScreen(rb.center.cx - logicalW * 0.5, rb.center.cy - logicalH * 0.5);
-        const rightBottom = this.logicalToScreen(rb.center.cx + logicalW * 0.5, rb.center.cy + logicalH * 0.5);
-
-        // render box
-        ctx.save();
-        ctx.strokeStyle = 'rgba(255,255,255,0.9)';
-        ctx.lineWidth = 1;
-        ctx.setLineDash([4, 3]);
-        ctx.strokeRect(leftTop.x, leftTop.y, rightBottom.x - leftTop.x, rightBottom.y - leftTop.y);
-        ctx.restore();
-
-        const rects = this.frameRectsScreen();
-
-        // mask
-        this.drawMask(rects);
-
-        // frames
-        rects.forEach((r) => {
-            const wScreen = r.frameW * r.effectiveScale;
-            const hScreen = r.frameH * r.effectiveScale;
-            ctx.save();
-            ctx.translate(r.centerScreen.x, r.centerScreen.y);
-            ctx.rotate(r.rotationRad);
-            ctx.strokeStyle = '#ff0000';
-            ctx.lineWidth = FRAME_OUTLINE_WIDTH_PX;
-            ctx.setLineDash([]);
-            this.strokeFrameOutlinePath(ctx, -wScreen * 0.5, -hScreen * 0.5, wScreen, hScreen);
-            if (r.frame.selected) {
-                ctx.strokeStyle = 'rgba(255,255,255,0.7)';
-                ctx.setLineDash([3, 2]);
-                ctx.lineWidth = 1;
-                this.strokeFrameOutlinePath(ctx, -wScreen * 0.5, -hScreen * 0.5, wScreen, hScreen);
-            }
-            ctx.restore();
+        const enabled = this.state.enabled;
+        const mapping = enabled ? this.computeViewportMapping() : null;
+        const rects = enabled ? this.frameRectsScreen() : [];
+        drawOverlayOverlay({
+            ctx: this.overlayCtx,
+            viewport: this.viewport,
+            enabled,
+            renderBox: this.state.renderBox,
+            mapping,
+            logicalToScreen: (x, y) => this.logicalToScreen(x, y),
+            frameRects: rects,
+            mask: this.state.mask
         });
-
-        // handles (選択時のみ)
-        const selectedRect = rects.find(r => r.frame.selected);
-        if (selectedRect) {
-            const handles = this.handleRects(selectedRect);
-            ctx.save();
-            ctx.fillStyle = '#ffffff';
-            ctx.strokeStyle = '#ff0000';
-            handles.forEach((h) => {
-                ctx.fillRect(h.rect.x, h.rect.y, h.rect.w, h.rect.h);
-                ctx.strokeRect(h.rect.x, h.rect.y, h.rect.w, h.rect.h);
-            });
-            ctx.restore();
-        }
     }
 
     // pointer interactions --------------------------------------------------
@@ -2979,51 +2870,6 @@ export class CameraFramesController {
 
     // rendering to image ---------------------------------------------------
 
-    private drawFramesToCtx(ctx: CanvasRenderingContext2D, rb: RenderBoxState, width: number, height: number, frames: FrameState[]) {
-        const logicalW = rb.baseSize.w * rb.scale.kx;
-        const logicalH = rb.baseSize.h * rb.scale.ky;
-        const boxLeft = width * 0.5 - logicalW * 0.5;
-        const boxTop = height * 0.5 - logicalH * 0.5;
-        ctx.save();
-        ctx.beginPath();
-        ctx.rect(boxLeft, boxTop, logicalW, logicalH);
-        ctx.clip();
-
-        const framesSorted = frames.slice().sort((a, b) => a.order - b.order);
-        framesSorted.forEach((frame) => {
-            const frameW = frame.baseSize.w * frame.scaleK;
-            const frameH = frame.baseSize.h * frame.scaleK;
-            const centerX = width * 0.5 + (frame.pos.x - 0.5) * logicalW;
-            const centerY = height * 0.5 + (frame.pos.y - 0.5) * logicalH;
-            const rotationRad = this.frameRotationRad(frame);
-            const lineWidth = FRAME_OUTLINE_WIDTH_PX;
-            ctx.save();
-            ctx.strokeStyle = '#ff0000';
-            ctx.lineWidth = lineWidth;
-
-            // 回転が 90 度刻み（軸揃い）の場合はピクセルグリッドにスナップしてシャープに描く
-            const quarterTurn = Math.PI * 0.5;
-            const nearestQuarter = Math.round(rotationRad / quarterTurn);
-            const alignedRad = nearestQuarter * quarterTurn;
-            const isAxisAligned = Math.abs(rotationRad - alignedRad) < 1e-3;
-
-            if (isAxisAligned) {
-                const swap = (Math.abs(nearestQuarter) % 2) === 1;
-                const w = swap ? frameH : frameW;
-                const h = swap ? frameW : frameH;
-                const snapped = this.snapAxisAlignedRect(centerX, centerY, w, h);
-                this.strokeFrameOutlinePath(ctx, snapped.x, snapped.y, snapped.w, snapped.h);
-            } else {
-                ctx.translate(centerX, centerY);
-                ctx.rotate(rotationRad);
-                this.strokeFrameOutlinePath(ctx, -frameW * 0.5, -frameH * 0.5, frameW, frameH);
-            }
-            ctx.restore();
-        });
-
-        ctx.restore();
-    }
-
     private canvasFromPixels(pixels: Uint8Array | Uint8ClampedArray, width: number, height: number) {
         const canvas = document.createElement('canvas');
         canvas.width = width;
@@ -3194,17 +3040,8 @@ export class CameraFramesController {
     }
 
     private renderFrameOverlay(width: number, height: number, frames?: FrameState[]) {
-        const canvas = document.createElement('canvas');
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) {
-            throw new Error('Failed to acquire 2D context for frame overlay');
-        }
-
         const framesToDraw = frames ?? this.state.frames;
-        this.drawFramesToCtx(ctx, this.state.renderBox, width, height, framesToDraw);
-        return { canvas };
+        return renderFrameOverlayOverlay(width, height, this.state.renderBox, framesToDraw);
     }
 
     private frameManagementName(frameId: string | null | undefined) {
@@ -3215,24 +3052,13 @@ export class CameraFramesController {
     }
 
     private renderFrameOverlaysByManagement(width: number, height: number) {
-        const framesSorted = this.state.frames.slice().sort((a, b) => a.order - b.order);
-        const order: string[] = [];
-        const groups = new Map<string, FrameState[]>();
-
-        framesSorted.forEach((frame) => {
-            const name = this.frameManagementName(frame.id);
-            if (!groups.has(name)) {
-                groups.set(name, []);
-                order.push(name);
-            }
-            groups.get(name).push(frame);
-        });
-
-        return order.map((name) => {
-            const groupFrames = groups.get(name) ?? [];
-            const { canvas } = this.renderFrameOverlay(width, height, groupFrames);
-            return { name, canvas };
-        });
+        return renderFrameOverlaysByManagementOverlay(
+            width,
+            height,
+            this.state.renderBox,
+            this.state.frames,
+            (frameId) => this.frameManagementName(frameId)
+        );
     }
 
     private getCompressor() {
