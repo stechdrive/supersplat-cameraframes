@@ -36,7 +36,6 @@ import {
     getAnchorLogicalForHandle as getAnchorLogicalForHandleGeometry,
     getHandleLogicalOffset as getHandleLogicalOffsetGeometry,
     getHandleLogicalPosition as getHandleLogicalPositionGeometry,
-    getCursorForHit as getCursorForHitGeometry,
     hitTestFrameBorder as hitTestFrameBorderGeometry,
     hitTestHandle as hitTestHandleGeometry
 } from './camera-frames-frame-geometry';
@@ -45,6 +44,12 @@ import {
     renderFrameOverlay as renderFrameOverlayOverlay,
     renderFrameOverlaysByManagement as renderFrameOverlaysByManagementOverlay
 } from './camera-frames-overlay';
+import {
+    getCursorForHit as getCursorForHitPointer,
+    onContainerPointerDown as onContainerPointerDownPointer,
+    onHover as onHoverPointer,
+    updatePointerFromLast as updatePointerFromLastPointer
+} from './camera-frames-pointer';
 import { renderImage } from './camera-frames-export';
 import { cameraFramesVersion } from './camera-frames-version';
 import { DEFAULT_NEAR_CLIP, MIN_NEAR_CLIP } from './clip-constants';
@@ -2416,10 +2421,6 @@ export class CameraFramesController {
         );
     }
 
-    private getCursorForHit(handleId: string | undefined, borderHit: any) {
-        return getCursorForHitGeometry(handleId, borderHit);
-    }
-
     private hitTestFrameBorder(px: number, py: number) {
         return hitTestFrameBorderGeometry(
             px,
@@ -2448,77 +2449,38 @@ export class CameraFramesController {
     // pointer interactions --------------------------------------------------
 
     private onHover(e: PointerEvent) {
-        this.lastPointer = { x: e.clientX, y: e.clientY };
-        this.ensureUiTargetAvailability();
-
-        const rect = this.canvasContainer.getBoundingClientRect();
-        const px = e.clientX - rect.left;
-        const py = e.clientY - rect.top;
-
-        if (this.frustumDragState) {
-            this.overlay.style.pointerEvents = 'auto';
-            this.overlay.style.cursor = 'grabbing';
-            return;
-        }
-
-        // Gizmo優先チェック: ギズモにヒットしたらオーバーレイは透過する
-        if (hitTestGizmo(this.scene, e.clientX, e.clientY)) {
-            this.overlay.style.pointerEvents = 'none';
-            this.overlay.style.cursor = '';
-            return;
-        }
-
-        if (!this.state.enabled) {
-            this.overlay.style.pointerEvents = 'none';
-            this.overlay.style.cursor = '';
-            return;
-        }
-        if (this.dragState) {
-            this.overlay.style.pointerEvents = 'auto';
-            this.overlay.style.cursor = this.dragState.mode === 'pan' ? 'grabbing' : '';
-            return;
-        }
-
-        if (e.shiftKey) {
-            this.overlay.style.pointerEvents = 'auto';
-            this.overlay.style.cursor = 'grab';
-            return;
-        }
-
-        const handleHit = this.hitTestHandle(px, py);
-        const borderHit = !handleHit && this.hitTestFrameBorder(px, py);
-
-        this.overlay.style.pointerEvents = (handleHit || borderHit) ? 'auto' : 'none';
-        this.overlay.style.cursor = this.getCursorForHit(handleHit?.handleId, borderHit);
+        onHoverPointer({
+            event: e,
+            canvasContainer: this.canvasContainer,
+            overlay: this.overlay,
+            scene: this.scene,
+            state: this.state,
+            dragState: this.dragState,
+            frustumDragState: this.frustumDragState,
+            setLastPointer: (value) => {
+                this.lastPointer = value;
+            },
+            ensureUiTargetAvailability: () => this.ensureUiTargetAvailability(),
+            hitTestHandle: (px, py) => this.hitTestHandle(px, py),
+            hitTestFrameBorder: (px, py) => this.hitTestFrameBorder(px, py)
+        });
     }
 
-    private onContainerPointerDown(_e: PointerEvent) {
-        // クリックでの対象切り替えは行わない（パネルUI経由でのみ操作対象を変更）
+    private onContainerPointerDown(e: PointerEvent) {
+        onContainerPointerDownPointer(e);
     }
 
     private updatePointerFromLast() {
-        if (!this.lastPointer) {
-            this.overlay.style.pointerEvents = 'none';
-            return;
-        }
-        this.ensureUiTargetAvailability();
-        const rect = this.canvasContainer.getBoundingClientRect();
-        const px = this.lastPointer.x - rect.left;
-        const py = this.lastPointer.y - rect.top;
-        if (this.frustumDragState) {
-            this.overlay.style.pointerEvents = 'auto';
-            this.overlay.style.cursor = 'grabbing';
-            return;
-        }
-        if (!this.state.enabled) {
-            this.overlay.style.pointerEvents = 'none';
-            this.overlay.style.cursor = '';
-            return;
-        }
-        const handleHit = this.hitTestHandle(px, py);
-        const borderHit = !handleHit && this.hitTestFrameBorder(px, py);
-        this.overlay.style.pointerEvents = (handleHit || borderHit) && this.state.enabled ? 'auto' : 'none';
-        this.overlay.style.cursor = this.getCursorForHit(handleHit?.handleId, borderHit);
+        updatePointerFromLastPointer({
+            lastPointer: this.lastPointer,
+            canvasContainer: this.canvasContainer,
+            overlay: this.overlay,
+            state: this.state,
+            frustumDragState: this.frustumDragState,
+            ensureUiTargetAvailability: () => this.ensureUiTargetAvailability(),
+            hitTestHandle: (px, py) => this.hitTestHandle(px, py),
+            hitTestFrameBorder: (px, py) => this.hitTestFrameBorder(px, py)
+        });
     }
 
     private applyCameraFramesVersionLabel() {
@@ -2648,7 +2610,7 @@ export class CameraFramesController {
             startAngle
         };
         this.historyBegin(`cameraFrames.${mode}`);
-        this.overlay.style.cursor = mode === 'rotate' ? 'grabbing' : this.getCursorForHit(handleId, true);
+        this.overlay.style.cursor = mode === 'rotate' ? 'grabbing' : getCursorForHitPointer(handleId, true);
 
         e.stopPropagation();
         e.preventDefault();
