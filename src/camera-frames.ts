@@ -48,7 +48,7 @@ import {
     updateViewportNearTargetSizeState as updateViewportNearTargetSizeStateCamera,
     worldDistanceToNormalized as worldDistanceToNormalizedCamera
 } from './camera-frames-camera';
-import { clampFov, cloneFrame, normalizeMaskScope } from './camera-frames-math';
+import { clampFov, normalizeMaskScope } from './camera-frames-math';
 import {
     computeViewportMapping as computeViewportMappingViewport,
     logicalToScreen as logicalToScreenViewport,
@@ -81,6 +81,12 @@ import {
     resetFrameRotation as resetFrameRotationPointer,
     updatePointerFromLast as updatePointerFromLastPointer
 } from './camera-frames-pointer';
+import {
+    applySnapshot as applySnapshotSerialize,
+    deserialize as deserializeSerialize,
+    serialize as serializeSerialize,
+    snapshot as snapshotSerialize
+} from './camera-frames-serialize';
 import { renderImage } from './camera-frames-export';
 import { cameraFramesVersion } from './camera-frames-version';
 import { DEFAULT_NEAR_CLIP } from './clip-constants';
@@ -2262,249 +2268,104 @@ export class CameraFramesController {
     // serialization --------------------------------------------------------
 
     public snapshot(): CameraFramesState {
-        return {
-            enabled: this.state.enabled,
-            renderBox: JSON.parse(JSON.stringify(this.state.renderBox)),
-            frames: this.state.frames.map(cloneFrame),
-            mask: { ...this.state.mask },
-            mainCameraPose: this.clonePoseSnapshot(this.state.mainCameraPose),
-            nearClip: this.state.nearClip,
-            exportName: this.state.exportName,
-            exportFormat: this.normalizeFormat(this.state.exportFormat),
-            exportGridOverlay: !!this.state.exportGridOverlay,
-            exportModelLayers: !!this.state.exportModelLayers
-        };
+        return snapshotSerialize({
+            state: this.state,
+            clonePoseSnapshot: (pose) => this.clonePoseSnapshot(pose),
+            normalizeFormat: (format) => this.normalizeFormat(format)
+        });
     }
 
     public applySnapshot(snapshot: CameraFramesState) {
-        this.applyingHistory = true;
-        try {
-            this.state = JSON.parse(JSON.stringify(snapshot));
-            this.normalizeMainRenderBoxProjection(this.scene.camera.fov);
-            this.state.mask = {
-                ...DEFAULT_MASK,
-                ...(this.state.mask ?? {}),
-                scope: normalizeMaskScope(this.state.mask?.scope, DEFAULT_MASK.scope)
-            };
-            this.state.mainCameraPose = this.clonePoseSnapshot(this.state.mainCameraPose);
-            this.forceMainCameraPoseOrthoOff(this.state.mainCameraPose);
-            if (!this.state.mainCameraPose) {
-                this.state.mainCameraPose = this.forceMainCameraPoseOrthoOff(this.clonePoseSnapshot(this.captureCameraPose()));
-            }
-            this.viewportPoseRuntime = null;
-            this.viewportPoseRuntimeWorldDistance = null;
-            if (!this.state.enabled) {
-                this.hasEnteredViewportOnce = true;
-            }
-            this.selectedId = this.state.frames.find(f => f.selected)?.id ?? null;
-            this.state.nearClip = this.computeSafeNearClip(this.state.nearClip);
-            this.state.exportGridOverlay = !!this.state.exportGridOverlay;
-            this.state.exportModelLayers = !!this.state.exportModelLayers;
-            this.overlay.style.pointerEvents = 'none';
-            this.rebuildBaseFrustum();
-            if (this.state.enabled) {
-                if (this.state.mainCameraPose) {
-                    this.applyCameraPose(this.state.mainCameraPose, { silent: true, allowOrtho: false });
-                }
-                this.applyNearClipOverride();
-                this.computeViewportMapping(true);
-                this.syncCameraFrustum();
-                this.scheduleNearClipGuard();
-            } else {
-                this.events.fire('camera.setNearOverride', null);
-                this.events.fire('camera.setCustomFrustum', null);
-            }
-            this.requestRender();
-            this.events.fire('cameraFrames.stateChanged', this.snapshot());
-            this.updatePointerFromLast();
-            this.updateFovInfo();
-            this.frustumDebugCache.points = null;
-            this.frustumDebugCache.pose = null;
-        } finally {
-            this.applyingHistory = false;
-        }
+        applySnapshotSerialize({
+            snapshot,
+            sceneCameraFov: this.scene.camera.fov,
+            setApplyingHistory: (value) => {
+                this.applyingHistory = value;
+            },
+            setState: (value) => {
+                this.state = value;
+            },
+            normalizeMainRenderBoxProjection: (baseFov) => this.normalizeMainRenderBoxProjection(baseFov),
+            clonePoseSnapshot: (pose) => this.clonePoseSnapshot(pose),
+            forceMainCameraPoseOrthoOff: (pose) => this.forceMainCameraPoseOrthoOff(pose),
+            captureCameraPose: () => this.captureCameraPose(),
+            computeSafeNearClip: (value) => this.computeSafeNearClip(value),
+            setViewportPoseRuntime: (value) => {
+                this.viewportPoseRuntime = value;
+            },
+            setViewportPoseRuntimeWorldDistance: (value) => {
+                this.viewportPoseRuntimeWorldDistance = value;
+            },
+            setHasEnteredViewportOnce: (value) => {
+                this.hasEnteredViewportOnce = value;
+            },
+            setSelectedId: (value) => {
+                this.selectedId = value;
+            },
+            overlay: this.overlay,
+            frustumDebugCache: this.frustumDebugCache,
+            rebuildBaseFrustum: () => this.rebuildBaseFrustum(),
+            applyCameraPose: (pose, options) => this.applyCameraPose(pose, options),
+            applyNearClipOverride: () => this.applyNearClipOverride(),
+            computeViewportMapping: (updateFitScale) => this.computeViewportMapping(updateFitScale),
+            syncCameraFrustum: () => this.syncCameraFrustum(),
+            scheduleNearClipGuard: () => this.scheduleNearClipGuard(),
+            requestRender: () => this.requestRender(),
+            events: this.events,
+            fireStateChanged: () => this.events.fire('cameraFrames.stateChanged', this.snapshot()),
+            updatePointerFromLast: () => this.updatePointerFromLast(),
+            updateFovInfo: () => this.updateFovInfo()
+        });
     }
 
     private serialize() {
-        const snap = this.snapshot();
-        return {
-            ...snap,
+        return serializeSerialize({
+            snapshot: () => this.snapshot(),
             selectedId: this.selectedId,
             version: cameraFramesVersion
-        };
+        });
     }
 
     private deserialize(docState: any) {
-        if (!docState) {
-            const initialPose = this.captureCameraPose();
-            this.state = {
-                enabled: false,
-                renderBox: DEFAULT_RENDERBOX(),
-                frames: [],
-                mask: { ...DEFAULT_MASK },
-                mainCameraPose: this.forceMainCameraPoseOrthoOff(this.clonePoseSnapshot(initialPose)),
-                nearClip: null,
-                exportName: 'cf-output',
-                exportFormat: 'png',
-                exportGridOverlay: false,
-                exportModelLayers: false
-            };
-            this.normalizeMainRenderBoxProjection(this.scene.camera.fov);
-            this.selectedId = null;
-            this.viewportPoseRuntime = null;
-            this.viewportPoseRuntimeWorldDistance = null;
-            this.hasEnteredViewportOnce = false;
-            this.rebuildBaseFrustum();
-            if (this.state.enabled && this.state.mainCameraPose) {
-                this.applyCameraPose(this.state.mainCameraPose, { silent: true, allowOrtho: false });
-                this.syncCameraFrustum();
-            }
-            this.updateFovInfo();
-            this.requestRender();
-            this.events.fire('cameraFrames.stateChanged', this.snapshot());
-            return;
-        }
-
-        const _stateVersion = docState.version ?? 0; // reserved for future migrations
-
-        const rb = docState.renderBox ?? DEFAULT_RENDERBOX();
-        const exportName = typeof docState.exportName === 'string' ? docState.exportName : 'cf-output';
-        const exportFormat = this.normalizeFormat(docState.exportFormat ?? 'psd');
-        const exportGridOverlay = !!docState.exportGridOverlay;
-        const exportModelLayers = !!docState.exportModelLayers;
-        const maskScope = normalizeMaskScope(docState.mask?.scope, DEFAULT_MASK.scope);
-        const frames = (docState.frames ?? []).map((f: FrameState) => ({
-            id: f.id,
-            pos: { ...f.pos },
-            scalePct: f.scalePct ?? 100,
-            scaleK: (f.scalePct ?? 100) / 100,
-            baseSize: f.baseSize ?? { ...DEFAULT_FRAME_BASE },
-            order: f.order ?? 0,
-            rotationDeg: (typeof f.rotationDeg === 'number' && isFinite(f.rotationDeg)) ? f.rotationDeg : 0,
-            anchor: f.anchor ? { ...f.anchor } : { x: f.pos?.x ?? 0.5, y: f.pos?.y ?? 0.5 }
-        }));
-
-        const baseSize = rb.baseSize ?? DEFAULT_RENDERBOX().baseSize;
-        const MIN_PCT = 100;
-        const MAX_DIM = 16000;
-        const rawScalePctX = rb.scalePct?.x ?? 100;
-        const rawScalePctY = rb.scalePct?.y ?? 100;
-        const maxScalePctX = baseSize.w > 0 ? Math.floor((MAX_DIM / baseSize.w) * 100) : MIN_PCT;
-        const maxScalePctY = baseSize.h > 0 ? Math.floor((MAX_DIM / baseSize.h) * 100) : MIN_PCT;
-        const clampedScalePctX = Math.min(maxScalePctX, Math.max(MIN_PCT, rawScalePctX));
-        const clampedScalePctY = Math.min(maxScalePctY, Math.max(MIN_PCT, rawScalePctY));
-        const scalePct = { x: clampedScalePctX, y: clampedScalePctY };
-        const scale = {
-            kx: rb.scale?.kx ?? scalePct.x / 100,
-            ky: rb.scale?.ky ?? scalePct.y / 100
-        };
-        const legacyUiScale = (typeof rb.uiScale === 'number' && isFinite(rb.uiScale)) ? rb.uiScale : undefined;
-        const viewZoomPct = this.normalizeViewZoomPct(rb.viewZoomPct ?? (legacyUiScale !== undefined ? legacyUiScale * 100 : undefined));
-        const lastViewport = rb.lastViewport ?? { ...this.viewport };
-        const logicalW = baseSize.w * scale.kx;
-        const logicalH = baseSize.h * scale.ky;
-        const autoFit = Math.min(
-            lastViewport.vw > 0 ? lastViewport.vw / logicalW : 1,
-            lastViewport.vh > 0 ? lastViewport.vh / logicalH : 1
-        ) || 1;
-        const legacyViewScale = (typeof rb.viewScale === 'number' && isFinite(rb.viewScale)) ? rb.viewScale : null;
-        const fitScale = (() => {
-            if (legacyViewScale) {
-                const divisor = legacyUiScale ?? (viewZoomPct / 100);
-                if (divisor > 0) {
-                    const fit = legacyViewScale / divisor;
-                    if (isFinite(fit) && fit > 0) {
-                        return fit;
-                    }
-                }
-            }
-            if (isFinite(rb.fitScale) && rb.fitScale > 0) {
-                return rb.fitScale;
-            }
-            return autoFit;
-        })();
-        const projection = (() => {
-            const raw = rb.projection ?? {};
-            let baseFov = this.scene.camera.fov;
-            if (typeof raw.baseFov === 'number' && isFinite(raw.baseFov)) {
-                baseFov = raw.baseFov;
-            } else if (typeof (raw as any).fovY === 'number' && isFinite((raw as any).fovY)) {
-                baseFov = (raw as any).fovY;
-            }
-            return {
-                type: raw.type ?? 'perspective',
-                baseFov,
-                orthoHalfHeight: raw.orthoHalfHeight
-            };
-        })();
-        const mainCameraPose = this.clonePoseSnapshot(docState.mainCameraPose);
-
-        this.state = {
-            enabled: !!docState.enabled,
-            renderBox: {
-                ...DEFAULT_RENDERBOX(),
-                baseSize,
-                scalePct,
-                scale,
-                anchor: rb.anchor ?? { ax: 0.5, ay: 0.5 },
-                center: rb.center ?? { cx: this.viewport.vw / 2, cy: this.viewport.vh / 2 },
-                fitScale,
-                viewZoomPct,
-                lastViewport,
-                projection
+        deserializeSerialize({
+            docState,
+            scene: this.scene,
+            viewport: this.viewport,
+            events: this.events,
+            normalizeFormat: (format) => this.normalizeFormat(format),
+            normalizeViewZoomPct: (value) => this.normalizeViewZoomPct(value),
+            clonePoseSnapshot: (pose) => this.clonePoseSnapshot(pose),
+            forceMainCameraPoseOrthoOff: (pose) => this.forceMainCameraPoseOrthoOff(pose),
+            captureCameraPose: () => this.captureCameraPose(),
+            normalizeMainRenderBoxProjection: (baseFov) => this.normalizeMainRenderBoxProjection(baseFov),
+            computeSafeNearClip: (value) => this.computeSafeNearClip(value),
+            setState: (value) => {
+                this.state = value;
             },
-            frames,
-            mask: {
-                ...DEFAULT_MASK,
-                ...(docState.mask ?? {}),
-                scope: maskScope
+            setSelectedId: (value) => {
+                this.selectedId = value;
             },
-            nearClip: (typeof docState.nearClip === 'number' && isFinite(docState.nearClip)) ? docState.nearClip : null,
-            exportName,
-            exportFormat,
-            exportGridOverlay,
-            exportModelLayers,
-            mainCameraPose
-        };
-
-        this.normalizeMainRenderBoxProjection(this.scene.camera.fov);
-        this.forceMainCameraPoseOrthoOff(this.state.mainCameraPose);
-        this.state.nearClip = this.computeSafeNearClip(this.state.nearClip);
-        if (!this.state.mainCameraPose) {
-            this.state.mainCameraPose = this.forceMainCameraPoseOrthoOff(this.clonePoseSnapshot(this.captureCameraPose()));
-        }
-
-        this.overlay.style.pointerEvents = 'none';
-        this.viewportPoseRuntime = null;
-        this.viewportPoseRuntimeWorldDistance = null;
-        this.hasEnteredViewportOnce = !this.state.enabled;
-
-        this.selectedId = (docState && Object.prototype.hasOwnProperty.call(docState, 'selectedId')) ?
-            docState.selectedId :
-            (frames[0]?.id ?? null);
-        this.state.frames.forEach((f) => {
-            f.selected = f.id === this.selectedId;
+            setViewportPoseRuntime: (value) => {
+                this.viewportPoseRuntime = value;
+            },
+            setViewportPoseRuntimeWorldDistance: (value) => {
+                this.viewportPoseRuntimeWorldDistance = value;
+            },
+            setHasEnteredViewportOnce: (value) => {
+                this.hasEnteredViewportOnce = value;
+            },
+            overlay: this.overlay,
+            rebuildBaseFrustum: () => this.rebuildBaseFrustum(),
+            applyCameraPose: (pose, options) => this.applyCameraPose(pose, options),
+            applyNearClipOverride: () => this.applyNearClipOverride(),
+            computeViewportMapping: (updateFitScale) => this.computeViewportMapping(updateFitScale),
+            syncCameraFrustum: () => this.syncCameraFrustum(),
+            scheduleNearClipGuard: () => this.scheduleNearClipGuard(),
+            requestRender: () => this.requestRender(),
+            fireStateChanged: () => this.events.fire('cameraFrames.stateChanged', this.snapshot()),
+            updatePointerFromLast: () => this.updatePointerFromLast(),
+            updateFovInfo: () => this.updateFovInfo()
         });
-
-        // 現在の viewport に合わせて rect を整合
-        this.computeViewportMapping(false);
-        this.rebuildBaseFrustum();
-        if (this.state.enabled) {
-            if (this.state.mainCameraPose) {
-                this.applyCameraPose(this.state.mainCameraPose, { silent: true, allowOrtho: false });
-            }
-            this.applyNearClipOverride();
-            this.syncCameraFrustum();
-        } else {
-            this.events.fire('camera.setNearOverride', null);
-            this.events.fire('camera.setCustomFrustum', null);
-        }
-
-        this.scheduleNearClipGuard();
-        this.requestRender();
-        this.events.fire('cameraFrames.stateChanged', this.snapshot());
-        this.updatePointerFromLast();
-        this.updateFovInfo();
     }
 }
 
