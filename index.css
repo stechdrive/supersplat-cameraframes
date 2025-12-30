@@ -4325,6 +4325,19 @@ body {
   top: 0px;
   pointer-events: none;
 }
+#view-cube-container.view-cube-disabled {
+  pointer-events: auto;
+  cursor: not-allowed;
+}
+
+#view-cube-svg {
+  pointer-events: auto;
+}
+
+#view-cube-container.view-cube-disabled #view-cube-svg {
+  pointer-events: none;
+  opacity: 0.35;
+}
 
 #mask-canvas {
   display: none;
