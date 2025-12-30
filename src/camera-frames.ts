@@ -12,17 +12,10 @@ import {
     HFOV_MIN,
     MAX_VIEW_ZOOM_PCT,
     MIN_VIEW_ZOOM_PCT,
-    PAN_MARGIN_PX,
     RAD2DEG,
     W_35MM
 } from './camera-frames-constants';
-import {
-    clampFov,
-    cloneFrame,
-    normalizeDegrees,
-    normalizeMaskScope,
-    rotateOffset as rotateOffsetPoint
-} from './camera-frames-math';
+import { clampFov, cloneFrame, normalizeMaskScope } from './camera-frames-math';
 import {
     computeViewportMapping as computeViewportMappingViewport,
     logicalToScreen as logicalToScreenViewport,
@@ -45,9 +38,14 @@ import {
     renderFrameOverlaysByManagement as renderFrameOverlaysByManagementOverlay
 } from './camera-frames-overlay';
 import {
-    getCursorForHit as getCursorForHitPointer,
     onContainerPointerDown as onContainerPointerDownPointer,
+    onDoubleClick as onDoubleClickPointer,
     onHover as onHoverPointer,
+    onPointerDown as onPointerDownPointer,
+    onPointerMove as onPointerMovePointer,
+    onPointerUp as onPointerUpPointer,
+    resetAnchorToCenter as resetAnchorToCenterPointer,
+    resetFrameRotation as resetFrameRotationPointer,
     updatePointerFromLast as updatePointerFromLastPointer
 } from './camera-frames-pointer';
 import { renderImage } from './camera-frames-export';
@@ -55,7 +53,6 @@ import { cameraFramesVersion } from './camera-frames-version';
 import { DEFAULT_NEAR_CLIP, MIN_NEAR_CLIP } from './clip-constants';
 import { ElementType } from './element';
 import { Events } from './events';
-import { hitTestGizmo } from './gizmo-hit';
 import { PngCompressor } from './png-compressor';
 import { Scene } from './scene';
 import type {
@@ -2535,308 +2532,96 @@ export class CameraFramesController {
     }
 
     private onPointerDown(e: PointerEvent) {
-        if (!this.state.enabled) {
-            return;
-        }
-
-        // Gizmo優先チェック: ギズモにヒットしたら操作開始しない
-        if (hitTestGizmo(this.scene, e.clientX, e.clientY)) {
-            return;
-        }
-
-        const handleHit = this.hitTestHandle(e.offsetX, e.offsetY);
-        const frame = handleHit?.frame ?? this.hitTestFrameBorder(e.offsetX, e.offsetY);
-        if (e.shiftKey && e.button === 0 && !handleHit && !frame) {
-            this.overlay.setPointerCapture(e.pointerId);
-            this.dragState = {
-                frameId: null,
-                startPos: { x: 0, y: 0 },
-                startPointer: { x: e.offsetX, y: e.offsetY },
-                axisLock: null,
-                shiftLock: false,
-                pointerId: e.pointerId,
-                mode: 'pan',
-                startCenterScreen: { x: this.state.renderBox.center.cx, y: this.state.renderBox.center.cy }
-            };
-            this.historyBegin('cameraFrames.renderBoxPan');
-            this.overlay.style.cursor = 'grabbing';
-            e.stopPropagation();
-            e.preventDefault();
-            return;
-        }
-        if (!frame) {
-            return;
-        }
-
-        this.selectFrame(frame.id);
-        this.overlay.setPointerCapture(e.pointerId);
-
-        const rb = this.state.renderBox;
-        const mapping = this.computeViewportMapping();
-        const logicalW = mapping.logicalW;
-        const logicalH = mapping.logicalH;
-        const centerLogical = this.frameCenterLogical(frame, logicalW, logicalH);
-        const frameW = frame.baseSize.w * frame.scaleK;
-        const frameH = frame.baseSize.h * frame.scaleK;
-        const rotationRad = this.frameRotationRad(frame);
-
-        const handleId = handleHit?.handleId;
-        const mode: 'move' | 'resize' | 'anchor' | 'rotate' =
-            handleId === 'anchor' ? 'anchor' :
-                (handleId === 'rotate' ? 'rotate' : (handleId ? 'resize' : 'move'));
-
-        const anchorLogicalDefault = this.getAnchorLogicalForHandle(handleId, frame, centerLogical, frameW, frameH, logicalW, logicalH, rotationRad);
-        const anchorLogical = (mode === 'resize' && e.altKey) ? this.frameAnchorLogical(frame, logicalW, logicalH) : anchorLogicalDefault;
-        const handleLogical = handleId ? this.getHandleLogicalPosition(handleId, centerLogical, frameW, frameH, rotationRad) : null;
-        const startDistance = (mode === 'resize' && handleLogical) ? Math.hypot(handleLogical.x - anchorLogical.x, handleLogical.y - anchorLogical.y) : null;
-        const pointerLogical = this.screenToLogical(e.offsetX, e.offsetY);
-        const startAngle = (mode === 'rotate') ? Math.atan2(pointerLogical.y - anchorLogical.y, pointerLogical.x - anchorLogical.x) : undefined;
-
-        this.dragState = {
-            frameId: frame.id,
-            startPos: { ...frame.pos },
-            startPointer: { x: e.offsetX, y: e.offsetY },
-            axisLock: null,
-            shiftLock: e.shiftKey,
-            pointerId: e.pointerId,
-            mode,
-            handleId,
-            startScaleK: frame.scaleK,
-            startCenterLogical: centerLogical,
-            startAnchorLogical: anchorLogical,
-            startHandleLogical: handleLogical,
-            startDistance,
-            startRotationRad: mode === 'rotate' ? rotationRad : undefined,
-            startAngle
-        };
-        this.historyBegin(`cameraFrames.${mode}`);
-        this.overlay.style.cursor = mode === 'rotate' ? 'grabbing' : getCursorForHitPointer(handleId, true);
-
-        e.stopPropagation();
-        e.preventDefault();
-    }
-
-    private onPointerMove(e: PointerEvent) {
-        if (!this.state.enabled) {
-            if (this.handleFrustumPointerMove(e)) {
-                return;
-            }
-            return;
-        }
-        if (!this.dragState || e.pointerId !== this.dragState.pointerId) return;
-        if (this.dragState.mode === 'pan') {
-            this.handlePanDrag(e);
-            this.overlay.style.cursor = 'grabbing';
-            e.stopPropagation();
-            e.preventDefault();
-            return;
-        }
-        const frame = this.state.frames.find(f => f.id === this.dragState.frameId);
-        if (!frame) return;
-
-        const rb = this.state.renderBox;
-        const mapping = this.computeViewportMapping();
-        const logicalW = mapping.logicalW;
-        const logicalH = mapping.logicalH;
-
-        if (this.dragState.mode === 'move') {
-            const dx = e.offsetX - this.dragState.startPointer.x;
-            const dy = e.offsetY - this.dragState.startPointer.y;
-
-            if (this.dragState.shiftLock && !this.dragState.axisLock) {
-                if (Math.abs(dx) + Math.abs(dy) > 5) {
-                    this.dragState.axisLock = Math.abs(dx) >= Math.abs(dy) ? 'x' : 'y';
-                }
-            }
-
-            const effectiveScale = mapping.viewScale;
-            const deltaLocalX = dx / (effectiveScale * logicalW);
-            const deltaLocalY = dy / (effectiveScale * logicalH);
-
-            frame.pos.x = this.dragState.startPos.x + (this.dragState.axisLock === 'y' ? 0 : deltaLocalX);
-            frame.pos.y = this.dragState.startPos.y + (this.dragState.axisLock === 'x' ? 0 : deltaLocalY);
-        } else if (this.dragState.mode === 'anchor') {
-            const logical = this.screenToLogical(e.offsetX, e.offsetY);
-            frame.anchor = {
-                x: 0.5 + (logical.x - rb.center.cx) / logicalW,
-                y: 0.5 + (logical.y - rb.center.cy) / logicalH
-            };
-        } else if (this.dragState.mode === 'resize') {
-            const start = this.dragState;
-            const logical = this.screenToLogical(e.offsetX, e.offsetY);
-            const handleLogical = logical;
-            if (!start.startHandleLogical || !start.startAnchorLogical || !start.startCenterLogical || !start.startScaleK || !start.startDistance) {
-                return;
-            }
-            const d1 = Math.hypot(handleLogical.x - start.startAnchorLogical.x, handleLogical.y - start.startAnchorLogical.y);
-            if (d1 <= 1e-6 || start.startDistance <= 1e-6) return;
-            const s = d1 / start.startDistance;
-
-            const newScaleK = start.startScaleK * s;
-            const MIN_K = 0.10;  // 10%
-            const MAX_K = 4.0;   // 400%
-            const clampedK = Math.min(MAX_K, Math.max(MIN_K, newScaleK));
-            frame.scaleK = clampedK;
-            frame.scalePct = clampedK * 100;
-
-            const newCenter = {
-                x: start.startAnchorLogical.x + (start.startCenterLogical.x - start.startAnchorLogical.x) * s,
-                y: start.startAnchorLogical.y + (start.startCenterLogical.y - start.startAnchorLogical.y) * s
-            };
-
-            frame.pos.x = 0.5 + (newCenter.x - rb.center.cx) / logicalW;
-            frame.pos.y = 0.5 + (newCenter.y - rb.center.cy) / logicalH;
-        } else if (this.dragState.mode === 'rotate') {
-            this.overlay.style.cursor = 'grabbing';
-            const start = this.dragState;
-            if (!start.startAnchorLogical || !start.startCenterLogical || start.startRotationRad === undefined || start.startAngle === undefined) {
-                return;
-            }
-            const anchorLogical = start.startAnchorLogical;
-            const logical = this.screenToLogical(e.offsetX, e.offsetY);
-            const angle = Math.atan2(logical.y - anchorLogical.y, logical.x - anchorLogical.x);
-            const delta = angle - start.startAngle;
-            const unsnappedNextRad = start.startRotationRad + delta;
-            const useSnap = start.shiftLock || e.shiftKey;
-            const snap = Math.PI / 12; // 15deg snap
-            const nextRad = useSnap ? Math.round(unsnappedNextRad / snap) * snap : unsnappedNextRad;
-            this.applyFrameRotationFromStart(frame, start, nextRad, logicalW, logicalH);
-        }
-
-        this.requestRender();
-        this.events.fire('cameraFrames.stateChanged', this.snapshot());
-
-        e.stopPropagation();
-        e.preventDefault();
-    }
-
-    private clampCenterToViewport(cx: number, cy: number, rectW: number, rectH: number, vw: number, vh: number) {
-        const halfW = rectW * 0.5;
-        const halfH = rectH * 0.5;
-        let minCx = -PAN_MARGIN_PX + halfW;
-        let maxCx = vw + PAN_MARGIN_PX - halfW;
-        if (minCx > maxCx) {
-            const mid = (minCx + maxCx) * 0.5;
-            minCx = mid;
-            maxCx = mid;
-        }
-        let minCy = -PAN_MARGIN_PX + halfH;
-        let maxCy = vh + PAN_MARGIN_PX - halfH;
-        if (minCy > maxCy) {
-            const mid = (minCy + maxCy) * 0.5;
-            minCy = mid;
-            maxCy = mid;
-        }
-        return {
-            cx: Math.min(maxCx, Math.max(minCx, cx)),
-            cy: Math.min(maxCy, Math.max(minCy, cy))
-        };
-    }
-
-    private handlePanDrag(e: PointerEvent) {
-        const mapping = this.computeViewportMapping();
-        const rectW = mapping.logicalW * mapping.viewScale;
-        const rectH = mapping.logicalH * mapping.viewScale;
-        const vw = this.scene.camera.targetSize?.width ?? this.viewport.vw;
-        const vh = this.scene.camera.targetSize?.height ?? this.viewport.vh;
-        const startCenter = this.dragState.startCenterScreen ?? { x: this.state.renderBox.center.cx, y: this.state.renderBox.center.cy };
-        const dx = e.offsetX - (this.dragState.startPointer?.x ?? e.offsetX);
-        const dy = e.offsetY - (this.dragState.startPointer?.y ?? e.offsetY);
-        const nextCenter = this.clampCenterToViewport(
-            startCenter.x + dx,
-            startCenter.y + dy,
-            rectW,
-            rectH,
-            vw,
-            vh
-        );
-
-        this.state.renderBox.center = nextCenter;
-        this.syncCameraFrustum();
-        this.requestRender();
-        this.events.fire('cameraFrames.stateChanged', this.snapshot());
-    }
-
-    private applyFrameRotationFromStart(frame: FrameState, start: { startCenterLogical?: { x: number; y: number; }; startAnchorLogical?: { x: number; y: number; }; startRotationRad?: number; }, nextRad: number, logicalW: number, logicalH: number) {
-        if (!start.startCenterLogical || !start.startAnchorLogical) {
-            return;
-        }
-        const rb = this.state.renderBox;
-        const baseRad = start.startRotationRad ?? 0;
-        const delta = nextRad - baseRad;
-        const offset = {
-            x: start.startCenterLogical.x - start.startAnchorLogical.x,
-            y: start.startCenterLogical.y - start.startAnchorLogical.y
-        };
-        const rotatedOffset = rotateOffsetPoint(offset, delta);
-        const newCenter = {
-            x: start.startAnchorLogical.x + rotatedOffset.x,
-            y: start.startAnchorLogical.y + rotatedOffset.y
-        };
-        frame.rotationDeg = normalizeDegrees(nextRad * RAD2DEG);
-        frame.pos.x = 0.5 + (newCenter.x - rb.center.cx) / logicalW;
-        frame.pos.y = 0.5 + (newCenter.y - rb.center.cy) / logicalH;
-    }
-
-    private onPointerUp(e: PointerEvent) {
-        if (this.handleFrustumPointerUp(e)) {
-            return;
-        }
-        if (this.dragState && e.pointerId === this.dragState.pointerId) {
-            this.historyCommit('cameraFrames.drag');
-            this.overlay.releasePointerCapture(e.pointerId);
-            this.dragState = null;
-            this.lastPointer = { x: e.clientX, y: e.clientY };
-            this.updatePointerFromLast();
-            this.overlay.style.cursor = e.shiftKey ? 'grab' : '';
-            e.stopPropagation();
-            e.preventDefault();
-        }
-    }
-
-    private onDoubleClick(e: MouseEvent) {
-        if (!this.state.enabled) return;
-        const handleHit = this.hitTestHandle(e.offsetX, e.offsetY);
-        if (handleHit?.handleId === 'anchor') {
-            this.resetAnchorToCenter(handleHit.frame);
-        } else if (handleHit?.handleId === 'rotate') {
-            this.resetFrameRotation(handleHit.frame);
-        } else {
-            return;
-        }
-        e.stopPropagation();
-        e.preventDefault();
-    }
-
-    private resetFrameRotation(frame: FrameState | null) {
-        this.historyRecord('cameraFrames.resetRotation', () => {
-            if (!frame) {
-                return;
-            }
-            const rb = this.state.renderBox;
-            const logicalW = rb.baseSize.w * rb.scale.kx;
-            const logicalH = rb.baseSize.h * rb.scale.ky;
-            const start = {
-                startCenterLogical: this.frameCenterLogical(frame, logicalW, logicalH),
-                startAnchorLogical: this.frameAnchorLogical(frame, logicalW, logicalH),
-                startRotationRad: this.frameRotationRad(frame)
-            };
-            this.applyFrameRotationFromStart(frame, start, 0, logicalW, logicalH);
-            this.requestRender();
-            this.events.fire('cameraFrames.stateChanged', this.snapshot());
-            this.updatePointerFromLast();
+        onPointerDownPointer({
+            event: e,
+            state: this.state,
+            scene: this.scene,
+            overlay: this.overlay,
+            setDragState: (value) => {
+                this.dragState = value;
+            },
+            selectFrame: (id) => this.selectFrame(id),
+            computeViewportMapping: () => this.computeViewportMapping(),
+            frameCenterLogical: (frame, logicalW, logicalH) => this.frameCenterLogical(frame, logicalW, logicalH),
+            frameRotationRad: (frame) => this.frameRotationRad(frame),
+            getAnchorLogicalForHandle: (handleId, frame, centerLogical, frameW, frameH, logicalW, logicalH, rotationRad) => {
+                return this.getAnchorLogicalForHandle(handleId, frame, centerLogical, frameW, frameH, logicalW, logicalH, rotationRad);
+            },
+            frameAnchorLogical: (frame, logicalW, logicalH) => this.frameAnchorLogical(frame, logicalW, logicalH),
+            getHandleLogicalPosition: (handleId, centerLogical, frameW, frameH, rotationRad) => {
+                return this.getHandleLogicalPosition(handleId, centerLogical, frameW, frameH, rotationRad);
+            },
+            screenToLogical: (x, y) => this.screenToLogical(x, y),
+            hitTestHandle: (px, py) => this.hitTestHandle(px, py),
+            hitTestFrameBorder: (px, py) => this.hitTestFrameBorder(px, py),
+            historyBegin: (label) => this.historyBegin(label)
         });
     }
 
-    private resetAnchorToCenter(frame: FrameState | null) {
-        this.historyRecord('cameraFrames.resetAnchor', () => {
-            if (!frame) {
-                return;
-            }
-            frame.anchor = { x: frame.pos.x, y: frame.pos.y };
-            this.requestRender();
+    private onPointerMove(e: PointerEvent) {
+        onPointerMovePointer({
+            event: e,
+            state: this.state,
+            dragState: this.dragState,
+            overlay: this.overlay,
+            scene: this.scene,
+            viewport: this.viewport,
+            handleFrustumPointerMove: (event) => this.handleFrustumPointerMove(event),
+            computeViewportMapping: () => this.computeViewportMapping(),
+            screenToLogical: (x, y) => this.screenToLogical(x, y),
+            syncCameraFrustum: () => this.syncCameraFrustum(),
+            requestRender: () => this.requestRender(),
+            fireStateChanged: () => this.events.fire('cameraFrames.stateChanged', this.snapshot())
+        });
+    }
+
+    private onPointerUp(e: PointerEvent) {
+        onPointerUpPointer({
+            event: e,
+            dragState: this.dragState,
+            overlay: this.overlay,
+            setDragState: (value) => {
+                this.dragState = value;
+            },
+            handleFrustumPointerUp: (event) => this.handleFrustumPointerUp(event),
+            historyCommit: (label) => this.historyCommit(label),
+            setLastPointer: (value) => {
+                this.lastPointer = value;
+            },
+            updatePointerFromLast: () => this.updatePointerFromLast()
+        });
+    }
+
+    private onDoubleClick(e: MouseEvent) {
+        const fireStateChanged = () => {
             this.events.fire('cameraFrames.stateChanged', this.snapshot());
-            this.updatePointerFromLast();
+        };
+        onDoubleClickPointer({
+            event: e,
+            state: this.state,
+            hitTestHandle: (px, py) => this.hitTestHandle(px, py),
+            resetAnchorToCenter: (frame) => {
+                resetAnchorToCenterPointer({
+                    frame,
+                    historyRecord: (label, fn) => this.historyRecord(label, fn),
+                    requestRender: () => this.requestRender(),
+                    fireStateChanged,
+                    updatePointerFromLast: () => this.updatePointerFromLast()
+                });
+            },
+            resetFrameRotation: (frame) => {
+                resetFrameRotationPointer({
+                    frame,
+                    state: this.state,
+                    historyRecord: (label, fn) => this.historyRecord(label, fn),
+                    frameCenterLogical: (target, logicalW, logicalH) => this.frameCenterLogical(target, logicalW, logicalH),
+                    frameAnchorLogical: (target, logicalW, logicalH) => this.frameAnchorLogical(target, logicalW, logicalH),
+                    frameRotationRad: (target) => this.frameRotationRad(target),
+                    requestRender: () => this.requestRender(),
+                    fireStateChanged,
+                    updatePointerFromLast: () => this.updatePointerFromLast()
+                });
+            }
         });
     }
 
