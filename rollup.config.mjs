@@ -56,6 +56,20 @@ const buildInfoContent = `export const buildInfo = {
 writeFileSync('src/build-info.ts', buildInfoContent);
 console.log(`Generated src/build-info.ts with version: ${buildVersion}`);
 
+const isAgPsdPath = (id) => typeof id === 'string' && id.includes('/node_modules/ag-psd/');
+const onwarn = (warning, warn) => {
+    if (warning?.code === 'CIRCULAR_DEPENDENCY') {
+        const ids = warning.ids ?? warning.cycle ?? [];
+        if (ids.some(isAgPsdPath)) {
+            return;
+        }
+    }
+    if (warning?.code === 'THIS_IS_UNDEFINED' && isAgPsdPath(warning.id)) {
+        return;
+    }
+    warn(warning);
+};
+
 const application = {
     input: 'src/index.ts',
     output: {
@@ -63,6 +77,7 @@ const application = {
         format: 'esm',
         sourcemap: true
     },
+    onwarn,
     plugins: [
         copyAndWatch({
             targets: [
