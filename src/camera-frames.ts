@@ -1,4 +1,4 @@
-import { Ray, Vec3 } from 'playcanvas';
+import { Vec3 } from 'playcanvas';
 
 import {
     DEFAULT_FRAME_BASE,
@@ -197,8 +197,6 @@ export class CameraFramesController {
         planeNormal: Vec3;
         mode: 'translate' | 'rotate';
     } | null = null;
-    private workRay: Ray = new Ray();
-    private workVec: Vec3 = new Vec3();
 
     constructor(events: Events, scene: Scene, canvasContainer: HTMLElement) {
         this.events = events;
@@ -780,67 +778,6 @@ export class CameraFramesController {
             frustumDebugColor: FRUSTUM_DEBUG_COLOR,
             frustumSelectedColor: FRUSTUM_SELECTED_COLOR
         });
-    }
-
-    private projectFrustumToScreen(points: Vec3[]) {
-        if (!points || points.length === 0) {
-            return null;
-        }
-        const targetSize = this.scene?.targetSize ?? { width: this.viewport.vw, height: this.viewport.vh };
-        const width = targetSize.width || this.viewport.vw;
-        const height = targetSize.height || this.viewport.vh;
-        const projected: { x: number; y: number; z: number; }[] = [];
-        const screen = new Vec3();
-        points.forEach((p) => {
-            this.scene.camera.worldToScreen(p, screen);
-            projected.push({
-                x: screen.x * width,
-                y: screen.y * height,
-                z: screen.z
-            });
-        });
-        return projected;
-    }
-
-    private distanceToSegment(px: number, py: number, a: { x: number; y: number; }, b: { x: number; y: number; }) {
-        const vx = b.x - a.x;
-        const vy = b.y - a.y;
-        const wx = px - a.x;
-        const wy = py - a.y;
-        const lenSq = vx * vx + vy * vy;
-        const t = lenSq > 0 ? Math.max(0, Math.min(1, (wx * vx + wy * vy) / lenSq)) : 0;
-        const projX = a.x + t * vx;
-        const projY = a.y + t * vy;
-        return Math.hypot(px - projX, py - projY);
-    }
-
-    private intersectPointerWithPlane(clientX: number, clientY: number, planePoint: Vec3, planeNormal: Vec3) {
-        if (!planeNormal || planeNormal.lengthSq() < 1e-6) {
-            return null;
-        }
-        const normal = planeNormal.clone();
-        normal.normalize();
-        const ray = this.workRay;
-        const rect = this.canvasContainer.getBoundingClientRect();
-        const targetSize = this.scene?.targetSize ?? { width: rect.width, height: rect.height };
-        const scaleX = rect.width > 0 ? targetSize.width / rect.width : 1;
-        const scaleY = rect.height > 0 ? targetSize.height / rect.height : 1;
-        const sx = (clientX - rect.left) * scaleX;
-        const sy = (clientY - rect.top) * scaleY;
-        if (!this.scene.camera.getRay(sx, sy, ray, { space: 'target' })) {
-            return null;
-        }
-        const denom = ray.direction.dot(normal);
-        if (Math.abs(denom) < 1e-6) {
-            return null;
-        }
-        const toPoint = this.workVec.copy(planePoint).sub(ray.origin);
-        const t = toPoint.dot(normal) / denom;
-        if (!isFinite(t)) {
-            return null;
-        }
-        const hit = ray.direction.clone().mulScalar(t).add(ray.origin);
-        return hit;
     }
 
     private registerEvents() {
@@ -2123,11 +2060,6 @@ export class CameraFramesController {
                 this.frustumDragState = null;
             }
         });
-    }
-
-    private handleFrustumPointerDown(_e: PointerEvent) {
-        // フラスタムクリックによる対象切替・ドラッグは行わない
-        return false;
     }
 
     private handleFrustumPointerMove(_e: PointerEvent) {
