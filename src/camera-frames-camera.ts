@@ -1,8 +1,54 @@
 import { Quat, Vec3 } from 'playcanvas';
 
-import { DEG2RAD } from './camera-frames-constants';
-import type { CameraBasis, CameraPoseSnapshot } from './camera-frames-types';
+import { DEG2RAD, HFOV_MAX, HFOV_MIN, RAD2DEG, W_35MM } from './camera-frames-constants';
+import { clampFov } from './camera-frames-math';
+import type { CameraBasis, CameraPoseSnapshot, FovInfo, RenderBoxState } from './camera-frames-types';
+import type { Events } from './events';
 import type { Scene } from './scene';
+
+type BaseFovToHorizontalRad = (baseFovRad: number, axis: 'horizontal' | 'vertical', aspect: number) => number;
+type CropFactor = (renderBox: RenderBoxState) => number;
+type EmitViewportLensChanged = () => void;
+type GetFovInfo = () => FovInfo | null;
+type GetViewportLensMm = () => number | null;
+type SetBaseFovRad = (value: number) => void;
+type SetFovInfo = (value: FovInfo) => void;
+type SetViewportFovRuntime = (value: number) => void;
+type ViewportLensRange = () => { min: number; max: number; };
+
+type CalcFovInfoParams = {
+    renderBox: RenderBoxState;
+    scene: Scene;
+    lockFovAxis: 'horizontal' | 'vertical' | undefined;
+    baseAspect: number;
+    baseFovToHorizontalRad: BaseFovToHorizontalRad;
+    cropFactor: CropFactor;
+    setBaseFovRad: SetBaseFovRad;
+};
+
+type UpdateFovInfoParams = {
+    calcFovInfo: () => FovInfo;
+    getFovInfo: GetFovInfo;
+    setFovInfo: SetFovInfo;
+    events: Events;
+};
+
+type GetViewportLensStateParams = {
+    stateEnabled: boolean;
+    viewportLensRange: ViewportLensRange;
+    getViewportLensMm: GetViewportLensMm;
+};
+
+type SetViewportLensMmParams = {
+    mm: number;
+    stateEnabled: boolean;
+    viewportLensRange: ViewportLensRange;
+    renderBox: RenderBoxState;
+    cropFactor: CropFactor;
+    setViewportFovRuntime: SetViewportFovRuntime;
+    events: Events;
+    emitViewportLensChanged: EmitViewportLensChanged;
+};
 
 export const clonePoseSnapshot = (pose: CameraPoseSnapshot | null | undefined): CameraPoseSnapshot | null => {
     if (!pose) {
@@ -152,5 +198,104 @@ export const poseToTransform = (scene: Scene, pose: CameraPoseSnapshot | null) =
     return {
         position: { x: basis.position.x, y: basis.position.y, z: basis.position.z },
         rotation: { yaw: snap.azim ?? 0, pitch: snap.elev ?? 0, roll: snap.roll ?? 0 }
+    };
+};
+
+export const eqMmForFov = (hfovDeg: number, crop: number) => {
+    const hfovRad = hfovDeg * DEG2RAD;
+    const focalVirtual = W_35MM / (2 * Math.tan(hfovRad * 0.5));
+    return focalVirtual * crop;
+};
+
+export const eqMmToHfov = (eqMm: number, crop: number) => {
+    const safeEq = Math.max(eqMm, 1e-6);
+    const hfovRad = 2 * Math.atan((W_35MM * crop) / (2 * safeEq));
+    return hfovRad * RAD2DEG;
+};
+
+export const calcFovInfo = ({
+    renderBox,
+    scene,
+    lockFovAxis,
+    baseAspect,
+    baseFovToHorizontalRad,
+    cropFactor,
+    setBaseFovRad
+}: CalcFovInfoParams): FovInfo => {
+    const crop = cropFactor(renderBox);
+    const axis = lockFovAxis ?? 'horizontal';
+    const baseFovDeg = renderBox.projection?.baseFov ?? scene.camera.fov;
+    const baseFovRadAxis = (baseFovDeg ?? HFOV_MIN) * DEG2RAD;
+    const hfovRad = baseFovToHorizontalRad(baseFovRadAxis, axis, baseAspect);
+    const hfovClamped = clampFov(hfovRad * RAD2DEG);
+    const hfovClampedRad = hfovClamped * DEG2RAD;
+    setBaseFovRad(hfovClampedRad);
+
+    const focalVirtual = W_35MM / (2 * Math.tan(hfovClampedRad * 0.5));
+    const eqMm = focalVirtual * crop;
+
+    const hfovFrame = 2 * Math.atan(Math.tan(hfovClampedRad * 0.5) / crop) * RAD2DEG;
+
+    const minEqMm = eqMmForFov(HFOV_MAX, crop);
+    const maxEqMm = eqMmForFov(HFOV_MIN, crop);
+
+    return {
+        crop,
+        hfovDeg: hfovClamped,
+        hfovFrameDeg: hfovFrame,
+        eqMm,
+        minEqMm,
+        maxEqMm
+    };
+};
+
+export const updateFovInfo = ({ calcFovInfo, getFovInfo, setFovInfo, events }: UpdateFovInfoParams) => {
+    const next = calcFovInfo();
+    const prev = getFovInfo();
+    setFovInfo(next);
+    const changed =
+        !prev ||
+        Math.abs(prev.eqMm - next.eqMm) > 1e-4 ||
+        Math.abs(prev.hfovDeg - next.hfovDeg) > 1e-4 ||
+        Math.abs(prev.crop - next.crop) > 1e-4;
+    if (changed) {
+        events.fire('cameraFrames.fovInfoChanged', next);
+    }
+};
+
+export const setViewportLensMm = ({
+    mm,
+    stateEnabled,
+    viewportLensRange,
+    renderBox,
+    cropFactor,
+    setViewportFovRuntime,
+    events,
+    emitViewportLensChanged
+}: SetViewportLensMmParams) => {
+    if (stateEnabled) {
+        return;
+    }
+    const range = viewportLensRange();
+    const clamped = Math.min(range.max, Math.max(range.min, mm));
+    const crop = cropFactor(renderBox);
+    const hfovDeg = eqMmToHfov(clamped, crop);
+    setViewportFovRuntime(hfovDeg);
+    events.fire('camera.setFov', hfovDeg);
+    emitViewportLensChanged();
+};
+
+export const getViewportLensState = ({
+    stateEnabled,
+    viewportLensRange,
+    getViewportLensMm
+}: GetViewportLensStateParams) => {
+    const range = viewportLensRange();
+    const mm = getViewportLensMm();
+    return {
+        enabled: !stateEnabled,
+        mm: mm ?? range.max,
+        min: range.min,
+        max: range.max
     };
 };
