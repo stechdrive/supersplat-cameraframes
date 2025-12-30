@@ -15,6 +15,7 @@ import type {
     Viewport,
     ViewportMapping
 } from './camera-frames-types';
+import { ElementType } from './element';
 import type { Events } from './events';
 import type { Scene } from './scene';
 
@@ -140,6 +141,101 @@ type DrawMainCameraFrustumParams = {
     mainCameraSelected: boolean;
     frustumDebugColor: Color;
     frustumSelectedColor: Color;
+};
+
+type ApplyNearClipOverrideParams = {
+    stateEnabled: boolean;
+    nearClip: number | null;
+    events: Events;
+};
+
+type SetNearClipParams = {
+    value: number | null;
+    suppressHistory: boolean;
+    getStateEnabled: () => boolean;
+    getUiTarget: () => 'viewport' | 'main';
+    getNearClip: () => number | null;
+    setNearClipState: (value: number | null) => void;
+    applyNearClipOverride: () => void;
+    rebuildBaseFrustum: () => void;
+    syncCameraFrustum: () => void;
+    requestRender: () => void;
+    events: Events;
+    snapshot: () => unknown;
+    historyDebounced: (label: string, fn: () => void) => void;
+    invalidateFrustumDebugCache: () => void;
+};
+
+type UpdateViewportNearTargetSizeStateParams = {
+    scene: Scene;
+    viewportNearTargetSizeActive: boolean;
+    setViewportNearTargetSizeActive: (value: boolean) => void;
+    clearViewportNearOverride: () => void;
+    scheduleViewportNearOverride: (delayMs: number) => void;
+};
+
+type ShouldApplyViewportNearOverrideParams = {
+    stateEnabled: boolean;
+    uiTarget: 'viewport' | 'main';
+    scene: Scene;
+};
+
+type ClearViewportNearOverrideParams = {
+    viewportNearDebounceId: number | null;
+    setViewportNearDebounceId: (value: number | null) => void;
+    viewportNearOverrideActive: boolean;
+    setViewportNearOverrideActive: (value: boolean) => void;
+    viewportNearOverride: number | null;
+    setViewportNearOverride: (value: number | null) => void;
+    events: Events;
+};
+
+type ScheduleViewportNearOverrideParams = {
+    delayMs: number;
+    shouldApplyViewportNearOverride: () => boolean;
+    viewportNearDebounceId: number | null;
+    setViewportNearDebounceId: (value: number | null) => void;
+    applyViewportNearOverride: () => void;
+};
+
+type ApplyViewportNearOverrideParams = {
+    shouldApplyViewportNearOverride: () => boolean;
+    viewportNearLastSampleTs: number;
+    setViewportNearLastSampleTs: (value: number) => void;
+    computeViewportNearCandidate: () => number | null;
+    viewportNearOverride: number | null;
+    setViewportNearOverride: (value: number | null) => void;
+    viewportNearOverrideActive: boolean;
+    setViewportNearOverrideActive: (value: boolean) => void;
+    clearViewportNearOverride: () => void;
+    events: Events;
+};
+
+type ComputeViewportNearCandidateParams = {
+    scene: Scene;
+};
+
+type EnforceSafeNearClipParams = {
+    stateEnabled: boolean;
+    nearClipGuardSeed: number | null;
+    nearClip: number | null;
+    events: Events;
+    setNearClip: (value: number | null, suppressHistory: boolean) => void;
+};
+
+type ScheduleNearClipGuardParams = {
+    frames: number;
+    nearClip: number | null;
+    pendingNearClipGuard: number;
+    setPendingNearClipGuard: (value: number) => void;
+    setNearClipGuardSeed: (value: number | null) => void;
+};
+
+type RunPendingNearClipGuardParams = {
+    stateEnabled: boolean;
+    pendingNearClipGuard: number;
+    setPendingNearClipGuard: (value: number) => void;
+    enforceSafeNearClip: () => void;
 };
 
 export const clonePoseSnapshot = (pose: CameraPoseSnapshot | null | undefined): CameraPoseSnapshot | null => {
@@ -760,4 +856,286 @@ export const drawMainCameraFrustum = ({
     draw(0, 2);
     draw(0, 3);
     draw(0, 4);
+};
+
+export const applyNearClipOverride = ({ stateEnabled, nearClip, events }: ApplyNearClipOverrideParams) => {
+    if (!stateEnabled) {
+        return;
+    }
+    if (typeof nearClip === 'number' && isFinite(nearClip)) {
+        events.fire('camera.setNearOverride', nearClip);
+    } else {
+        events.fire('camera.setNearOverride', null);
+    }
+};
+
+export const computeSafeNearClip = (value: number | null | undefined) => {
+    const raw = (typeof value === 'number' && isFinite(value)) ? value : NaN;
+    if (!isFinite(raw) || raw <= 0) {
+        return DEFAULT_NEAR_CLIP;
+    }
+    return Math.max(MIN_NEAR_CLIP, raw);
+};
+
+export const setNearClip = ({
+    value,
+    suppressHistory,
+    stateEnabled,
+    uiTarget,
+    getNearClip,
+    setNearClipState,
+    applyNearClipOverride,
+    rebuildBaseFrustum,
+    syncCameraFrustum,
+    requestRender,
+    events,
+    snapshot,
+    historyDebounced,
+    invalidateFrustumDebugCache
+}: SetNearClipParams) => {
+    const apply = () => {
+        const stateEnabled = getStateEnabled();
+        const uiTarget = getUiTarget();
+        const sanitized = computeSafeNearClip(value);
+        if (getNearClip() === sanitized) return;
+        setNearClipState(sanitized);
+        if (stateEnabled) {
+            applyNearClipOverride();
+            rebuildBaseFrustum();
+            syncCameraFrustum();
+        } else if (uiTarget === 'main') {
+            rebuildBaseFrustum();
+            invalidateFrustumDebugCache();
+        }
+        requestRender();
+        events.fire('cameraFrames.stateChanged', snapshot());
+    };
+
+    if (suppressHistory) {
+        apply();
+    } else {
+        historyDebounced('cameraFrames.nearClip', apply);
+    }
+};
+
+export const updateViewportNearTargetSizeState = ({
+    scene,
+    viewportNearTargetSizeActive,
+    setViewportNearTargetSizeActive,
+    clearViewportNearOverride,
+    scheduleViewportNearOverride
+}: UpdateViewportNearTargetSizeStateParams) => {
+    const active = !!scene.camera.targetSize;
+    if (active === viewportNearTargetSizeActive) {
+        return;
+    }
+    setViewportNearTargetSizeActive(active);
+    clearViewportNearOverride();
+    if (!active) {
+        scheduleViewportNearOverride(0);
+    }
+};
+
+export const shouldApplyViewportNearOverride = ({
+    stateEnabled,
+    uiTarget,
+    scene
+}: ShouldApplyViewportNearOverrideParams) => {
+    return !stateEnabled && uiTarget === 'viewport' && !scene.camera.targetSize && !scene.camera.ortho;
+};
+
+export const clearViewportNearOverride = ({
+    viewportNearDebounceId,
+    setViewportNearDebounceId,
+    viewportNearOverrideActive,
+    setViewportNearOverrideActive,
+    viewportNearOverride,
+    setViewportNearOverride,
+    events
+}: ClearViewportNearOverrideParams) => {
+    if (viewportNearDebounceId !== null) {
+        window.clearTimeout(viewportNearDebounceId);
+        setViewportNearDebounceId(null);
+    }
+    if (viewportNearOverrideActive || viewportNearOverride !== null) {
+        setViewportNearOverrideActive(false);
+        setViewportNearOverride(null);
+        events.fire('camera.setNearOverride', null, { transient: true });
+    }
+};
+
+export const scheduleViewportNearOverride = ({
+    delayMs,
+    shouldApplyViewportNearOverride,
+    viewportNearDebounceId,
+    setViewportNearDebounceId,
+    applyViewportNearOverride
+}: ScheduleViewportNearOverrideParams) => {
+    if (!shouldApplyViewportNearOverride()) {
+        return;
+    }
+    if (viewportNearDebounceId !== null) {
+        window.clearTimeout(viewportNearDebounceId);
+    }
+    const debounceId = window.setTimeout(() => {
+        setViewportNearDebounceId(null);
+        applyViewportNearOverride();
+    }, delayMs);
+    setViewportNearDebounceId(debounceId);
+};
+
+export const applyViewportNearOverride = ({
+    shouldApplyViewportNearOverride,
+    viewportNearLastSampleTs,
+    setViewportNearLastSampleTs,
+    computeViewportNearCandidate,
+    viewportNearOverride,
+    setViewportNearOverride,
+    viewportNearOverrideActive,
+    setViewportNearOverrideActive,
+    clearViewportNearOverride,
+    events
+}: ApplyViewportNearOverrideParams) => {
+    if (!shouldApplyViewportNearOverride()) {
+        return;
+    }
+    const now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+    if (now - viewportNearLastSampleTs < 100) {
+        return;
+    }
+    setViewportNearLastSampleTs(now);
+
+    const candidate = computeViewportNearCandidate();
+    if (candidate === null) {
+        if (viewportNearOverrideActive) {
+            clearViewportNearOverride();
+        }
+        return;
+    }
+
+    if (viewportNearOverride !== null) {
+        const absDelta = Math.abs(candidate - viewportNearOverride);
+        const relDelta = absDelta / Math.max(viewportNearOverride, MIN_NEAR_CLIP);
+        if (absDelta < 1e-3 && relDelta < 0.2) {
+            return;
+        }
+    }
+
+    setViewportNearOverride(candidate);
+    setViewportNearOverrideActive(true);
+    events.fire('camera.setNearOverride', candidate, { transient: true });
+};
+
+export const computeViewportNearCandidate = ({ scene }: ComputeViewportNearCandidateParams): number | null => {
+    const canvas = scene?.canvas;
+    const targetSize = scene?.targetSize;
+    if (!canvas || !targetSize || targetSize.width <= 0 || targetSize.height <= 0) {
+        return null;
+    }
+    const w = canvas.clientWidth ?? 0;
+    const h = canvas.clientHeight ?? 0;
+    if (!(w > 0 && h > 0)) {
+        return null;
+    }
+    if (scene.getElementsByType(ElementType.splat).length === 0) {
+        return null;
+    }
+
+    const cx = w * 0.5;
+    const cy = h * 0.5;
+    const dx = w * 0.35;
+    const dy = h * 0.35;
+    const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
+    const samples = [
+        { x: cx, y: cy },
+        { x: cx + dx, y: cy },
+        { x: cx - dx, y: cy },
+        { x: cx, y: cy + dy },
+        { x: cx, y: cy - dy }
+    ];
+
+    let minDist: number | null = null;
+    for (const sample of samples) {
+        const x = clamp(sample.x, 0, w - 1);
+        const y = clamp(sample.y, 0, h - 1);
+        const hit = scene.camera.intersect(x, y);
+        const distance = hit?.distance;
+        if (typeof distance !== 'number' || !isFinite(distance) || distance <= 0) {
+            continue;
+        }
+        if (minDist === null || distance < minDist) {
+            minDist = distance;
+        }
+    }
+    if (minDist === null) {
+        return null;
+    }
+
+    const far = scene.camera.far;
+    const sceneRadius = scene.camera.sceneRadius;
+    const maxCandidates: number[] = [];
+    if (typeof far === 'number' && isFinite(far) && far > 0) {
+        maxCandidates.push(far * 0.1);
+    }
+    if (typeof sceneRadius === 'number' && isFinite(sceneRadius) && sceneRadius > 0) {
+        maxCandidates.push(sceneRadius * 0.1);
+    }
+    const maxNear = maxCandidates.length ? Math.min(...maxCandidates) : null;
+
+    let near = minDist * 0.05;
+    if (maxNear !== null && near > maxNear) {
+        near = maxNear;
+    }
+    near = Math.max(MIN_NEAR_CLIP, near);
+    if (!isFinite(near) || near <= 0) {
+        return null;
+    }
+    return near;
+};
+
+export const enforceSafeNearClip = ({
+    stateEnabled,
+    nearClipGuardSeed,
+    nearClip,
+    events,
+    setNearClip
+}: EnforceSafeNearClipParams) => {
+    if (!stateEnabled) {
+        return;
+    }
+    if (nearClipGuardSeed !== nearClip) {
+        return;
+    }
+    const currentNear = nearClip ?? events.invoke('camera.near');
+    const safeNear = computeSafeNearClip(currentNear);
+    if (nearClip !== safeNear) {
+        setNearClip(safeNear, true);
+    }
+};
+
+export const scheduleNearClipGuard = ({
+    frames,
+    nearClip,
+    pendingNearClipGuard,
+    setPendingNearClipGuard,
+    setNearClipGuardSeed
+}: ScheduleNearClipGuardParams) => {
+    setNearClipGuardSeed(nearClip ?? null);
+    setPendingNearClipGuard(Math.max(pendingNearClipGuard, frames));
+};
+
+export const runPendingNearClipGuard = ({
+    stateEnabled,
+    pendingNearClipGuard,
+    setPendingNearClipGuard,
+    enforceSafeNearClip
+}: RunPendingNearClipGuardParams) => {
+    if (!stateEnabled || pendingNearClipGuard <= 0) {
+        return;
+    }
+    const nextPending = pendingNearClipGuard - 1;
+    setPendingNearClipGuard(nextPending);
+    if (nextPending === 0) {
+        enforceSafeNearClip();
+    }
 };
