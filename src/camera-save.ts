@@ -263,7 +263,7 @@ const rebuildMainCameraPose = (file: CameraSaveFileV1, scene: Scene): CameraPose
                 roll: requireFiniteNumber(basePose.roll, 'cameraFramesState.mainCameraPose.roll'),
                 navMode: basePose.navMode === 'orbit' ? 'orbit' : 'fpv',
                 fpvPosition: isObject(basePose.fpvPosition) ? requireVec3(basePose.fpvPosition, 'cameraFramesState.mainCameraPose.fpvPosition') : undefined,
-                ortho: typeof basePose.ortho === 'boolean' ? basePose.ortho : undefined,
+                ortho: false,
                 lockFraming: typeof basePose.lockFraming === 'boolean' ? basePose.lockFraming : undefined
             };
         } catch {
@@ -279,14 +279,14 @@ const rebuildMainCameraPose = (file: CameraSaveFileV1, scene: Scene): CameraPose
         roll: rot.roll,
         navMode: 'fpv',
         fpvPosition: { x: pos.x, y: pos.y, z: pos.z },
-        ortho: file.mainCamera.projection.type === 'ortho',
+        ortho: false,
         lockFraming: true
     };
 
     pose.azim = rot.yaw;
     pose.elev = clampPitch(rot.pitch);
     pose.roll = rot.roll;
-    pose.ortho = file.mainCamera.projection.type === 'ortho';
+    pose.ortho = false;
 
     let worldDistance = 1;
     if (pose.focalPoint && typeof pose.focalPoint.x === 'number') {
@@ -305,19 +305,14 @@ const rebuildMainCameraPose = (file: CameraSaveFileV1, scene: Scene): CameraPose
     return pose;
 };
 
-const normalizeProjectionIntoState = (state: CameraFramesState, projection: ProjectionJson) => {
+const normalizeProjectionIntoState = (state: CameraFramesState, projection: ProjectionJson, fallbackBaseFov: number) => {
     const next = JSON.parse(JSON.stringify(state)) as CameraFramesState;
-    const rbProj = (next.renderBox?.projection ?? { type: 'perspective' as const }) as any;
-    if (projection.type === 'ortho') {
-        rbProj.type = 'ortho';
-        rbProj.orthoHalfHeight = projection.orthoHalfHeight;
-        delete rbProj.baseFov;
-    } else {
-        rbProj.type = 'perspective';
-        rbProj.baseFov = projection.baseFov;
-        delete rbProj.orthoHalfHeight;
-    }
-    next.renderBox.projection = rbProj;
+    const rawBaseFov = projection.type === 'perspective' ? projection.baseFov : fallbackBaseFov;
+    const baseFov = (typeof rawBaseFov === 'number' && isFinite(rawBaseFov)) ? rawBaseFov : fallbackBaseFov;
+    next.renderBox.projection = {
+        type: 'perspective',
+        baseFov
+    };
     return next;
 };
 
@@ -335,12 +330,11 @@ const registerCameraSave = (events: Events, scene: Scene, cameraFramesController
 
         const state = cameraFramesController.snapshot();
         const mainTransform = (state.mainCameraPose ? (events.invoke('cameraFrames.mainTransform') as any) : null) ?? scene.camera.getTransform();
-        const projection = state.renderBox?.projection?.type === 'ortho' ? {
-            type: 'ortho' as const,
-            orthoHalfHeight: Number(state.renderBox.projection.orthoHalfHeight ?? 1) || 1
-        } : {
+        const rawBaseFov = scene.camera?.fov ?? state.renderBox?.projection?.baseFov ?? 60;
+        const baseFov = (typeof rawBaseFov === 'number' && isFinite(rawBaseFov)) ? rawBaseFov : 60;
+        const projection = {
             type: 'perspective' as const,
-            baseFov: Number(state.renderBox?.projection?.baseFov ?? 60) || 60
+            baseFov
         };
 
         const file: CameraSaveFileV1 = {
@@ -428,7 +422,8 @@ const registerCameraSave = (events: Events, scene: Scene, cameraFramesController
             const cameraFile = requireCameraSaveFileV1(parsed);
 
             const rebuiltPose = rebuildMainCameraPose(cameraFile, scene);
-            const patchedState = normalizeProjectionIntoState(cameraFile.cameraFramesState, cameraFile.mainCamera.projection);
+            const fallbackFov = (typeof scene.camera?.fov === 'number' && isFinite(scene.camera.fov)) ? scene.camera.fov : 60;
+            const patchedState = normalizeProjectionIntoState(cameraFile.cameraFramesState, cameraFile.mainCamera.projection, fallbackFov);
             patchedState.mainCameraPose = rebuiltPose as any;
             patchedState.nearClip = cameraFile.mainCamera.nearClip;
 

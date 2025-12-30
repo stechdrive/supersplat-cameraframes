@@ -3,6 +3,7 @@ import {
     BLENDMODE_ONE_MINUS_SRC_ALPHA,
     BLENDMODE_SRC_ALPHA,
     CULLFACE_NONE,
+    PROJECTION_ORTHOGRAPHIC,
     SEMANTIC_POSITION,
     BlendState,
     DepthState,
@@ -68,6 +69,10 @@ class EyeLevel extends Element {
             }
 
             const camera = scene.camera.entity.camera;
+            if (camera.projection === PROJECTION_ORTHOGRAPHIC) {
+                // Eye-level overlay fills the screen in orthographic projection.
+                return;
+            }
             const projection = camera.projectionMatrix;
             const view = camera.viewMatrix;
             if (!projection || !view) {

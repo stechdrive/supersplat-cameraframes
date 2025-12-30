@@ -263,17 +263,32 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
 
     // handle camera align events
     events.on('camera.align', (axis: string) => {
+        const allowViewCube = events.functions.has('cameraFrames.allowViewCube') ?
+            events.invoke('cameraFrames.allowViewCube') !== false :
+            true;
+        if (!allowViewCube) {
+            return;
+        }
+        const orthoToggleAllowed = events.functions.has('cameraFrames.orthoToggleAllowed') ?
+            events.invoke('cameraFrames.orthoToggleAllowed') === true :
+            false;
+        const damping = orthoToggleAllowed ? 0 : 1;
+        const dropOrtho = !orthoToggleAllowed;
+        const align = (azim: number, elev: number) => {
+            scene.camera.setAzimElev(azim, elev, damping, { dropOrtho });
+        };
         switch (axis) {
-            case 'px': scene.camera.setAzimElev(90, 0); break;
-            case 'py': scene.camera.setAzimElev(0, -90); break;
-            case 'pz': scene.camera.setAzimElev(0, 0); break;
-            case 'nx': scene.camera.setAzimElev(270, 0); break;
-            case 'ny': scene.camera.setAzimElev(0, 90); break;
-            case 'nz': scene.camera.setAzimElev(180, 0); break;
+            case 'px': align(90, 0); break;
+            case 'py': align(0, -90); break;
+            case 'pz': align(0, 0); break;
+            case 'nx': align(270, 0); break;
+            case 'ny': align(0, 90); break;
+            case 'nz': align(180, 0); break;
         }
 
-        // switch to ortho mode
-        scene.camera.ortho = true;
+        if (orthoToggleAllowed) {
+            events.fire('cameraFrames.setViewportOrtho', true, { source: 'align' });
+        }
     });
 
     // returns true if the selected splat has selected gaussians
@@ -306,6 +321,8 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
         });
     });
 
+    const clamp01 = (value: number) => Math.max(0, Math.min(1, value));
+
     const intersectCenters = (splat: Splat, op: 'add'|'remove'|'set', options: any) => {
         const data = scene.dataProcessor.intersect(options, scene.renderSystem.getProcessorContext(splat));
         const filter = (i: number) => data[i] === 255;
@@ -330,21 +347,50 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
 
     events.on('select.rect', (op: 'add'|'remove'|'set', rect: any) => {
         const mode = events.invoke('camera.mode');
+        if (!rect?.start || !rect?.end) {
+            return;
+        }
+        const startX = clamp01(rect.start.x);
+        const startY = clamp01(rect.start.y);
+        const endX = clamp01(rect.end.x);
+        const endY = clamp01(rect.end.y);
+        const minX = Math.min(startX, endX);
+        const minY = Math.min(startY, endY);
+        const maxX = Math.max(startX, endX);
+        const maxY = Math.max(startY, endY);
+        const normW = maxX - minX;
+        const normH = maxY - minY;
+        if (normW <= 0 || normH <= 0) {
+            return;
+        }
+        if (mode === 'rings' && scene.camera.targetSize) {
+            return;
+        }
 
         selectedSplats().forEach((splat) => {
             if (mode === 'centers') {
                 intersectCenters(splat, op, {
-                    rect: { x1: rect.start.x, y1: rect.start.y, x2: rect.end.x, y2: rect.end.y }
+                    rect: { x1: minX, y1: minY, x2: maxX, y2: maxY }
                 });
             } else if (mode === 'rings') {
                 const { width, height } = scene.targetSize;
+                if (!(width > 0 && height > 0)) {
+                    return;
+                }
+                const px = Math.floor(minX * width);
+                const py = Math.floor(minY * height);
+                const pw = Math.floor(normW * width);
+                const ph = Math.floor(normH * height);
+                if (pw <= 0 || ph <= 0) {
+                    return;
+                }
 
                 scene.camera.pickPrep(splat, op);
                 const pick = scene.camera.pickRect(
-                    Math.floor(rect.start.x * width),
-                    Math.floor(rect.start.y * height),
-                    Math.floor((rect.end.x - rect.start.x) * width),
-                    Math.floor((rect.end.y - rect.start.y) * height)
+                    px,
+                    py,
+                    pw,
+                    ph
                 );
 
                 const selected = new Set<number>(pick);
@@ -377,6 +423,9 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
                     mask: maskTexture
                 });
             } else if (mode === 'rings') {
+                if (scene.camera.targetSize) {
+                    return;
+                }
                 const mask = context.getImageData(0, 0, canvas.width, canvas.height);
 
                 // calculate mask bound so we limit pixel operations
@@ -395,13 +444,24 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
                     }
                 }
 
+                if (mx1 < mx0 || my1 < my0) {
+                    return;
+                }
+
                 const { width, height } = scene.targetSize;
-                const px0 = Math.floor(mx0 / mask.width * width);
-                const py0 = Math.floor(my0 / mask.height * height);
-                const px1 = Math.floor(mx1 / mask.width * width);
-                const py1 = Math.floor(my1 / mask.height * height);
+                if (!(width > 0 && height > 0)) {
+                    return;
+                }
+                const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
+                const px0 = clamp(Math.floor(mx0 / mask.width * width), 0, width - 1);
+                const py0 = clamp(Math.floor(my0 / mask.height * height), 0, height - 1);
+                const px1 = clamp(Math.floor(mx1 / mask.width * width), 0, width - 1);
+                const py1 = clamp(Math.floor(my1 / mask.height * height), 0, height - 1);
                 const pw = px1 - px0 + 1;
                 const ph = py1 - py0 + 1;
+                if (pw <= 0 || ph <= 0) {
+                    return;
+                }
 
                 scene.camera.pickPrep(splat, op);
                 const pick = scene.camera.pickRect(px0, py0, pw, ph);
@@ -429,6 +489,14 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
     events.on('select.point', (op: 'add'|'remove'|'set', point: { x: number, y: number }) => {
         const { width, height } = scene.targetSize;
         const mode = events.invoke('camera.mode');
+        if (!(width > 0 && height > 0)) {
+            return;
+        }
+        const px = clamp01(point?.x ?? 0);
+        const py = clamp01(point?.y ?? 0);
+        if (mode === 'rings' && scene.camera.targetSize) {
+            return;
+        }
 
         selectedSplats().forEach((splat) => {
             const splatData = splat.splatData;
@@ -440,8 +508,8 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
 
                 const splatSize = events.invoke('camera.splatSize');
                 const camera = scene.camera.entity.camera;
-                const sx = point.x * width;
-                const sy = point.y * height;
+                const sx = px * width;
+                const sy = py * height;
 
                 // calculate final matrix
                 mat.mul2(camera.camera._viewProjMat, splat.worldTransform);
@@ -459,8 +527,8 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
                 scene.camera.pickPrep(splat, op);
 
                 const pickId = scene.camera.pickRect(
-                    Math.floor(point.x * width),
-                    Math.floor(point.y * height),
+                    Math.floor(px * width),
+                    Math.floor(py * height),
                     1, 1
                 )[0];
 
@@ -482,6 +550,9 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
         const splats = selectedSplats();
         const targetSize = scene.targetSize;
         if (!splats.length || !targetSize || !point) {
+            return;
+        }
+        if (scene.camera.targetSize) {
             return;
         }
 

@@ -296,7 +296,13 @@ const main = async () => {
     const fpvReadyHandle = events.on('postrender', () => {
         fpvReadyHandle.off();
         events.fire('cameraFrames.setEnabled', true);
-        events.fire('camera.setNavMode', 'fpv');
+        if (events.functions.has('cameraHistory.suppress')) {
+            events.invoke('cameraHistory.suppress', () => {
+                events.fire('camera.setNavMode', 'fpv');
+            });
+        } else {
+            events.fire('camera.setNavMode', 'fpv');
+        }
     });
 
     // load async models

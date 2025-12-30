@@ -1515,11 +1515,7 @@ class CameraFramesPanel extends Panel {
                 (lastState?.mainCameraPose?.navMode ?? (events.invoke('camera.navMode') as ('orbit' | 'fpv'))) :
                 (events.invoke('camera.navMode') as ('orbit' | 'fpv'));
             if (initialNav) {
-                if (uiTarget === 'viewport') {
-                    events.fire('camera.navMode', initialNav);
-                } else {
-                    setNavModeState(initialNav);
-                }
+                setNavModeState(initialNav);
             }
 
             if (!transformEditing) {

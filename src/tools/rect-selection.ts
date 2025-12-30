@@ -79,23 +79,39 @@ class RectSelection {
 
                 const w = parent.clientWidth;
                 const h = parent.clientHeight;
+                if (!(w > 0 && h > 0)) {
+                    dragEnd();
+                    return;
+                }
+                const clamp01 = (value: number) => Math.max(0, Math.min(1, value));
 
                 dragEnd();
 
                 if (dragMoved) {
                     // rect select
+                    const minX = Math.min(start.x, end.x);
+                    const minY = Math.min(start.y, end.y);
+                    const maxX = Math.max(start.x, end.x);
+                    const maxY = Math.max(start.y, end.y);
+                    const startX = clamp01(minX / w);
+                    const startY = clamp01(minY / h);
+                    const endX = clamp01(maxX / w);
+                    const endY = clamp01(maxY / h);
+                    if (endX <= startX || endY <= startY) {
+                        return;
+                    }
                     events.fire(
                         'select.rect',
                         op, {
-                            start: { x: Math.min(start.x, end.x) / w, y: Math.min(start.y, end.y) / h },
-                            end: { x: Math.max(start.x, end.x) / w, y: Math.max(start.y, end.y) / h }
+                            start: { x: startX, y: startY },
+                            end: { x: endX, y: endY }
                         });
                 } else {
                     // pick
                     events.fire(
                         'select.point',
                         op,
-                        { x: e.offsetX / parent.clientWidth, y: e.offsetY / parent.clientHeight }
+                        { x: clamp01(e.offsetX / w), y: clamp01(e.offsetY / h) }
                     );
                 }
             }
