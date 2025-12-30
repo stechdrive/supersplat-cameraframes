@@ -152,6 +152,20 @@ body {
     right: 0px;
     top: 0px;
     pointer-events: none;
+
+    &.view-cube-disabled {
+        pointer-events: auto;
+        cursor: not-allowed;
+    }
+}
+
+#view-cube-svg {
+    pointer-events: auto;
+}
+
+#view-cube-container.view-cube-disabled #view-cube-svg {
+    pointer-events: none;
+    opacity: 0.35;
 }
 
 #mask-canvas {

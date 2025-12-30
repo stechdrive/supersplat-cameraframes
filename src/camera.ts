@@ -168,6 +168,8 @@ class Camera extends Element {
         if (value !== this.ortho) {
             this.entity.camera.projection = value ? PROJECTION_ORTHOGRAPHIC : PROJECTION_PERSPECTIVE;
             this.scene.events.fire('camera.ortho', value);
+            this.scene.forceRender = true;
+            this.emitTransform(true);
         }
     }
 
@@ -334,7 +336,7 @@ class Camera extends Element {
         this.focalPointTween.goto(point, dampingFactorFactor * this.scene.config.controls.dampingFactor);
     }
 
-    setAzimElev(azim: number, elev: number, dampingFactorFactor: number = 1) {
+    setAzimElev(azim: number, elev: number, dampingFactorFactor: number = 1, options?: { dropOrtho?: boolean }) {
         // clamp
         azim = mod(azim, 360);
         elev = Math.max(this.minElev, Math.min(this.maxElev, elev));
@@ -350,7 +352,9 @@ class Camera extends Element {
         }
 
         // return to perspective mode on rotation
-        this.ortho = false;
+        if (options?.dropOrtho !== false) {
+            this.ortho = false;
+        }
     }
 
     setDistance(distance: number, dampingFactorFactor: number = 1) {
@@ -368,8 +372,10 @@ class Camera extends Element {
         const l = vec.length();
         const azim = Math.atan2(-vec.x / l, -vec.z / l) * math.RAD_TO_DEG;
         const elev = Math.asin(vec.y / l) * math.RAD_TO_DEG;
+        const angleDelta = (a: number, b: number) => Math.abs(mod(a - b + 180, 360) - 180);
+        const dropOrtho = angleDelta(azim, this.azim) > 1e-4 || angleDelta(elev, this.elevation) > 1e-4;
         this.setFocalPoint(target, dampingFactorFactor);
-        this.setAzimElev(azim, elev, dampingFactorFactor);
+        this.setAzimElev(azim, elev, dampingFactorFactor, { dropOrtho });
         this.setDistance(l / this.sceneRadius * this.getFramingFactor(), dampingFactorFactor);
     }
 
@@ -413,8 +419,8 @@ class Camera extends Element {
         };
         this.scene.events.on('camera.setLockFraming', this.lockFramingHandler);
         this.scene.events.on('camera.setLockFovAxis', this.lockFovAxisHandler);
-        this.scene.events.on('camera.setNavMode', (mode: 'orbit' | 'fpv') => {
-            this.setNavMode(mode ?? 'orbit');
+        this.scene.events.on('camera.setNavMode', (mode: 'orbit' | 'fpv', options?: { preservePose?: boolean; source?: string; }) => {
+            this.setNavMode(mode ?? 'orbit', options);
         });
 
         // apply scene config
@@ -717,7 +723,9 @@ class Camera extends Element {
         const framingFactor = this.getFramingFactor();
         const { camera } = this.entity;
         if (!this.lockFraming && this.navMode !== 'fpv') {
-            camera.orthoHeight = this.distanceTween.value.distance * this.sceneRadius / framingFactor * (this.fov / 90) * (camera.horizontalFov ? this.scene.targetSize.height / this.scene.targetSize.width : 1);
+            const size = this.targetSize ?? this.scene.targetSize;
+            const aspect = (size && size.width > 0) ? size.height / size.width : 1;
+            camera.orthoHeight = this.distanceTween.value.distance * this.sceneRadius / framingFactor * (this.fov / 90) * (camera.horizontalFov ? aspect : 1);
         }
         camera.camera._updateViewProjMat();
     }
@@ -826,7 +834,14 @@ class Camera extends Element {
         let near = 1e-6;
         let far = boundRadius * 2;
 
-        if (dist > 0) {
+        if (this.ortho) {
+            const baseNear = dist - boundRadius;
+            const baseFar = dist + boundRadius;
+            if (isFinite(baseNear) && isFinite(baseFar)) {
+                near = baseNear;
+                far = baseFar;
+            }
+        } else if (dist > 0) {
             far = dist + boundRadius;
             // if camera is placed inside the sphere bound calculate near based far
             near = Math.max(1e-6, dist < boundRadius ? far / (1024 * 16) : dist - boundRadius);
@@ -843,6 +858,7 @@ class Camera extends Element {
             }
             near = desiredNear;
         } else if (
+            !this.ortho &&
             this.customFrustum === null &&
             this.targetSize === null &&
             this.scene.getElementsByType(ElementType.splat).length === 0
@@ -919,13 +935,14 @@ class Camera extends Element {
     private computeNoSplatNearCap(cameraPosition: Vec3, forwardVec: Vec3): number | null {
         let cap: number | null = null;
 
-        const w = this.scene?.canvas?.clientWidth ?? 0;
-        const h = this.scene?.canvas?.clientHeight ?? 0;
-        if (w > 0 && h > 0) {
-            const screenX = w * 0.5;
-            const screenY = Math.max(0, h - 1);
+        const size = this.getRenderTargetSize();
+        if (size) {
+            const screenX = size.width * 0.5;
+            const screenY = Math.max(0, size.height - 1);
 
-            this.getRay(screenX, screenY, ray);
+            if (!this.getRay(screenX, screenY, ray, { space: 'target' })) {
+                return null;
+            }
 
             const planeIndex = this.getInfiniteGridPlaneIndex();
             const planeNormal = planeIndex === 0 ? Vec3.RIGHT : (planeIndex === 2 ? Vec3.BACK : Vec3.UP);
@@ -1068,6 +1085,8 @@ class Camera extends Element {
         const yaw = yawDeg;
         const currentRoll = this.rollTween.target.roll ?? this.rollTween.value.roll ?? 0;
         const roll = lockRoll ? currentRoll : rollDeg;
+        const angleDelta = (a: number, b: number) => Math.abs(mod(a - b + 180, 360) - 180);
+        const dropOrtho = angleDelta(yaw, this.azim) > 1e-4 || angleDelta(pitch, this.elevation) > 1e-4;
 
         // update tweens so UI stays in sync
         this.azimElevTween.goto({ azim: yaw, elev: pitch }, 0);
@@ -1076,6 +1095,10 @@ class Camera extends Element {
         }
 
         this.applyOrientation({ azim: yaw, elev: pitch }, lockRoll ? currentRoll : roll);
+
+        if (dropOrtho) {
+            this.ortho = false;
+        }
 
         // also keep tween values in sync in case onUpdate hasn't run yet
         this.azimElevTween.value.azim = yaw;
@@ -1226,8 +1249,9 @@ class Camera extends Element {
     get fovFactor() {
         // we set the fov of the longer axis. here we get the fov of the other (smaller) axis so framing
         // doesn't cut off the scene.
-        const width = this.scene.aspectViewport.enabled ? this.scene.aspectViewport.width : this.scene.targetSize.width;
-        const height = this.scene.aspectViewport.enabled ? this.scene.aspectViewport.height : this.scene.targetSize.height;
+        const targetSize = this.targetSize ?? this.scene.targetSize;
+        const width = this.scene.aspectViewport.enabled ? this.scene.aspectViewport.width : targetSize.width;
+        const height = this.scene.aspectViewport.enabled ? this.scene.aspectViewport.height : targetSize.height;
         const aspect = (width && height) ? this.entity.camera.horizontalFov ? height / width : width / height : 1;
         const fov = 2 * Math.atan(Math.tan(this.fov * math.DEG_TO_RAD * 0.5) * aspect);
         return Math.sin(fov * 0.5);
@@ -1241,24 +1265,54 @@ class Camera extends Element {
         return (typeof factor === 'number' && isFinite(factor) && factor > 1e-6) ? factor : 1;
     }
 
-    setNavMode(mode: 'orbit' | 'fpv') {
+    getLastOrbitWorldDistance() {
+        return this.lastOrbitWorldDistance;
+    }
+
+    syncOrbitCache(distanceNorm?: number, pivot?: Vec3) {
+        const controls = this.scene.config.controls;
+        const minDistNorm = Math.max(controls.minZoom ?? 1e-6, 1e-6);
+        const maxDistNorm = Math.max(controls.maxZoom ?? minDistNorm, minDistNorm);
+        const rawDist = (typeof distanceNorm === 'number' && isFinite(distanceNorm) && distanceNorm > 0) ?
+            distanceNorm :
+            this.distanceTween.value.distance;
+        const distNorm = (typeof rawDist === 'number' && isFinite(rawDist) && rawDist > 0) ?
+            Math.max(minDistNorm, Math.min(maxDistNorm, rawDist)) :
+            minDistNorm;
+        const framingFactor = this.getFramingFactor();
+        this.lastOrbitDistance = distNorm;
+        this.lastOrbitWorldDistance = distNorm * this.sceneRadius / (framingFactor || 1e-6);
+        if (pivot) {
+            this.lastOrbitPivot.copy(pivot);
+        } else {
+            this.lastOrbitPivot.copy(this.focalPointTween.value);
+        }
+        return distNorm;
+    }
+
+    setNavMode(mode: 'orbit' | 'fpv', options?: { preservePose?: boolean; source?: string; }) {
         const next = mode ?? 'orbit';
         if (next === this.navMode) {
             return;
         }
         this.getCameraPositionWorldFromState(cameraPosition, this.navMode);
 
+        const preservePose = !!options?.preservePose;
         this.navMode = next;
         if (this.navMode === 'fpv') {
             // ensure perspective
             this.ortho = false;
             // sync fpv position to current camera location
             this.fpvPosition.copy(cameraPosition);
-            const currentDist = this.distanceTween.value.distance;
-            this.lastOrbitDistance = (typeof currentDist === 'number' && isFinite(currentDist) && currentDist > 0) ? currentDist : 1;
-            this.lastOrbitPivot.copy(this.focalPointTween.value);
-            const framingFactor = this.getFramingFactor();
-            this.lastOrbitWorldDistance = this.lastOrbitDistance * this.sceneRadius / framingFactor;
+            if (preservePose) {
+                this.syncOrbitCache();
+            } else {
+                const currentDist = this.distanceTween.value.distance;
+                this.lastOrbitDistance = (typeof currentDist === 'number' && isFinite(currentDist) && currentDist > 0) ? currentDist : 1;
+                this.lastOrbitPivot.copy(this.focalPointTween.value);
+                const framingFactor = this.getFramingFactor();
+                this.lastOrbitWorldDistance = this.lastOrbitDistance * this.sceneRadius / framingFactor;
+            }
         } else {
             // when returning to orbit, keep the camera position fixed and reuse the previous orbit distance
             const controls = this.scene.config.controls;
@@ -1276,68 +1330,134 @@ class Camera extends Element {
             let distNorm = baseDistNorm;
             let worldDist = distNorm * this.sceneRadius / framingFactor;
 
-            const RATIO_TRIGGER = 4;
-            const ABS_TRIGGER = 50;
-            const absThreshold = this.sceneRadius * ABS_TRIGGER;
+            if (preservePose) {
+                const distRaw = this.distanceTween.value.distance;
+                const validDist = typeof distRaw === 'number' && isFinite(distRaw) && distRaw > 0;
+                distNorm = validDist ? Math.max(minDistNorm, Math.min(maxDistNorm, distRaw)) : minDistNorm;
+                if (!validDist) {
+                    this.setDistance(distNorm, 0);
+                }
+                worldDist = distNorm * this.sceneRadius / framingFactor;
+                this.lastOrbitWorldDistance = worldDist;
+                this.lastOrbitDistance = distNorm;
+                this.lastOrbitPivot.copy(this.focalPointTween.value);
+            } else {
+                const RATIO_TRIGGER = 4;
+                const ABS_TRIGGER = 50;
+                const absThreshold = this.sceneRadius * ABS_TRIGGER;
+                const allowPick = !this.targetSize && !this.ortho;
 
-            const candidate = this.pickForwardHit();
-            if (candidate) {
-                const candidateThreshold = candidate.worldDist * RATIO_TRIGGER;
-                if (baseInvalid || worldDist > candidateThreshold || worldDist > absThreshold) {
-                    const desiredDistNorm = candidate.worldDist / this.sceneRadius * framingFactor;
+                const candidate = allowPick ? this.pickForwardHit() : null;
+                if (candidate) {
+                    const candidateThreshold = candidate.worldDist * RATIO_TRIGGER;
+                    if (baseInvalid || worldDist > candidateThreshold || worldDist > absThreshold) {
+                        const desiredDistNorm = candidate.worldDist / this.sceneRadius * framingFactor;
+                        distNorm = Math.max(minDistNorm, Math.min(maxDistNorm, desiredDistNorm));
+                        worldDist = distNorm * this.sceneRadius / framingFactor;
+                    }
+                } else if (baseInvalid || worldDist > absThreshold) {
+                    const fallbackWorldDist = this.sceneRadius * 2;
+                    const desiredDistNorm = fallbackWorldDist / this.sceneRadius * framingFactor;
                     distNorm = Math.max(minDistNorm, Math.min(maxDistNorm, desiredDistNorm));
                     worldDist = distNorm * this.sceneRadius / framingFactor;
                 }
-            } else if (baseInvalid || worldDist > absThreshold) {
-                const fallbackWorldDist = this.sceneRadius * 2;
-                const desiredDistNorm = fallbackWorldDist / this.sceneRadius * framingFactor;
-                distNorm = Math.max(minDistNorm, Math.min(maxDistNorm, desiredDistNorm));
-                worldDist = distNorm * this.sceneRadius / framingFactor;
+
+                // forward (pivot -> camera) using current view
+                calcForwardVec(vec, currentAngles.azim, currentAngles.elev);
+                va.copy(cameraPosition).sub(vec.mulScalar(worldDist));
+                const pivot = va;
+
+                this.setFocalPoint(pivot, 0);
+                this.setDistance(distNorm, 0);
+
+                // remember latest orbit params for future round-trips
+                this.lastOrbitWorldDistance = worldDist;
+                this.lastOrbitDistance = distNorm;
+                this.lastOrbitPivot.copy(pivot);
             }
-
-            // forward (pivot -> camera) using current view
-            calcForwardVec(vec, currentAngles.azim, currentAngles.elev);
-            va.copy(cameraPosition).sub(vec.mulScalar(worldDist));
-            const pivot = va;
-
-            this.setFocalPoint(pivot, 0);
-            this.setDistance(distNorm, 0);
-
-            // remember latest orbit params for future round-trips
-            this.lastOrbitWorldDistance = worldDist;
-            this.lastOrbitDistance = distNorm;
-            this.lastOrbitPivot.copy(pivot);
         }
 
-        this.scene.events.fire('camera.navMode', this.navMode);
+        this.scene.events.fire('camera.navMode', this.navMode, options?.source ? { source: options.source } : undefined);
     }
 
-    getRay(screenX: number, screenY: number, ray: Ray) {
-        const { entity, ortho, scene } = this;
+    private getRenderTargetSize() {
+        const size = this.targetSize ?? this.scene?.targetSize;
+        const width = size?.width ?? 0;
+        const height = size?.height ?? 0;
+        if (!(width > 0 && height > 0)) {
+            return null;
+        }
+        return { width, height };
+    }
+
+    private mapCssToTargetCoords(screenX: number, screenY: number) {
+        const size = this.getRenderTargetSize();
+        const canvas = this.scene?.canvas;
+        const w = canvas?.clientWidth ?? 0;
+        const h = canvas?.clientHeight ?? 0;
+        if (!size || !(w > 0 && h > 0)) {
+            return null;
+        }
+        if (!isFinite(screenX) || !isFinite(screenY)) {
+            return null;
+        }
+        return {
+            x: screenX / w * size.width,
+            y: screenY / h * size.height,
+            width: size.width,
+            height: size.height
+        };
+    }
+
+    getRay(screenX: number, screenY: number, ray: Ray, options?: { space?: 'css' | 'target' }) {
+        let sx = screenX;
+        let sy = screenY;
+        if (options?.space !== 'target') {
+            const mapped = this.mapCssToTargetCoords(screenX, screenY);
+            if (!mapped) {
+                return false;
+            }
+            sx = mapped.x;
+            sy = mapped.y;
+        }
+        const { entity, ortho } = this;
         const cameraPos = this.entity.getPosition();
 
         // create the pick ray in world space
         if (ortho) {
-            entity.camera.screenToWorld(screenX, screenY, -1.0, vec);
-            entity.camera.screenToWorld(screenX, screenY, 1.0, vecb);
+            entity.camera.screenToWorld(sx, sy, -1.0, vec);
+            entity.camera.screenToWorld(sx, sy, 1.0, vecb);
             vecb.sub(vec).normalize();
             ray.set(vec, vecb);
         } else {
-            entity.camera.screenToWorld(screenX, screenY, 1.0, vec);
+            entity.camera.screenToWorld(sx, sy, 1.0, vec);
             vec.sub(cameraPos).normalize();
             ray.set(cameraPos, vec);
         }
+        return true;
     }
 
     // intersect the scene at the given screen coordinate
     intersect(screenX: number, screenY: number) {
         const { scene } = this;
 
-        const target = scene.canvas;
-        const sx = screenX / target.clientWidth * scene.targetSize.width;
-        const sy = screenY / target.clientHeight * scene.targetSize.height;
+        if (this.targetSize) {
+            return null;
+        }
 
-        this.getRay(screenX, screenY, ray);
+        const mapped = this.mapCssToTargetCoords(screenX, screenY);
+        if (!mapped) {
+            return null;
+        }
+        const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
+        const sx = clamp(mapped.x, 0, mapped.width - 1);
+        const sy = clamp(mapped.y, 0, mapped.height - 1);
+        const ix = Math.floor(sx);
+        const iy = Math.floor(sy);
+
+        if (!this.getRay(sx, sy, ray, { space: 'target' })) {
+            return null;
+        }
 
         const splats = scene.getElementsByType(ElementType.splat);
 
@@ -1349,7 +1469,7 @@ class Camera extends Element {
             const splat = splats[i] as Splat;
 
             this.pickPrep(splat, 'set');
-            const pickId = this.pick(sx, sy);
+            const pickId = this.pick(ix, iy);
 
             if (pickId !== -1 && splat.calcSplatWorldPosition(pickId, vec)) {
                 // create a plane at the world position facing perpendicular to the camera
@@ -1378,9 +1498,9 @@ class Camera extends Element {
 
         const worldLayer = scene.app.scene.layers.getLayerByName('World');
         const layersToPick = [worldLayer, scene.modelLightingLayer].filter(layer => !!layer);
-        this.picker.resize(scene.targetSize.width, scene.targetSize.height);
+        this.picker.resize(mapped.width, mapped.height);
         this.picker.prepare(this.entity.camera, this.scene.app.scene, layersToPick.length > 0 ? layersToPick : undefined);
-        const selection = this.picker.getSelection(sx, sy);
+        const selection = this.picker.getSelection(ix, iy);
         for (let i = 0; i < selection.length; ++i) {
             const mesh = selection[i];
             const model = scene.events.invoke('mesh.fromGraphNode', mesh.node) as Model;
@@ -1467,18 +1587,38 @@ class Camera extends Element {
 
     pickRect(x: number, y: number, width: number, height: number) {
         const device = this.scene.graphicsDevice as WebglGraphicsDevice;
-        const pixels = new Uint8Array(width * height * 4);
+        const ix = Math.floor(x);
+        const iy = Math.floor(y);
+        const iw = Math.floor(width);
+        const ih = Math.floor(height);
+        if (!(iw > 0 && ih > 0) || !isFinite(ix) || !isFinite(iy)) {
+            return [];
+        }
+        const rtWidth = this.picker.renderTarget.width;
+        const rtHeight = this.picker.renderTarget.height;
+        if (!(rtWidth > 0 && rtHeight > 0)) {
+            return [];
+        }
+        const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
+        const cx = clamp(ix, 0, rtWidth - 1);
+        const cy = clamp(iy, 0, rtHeight - 1);
+        const cw = Math.min(iw, rtWidth - cx);
+        const ch = Math.min(ih, rtHeight - cy);
+        if (!(cw > 0 && ch > 0)) {
+            return [];
+        }
+        const pixels = new Uint8Array(cw * ch * 4);
 
         // read pixels
         // @ts-ignore
         device.setRenderTarget(this.picker.renderTarget);
         device.updateBegin();
         // @ts-ignore
-        device.readPixels(x, this.picker.renderTarget.height - y - height, width, height, pixels);
+        device.readPixels(cx, this.picker.renderTarget.height - cy - ch, cw, ch, pixels);
         device.updateEnd();
 
         const result: number[] = [];
-        for (let i = 0; i < width * height; i++) {
+        for (let i = 0; i < cw * ch; i++) {
             const id =
                 pixels[i * 4] |
                 (pixels[i * 4 + 1] << 8) |
@@ -1538,7 +1678,7 @@ class Camera extends Element {
         return result;
     }
 
-    docDeserialize(settings: any) {
+    docDeserialize(settings: any, options?: { allowOrtho?: boolean; preserveNavMode?: boolean; source?: string; }) {
         if (!settings) {
             return;
         }
@@ -1565,9 +1705,24 @@ class Camera extends Element {
         const azim = settings.azim ?? this.azim;
         const elev = settings.elev ?? this.elevation;
         const distance = settings.distance ?? this.distance;
+        const allowOrtho = options?.allowOrtho !== false;
+        const preserveNavMode = options?.preserveNavMode !== false;
+        const hasOrtho = Object.prototype.hasOwnProperty.call(settings, 'ortho');
+        let navMode = settings.navMode ?? this.navMode;
+        let ortho = hasOrtho ? !!settings.ortho : this.ortho;
+
+        if (navMode === 'fpv') {
+            ortho = false;
+        }
+        if (ortho) {
+            navMode = 'orbit';
+        }
+        if (!allowOrtho) {
+            ortho = false;
+        }
 
         this.setFocalPoint(focalPoint, 0);
-        this.setAzimElev(azim, elev, 0);
+        this.setAzimElev(azim, elev, 0, { dropOrtho: !ortho });
         this.setDistance(distance, 0);
         if (settings.roll !== undefined) {
             this.rollTween.goto({ roll: settings.roll }, 0);
@@ -1578,8 +1733,10 @@ class Camera extends Element {
         if (settings.tonemapping !== undefined) {
             this.tonemapping = settings.tonemapping;
         }
-        if (settings.hasOwnProperty('ortho')) {
-            this.ortho = !!settings.ortho;
+        if (!allowOrtho) {
+            this.ortho = false;
+        } else if (hasOrtho) {
+            this.ortho = ortho;
         }
         if (settings.hasOwnProperty('nearOverride')) {
             this.setNearOverride(settings.nearOverride, { transient: false });
@@ -1590,8 +1747,8 @@ class Camera extends Element {
         if (settings.hasOwnProperty('renderOverlays')) {
             this.renderOverlays = !!settings.renderOverlays;
         }
-        if (settings.navMode && settings.navMode !== this.navMode) {
-            this.setNavMode(settings.navMode);
+        if (navMode && navMode !== this.navMode) {
+            this.setNavMode(navMode, { preservePose: preserveNavMode, source: options?.source });
         }
         if (this.navMode === 'fpv' && settings.fpvPosition) {
             this.fpvPosition.copy(toVec3(settings.fpvPosition, this.fpvPosition));

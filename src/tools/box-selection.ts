@@ -108,10 +108,15 @@ class BoxSelection {
 
         const updateGizmoSize = () => {
             const { camera, canvas } = scene;
+            const w = canvas.clientWidth;
+            const h = canvas.clientHeight;
+            if (!(w > 0 && h > 0)) {
+                return;
+            }
             if (camera.ortho) {
-                gizmo.size = 1125 / canvas.clientHeight;
+                gizmo.size = 1125 / h;
             } else {
-                gizmo.size = 1200 / Math.max(canvas.clientWidth, canvas.clientHeight);
+                gizmo.size = 1200 / Math.max(w, h);
             }
         };
         updateGizmoSize();

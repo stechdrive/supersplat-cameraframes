@@ -10,6 +10,7 @@ type CameraSnapshot = {
     roll: number;
     navMode: 'orbit' | 'fpv';
     fov: number;
+    ortho: boolean;
     fpvPosition?: number[];
     renderOverlays?: boolean;
 };
@@ -26,6 +27,7 @@ const pickSnapshot = (camera: Camera): CameraSnapshot => {
         roll: doc.roll ?? 0,
         navMode: doc.navMode ?? 'orbit',
         fov: doc.fov,
+        ortho: !!doc.ortho,
         fpvPosition: doc.fpvPosition,
         renderOverlays: doc.renderOverlays
     };
@@ -39,6 +41,7 @@ class CameraHistory {
     private before: CameraSnapshot | null = null;
     private timer: number | null = null;
     private applying = false;
+    private suppressDepth = 0;
     private debounceMs = 250;
 
     constructor(events: Events, camera: Camera) {
@@ -53,20 +56,23 @@ class CameraHistory {
     attach() {
         this.events.on('camera.transform', () => this.schedule('camera.transform'));
         this.events.on('camera.fov', () => this.schedule('camera.fov'));
-        this.events.on('camera.navMode', () => {
-            if (this.applying) {
+        this.events.on('camera.navMode', (_mode?: 'orbit' | 'fpv', meta?: { source?: string }) => {
+            if (this.shouldIgnore(meta)) {
                 return;
             }
-            if (!this.before) {
-                this.before = clone(pickSnapshot(this.camera));
+            this.schedule('camera.navMode');
+        });
+        this.events.on('camera.ortho', (_value?: boolean, meta?: { source?: string }) => {
+            if (this.shouldIgnore(meta)) {
+                return;
             }
-            this.commit('camera.navMode');
+            this.schedule('camera.ortho');
         });
         this.events.on('scene.clear', () => this.reset());
     }
 
     private schedule(label: string) {
-        if (this.applying) {
+        if (this.applying || this.suppressDepth > 0) {
             return;
         }
         if (!this.before) {
@@ -79,7 +85,7 @@ class CameraHistory {
     }
 
     private commit(label: string) {
-        if (this.applying) {
+        if (this.applying || this.suppressDepth > 0) {
             return;
         }
         if (this.timer !== null) {
@@ -117,6 +123,29 @@ class CameraHistory {
         }
     }
 
+    suppress<T>(fn: () => T) {
+        const isRoot = this.suppressDepth === 0;
+        if (isRoot) {
+            this.reset();
+        }
+        this.suppressDepth++;
+        try {
+            return fn();
+        } finally {
+            this.suppressDepth = Math.max(0, this.suppressDepth - 1);
+            if (this.suppressDepth === 0) {
+                this.reset();
+            }
+        }
+    }
+
+    private shouldIgnore(meta?: { source?: string }) {
+        if (this.applying || this.suppressDepth > 0) {
+            return true;
+        }
+        return meta?.source === 'ui-sync';
+    }
+
     private reset() {
         this.before = null;
         if (this.timer !== null) {
@@ -129,6 +158,7 @@ class CameraHistory {
 const registerCameraHistory = (events: Events, camera: Camera) => {
     const history = new CameraHistory(events, camera);
     history.attach();
+    events.function('cameraHistory.suppress', (fn: () => void) => history.suppress(fn));
     return history;
 };
 
