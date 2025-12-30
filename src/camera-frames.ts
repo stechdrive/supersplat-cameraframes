@@ -47,17 +47,19 @@ import {
 } from './camera-frames-overlay';
 import {
     addPngDpi,
-    canvasFromPixels,
     downloadArrayBuffer,
     flipForCompressor,
-    mergeOverlayCanvases
+    mergeOverlayCanvases,
+    renderBase,
+    renderModelLayers,
+    renderOverlayLayers,
+    renderReferenceLayers
 } from './camera-frames-export';
 import { cameraFramesVersion } from './camera-frames-version';
 import { DEFAULT_NEAR_CLIP, MIN_NEAR_CLIP } from './clip-constants';
 import { ElementType } from './element';
 import { Events } from './events';
 import { hitTestGizmo } from './gizmo-hit';
-import { Model } from './model';
 import { PngCompressor } from './png-compressor';
 import { exportPsd, type PsdOverlayLayer } from './psd-export';
 import { Scene } from './scene';
@@ -2876,144 +2878,6 @@ export class CameraFramesController {
 
     // rendering to image ---------------------------------------------------
 
-    private async renderBase(width: number, height: number) {
-        // ベース描画には下絵を混ぜない（PSD で独立レイヤー化し、PNG も CPU 合成で制御する）
-        const pixels = await this.events.invoke('render.offscreen', width, height, { includeReferenceImage: false }) as Uint8Array;
-        if (!pixels) {
-            throw new Error('render.offscreen returned empty buffer');
-        }
-        return pixels;
-    }
-
-    private async renderReferenceLayers(width: number, height: number, options?: { applyOpacity?: boolean; }): Promise<ReferenceExportLayer[]> {
-        const layers = await this.events.invoke('referenceImages.renderExportLayers', width, height, options) as ReferenceExportLayer[] | null;
-        return Array.isArray(layers) ? layers : [];
-    }
-
-    private async renderOverlayLayer(width: number, height: number, options: { includeGrid?: boolean; includeEyeLevel?: boolean; }): Promise<HTMLCanvasElement | null> {
-        const includeGrid = !!options.includeGrid;
-        const includeEyeLevel = !!options.includeEyeLevel;
-        if (!includeGrid && !includeEyeLevel) {
-            return null;
-        }
-        const pixels = await this.events.invoke('render.offscreen', width, height, {
-            includeGrid,
-            includeEyeLevel,
-            overlaysOnly: true,
-            unpremultiplyAlpha: true
-        }) as Uint8Array;
-        if (!pixels) {
-            throw new Error('render.offscreen returned empty overlay buffer');
-        }
-        return canvasFromPixels(pixels, width, height);
-    }
-
-    private async renderOverlayLayers(width: number, height: number): Promise<{ grid: HTMLCanvasElement | null; eyeLevel: HTMLCanvasElement | null; } | null> {
-        if (!this.state.exportGridOverlay) {
-            return null;
-        }
-        const grid = await this.renderOverlayLayer(width, height, { includeGrid: true });
-        const eyeLevel = await this.renderOverlayLayer(width, height, { includeEyeLevel: true });
-        return { grid, eyeLevel };
-    }
-
-    private async renderModelLayers(width: number, height: number): Promise<Array<{ name: string; canvas: HTMLCanvasElement; }>> {
-        if (!this.state.exportModelLayers) {
-            return [];
-        }
-
-        const models = ((this.events.invoke('mesh.list') as Model[] | null) ?? []).filter((model) => {
-            return !!model && !!model.entity && model.visible && model.entity.enabled !== false;
-        });
-
-        if (models.length === 0) {
-            return [];
-        }
-
-        const overlays: Array<{ name: string; canvas: HTMLCanvasElement; }> = [];
-
-        const modelStates = models.map(model => ({
-            model,
-            enabled: model.entity.enabled
-        }));
-
-        const layers = this.scene.app.scene.layers;
-        const worldLayer = layers.getLayerByName('World');
-        const restoreLayers: Array<{ layer: any; enabled: boolean; }> = [];
-        const rememberLayer = (layer?: any) => {
-            if (!layer) return;
-            restoreLayers.push({ layer, enabled: layer.enabled });
-        };
-
-        const layersToDisable = [
-            worldLayer,
-            this.scene.overlayLayer,
-            this.scene.debugLayer,
-            this.scene.gizmoLayer,
-            this.scene.backgroundLayer,
-            this.scene.shadowLayer,
-            this.scene.exportOverlayLayer
-        ];
-        layersToDisable.forEach(rememberLayer);
-
-        const prevRenderFlags = { ...this.scene.renderFlags };
-        const prevGridVisible = this.scene.grid.visible;
-        const prevEyeVisible = this.scene.eyeLevel.visible;
-        const prevRenderOverlays = this.scene.camera.renderOverlays;
-
-        try {
-            layersToDisable.forEach((layer) => {
-                if (layer) {
-                    layer.enabled = false;
-                }
-            });
-
-            this.scene.renderFlags.forceGridOverlay = false;
-            this.scene.renderFlags.forceEyeLevelOverlay = false;
-            this.scene.renderFlags.eyeLevelLayerOverride = null;
-            this.scene.renderFlags.gridLayerOverride = null;
-            this.scene.renderFlags.hideBounds = true;
-            this.scene.grid.visible = false;
-            this.scene.eyeLevel.visible = false;
-            this.scene.camera.renderOverlays = false;
-
-            modelStates.forEach(({ model }) => {
-                model.entity.enabled = false;
-            });
-
-            for (const { model } of modelStates) {
-                model.entity.enabled = true;
-                const pixels = await this.events.invoke('render.offscreen', width, height, {
-                    unpremultiplyAlpha: true
-                }) as Uint8Array;
-                if (pixels && pixels.length > 0) {
-                    overlays.push({
-                        name: localize('panel.camera-frames.export.model-layer', { name: model.name ?? 'Model' }),
-                        canvas: canvasFromPixels(pixels, width, height)
-                    });
-                }
-                model.entity.enabled = false;
-            }
-        } finally {
-            modelStates.forEach(({ model, enabled }) => {
-                model.entity.enabled = enabled;
-            });
-            restoreLayers.forEach(({ layer, enabled }) => {
-                layer.enabled = enabled;
-            });
-            this.scene.renderFlags.forceGridOverlay = prevRenderFlags.forceGridOverlay;
-            this.scene.renderFlags.forceEyeLevelOverlay = prevRenderFlags.forceEyeLevelOverlay;
-            this.scene.renderFlags.eyeLevelLayerOverride = prevRenderFlags.eyeLevelLayerOverride;
-            this.scene.renderFlags.gridLayerOverride = prevRenderFlags.gridLayerOverride;
-            this.scene.renderFlags.hideBounds = prevRenderFlags.hideBounds;
-            this.scene.grid.visible = prevGridVisible;
-            this.scene.eyeLevel.visible = prevEyeVisible;
-            this.scene.camera.renderOverlays = prevRenderOverlays;
-        }
-
-        return overlays;
-    }
-
     private renderFrameOverlay(width: number, height: number, frames?: FrameState[]) {
         const framesToDraw = frames ?? this.state.frames;
         return renderFrameOverlayOverlay(width, height, this.state.renderBox, framesToDraw);
@@ -3120,9 +2984,9 @@ export class CameraFramesController {
         try {
             // 書き出し前に明示的にエクスポート用フラスタムを適用し、副作用イベント(camera.resize)頼りを排除
             this.syncExportFrustum(width, height);
-            const basePixels = await this.renderBase(width, height);
-            const debugOverlays = await this.renderOverlayLayers(width, height);
-            const referenceLayers = await this.renderReferenceLayers(width, height, { applyOpacity: format !== 'psd' });
+            const basePixels = await renderBase(this.events, width, height);
+            const debugOverlays = await renderOverlayLayers(this.events, width, height, this.state.exportGridOverlay);
+            const referenceLayers = await renderReferenceLayers(this.events, width, height, { applyOpacity: format !== 'psd' });
 
             if (format === 'psd') {
                 const referenceUnderlays: PsdOverlayLayer[] = referenceLayers
@@ -3131,7 +2995,7 @@ export class CameraFramesController {
                 const referenceOverlays: PsdOverlayLayer[] = referenceLayers
                 .filter(layer => layer.group === 'front')
                 .map(layer => ({ name: layer.name, canvas: layer.canvas, opacity: layer.opacity, bounds: layer.bounds }));
-                const modelOverlays = await this.renderModelLayers(width, height);
+                const modelOverlays = await renderModelLayers(this.events, this.scene, width, height, this.state.exportModelLayers);
                 const frameOverlays = this.renderFrameOverlaysByManagement(width, height);
                 const overlayLayers = [
                     ...(debugOverlays?.grid ? [{ name: localize('panel.camera-frames.export.grid-layer.grid'), canvas: debugOverlays.grid }] : []),

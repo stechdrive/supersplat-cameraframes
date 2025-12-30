@@ -1,4 +1,9 @@
 import { Crc } from './serialize/crc';
+import { localize } from './ui/localization';
+import type { Events } from './events';
+import type { Model } from './model';
+import type { Scene } from './scene';
+import type { ReferenceExportLayer } from './camera-frames-types';
 
 export const canvasFromPixels = (pixels: Uint8Array | Uint8ClampedArray, width: number, height: number) => {
     const canvas = document.createElement('canvas');
@@ -107,4 +112,163 @@ export const addPngDpi = (arrayBuffer: ArrayBuffer, dpi: number) => {
     result.set(chunk, ihdrEnd);
     result.set(data.subarray(ihdrEnd), ihdrEnd + chunk.length);
     return result.buffer;
+};
+
+export const renderBase = async (events: Events, width: number, height: number) => {
+    // ベース描画には下絵を混ぜない（PSD で独立レイヤー化し、PNG も CPU 合成で制御する）
+    const pixels = await events.invoke('render.offscreen', width, height, { includeReferenceImage: false }) as Uint8Array;
+    if (!pixels) {
+        throw new Error('render.offscreen returned empty buffer');
+    }
+    return pixels;
+};
+
+export const renderReferenceLayers = async (
+    events: Events,
+    width: number,
+    height: number,
+    options?: { applyOpacity?: boolean; }
+): Promise<ReferenceExportLayer[]> => {
+    const layers = await events.invoke('referenceImages.renderExportLayers', width, height, options) as ReferenceExportLayer[] | null;
+    return Array.isArray(layers) ? layers : [];
+};
+
+export const renderOverlayLayer = async (
+    events: Events,
+    width: number,
+    height: number,
+    options: { includeGrid?: boolean; includeEyeLevel?: boolean; }
+): Promise<HTMLCanvasElement | null> => {
+    const includeGrid = !!options.includeGrid;
+    const includeEyeLevel = !!options.includeEyeLevel;
+    if (!includeGrid && !includeEyeLevel) {
+        return null;
+    }
+    const pixels = await events.invoke('render.offscreen', width, height, {
+        includeGrid,
+        includeEyeLevel,
+        overlaysOnly: true,
+        unpremultiplyAlpha: true
+    }) as Uint8Array;
+    if (!pixels) {
+        throw new Error('render.offscreen returned empty overlay buffer');
+    }
+    return canvasFromPixels(pixels, width, height);
+};
+
+export const renderOverlayLayers = async (
+    events: Events,
+    width: number,
+    height: number,
+    exportGridOverlay: boolean
+): Promise<{ grid: HTMLCanvasElement | null; eyeLevel: HTMLCanvasElement | null; } | null> => {
+    if (!exportGridOverlay) {
+        return null;
+    }
+    const grid = await renderOverlayLayer(events, width, height, { includeGrid: true });
+    const eyeLevel = await renderOverlayLayer(events, width, height, { includeEyeLevel: true });
+    return { grid, eyeLevel };
+};
+
+export const renderModelLayers = async (
+    events: Events,
+    scene: Scene,
+    width: number,
+    height: number,
+    exportModelLayers: boolean
+): Promise<Array<{ name: string; canvas: HTMLCanvasElement; }>> => {
+    if (!exportModelLayers) {
+        return [];
+    }
+
+    const models = ((events.invoke('mesh.list') as Model[] | null) ?? []).filter((model) => {
+        return !!model && !!model.entity && model.visible && model.entity.enabled !== false;
+    });
+
+    if (models.length === 0) {
+        return [];
+    }
+
+    const overlays: Array<{ name: string; canvas: HTMLCanvasElement; }> = [];
+
+    const modelStates = models.map(model => ({
+        model,
+        enabled: model.entity.enabled
+    }));
+
+    const layers = scene.app.scene.layers;
+    const worldLayer = layers.getLayerByName('World');
+    const restoreLayers: Array<{ layer: any; enabled: boolean; }> = [];
+    const rememberLayer = (layer?: any) => {
+        if (!layer) return;
+        restoreLayers.push({ layer, enabled: layer.enabled });
+    };
+
+    const layersToDisable = [
+        worldLayer,
+        scene.overlayLayer,
+        scene.debugLayer,
+        scene.gizmoLayer,
+        scene.backgroundLayer,
+        scene.shadowLayer,
+        scene.exportOverlayLayer
+    ];
+    layersToDisable.forEach(rememberLayer);
+
+    const prevRenderFlags = { ...scene.renderFlags };
+    const prevGridVisible = scene.grid.visible;
+    const prevEyeVisible = scene.eyeLevel.visible;
+    const prevRenderOverlays = scene.camera.renderOverlays;
+
+    try {
+        layersToDisable.forEach((layer) => {
+            if (layer) {
+                layer.enabled = false;
+            }
+        });
+
+        scene.renderFlags.forceGridOverlay = false;
+        scene.renderFlags.forceEyeLevelOverlay = false;
+        scene.renderFlags.eyeLevelLayerOverride = null;
+        scene.renderFlags.gridLayerOverride = null;
+        scene.renderFlags.hideBounds = true;
+        scene.grid.visible = false;
+        scene.eyeLevel.visible = false;
+        scene.camera.renderOverlays = false;
+
+        modelStates.forEach(({ model }) => {
+            model.entity.enabled = false;
+        });
+
+        for (const { model } of modelStates) {
+            model.entity.enabled = true;
+            const pixels = await events.invoke('render.offscreen', width, height, {
+                unpremultiplyAlpha: true
+            }) as Uint8Array;
+            if (pixels && pixels.length > 0) {
+                overlays.push({
+                    name: localize('panel.camera-frames.export.model-layer', { name: model.name ?? 'Model' }),
+                    canvas: canvasFromPixels(pixels, width, height)
+                });
+            }
+            model.entity.enabled = false;
+        }
+    } finally {
+        modelStates.forEach(({ model, enabled }) => {
+            model.entity.enabled = enabled;
+        });
+        restoreLayers.forEach(({ layer, enabled }) => {
+            layer.enabled = enabled;
+        });
+        scene.renderFlags.forceGridOverlay = prevRenderFlags.forceGridOverlay;
+        scene.renderFlags.forceEyeLevelOverlay = prevRenderFlags.forceEyeLevelOverlay;
+        scene.renderFlags.eyeLevelLayerOverride = prevRenderFlags.eyeLevelLayerOverride;
+        scene.renderFlags.gridLayerOverride = prevRenderFlags.gridLayerOverride;
+        scene.renderFlags.hideBounds = prevRenderFlags.hideBounds;
+        scene.grid.visible = prevGridVisible;
+        scene.eyeLevel.visible = prevEyeVisible;
+        scene.camera.renderOverlays = prevRenderOverlays;
+    }
+
+    return overlays;
 };
