@@ -5,7 +5,7 @@
   font-weight: normal;
   font-style: normal;
 }
-.font-icon, .pcui-menu-item-content > .pcui-label[data-icon]::before, .pcui-menu-item-has-children > .pcui-menu-item-content > .pcui-label::after, .pcui-treeview-item:not(.pcui-treeview-item-empty) > .pcui-treeview-item-contents::before, .pcui-treeview-item-icon::after, .pcui-select-input-create-new > .pcui-label:last-child::before, .pcui-container.pcui-select-input-list .pcui-label.pcui-selected::after, .pcui-label.pcui-select-input-disabled-value::after, .pcui-label.pcui-select-input-icon::after, .pcui-infobox[data-icon]:not(.pcui-hidden)::before, .pcui-panel.pcui-collapsible > .pcui-panel-header::before, .picker-gradient > .pcui-overlay-content > .picker-gradient-panel > .picker-gradient-footer > .pcui-panel-content > .delete-curve-button::after, .picker-gradient > .pcui-overlay-content > .picker-gradient-panel > .picker-gradient-footer > .pcui-panel-content > .paste-curve-button::after, .picker-gradient > .pcui-overlay-content > .picker-gradient-panel > .picker-gradient-footer > .pcui-panel-content > .copy-curve-button::after, .picker-gradient > .pcui-overlay-content > .picker-gradient-panel > .picker-gradient-footer > .pcui-panel-content > .pcui-button, .pcui-button[data-icon]::before, .pcui-boolean-input.pcui-boolean-input-ticked::after {
+.font-icon, .pcui-menu-item-has-children > .pcui-menu-item-content > .pcui-label:not(.pcui-menu-item-shortcut)::after, .pcui-menu-item-content > .pcui-label:not(.pcui-menu-item-shortcut)[data-icon]::before, .pcui-treeview-item:not(.pcui-treeview-item-empty) > .pcui-treeview-item-contents::before, .pcui-treeview-item-icon::after, .pcui-select-input-create-new > .pcui-label:last-child::before, .pcui-container.pcui-select-input-list .pcui-label.pcui-selected::after, .pcui-label.pcui-select-input-disabled-value::after, .pcui-label.pcui-select-input-icon::after, .pcui-infobox[data-icon]:not(.pcui-hidden)::before, .pcui-panel.pcui-collapsible > .pcui-panel-header::before, .picker-gradient > .pcui-overlay-content > .picker-gradient-panel > .picker-gradient-footer > .pcui-panel-content > .delete-curve-button::after, .picker-gradient > .pcui-overlay-content > .picker-gradient-panel > .picker-gradient-footer > .pcui-panel-content > .paste-curve-button::after, .picker-gradient > .pcui-overlay-content > .picker-gradient-panel > .picker-gradient-footer > .pcui-panel-content > .copy-curve-button::after, .picker-gradient > .pcui-overlay-content > .picker-gradient-panel > .picker-gradient-footer > .pcui-panel-content > .pcui-button, .pcui-button[data-icon]::before, .pcui-boolean-input.pcui-boolean-input-ticked::after {
   font-family: pc-icon;
 }
 
@@ -1945,16 +1945,10 @@
   visibility: visible;
 }
 
-.pcui-menu-item-has-children > .pcui-menu-item-content > .pcui-label {
-  padding-right: 32px;
-}
-.pcui-menu-item-has-children > .pcui-menu-item-content > .pcui-label::after {
-  content: "\e160";
-  position: absolute;
-  right: 6px;
-}
-
 .pcui-menu-item-content {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
   min-width: 158px;
   color: rgba(170, 170, 170, 0.5);
   border-bottom: 1px solid #242424;
@@ -1972,15 +1966,32 @@
   border-bottom: none;
 }
 
-.pcui-menu-item-content > .pcui-label {
+.pcui-menu-item-content > .pcui-label:not(.pcui-menu-item-shortcut) {
+  display: inline-flex;
+  align-items: center;
   color: inherit;
 }
-.pcui-menu-item-content > .pcui-label[data-icon]::before {
+.pcui-menu-item-content > .pcui-label:not(.pcui-menu-item-shortcut)[data-icon]::before {
   content: attr(data-icon);
   font-weight: 100;
-  font-size: inherit;
   margin-right: 6px;
-  vertical-align: middle;
+}
+
+.pcui-menu-item-has-children > .pcui-menu-item-content > .pcui-label:not(.pcui-menu-item-shortcut)::after {
+  content: "\e160";
+  position: absolute;
+  right: 6px;
+}
+.pcui-menu-item-has-children > .pcui-menu-item-content > .pcui-label:not(.pcui-menu-item-shortcut) {
+  padding-right: 32px;
+}
+
+.pcui-menu-item-shortcut {
+  margin-left: auto;
+  color: inherit;
+}
+.pcui-menu-item-shortcut:not(:empty) {
+  padding-left: 16px;
 }
 
 .pcui-menu-item.pcui-disabled .pcui-menu-item-content {
