@@ -45,6 +45,13 @@ import {
     renderFrameOverlay as renderFrameOverlayOverlay,
     renderFrameOverlaysByManagement as renderFrameOverlaysByManagementOverlay
 } from './camera-frames-overlay';
+import {
+    addPngDpi,
+    canvasFromPixels,
+    downloadArrayBuffer,
+    flipForCompressor,
+    mergeOverlayCanvases
+} from './camera-frames-export';
 import { cameraFramesVersion } from './camera-frames-version';
 import { DEFAULT_NEAR_CLIP, MIN_NEAR_CLIP } from './clip-constants';
 import { ElementType } from './element';
@@ -54,7 +61,6 @@ import { Model } from './model';
 import { PngCompressor } from './png-compressor';
 import { exportPsd, type PsdOverlayLayer } from './psd-export';
 import { Scene } from './scene';
-import { Crc } from './serialize/crc';
 import { localize } from './ui/localization';
 import type {
     CameraBasis,
@@ -2870,21 +2876,6 @@ export class CameraFramesController {
 
     // rendering to image ---------------------------------------------------
 
-    private canvasFromPixels(pixels: Uint8Array | Uint8ClampedArray, width: number, height: number) {
-        const canvas = document.createElement('canvas');
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) {
-            throw new Error('Failed to acquire 2D context for overlay render');
-        }
-        const view = pixels instanceof Uint8ClampedArray ? pixels : new Uint8ClampedArray(pixels);
-        const imgData = new ImageData(width, height);
-        imgData.data.set(view);
-        ctx.putImageData(imgData, 0, 0);
-        return canvas;
-    }
-
     private async renderBase(width: number, height: number) {
         // ベース描画には下絵を混ぜない（PSD で独立レイヤー化し、PNG も CPU 合成で制御する）
         const pixels = await this.events.invoke('render.offscreen', width, height, { includeReferenceImage: false }) as Uint8Array;
@@ -2914,7 +2905,7 @@ export class CameraFramesController {
         if (!pixels) {
             throw new Error('render.offscreen returned empty overlay buffer');
         }
-        return this.canvasFromPixels(pixels, width, height);
+        return canvasFromPixels(pixels, width, height);
     }
 
     private async renderOverlayLayers(width: number, height: number): Promise<{ grid: HTMLCanvasElement | null; eyeLevel: HTMLCanvasElement | null; } | null> {
@@ -2998,7 +2989,7 @@ export class CameraFramesController {
                 if (pixels && pixels.length > 0) {
                     overlays.push({
                         name: localize('panel.camera-frames.export.model-layer', { name: model.name ?? 'Model' }),
-                        canvas: this.canvasFromPixels(pixels, width, height)
+                        canvas: canvasFromPixels(pixels, width, height)
                     });
                 }
                 model.entity.enabled = false;
@@ -3021,22 +3012,6 @@ export class CameraFramesController {
         }
 
         return overlays;
-    }
-
-    private mergeOverlayCanvases(width: number, height: number, overlays: Array<HTMLCanvasElement | null | undefined>): HTMLCanvasElement | null {
-        const valid = overlays.filter((layer): layer is HTMLCanvasElement => !!layer);
-        if (valid.length === 0) {
-            return null;
-        }
-        const canvas = document.createElement('canvas');
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) {
-            throw new Error('Failed to acquire 2D context for merged overlays');
-        }
-        valid.forEach(layer => ctx.drawImage(layer, 0, 0));
-        return canvas;
     }
 
     private renderFrameOverlay(width: number, height: number, frames?: FrameState[]) {
@@ -3066,80 +3041,6 @@ export class CameraFramesController {
             this.compressor = new PngCompressor();
         }
         return this.compressor;
-    }
-
-    private flipForCompressor(data: Uint32Array, width: number, height: number) {
-        // render.offscreen() は既に y 軸を反転済みだが、PngCompressor でもう一度反転されるため、
-        // ここでバッファを bottom-up に戻しておく（ダブルフリップ対策）。
-        const flipped = new Uint32Array(data.length);
-        for (let y = 0; y < height; y++) {
-            const srcStart = (height - 1 - y) * width;
-            const dstStart = y * width;
-            flipped.set(data.subarray(srcStart, srcStart + width), dstStart);
-        }
-        return flipped;
-    }
-
-    private downloadArrayBuffer(arrayBuffer: ArrayBuffer, filename: string) {
-        const blob = new Blob([arrayBuffer], { type: 'application/octet-stream' });
-        const url = URL.createObjectURL(blob);
-        const el = document.createElement('a');
-        el.href = url;
-        el.download = filename;
-        el.click();
-        URL.revokeObjectURL(url);
-    }
-
-    private addPngDpi(arrayBuffer: ArrayBuffer, dpi: number) {
-        const data = new Uint8Array(arrayBuffer);
-        const PNG_SIG = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
-        if (data.length < 33 || !PNG_SIG.every((b, i) => data[i] === b)) {
-            return arrayBuffer;
-        }
-
-        const readUint32BE = (offset: number) => {
-            return (data[offset] << 24) | (data[offset + 1] << 16) | (data[offset + 2] << 8) | data[offset + 3];
-        };
-
-        let ihdrEnd = -1;
-        let offset = 8; // after signature
-        while (offset + 8 <= data.length) {
-            const length = readUint32BE(offset);
-            const type = String.fromCharCode(data[offset + 4], data[offset + 5], data[offset + 6], data[offset + 7]);
-            const chunkEnd = offset + 8 + length + 4;
-            if (chunkEnd > data.length) {
-                break;
-            }
-            if (type === 'IHDR') {
-                ihdrEnd = chunkEnd;
-                break;
-            }
-            offset = chunkEnd;
-        }
-
-        if (ihdrEnd < 0) {
-            return arrayBuffer;
-        }
-
-        const ppm = Math.max(1, Math.round(dpi * 39.37007874015748)); // pixels per meter
-
-        const chunk = new Uint8Array(4 + 4 + 9 + 4);
-        const view = new DataView(chunk.buffer);
-        view.setUint32(0, 9); // data length
-        chunk.set([0x70, 0x48, 0x59, 0x73], 4); // 'pHYs'
-        view.setUint32(8, ppm, false);  // X pixels per unit
-        view.setUint32(12, ppm, false); // Y pixels per unit
-        chunk[16] = 1; // unit: meter
-
-        const crc = new Crc();
-        crc.update(chunk.subarray(4, 17)); // type + data
-        view.setUint32(17, crc.value(), false);
-
-        const result = new Uint8Array(data.length + chunk.length);
-        result.set(data.subarray(0, ihdrEnd), 0);
-        result.set(chunk, ihdrEnd);
-        result.set(data.subarray(ihdrEnd), ihdrEnd + chunk.length);
-        return result.buffer;
     }
 
     private async renderPng(params: { basePixels: Uint8Array; referenceLayers?: ReferenceExportLayer[]; frameOverlay: HTMLCanvasElement; gridOverlay?: HTMLCanvasElement | null; eyeLevelOverlay?: HTMLCanvasElement | null; width: number; height: number; filename: string; }) {
@@ -3180,12 +3081,12 @@ export class CameraFramesController {
         ctx.drawImage(frameOverlay, 0, 0);
 
         const merged = new Uint32Array(ctx.getImageData(0, 0, width, height).data.buffer);
-        const flipped = this.flipForCompressor(merged, width, height);
+        const flipped = flipForCompressor(merged, width, height);
 
         const compressor = this.getCompressor();
         let arrayBuffer = await compressor.compress(flipped, width, height);
-        arrayBuffer = this.addPngDpi(arrayBuffer, 150);
-        this.downloadArrayBuffer(arrayBuffer, filename);
+        arrayBuffer = addPngDpi(arrayBuffer, 150);
+        downloadArrayBuffer(arrayBuffer, filename);
     }
 
     private async renderPsd(params: { basePixels: Uint8ClampedArray; underlays?: PsdOverlayLayer[]; overlays: PsdOverlayLayer[]; width: number; height: number; filename: string; }) {
@@ -3249,8 +3150,8 @@ export class CameraFramesController {
                 });
             } else {
                 const overlay = this.renderFrameOverlay(width, height);
-                const gridOverlay = this.mergeOverlayCanvases(width, height, [debugOverlays?.grid]);
-                const eyeLevelOverlay = this.mergeOverlayCanvases(width, height, [debugOverlays?.eyeLevel]);
+                const gridOverlay = mergeOverlayCanvases(width, height, [debugOverlays?.grid]);
+                const eyeLevelOverlay = mergeOverlayCanvases(width, height, [debugOverlays?.eyeLevel]);
                 await this.renderPng({
                     basePixels,
                     referenceLayers,
