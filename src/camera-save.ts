@@ -1,4 +1,5 @@
-import type { CameraFramesController, CameraFramesState } from './camera-frames';
+import type { CameraFramesController } from './camera-frames';
+import type { CameraFramesState } from './camera-frames-types';
 import type { CameraFramesHistory } from './camera-frames-history';
 import { cameraFramesVersion } from './camera-frames-version';
 import { Events } from './events';
