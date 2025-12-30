@@ -1,20 +1,6 @@
 import { Vec3 } from 'playcanvas';
 
 import {
-    DEFAULT_FRAME_BASE,
-    DEFAULT_MASK,
-    DEFAULT_RENDERBOX,
-    DEG2RAD,
-    FRUSTUM_DEBUG_CACHE_VERSION,
-    FRUSTUM_DEBUG_COLOR,
-    FRUSTUM_SELECTED_COLOR,
-    HFOV_MAX,
-    HFOV_MIN,
-    MAX_VIEW_ZOOM_PCT,
-    MIN_VIEW_ZOOM_PCT,
-    RAD2DEG
-} from './camera-frames-constants';
-import {
     applyNearClipOverride as applyNearClipOverrideCamera,
     applyViewportNearOverride as applyViewportNearOverrideCamera,
     buildCameraBasis as buildCameraBasisCamera,
@@ -48,12 +34,21 @@ import {
     updateViewportNearTargetSizeState as updateViewportNearTargetSizeStateCamera,
     worldDistanceToNormalized as worldDistanceToNormalizedCamera
 } from './camera-frames-camera';
-import { clampFov, normalizeMaskScope } from './camera-frames-math';
 import {
-    computeViewportMapping as computeViewportMappingViewport,
-    logicalToScreen as logicalToScreenViewport,
-    screenToLogical as screenToLogicalViewport
-} from './camera-frames-viewport';
+    DEFAULT_FRAME_BASE,
+    DEFAULT_MASK,
+    DEFAULT_RENDERBOX,
+    DEG2RAD,
+    FRUSTUM_DEBUG_CACHE_VERSION,
+    FRUSTUM_DEBUG_COLOR,
+    FRUSTUM_SELECTED_COLOR,
+    HFOV_MAX,
+    HFOV_MIN,
+    MAX_VIEW_ZOOM_PCT,
+    MIN_VIEW_ZOOM_PCT,
+    RAD2DEG
+} from './camera-frames-constants';
+import { renderImage } from './camera-frames-export';
 import {
     frameRectsScreen as frameRectsScreenGeometry,
     frameAnchorLogical as frameAnchorLogicalGeometry,
@@ -65,6 +60,7 @@ import {
     hitTestFrameBorder as hitTestFrameBorderGeometry,
     hitTestHandle as hitTestHandleGeometry
 } from './camera-frames-frame-geometry';
+import { clampFov, normalizeMaskScope } from './camera-frames-math';
 import {
     drawOverlay as drawOverlayOverlay,
     renderFrameOverlay as renderFrameOverlayOverlay,
@@ -87,13 +83,6 @@ import {
     serialize as serializeSerialize,
     snapshot as snapshotSerialize
 } from './camera-frames-serialize';
-import { renderImage } from './camera-frames-export';
-import { cameraFramesVersion } from './camera-frames-version';
-import { DEFAULT_NEAR_CLIP } from './clip-constants';
-import { ElementType } from './element';
-import { Events } from './events';
-import { PngCompressor } from './png-compressor';
-import { Scene } from './scene';
 import type {
     CameraBasis,
     CameraFrustum,
@@ -109,6 +98,17 @@ import type {
     Viewport,
     ViewportMapping
 } from './camera-frames-types';
+import { cameraFramesVersion } from './camera-frames-version';
+import {
+    computeViewportMapping as computeViewportMappingViewport,
+    logicalToScreen as logicalToScreenViewport,
+    screenToLogical as screenToLogicalViewport
+} from './camera-frames-viewport';
+import { DEFAULT_NEAR_CLIP } from './clip-constants';
+import { ElementType } from './element';
+import { Events } from './events';
+import { PngCompressor } from './png-compressor';
+import { Scene } from './scene';
 
 export type { CameraFramesState } from './camera-frames-types';
 
@@ -704,7 +704,7 @@ export class CameraFramesController {
             lockFovAxis: this.lockFovAxis,
             baseFovRad: this.baseFovRad,
             baseFovToHorizontalRad: (baseFovRad, axis, aspect) => this.baseFovToHorizontalRad(baseFovRad, axis, aspect),
-            cropFactor: (renderBox) => this.cropFactor(renderBox)
+            cropFactor: renderBox => this.cropFactor(renderBox)
         });
     }
 
@@ -750,7 +750,7 @@ export class CameraFramesController {
             lockFovAxis: this.lockFovAxis,
             baseFovRad: this.baseFovRad,
             baseFovToHorizontalRad: (baseFovRad, axis, aspect) => this.baseFovToHorizontalRad(baseFovRad, axis, aspect),
-            cropFactor: (renderBox) => this.cropFactor(renderBox),
+            cropFactor: renderBox => this.cropFactor(renderBox),
             frustumDebugCache: this.frustumDebugCache,
             frustumDebugCacheVersion: FRUSTUM_DEBUG_CACHE_VERSION,
             computeEffectiveFrustum: () => this.computeEffectiveFrustum(),
@@ -772,7 +772,7 @@ export class CameraFramesController {
             scene: this.scene,
             ensureUiTargetAvailability: () => this.ensureUiTargetAvailability(),
             captureCameraPose: () => this.captureCameraPose(),
-            forceMainCameraPoseOrthoOff: (pose) => this.forceMainCameraPoseOrthoOff(pose),
+            forceMainCameraPoseOrthoOff: pose => this.forceMainCameraPoseOrthoOff(pose),
             getFrustumDebugPoints: () => this.getFrustumDebugPoints(),
             mainCameraSelected: this.mainCameraSelected,
             frustumDebugColor: FRUSTUM_DEBUG_COLOR,
@@ -1107,7 +1107,7 @@ export class CameraFramesController {
                 scene: this.scene,
                 getState: () => this.state,
                 applyCameraPose: (pose, opts) => this.applyCameraPose(pose, opts),
-                normalizeFormat: (format) => this.normalizeFormat(format),
+                normalizeFormat: format => this.normalizeFormat(format),
                 resolveFilename: (name, format) => this.resolveFilename(name, format),
                 renderFrameOverlay: (width, height) => this.renderFrameOverlay(width, height),
                 renderFrameOverlaysByManagement: (width, height) => this.renderFrameOverlaysByManagement(width, height),
@@ -1428,7 +1428,7 @@ export class CameraFramesController {
                 this.viewportNearTargetSizeActive = value;
             },
             clearViewportNearOverride: () => this.clearViewportNearOverride(),
-            scheduleViewportNearOverride: (delayMs) => this.scheduleViewportNearOverride(delayMs)
+            scheduleViewportNearOverride: delayMs => this.scheduleViewportNearOverride(delayMs)
         });
     }
 
@@ -1794,7 +1794,7 @@ export class CameraFramesController {
             lockFovAxis: this.lockFovAxis,
             baseAspect: this.baseAspect(),
             baseFovToHorizontalRad: (baseFovRad, axis, aspect) => this.baseFovToHorizontalRad(baseFovRad, axis, aspect),
-            horizontalRadToAxisDeg: (horizontalRad) => this.horizontalRadToAxisDeg(horizontalRad),
+            horizontalRadToAxisDeg: horizontalRad => this.horizontalRadToAxisDeg(horizontalRad),
             nearClip: this.state.nearClip,
             setBaseFovRad: (value) => {
                 this.baseFovRad = value;
@@ -1840,7 +1840,7 @@ export class CameraFramesController {
             lockFovAxis: this.lockFovAxis,
             baseAspect: this.baseAspect(),
             baseFovToHorizontalRad: (baseFovRad, axis, aspect) => this.baseFovToHorizontalRad(baseFovRad, axis, aspect),
-            cropFactor: (renderBox) => this.cropFactor(renderBox),
+            cropFactor: renderBox => this.cropFactor(renderBox),
             setBaseFovRad: (value) => {
                 this.baseFovRad = value;
             }
@@ -1874,7 +1874,7 @@ export class CameraFramesController {
             stateEnabled: this.state.enabled,
             viewportLensRange: () => this.viewportLensRange(),
             renderBox: this.state.renderBox,
-            cropFactor: (renderBox) => this.cropFactor(renderBox),
+            cropFactor: renderBox => this.cropFactor(renderBox),
             setViewportFovRuntime: (value) => {
                 this.viewportFovRuntime = value;
             },
@@ -2081,10 +2081,10 @@ export class CameraFramesController {
             setDragState: (value) => {
                 this.dragState = value;
             },
-            selectFrame: (id) => this.selectFrame(id),
+            selectFrame: id => this.selectFrame(id),
             computeViewportMapping: () => this.computeViewportMapping(),
             frameCenterLogical: (frame, logicalW, logicalH) => this.frameCenterLogical(frame, logicalW, logicalH),
-            frameRotationRad: (frame) => this.frameRotationRad(frame),
+            frameRotationRad: frame => this.frameRotationRad(frame),
             getAnchorLogicalForHandle: (handleId, frame, centerLogical, frameW, frameH, logicalW, logicalH, rotationRad) => {
                 return this.getAnchorLogicalForHandle(handleId, frame, centerLogical, frameW, frameH, logicalW, logicalH, rotationRad);
             },
@@ -2095,7 +2095,7 @@ export class CameraFramesController {
             screenToLogical: (x, y) => this.screenToLogical(x, y),
             hitTestHandle: (px, py) => this.hitTestHandle(px, py),
             hitTestFrameBorder: (px, py) => this.hitTestFrameBorder(px, py),
-            historyBegin: (label) => this.historyBegin(label)
+            historyBegin: label => this.historyBegin(label)
         });
     }
 
@@ -2107,7 +2107,7 @@ export class CameraFramesController {
             overlay: this.overlay,
             scene: this.scene,
             viewport: this.viewport,
-            handleFrustumPointerMove: (event) => this.handleFrustumPointerMove(event),
+            handleFrustumPointerMove: event => this.handleFrustumPointerMove(event),
             computeViewportMapping: () => this.computeViewportMapping(),
             screenToLogical: (x, y) => this.screenToLogical(x, y),
             syncCameraFrustum: () => this.syncCameraFrustum(),
@@ -2124,8 +2124,8 @@ export class CameraFramesController {
             setDragState: (value) => {
                 this.dragState = value;
             },
-            handleFrustumPointerUp: (event) => this.handleFrustumPointerUp(event),
-            historyCommit: (label) => this.historyCommit(label),
+            handleFrustumPointerUp: event => this.handleFrustumPointerUp(event),
+            historyCommit: label => this.historyCommit(label),
             setLastPointer: (value) => {
                 this.lastPointer = value;
             },
@@ -2157,7 +2157,7 @@ export class CameraFramesController {
                     historyRecord: (label, fn) => this.historyRecord(label, fn),
                     frameCenterLogical: (target, logicalW, logicalH) => this.frameCenterLogical(target, logicalW, logicalH),
                     frameAnchorLogical: (target, logicalW, logicalH) => this.frameAnchorLogical(target, logicalW, logicalH),
-                    frameRotationRad: (target) => this.frameRotationRad(target),
+                    frameRotationRad: target => this.frameRotationRad(target),
                     requestRender: () => this.requestRender(),
                     fireStateChanged,
                     updatePointerFromLast: () => this.updatePointerFromLast()
@@ -2186,7 +2186,7 @@ export class CameraFramesController {
             height,
             this.state.renderBox,
             this.state.frames,
-            (frameId) => this.frameManagementName(frameId)
+            frameId => this.frameManagementName(frameId)
         );
     }
 
@@ -2202,8 +2202,8 @@ export class CameraFramesController {
     public snapshot(): CameraFramesState {
         return snapshotSerialize({
             state: this.state,
-            clonePoseSnapshot: (pose) => this.clonePoseSnapshot(pose),
-            normalizeFormat: (format) => this.normalizeFormat(format)
+            clonePoseSnapshot: pose => this.clonePoseSnapshot(pose),
+            normalizeFormat: format => this.normalizeFormat(format)
         });
     }
 
@@ -2217,11 +2217,11 @@ export class CameraFramesController {
             setState: (value) => {
                 this.state = value;
             },
-            normalizeMainRenderBoxProjection: (baseFov) => this.normalizeMainRenderBoxProjection(baseFov),
-            clonePoseSnapshot: (pose) => this.clonePoseSnapshot(pose),
-            forceMainCameraPoseOrthoOff: (pose) => this.forceMainCameraPoseOrthoOff(pose),
+            normalizeMainRenderBoxProjection: baseFov => this.normalizeMainRenderBoxProjection(baseFov),
+            clonePoseSnapshot: pose => this.clonePoseSnapshot(pose),
+            forceMainCameraPoseOrthoOff: pose => this.forceMainCameraPoseOrthoOff(pose),
             captureCameraPose: () => this.captureCameraPose(),
-            computeSafeNearClip: (value) => this.computeSafeNearClip(value),
+            computeSafeNearClip: value => this.computeSafeNearClip(value),
             setViewportPoseRuntime: (value) => {
                 this.viewportPoseRuntime = value;
             },
@@ -2239,7 +2239,7 @@ export class CameraFramesController {
             rebuildBaseFrustum: () => this.rebuildBaseFrustum(),
             applyCameraPose: (pose, options) => this.applyCameraPose(pose, options),
             applyNearClipOverride: () => this.applyNearClipOverride(),
-            computeViewportMapping: (updateFitScale) => this.computeViewportMapping(updateFitScale),
+            computeViewportMapping: updateFitScale => this.computeViewportMapping(updateFitScale),
             syncCameraFrustum: () => this.syncCameraFrustum(),
             scheduleNearClipGuard: () => this.scheduleNearClipGuard(),
             requestRender: () => this.requestRender(),
@@ -2264,13 +2264,13 @@ export class CameraFramesController {
             scene: this.scene,
             viewport: this.viewport,
             events: this.events,
-            normalizeFormat: (format) => this.normalizeFormat(format),
-            normalizeViewZoomPct: (value) => this.normalizeViewZoomPct(value),
-            clonePoseSnapshot: (pose) => this.clonePoseSnapshot(pose),
-            forceMainCameraPoseOrthoOff: (pose) => this.forceMainCameraPoseOrthoOff(pose),
+            normalizeFormat: format => this.normalizeFormat(format),
+            normalizeViewZoomPct: value => this.normalizeViewZoomPct(value),
+            clonePoseSnapshot: pose => this.clonePoseSnapshot(pose),
+            forceMainCameraPoseOrthoOff: pose => this.forceMainCameraPoseOrthoOff(pose),
             captureCameraPose: () => this.captureCameraPose(),
-            normalizeMainRenderBoxProjection: (baseFov) => this.normalizeMainRenderBoxProjection(baseFov),
-            computeSafeNearClip: (value) => this.computeSafeNearClip(value),
+            normalizeMainRenderBoxProjection: baseFov => this.normalizeMainRenderBoxProjection(baseFov),
+            computeSafeNearClip: value => this.computeSafeNearClip(value),
             setState: (value) => {
                 this.state = value;
             },
@@ -2290,7 +2290,7 @@ export class CameraFramesController {
             rebuildBaseFrustum: () => this.rebuildBaseFrustum(),
             applyCameraPose: (pose, options) => this.applyCameraPose(pose, options),
             applyNearClipOverride: () => this.applyNearClipOverride(),
-            computeViewportMapping: (updateFitScale) => this.computeViewportMapping(updateFitScale),
+            computeViewportMapping: updateFitScale => this.computeViewportMapping(updateFitScale),
             syncCameraFrustum: () => this.syncCameraFrustum(),
             scheduleNearClipGuard: () => this.scheduleNearClipGuard(),
             requestRender: () => this.requestRender(),

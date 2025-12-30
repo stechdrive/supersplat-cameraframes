@@ -1,8 +1,6 @@
-import { Quat, Vec3 } from 'playcanvas';
-import type { Color } from 'playcanvas';
+import { Quat, Vec3, type Color } from 'playcanvas';
 
 import { DEG2RAD, HFOV_MAX, HFOV_MIN, RAD2DEG, W_35MM } from './camera-frames-constants';
-import { DEFAULT_NEAR_CLIP, MIN_NEAR_CLIP } from './clip-constants';
 import { clampFov } from './camera-frames-math';
 import type {
     CameraBasis,
@@ -15,6 +13,7 @@ import type {
     Viewport,
     ViewportMapping
 } from './camera-frames-types';
+import { DEFAULT_NEAR_CLIP, MIN_NEAR_CLIP } from './clip-constants';
 import { ElementType } from './element';
 import type { Events } from './events';
 import type { Scene } from './scene';
@@ -880,8 +879,8 @@ export const computeSafeNearClip = (value: number | null | undefined) => {
 export const setNearClip = ({
     value,
     suppressHistory,
-    stateEnabled,
-    uiTarget,
+    getStateEnabled,
+    getUiTarget,
     getNearClip,
     setNearClipState,
     applyNearClipOverride,

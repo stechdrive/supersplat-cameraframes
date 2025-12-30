@@ -173,8 +173,8 @@ export const handleRects = (
     handles.push({ id: 'anchor', x: anchorScreen.x, y: anchorScreen.y });
     const gapPx = 30;
     const logicalGap = gapPx / Math.max(1e-6, effectiveScale);
-    const rotateOffset = rotateOffset({ x: 0, y: -(frameH * 0.5 + logicalGap) }, rotationRad);
-    const rotateLogical = { x: centerLogical.x + rotateOffset.x, y: centerLogical.y + rotateOffset.y };
+    const rotateHandleOffset = rotateOffset({ x: 0, y: -(frameH * 0.5 + logicalGap) }, rotationRad);
+    const rotateLogical = { x: centerLogical.x + rotateHandleOffset.x, y: centerLogical.y + rotateHandleOffset.y };
     const rotateScreen = logicalToScreen(rotateLogical.x, rotateLogical.y);
     handles.push({ id: 'rotate', x: rotateScreen.x, y: rotateScreen.y });
     return handles.map(h => ({
