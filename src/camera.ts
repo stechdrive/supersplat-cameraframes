@@ -68,6 +68,7 @@ const quatOrbitPitch = new Quat();
 
 // modulo dealing with negative numbers
 const mod = (n: number, m: number) => ((n % m) + m) % m;
+const MAX_ORTHO_DEPTH_RATIO = 8192;
 
 type CameraCustomFrustum = { left: number, right: number, bottom: number, top: number, near: number, far: number };
 
@@ -835,11 +836,23 @@ class Camera extends Element {
         let far = boundRadius * 2;
 
         if (this.ortho) {
-            const baseNear = dist - boundRadius;
-            const baseFar = dist + boundRadius;
-            if (isFinite(baseNear) && isFinite(baseFar)) {
-                near = baseNear;
-                far = baseFar;
+            const half = bound.halfExtents;
+            const extent = Math.abs(forwardVec.x) * half.x +
+                Math.abs(forwardVec.y) * half.y +
+                Math.abs(forwardVec.z) * half.z;
+            const minDist = dist - extent;
+            const maxDist = dist + extent;
+            if (isFinite(minDist) && isFinite(maxDist) && maxDist > 0) {
+                near = Math.max(MIN_NEAR_CLIP, minDist);
+                far = Math.max(maxDist, near * 2);
+                if (near <= MIN_NEAR_CLIP) {
+                    const ratio = far / Math.max(near, MIN_NEAR_CLIP);
+                    if (ratio > MAX_ORTHO_DEPTH_RATIO) {
+                        near = Math.max(near, far / MAX_ORTHO_DEPTH_RATIO);
+                    }
+                }
+            } else {
+                near = Math.max(MIN_NEAR_CLIP, far / (1024 * 16));
             }
         } else if (dist > 0) {
             far = dist + boundRadius;
