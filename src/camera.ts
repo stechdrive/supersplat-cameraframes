@@ -1607,8 +1607,12 @@ class Camera extends Element {
         if (!(iw > 0 && ih > 0) || !isFinite(ix) || !isFinite(iy)) {
             return [];
         }
-        const rtWidth = this.picker.renderTarget.width;
-        const rtHeight = this.picker.renderTarget.height;
+        const pickTarget = this.workRenderTarget;
+        if (!pickTarget) {
+            return [];
+        }
+        const rtWidth = pickTarget.width;
+        const rtHeight = pickTarget.height;
         if (!(rtWidth > 0 && rtHeight > 0)) {
             return [];
         }
@@ -1624,10 +1628,10 @@ class Camera extends Element {
 
         // read pixels
         // @ts-ignore
-        device.setRenderTarget(this.picker.renderTarget);
+        device.setRenderTarget(pickTarget);
         device.updateBegin();
         // @ts-ignore
-        device.readPixels(cx, this.picker.renderTarget.height - cy - ch, cw, ch, pixels);
+        device.readPixels(cx, rtHeight - cy - ch, cw, ch, pixels);
         device.updateEnd();
 
         const result: number[] = [];
