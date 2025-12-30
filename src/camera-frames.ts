@@ -45,25 +45,14 @@ import {
     renderFrameOverlay as renderFrameOverlayOverlay,
     renderFrameOverlaysByManagement as renderFrameOverlaysByManagementOverlay
 } from './camera-frames-overlay';
-import {
-    addPngDpi,
-    downloadArrayBuffer,
-    flipForCompressor,
-    mergeOverlayCanvases,
-    renderBase,
-    renderModelLayers,
-    renderOverlayLayers,
-    renderReferenceLayers
-} from './camera-frames-export';
+import { renderImage } from './camera-frames-export';
 import { cameraFramesVersion } from './camera-frames-version';
 import { DEFAULT_NEAR_CLIP, MIN_NEAR_CLIP } from './clip-constants';
 import { ElementType } from './element';
 import { Events } from './events';
 import { hitTestGizmo } from './gizmo-hit';
 import { PngCompressor } from './png-compressor';
-import { exportPsd, type PsdOverlayLayer } from './psd-export';
 import { Scene } from './scene';
-import { localize } from './ui/localization';
 import type {
     CameraBasis,
     CameraFrustum,
@@ -75,7 +64,6 @@ import type {
     FrameMaskState,
     FrameState,
     FrustumDebugCache,
-    ReferenceExportLayer,
     RenderBoxState,
     Viewport,
     ViewportMapping
@@ -1343,7 +1331,21 @@ export class CameraFramesController {
             if (!this.state.enabled) {
                 return;
             }
-            await this.renderImage(options);
+            await renderImage({
+                events: this.events,
+                scene: this.scene,
+                getState: () => this.state,
+                applyCameraPose: (pose, opts) => this.applyCameraPose(pose, opts),
+                normalizeFormat: (format) => this.normalizeFormat(format),
+                resolveFilename: (name, format) => this.resolveFilename(name, format),
+                renderFrameOverlay: (width, height) => this.renderFrameOverlay(width, height),
+                renderFrameOverlaysByManagement: (width, height) => this.renderFrameOverlaysByManagement(width, height),
+                getCompressor: () => this.getCompressor(),
+                requestRender: () => this.requestRender(),
+                syncCameraFrustum: () => this.syncCameraFrustum(),
+                clearViewportNearOverride: () => this.clearViewportNearOverride(),
+                options
+            });
         });
 
         // doc serialize / deserialize
@@ -2905,157 +2907,6 @@ export class CameraFramesController {
             this.compressor = new PngCompressor();
         }
         return this.compressor;
-    }
-
-    private async renderPng(params: { basePixels: Uint8Array; referenceLayers?: ReferenceExportLayer[]; frameOverlay: HTMLCanvasElement; gridOverlay?: HTMLCanvasElement | null; eyeLevelOverlay?: HTMLCanvasElement | null; width: number; height: number; filename: string; }) {
-        const { basePixels, referenceLayers, frameOverlay, gridOverlay, eyeLevelOverlay, width, height, filename } = params;
-        const canvas = document.createElement('canvas');
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) {
-            throw new Error('Failed to acquire 2D context for PNG render');
-        }
-
-        const imgData = new ImageData(new Uint8ClampedArray(basePixels), width, height);
-        ctx.putImageData(imgData, 0, 0);
-        if (gridOverlay) {
-            ctx.globalCompositeOperation = 'destination-over';
-            ctx.drawImage(gridOverlay, 0, 0);
-            ctx.globalCompositeOperation = 'source-over';
-        }
-        const refLayers = Array.isArray(referenceLayers) ? referenceLayers : [];
-        const backLayers = refLayers.filter(l => l?.group === 'back');
-        const frontLayers = refLayers.filter(l => l?.group === 'front');
-        if (backLayers.length > 0) {
-            ctx.globalCompositeOperation = 'destination-over';
-            backLayers.slice().reverse().forEach((layer) => {
-                const bounds = layer.bounds;
-                ctx.drawImage(layer.canvas, bounds?.left ?? 0, bounds?.top ?? 0);
-            });
-            ctx.globalCompositeOperation = 'source-over';
-        }
-        frontLayers.forEach((layer) => {
-            const bounds = layer.bounds;
-            ctx.drawImage(layer.canvas, bounds?.left ?? 0, bounds?.top ?? 0);
-        });
-        if (eyeLevelOverlay) {
-            ctx.drawImage(eyeLevelOverlay, 0, 0);
-        }
-        ctx.drawImage(frameOverlay, 0, 0);
-
-        const merged = new Uint32Array(ctx.getImageData(0, 0, width, height).data.buffer);
-        const flipped = flipForCompressor(merged, width, height);
-
-        const compressor = this.getCompressor();
-        let arrayBuffer = await compressor.compress(flipped, width, height);
-        arrayBuffer = addPngDpi(arrayBuffer, 150);
-        downloadArrayBuffer(arrayBuffer, filename);
-    }
-
-    private async renderPsd(params: { basePixels: Uint8ClampedArray; underlays?: PsdOverlayLayer[]; overlays: PsdOverlayLayer[]; width: number; height: number; filename: string; }) {
-        const { basePixels, underlays, overlays, width, height, filename } = params;
-        await exportPsd({
-            basePixels,
-            underlays,
-            overlays,
-            width,
-            height,
-            filename
-        });
-    }
-
-    private async renderImage(options?: { format?: ExportFormat; filename?: string }) {
-        const rb = this.state.renderBox;
-        const width = Math.round(rb.baseSize.w * rb.scale.kx);
-        const height = Math.round(rb.baseSize.h * rb.scale.ky);
-
-        if (width <= 0 || height <= 0) {
-            return;
-        }
-
-        if (this.state.enabled && this.state.mainCameraPose) {
-            this.applyCameraPose(this.state.mainCameraPose, { silent: true, allowOrtho: false });
-        }
-
-        const format = this.normalizeFormat(options?.format ?? this.state.exportFormat);
-        const filename = this.resolveFilename(options?.filename ?? this.state.exportName, format);
-
-        try {
-            // 書き出し前に明示的にエクスポート用フラスタムを適用し、副作用イベント(camera.resize)頼りを排除
-            this.syncExportFrustum(width, height);
-            const basePixels = await renderBase(this.events, width, height);
-            const debugOverlays = await renderOverlayLayers(this.events, width, height, this.state.exportGridOverlay);
-            const referenceLayers = await renderReferenceLayers(this.events, width, height, { applyOpacity: format !== 'psd' });
-
-            if (format === 'psd') {
-                const referenceUnderlays: PsdOverlayLayer[] = referenceLayers
-                .filter(layer => layer.group === 'back')
-                .map(layer => ({ name: layer.name, canvas: layer.canvas, opacity: layer.opacity, bounds: layer.bounds }));
-                const referenceOverlays: PsdOverlayLayer[] = referenceLayers
-                .filter(layer => layer.group === 'front')
-                .map(layer => ({ name: layer.name, canvas: layer.canvas, opacity: layer.opacity, bounds: layer.bounds }));
-                const modelOverlays = await renderModelLayers(this.events, this.scene, width, height, this.state.exportModelLayers);
-                const frameOverlays = this.renderFrameOverlaysByManagement(width, height);
-                const overlayLayers = [
-                    ...(debugOverlays?.grid ? [{ name: localize('panel.camera-frames.export.grid-layer.grid'), canvas: debugOverlays.grid }] : []),
-                    ...(debugOverlays?.eyeLevel ? [{ name: localize('panel.camera-frames.export.grid-layer.eye-level'), canvas: debugOverlays.eyeLevel }] : []),
-                    ...modelOverlays,
-                    ...referenceOverlays,
-                    ...frameOverlays
-                ];
-                await this.renderPsd({
-                    basePixels: basePixels instanceof Uint8ClampedArray ? basePixels : new Uint8ClampedArray(basePixels),
-                    underlays: referenceUnderlays.length > 0 ? referenceUnderlays : undefined,
-                    overlays: overlayLayers,
-                    width,
-                    height,
-                    filename
-                });
-            } else {
-                const overlay = this.renderFrameOverlay(width, height);
-                const gridOverlay = mergeOverlayCanvases(width, height, [debugOverlays?.grid]);
-                const eyeLevelOverlay = mergeOverlayCanvases(width, height, [debugOverlays?.eyeLevel]);
-                await this.renderPng({
-                    basePixels,
-                    referenceLayers,
-                    frameOverlay: overlay.canvas,
-                    gridOverlay,
-                    eyeLevelOverlay,
-                    width,
-                    height,
-                    filename
-                });
-            }
-        } catch (error) {
-            console.error('cameraFrames.render failed', error);
-            await this.events.invoke('showPopup', {
-                type: 'error',
-                header: 'Camera Frames',
-                message: `'${(error as Error)?.message ?? error}'`
-            });
-        } finally {
-            // --- 修正箇所: ビューの復元 ---
-            // render.offscreen が終了し、scene.camera.targetSize は null に戻っている。
-            // ここで syncCameraFrustum を呼ぶことで、「Exportモード」から「Previewモード」の計算に戻り、
-            // 元の ViewZoomPct が適用されたフラスタムがカメラに再設定される。
-            if (this.state.enabled) {
-                this.syncCameraFrustum();
-                this.requestRender();
-            }
-        }
-    }
-
-    // 書き出し開始前に、指定サイズを前提としたエクスポート用フラスタムを明示的にカメラへ適用する
-    // camera.resize などの副作用イベントに依存しない安全策。
-    private syncExportFrustum(width: number, height: number) {
-        // 一時的に targetSize を設定して export モードの計算を行い、終わったら戻す
-        // targetSize の切替はここに集約し、モード混在や累積誤差を防ぐ。
-        this.clearViewportNearOverride();
-        const prevTarget = this.scene.camera.targetSize ? { ...this.scene.camera.targetSize } : null;
-        this.scene.camera.targetSize = { width, height };
-        this.syncCameraFrustum();
-        this.scene.camera.targetSize = prevTarget;
     }
 
     // serialization --------------------------------------------------------
