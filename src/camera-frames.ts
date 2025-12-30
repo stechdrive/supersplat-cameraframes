@@ -1,5 +1,22 @@
-import { Color, Quat, Ray, Vec3 } from 'playcanvas';
+import { Quat, Ray, Vec3 } from 'playcanvas';
 
+import {
+    DEFAULT_FRAME_BASE,
+    DEFAULT_MASK,
+    DEFAULT_RENDERBOX,
+    DEG2RAD,
+    FRAME_OUTLINE_WIDTH_PX,
+    FRUSTUM_DEBUG_CACHE_VERSION,
+    FRUSTUM_DEBUG_COLOR,
+    FRUSTUM_SELECTED_COLOR,
+    HFOV_MAX,
+    HFOV_MIN,
+    MAX_VIEW_ZOOM_PCT,
+    MIN_VIEW_ZOOM_PCT,
+    PAN_MARGIN_PX,
+    RAD2DEG,
+    W_35MM
+} from './camera-frames-constants';
 import { cameraFramesVersion } from './camera-frames-version';
 import { DEFAULT_NEAR_CLIP, MIN_NEAR_CLIP } from './clip-constants';
 import { ElementType } from './element';
@@ -30,45 +47,11 @@ import type {
 
 export type { CameraFramesState } from './camera-frames-types';
 
-const DEFAULT_RENDERBOX = (): RenderBoxState => ({
-    baseSize: { w: 1754, h: 1240 },
-    scalePct: { x: 100, y: 100 },
-    scale: { kx: 1, ky: 1 },
-    anchor: { ax: 0.5, ay: 0.5 },
-    center: { cx: 0, cy: 0 },
-    fitScale: 1,
-    viewZoomPct: 100,
-    lastViewport: { vw: 1, vh: 1 },
-    projection: { type: 'perspective', baseFov: 60 }
-});
-
-const DEFAULT_FRAME_BASE = { w: 1536, h: 864 };
-
-const DEFAULT_MASK: FrameMaskState = {
-    enabled: false,
-    opacity: 0.8,
-    scope: 'all'
-};
-
 const normalizeMaskScope = (scope: unknown, fallback: 'all' | 'selected' = 'all'): 'all' | 'selected' => {
     if (scope === 'selected') return 'selected';
     if (scope === 'all') return 'all';
     return fallback;
 };
-
-// constants for FOV <-> 35mm換算
-const W_35MM = 36;          // 35mmフィルムの横幅 [mm]
-const HFOV_MIN = 10;        // supersplat 制約
-const HFOV_MAX = 120;
-const DEG2RAD = Math.PI / 180;
-const RAD2DEG = 180 / Math.PI;
-const MIN_VIEW_ZOOM_PCT = 25;
-const MAX_VIEW_ZOOM_PCT = 100;
-const PAN_MARGIN_PX = 0;
-const FRAME_OUTLINE_WIDTH_PX = 2;
-const FRUSTUM_DEBUG_COLOR = new Color(0, 1, 1, 1);
-const FRUSTUM_SELECTED_COLOR = new Color(1, 0, 1, 1);
-const FRUSTUM_DEBUG_CACHE_VERSION = 2;
 
 const cloneFrame = (f: FrameState): FrameState => ({
     ...f,
