@@ -24,6 +24,11 @@ import {
     normalizeMaskScope,
     rotateOffset as rotateOffsetPoint
 } from './camera-frames-math';
+import {
+    computeViewportMapping as computeViewportMappingViewport,
+    logicalToScreen as logicalToScreenViewport,
+    screenToLogical as screenToLogicalViewport
+} from './camera-frames-viewport';
 import { cameraFramesVersion } from './camera-frames-version';
 import { DEFAULT_NEAR_CLIP, MIN_NEAR_CLIP } from './clip-constants';
 import { ElementType } from './element';
@@ -1997,25 +2002,13 @@ export class CameraFramesController {
     }
 
     private logicalToScreen(x: number, y: number) {
-        const rb = this.state.renderBox;
         const mapping = this.computeViewportMapping();
-        const effectiveScale = mapping.viewScale;
-        const leftLogical = rb.center.cx - mapping.logicalW * 0.5;
-        const topLogical = rb.center.cy - mapping.logicalH * 0.5;
-        const sx = mapping.rectPxRaw.x + (x - leftLogical) * effectiveScale;
-        const sy = mapping.rectPxRaw.y + (y - topLogical) * effectiveScale;
-        return { x: sx, y: sy };
+        return logicalToScreenViewport(x, y, this.state.renderBox, mapping);
     }
 
     private screenToLogical(px: number, py: number) {
-        const rb = this.state.renderBox;
         const mapping = this.computeViewportMapping();
-        const effectiveScale = mapping.viewScale;
-        const leftLogical = rb.center.cx - mapping.logicalW * 0.5;
-        const topLogical = rb.center.cy - mapping.logicalH * 0.5;
-        const lx = leftLogical + (px - mapping.rectPxRaw.x) / effectiveScale;
-        const ly = topLogical + (py - mapping.rectPxRaw.y) / effectiveScale;
-        return { x: lx, y: ly };
+        return screenToLogicalViewport(px, py, this.state.renderBox, mapping);
     }
 
     private normalizeViewZoomPct(value?: number) {
@@ -2026,115 +2019,13 @@ export class CameraFramesController {
     // 毎回状態から再計算し、ズームやスケールの累積誤差を持たせない。
     // camera.targetSize が設定されている間だけ書き出しモードの 1:1 計算に切り替わる。
     private computeViewportMapping(updateFitScale: boolean = false): ViewportMapping {
-        const rb = this.state.renderBox;
-
-        // 書き出しモード判定: Sceneカメラに targetSize が設定されていれば書き出し中
-        const targetSize = this.scene.camera.targetSize;
-        const isExporting = !!targetSize;
-
-        // ビューポートサイズ: 書き出し時はターゲットサイズ、プレビュー時はキャンバスサイズ
-        const vw = isExporting ? targetSize.width : this.viewport.vw;
-        const vh = isExporting ? targetSize.height : this.viewport.vh;
-
-        const logicalW = Math.max(1e-6, rb.baseSize.w * rb.scale.kx);
-        const logicalH = Math.max(1e-6, rb.baseSize.h * rb.scale.ky);
-
-        const autoFit = Math.min(
-            vw > 0 ? vw / logicalW : 1,
-            vh > 0 ? vh / logicalH : 1
-        ) || 1;
-
-        const prevViewport = rb.lastViewport ?? { vw, vh };
-        const viewportChanged = prevViewport.vw !== vw || prevViewport.vh !== vh;
-
-        // パラメータ決定
-        // 書き出し時: Zoom=100%, FitScale=1.0 (等倍出力), Center=画面中央
-        // プレビュー時: UI設定値を使用
-        const viewZoomPct = isExporting ? 100 : this.normalizeViewZoomPct(rb.viewZoomPct);
-        const zoomScale = viewZoomPct / 100;
-
-        let fitScale = rb.fitScale;
-        const prevFitScaleRaw = rb.fitScale;
-        const prevFitScaleSafe = (isFinite(prevFitScaleRaw) && prevFitScaleRaw > 0) ? prevFitScaleRaw : autoFit;
-
-        // プレビュー時のみ FitScale を更新する。リサイズや復元時に autoFit を採用し、
-        // viewZoom 変更などでは fitScale を触らない。
-        const shouldUpdateFitScale = !isExporting && (updateFitScale || !isFinite(prevFitScaleRaw) || prevFitScaleRaw <= 0);
-        if (shouldUpdateFitScale) {
-            fitScale = autoFit;
-            rb.fitScale = fitScale;
-        }
-
-        const prevViewScale = Math.max(1e-6, prevFitScaleSafe * zoomScale);
-        // ViewScale
-        // 書き出し時は 1.0 (1:1)
-        const viewScale = isExporting ? 1.0 : Math.max(1e-6, fitScale * zoomScale);
-
-        // Center
-        // 書き出し時は中央、プレビュー時は設定値
-        let cx = isExporting ? vw / 2 : rb.center.cx;
-        let cy = isExporting ? vh / 2 : rb.center.cy;
-
-        // リサイズ時はアンカーのスクリーン座標を維持するために center を補正する
-        const shouldPreserveAnchor = !isExporting && updateFitScale && viewportChanged;
-        if (shouldPreserveAnchor) {
-            const anchor = rb.anchor ?? { ax: 0.5, ay: 0.5 };
-            if (isFinite(anchor.ax) && isFinite(anchor.ay)) {
-                const anchorOffsetX = (anchor.ax - 0.5) * logicalW * prevViewScale;
-                const anchorOffsetY = (anchor.ay - 0.5) * logicalH * prevViewScale;
-                const anchorPx = rb.center.cx + anchorOffsetX;
-                const anchorPy = rb.center.cy + anchorOffsetY;
-
-                const newAnchorOffsetX = (anchor.ax - 0.5) * logicalW * viewScale;
-                const newAnchorOffsetY = (anchor.ay - 0.5) * logicalH * viewScale;
-
-                cx = anchorPx - newAnchorOffsetX;
-                cy = anchorPy - newAnchorOffsetY;
-                rb.center = { cx, cy };
-            }
-        }
-        if (!isExporting && updateFitScale) {
-            rb.lastViewport = { vw, vh };
-        }
-
-        const displayW = logicalW * viewScale;
-        const displayH = logicalH * viewScale;
-
-        const rectXRaw = cx - displayW * 0.5;
-        const rectYRaw = cy - displayH * 0.5;
-
-        const rectPxRaw = { x: rectXRaw, y: rectYRaw, w: displayW, h: displayH };
-
-        // クリップ計算 (UI表示用)
-        const clippedX = Math.max(0, Math.min(vw, rectXRaw));
-        const clippedY = Math.max(0, Math.min(vh, rectYRaw));
-        const clippedW = Math.max(0, Math.min(vw, rectXRaw + displayW) - clippedX);
-        const clippedH = Math.max(0, Math.min(vh, rectYRaw + displayH) - clippedY);
-
-        const rectPx = { x: clippedX, y: clippedY, w: clippedW, h: clippedH };
-        const rectNorm = {
-            x: vw > 0 ? rectPx.x / vw : 0,
-            y: vh > 0 ? rectPx.y / vh : 0,
-            w: vw > 0 ? rectPx.w / vw : 1,
-            h: vh > 0 ? rectPx.h / vh : 1
-        };
-        const rectNormRaw = {
-            x: vw > 0 ? rectXRaw / vw : 0,
-            y: vh > 0 ? rectYRaw / vh : 0,
-            w: vw > 0 ? displayW / vw : 1,
-            h: vh > 0 ? displayH / vh : 1
-        };
-
-        return {
-            fitScale,
-            viewScale,
-            logicalW,
-            logicalH,
-            rectPx,
-            rectNorm,
-            rectPxRaw,
-            rectNormRaw
-        };
+        return computeViewportMappingViewport(
+            this.state.renderBox,
+            this.viewport,
+            this.scene.camera.targetSize,
+            updateFitScale,
+            (value?: number) => this.normalizeViewZoomPct(value)
+        );
     }
 
     private cropFactor(renderBox: RenderBoxState) {
