@@ -17,6 +17,13 @@ import {
     RAD2DEG,
     W_35MM
 } from './camera-frames-constants';
+import {
+    clampFov,
+    cloneFrame,
+    normalizeDegrees,
+    normalizeMaskScope,
+    rotateOffset as rotateOffsetPoint
+} from './camera-frames-math';
 import { cameraFramesVersion } from './camera-frames-version';
 import { DEFAULT_NEAR_CLIP, MIN_NEAR_CLIP } from './clip-constants';
 import { ElementType } from './element';
@@ -46,20 +53,6 @@ import type {
 } from './camera-frames-types';
 
 export type { CameraFramesState } from './camera-frames-types';
-
-const normalizeMaskScope = (scope: unknown, fallback: 'all' | 'selected' = 'all'): 'all' | 'selected' => {
-    if (scope === 'selected') return 'selected';
-    if (scope === 'all') return 'all';
-    return fallback;
-};
-
-const cloneFrame = (f: FrameState): FrameState => ({
-    ...f,
-    rotationDeg: f.rotationDeg ?? 0,
-    pos: { ...f.pos },
-    baseSize: { ...f.baseSize },
-    anchor: f.anchor ? { ...f.anchor } : undefined
-});
 
 export class CameraFramesController {
     private events: Events;
@@ -1912,7 +1905,7 @@ export class CameraFramesController {
             const minMm = info.minEqMm;
             const maxMm = info.maxEqMm;
             const clampedMm = Math.min(maxMm, Math.max(minMm, eqMm));
-            const targetHfovDeg = this.clampFov(this.eqMmToHfov(clampedMm, crop));
+            const targetHfovDeg = clampFov(this.eqMmToHfov(clampedMm, crop));
             const targetHfovRad = targetHfovDeg * DEG2RAD;
             const axisFovDeg = this.horizontalRadToAxisDeg(targetHfovRad);
             const projection = this.state.renderBox.projection ?? { type: 'perspective' as const };
@@ -2023,10 +2016,6 @@ export class CameraFramesController {
         const lx = leftLogical + (px - mapping.rectPxRaw.x) / effectiveScale;
         const ly = topLogical + (py - mapping.rectPxRaw.y) / effectiveScale;
         return { x: lx, y: ly };
-    }
-
-    private clampFov(hfov: number) {
-        return Math.min(HFOV_MAX, Math.max(HFOV_MIN, hfov));
     }
 
     private normalizeViewZoomPct(value?: number) {
@@ -2192,7 +2181,7 @@ export class CameraFramesController {
         const baseFovDeg = projection.baseFov ?? this.scene.camera.fov ?? HFOV_MIN;
         const baseFovRadAxis = baseFovDeg * DEG2RAD;
         const horizontalRad = this.baseFovToHorizontalRad(baseFovRadAxis, axis, aspect);
-        const clampedHorizontalDeg = this.clampFov(horizontalRad * RAD2DEG);
+        const clampedHorizontalDeg = clampFov(horizontalRad * RAD2DEG);
         const clampedHorizontalRad = clampedHorizontalDeg * DEG2RAD;
         this.baseFovRad = clampedHorizontalRad;
         const axisBaseFovDeg = this.horizontalRadToAxisDeg(clampedHorizontalRad);
@@ -2366,7 +2355,7 @@ export class CameraFramesController {
         const baseFovDeg = rb.projection?.baseFov ?? this.scene.camera.fov;
         const baseFovRadAxis = (baseFovDeg ?? HFOV_MIN) * DEG2RAD;
         const hfovRad = this.baseFovToHorizontalRad(baseFovRadAxis, axis, baseAspect);
-        const hfovClamped = this.clampFov(hfovRad * RAD2DEG);
+        const hfovClamped = clampFov(hfovRad * RAD2DEG);
         const hfovClampedRad = hfovClamped * DEG2RAD;
         this.baseFovRad = hfovClampedRad;
 
@@ -2457,20 +2446,6 @@ export class CameraFramesController {
         return deg * DEG2RAD;
     }
 
-    private rotateOffset(offset: { x: number; y: number; }, rad: number) {
-        const c = Math.cos(rad);
-        const s = Math.sin(rad);
-        return {
-            x: offset.x * c - offset.y * s,
-            y: offset.x * s + offset.y * c
-        };
-    }
-
-    private normalizeDegrees(deg: number) {
-        const wrapped = ((deg % 360) + 360) % 360;
-        return Math.abs(wrapped - 360) < 1e-6 ? 0 : wrapped;
-    }
-
     private frameCenterLogical(frame: FrameState, logicalW: number, logicalH: number) {
         const { renderBox } = this.state;
         return {
@@ -2506,7 +2481,7 @@ export class CameraFramesController {
                 { x: hw, y: hh },
                 { x: -hw, y: hh }
             ].map((off) => {
-                const rotated = this.rotateOffset(off, rotationRad);
+                const rotated = rotateOffsetPoint(off, rotationRad);
                 return { x: centerLogical.x + rotated.x, y: centerLogical.y + rotated.y };
             });
             const cornersScreen = cornersLogical.map(p => logicalToScreen(p.x, p.y));
@@ -2551,7 +2526,7 @@ export class CameraFramesController {
         handles.push({ id: 'anchor', x: anchorScreen.x, y: anchorScreen.y });
         const gapPx = 30;
         const logicalGap = gapPx / Math.max(1e-6, effectiveScale);
-        const rotateOffset = this.rotateOffset({ x: 0, y: -(frameH * 0.5 + logicalGap) }, rotationRad);
+        const rotateOffset = rotateOffsetPoint({ x: 0, y: -(frameH * 0.5 + logicalGap) }, rotationRad);
         const rotateLogical = { x: centerLogical.x + rotateOffset.x, y: centerLogical.y + rotateOffset.y };
         const rotateScreen = this.logicalToScreen(rotateLogical.x, rotateLogical.y);
         handles.push({ id: 'rotate', x: rotateScreen.x, y: rotateScreen.y });
@@ -2587,7 +2562,7 @@ export class CameraFramesController {
 
     private getHandleLogicalPosition(handleId: string, center: { x: number; y: number; }, frameW: number, frameH: number, rotationRad: number) {
         const off = this.getHandleLogicalOffset(handleId, frameW, frameH);
-        const rotated = this.rotateOffset(off, rotationRad);
+        const rotated = rotateOffsetPoint(off, rotationRad);
         return { x: center.x + rotated.x, y: center.y + rotated.y };
     }
 
@@ -2599,7 +2574,7 @@ export class CameraFramesController {
             return this.frameAnchorLogical(frame, logicalW, logicalH);
         }
         const off = this.getHandleLogicalOffset(handleId, frameW, frameH);
-        const rotated = this.rotateOffset(off, rotationRad);
+        const rotated = rotateOffsetPoint(off, rotationRad);
         return { x: center.x - rotated.x, y: center.y - rotated.y };
     }
 
@@ -2893,7 +2868,7 @@ export class CameraFramesController {
             const margin = HIT / Math.max(1e-6, r.effectiveScale);
             const dx = logical.x - r.centerLogical.x;
             const dy = logical.y - r.centerLogical.y;
-            const local = this.rotateOffset({ x: dx, y: dy }, -r.rotationRad);
+            const local = rotateOffsetPoint({ x: dx, y: dy }, -r.rotationRad);
             const inside = Math.abs(local.x) <= r.frameW * 0.5 + margin && Math.abs(local.y) <= r.frameH * 0.5 + margin;
             const inner = Math.abs(local.x) <= Math.max(0, r.frameW * 0.5 - margin) && Math.abs(local.y) <= Math.max(0, r.frameH * 0.5 - margin);
             if (inside && !inner) {
@@ -3152,12 +3127,12 @@ export class CameraFramesController {
             x: start.startCenterLogical.x - start.startAnchorLogical.x,
             y: start.startCenterLogical.y - start.startAnchorLogical.y
         };
-        const rotatedOffset = this.rotateOffset(offset, delta);
+        const rotatedOffset = rotateOffsetPoint(offset, delta);
         const newCenter = {
             x: start.startAnchorLogical.x + rotatedOffset.x,
             y: start.startAnchorLogical.y + rotatedOffset.y
         };
-        frame.rotationDeg = this.normalizeDegrees(nextRad * RAD2DEG);
+        frame.rotationDeg = normalizeDegrees(nextRad * RAD2DEG);
         frame.pos.x = 0.5 + (newCenter.x - rb.center.cx) / logicalW;
         frame.pos.y = 0.5 + (newCenter.y - rb.center.cy) / logicalH;
     }
