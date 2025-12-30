@@ -1,4 +1,4 @@
-import type { CameraFramesState } from './camera-frames';
+import type { CameraFramesState } from './camera-frames-types';
 import { Events } from './events';
 import { SnapshotOp } from './history-ops';
 

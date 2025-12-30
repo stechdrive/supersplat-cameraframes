@@ -1,180 +1,116 @@
-import { Color, Quat, Ray, Vec3 } from 'playcanvas';
+import { Vec3 } from 'playcanvas';
 
+import {
+    applyNearClipOverride as applyNearClipOverrideCamera,
+    applyViewportNearOverride as applyViewportNearOverrideCamera,
+    buildCameraBasis as buildCameraBasisCamera,
+    buildFrustumPoints as buildFrustumPointsCamera,
+    calcFovInfo as calcFovInfoCamera,
+    calcForwardVec as calcForwardVecCamera,
+    captureCameraPose as captureCameraPoseCamera,
+    clearViewportNearOverride as clearViewportNearOverrideCamera,
+    clonePoseSnapshot as clonePoseSnapshotCamera,
+    computeEffectiveFrustum as computeEffectiveFrustumCamera,
+    computeSafeNearClip as computeSafeNearClipCamera,
+    computeViewportNearCandidate as computeViewportNearCandidateCamera,
+    drawMainCameraFrustum as drawMainCameraFrustumCamera,
+    enforceSafeNearClip as enforceSafeNearClipCamera,
+    eqMmForFov as eqMmForFovCamera,
+    eqMmToHfov as eqMmToHfovCamera,
+    getFrustumDebugPoints as getFrustumDebugPointsCamera,
+    getViewportLensState as getViewportLensStateCamera,
+    getPoseWorldDistance as getPoseWorldDistanceCamera,
+    normalizeViewportPose as normalizeViewportPoseCamera,
+    poseToTransform as poseToTransformCamera,
+    rebuildBaseFrustum as rebuildBaseFrustumCamera,
+    runPendingNearClipGuard as runPendingNearClipGuardCamera,
+    scheduleNearClipGuard as scheduleNearClipGuardCamera,
+    scheduleViewportNearOverride as scheduleViewportNearOverrideCamera,
+    setNearClip as setNearClipCamera,
+    setViewportLensMm as setViewportLensMmCamera,
+    shouldApplyViewportNearOverride as shouldApplyViewportNearOverrideCamera,
+    syncCameraFrustum as syncCameraFrustumCamera,
+    updateFovInfo as updateFovInfoCamera,
+    updateViewportNearTargetSizeState as updateViewportNearTargetSizeStateCamera,
+    worldDistanceToNormalized as worldDistanceToNormalizedCamera
+} from './camera-frames-camera';
+import {
+    DEFAULT_FRAME_BASE,
+    DEFAULT_MASK,
+    DEFAULT_RENDERBOX,
+    DEG2RAD,
+    FRUSTUM_DEBUG_CACHE_VERSION,
+    FRUSTUM_DEBUG_COLOR,
+    FRUSTUM_SELECTED_COLOR,
+    HFOV_MAX,
+    HFOV_MIN,
+    MAX_VIEW_ZOOM_PCT,
+    MIN_VIEW_ZOOM_PCT,
+    RAD2DEG
+} from './camera-frames-constants';
+import { renderImage } from './camera-frames-export';
+import {
+    frameRectsScreen as frameRectsScreenGeometry,
+    frameAnchorLogical as frameAnchorLogicalGeometry,
+    frameCenterLogical as frameCenterLogicalGeometry,
+    frameRotationRad as frameRotationRadGeometry,
+    getAnchorLogicalForHandle as getAnchorLogicalForHandleGeometry,
+    getHandleLogicalOffset as getHandleLogicalOffsetGeometry,
+    getHandleLogicalPosition as getHandleLogicalPositionGeometry,
+    hitTestFrameBorder as hitTestFrameBorderGeometry,
+    hitTestHandle as hitTestHandleGeometry
+} from './camera-frames-frame-geometry';
+import { clampFov, normalizeMaskScope } from './camera-frames-math';
+import {
+    drawOverlay as drawOverlayOverlay,
+    renderFrameOverlay as renderFrameOverlayOverlay,
+    renderFrameOverlaysByManagement as renderFrameOverlaysByManagementOverlay
+} from './camera-frames-overlay';
+import {
+    onContainerPointerDown as onContainerPointerDownPointer,
+    onDoubleClick as onDoubleClickPointer,
+    onHover as onHoverPointer,
+    onPointerDown as onPointerDownPointer,
+    onPointerMove as onPointerMovePointer,
+    onPointerUp as onPointerUpPointer,
+    resetAnchorToCenter as resetAnchorToCenterPointer,
+    resetFrameRotation as resetFrameRotationPointer,
+    updatePointerFromLast as updatePointerFromLastPointer
+} from './camera-frames-pointer';
+import {
+    applySnapshot as applySnapshotSerialize,
+    deserialize as deserializeSerialize,
+    serialize as serializeSerialize,
+    snapshot as snapshotSerialize
+} from './camera-frames-serialize';
+import type {
+    CameraBasis,
+    CameraFrustum,
+    CameraFramesState,
+    CameraPoseSnapshot,
+    EffectiveFrustum,
+    ExportFormat,
+    FovInfo,
+    FrameMaskState,
+    FrameState,
+    FrustumDebugCache,
+    RenderBoxState,
+    Viewport,
+    ViewportMapping
+} from './camera-frames-types';
 import { cameraFramesVersion } from './camera-frames-version';
-import { DEFAULT_NEAR_CLIP, MIN_NEAR_CLIP } from './clip-constants';
+import {
+    computeViewportMapping as computeViewportMappingViewport,
+    logicalToScreen as logicalToScreenViewport,
+    screenToLogical as screenToLogicalViewport
+} from './camera-frames-viewport';
+import { DEFAULT_NEAR_CLIP } from './clip-constants';
 import { ElementType } from './element';
 import { Events } from './events';
-import { hitTestGizmo } from './gizmo-hit';
-import { Model } from './model';
 import { PngCompressor } from './png-compressor';
-import { exportPsd, type PsdOverlayLayer } from './psd-export';
 import { Scene } from './scene';
-import { Crc } from './serialize/crc';
-import { localize } from './ui/localization';
 
-type RenderBoxState = {
-    baseSize: { w: number; h: number; };
-    scalePct: { x: number; y: number; };
-    scale: { kx: number; ky: number; };
-    anchor: { ax: 0 | 0.5 | 1; ay: 0 | 0.5 | 1; };
-    center: { cx: number; cy: number; };
-    fitScale: number;
-    viewZoomPct: number;
-    lastViewport: { vw: number; vh: number; };
-    projection: {
-        type: 'perspective' | 'ortho';
-        baseFov?: number;
-        orthoHalfHeight?: number;
-    };
-};
-
-type FrameState = {
-    id: string;
-    pos: { x: number; y: number; };
-    scalePct: number;
-    scaleK: number;
-    baseSize: { w: number; h: number; };
-    order: number;
-    selected?: boolean;
-    rotationDeg?: number;
-    anchor?: { x: number; y: number; };
-};
-
-type FrameMaskState = {
-    enabled: boolean;
-    opacity: number; // 0.0 - 1.0
-    scope: 'all' | 'selected';
-};
-
-type ReferenceExportLayer = {
-    group: 'back' | 'front';
-    name: string;
-    opacity: number;
-    canvas: HTMLCanvasElement;
-    bounds?: { left: number; top: number; right: number; bottom: number; };
-};
-
-export type CameraFramesState = {
-    enabled: boolean;
-    renderBox: RenderBoxState;
-    frames: FrameState[];
-    mask: FrameMaskState;
-    mainCameraPose?: CameraPoseSnapshot | null;
-    nearClip?: number | null;
-    exportName?: string;
-    exportFormat?: ExportFormat;
-    exportGridOverlay?: boolean;
-    exportModelLayers?: boolean;
-};
-
-type Viewport = { vw: number; vh: number; };
-
-type FovInfo = {
-    crop: number;
-    hfovDeg: number;
-    hfovFrameDeg: number;
-    eqMm: number;
-    minEqMm: number;
-    maxEqMm: number;
-};
-
-type ExportFormat = 'png' | 'psd';
-
-type ViewportMapping = {
-    fitScale: number;
-    viewScale: number;
-    logicalW: number;
-    logicalH: number;
-    rectPx: { x: number; y: number; w: number; h: number; };
-    rectNorm: { x: number; y: number; w: number; h: number; };
-    rectPxRaw: { x: number; y: number; w: number; h: number; };
-    rectNormRaw: { x: number; y: number; w: number; h: number; };
-};
-
-type CameraFrustum = {
-    l0: number;
-    r0: number;
-    b0: number;
-    t0: number;
-    near: number;
-    far: number;
-};
-
-type CameraPoseSnapshot = {
-    focalPoint: { x: number; y: number; z: number; };
-    azim: number;
-    elev: number;
-    distance: number;
-    roll: number;
-    navMode: 'orbit' | 'fpv';
-    fpvPosition?: { x: number; y: number; z: number; };
-    ortho?: boolean;
-    lockFraming?: boolean;
-};
-
-type CameraBasis = {
-    position: Vec3;
-    focalPoint: Vec3;
-    rotation: Quat;
-    forward: Vec3;
-    right: Vec3;
-    up: Vec3;
-};
-
-type FrustumDebugCache = {
-    pose: CameraPoseSnapshot | null;
-    frustum: ReturnType<CameraFramesController['computeEffectiveFrustum']> | null;
-    points: Vec3[] | null;
-    version: number;
-};
-
-const DEFAULT_RENDERBOX = (): RenderBoxState => ({
-    baseSize: { w: 1754, h: 1240 },
-    scalePct: { x: 100, y: 100 },
-    scale: { kx: 1, ky: 1 },
-    anchor: { ax: 0.5, ay: 0.5 },
-    center: { cx: 0, cy: 0 },
-    fitScale: 1,
-    viewZoomPct: 100,
-    lastViewport: { vw: 1, vh: 1 },
-    projection: { type: 'perspective', baseFov: 60 }
-});
-
-const DEFAULT_FRAME_BASE = { w: 1536, h: 864 };
-
-const DEFAULT_MASK: FrameMaskState = {
-    enabled: false,
-    opacity: 0.8,
-    scope: 'all'
-};
-
-const normalizeMaskScope = (scope: unknown, fallback: 'all' | 'selected' = 'all'): 'all' | 'selected' => {
-    if (scope === 'selected') return 'selected';
-    if (scope === 'all') return 'all';
-    return fallback;
-};
-
-// constants for FOV <-> 35mm換算
-const W_35MM = 36;          // 35mmフィルムの横幅 [mm]
-const HFOV_MIN = 10;        // supersplat 制約
-const HFOV_MAX = 120;
-const DEG2RAD = Math.PI / 180;
-const RAD2DEG = 180 / Math.PI;
-const MIN_VIEW_ZOOM_PCT = 25;
-const MAX_VIEW_ZOOM_PCT = 100;
-const PAN_MARGIN_PX = 0;
-const FRAME_OUTLINE_WIDTH_PX = 2;
-const FRUSTUM_DEBUG_COLOR = new Color(0, 1, 1, 1);
-const FRUSTUM_SELECTED_COLOR = new Color(1, 0, 1, 1);
-const FRUSTUM_DEBUG_CACHE_VERSION = 2;
-
-const cloneFrame = (f: FrameState): FrameState => ({
-    ...f,
-    rotationDeg: f.rotationDeg ?? 0,
-    pos: { ...f.pos },
-    baseSize: { ...f.baseSize },
-    anchor: f.anchor ? { ...f.anchor } : undefined
-});
+export type { CameraFramesState } from './camera-frames-types';
 
 export class CameraFramesController {
     private events: Events;
@@ -261,8 +197,6 @@ export class CameraFramesController {
         planeNormal: Vec3;
         mode: 'translate' | 'rotate';
     } | null = null;
-    private workRay: Ray = new Ray();
-    private workVec: Vec3 = new Vec3();
 
     constructor(events: Events, scene: Scene, canvasContainer: HTMLElement) {
         this.events = events;
@@ -371,68 +305,15 @@ export class CameraFramesController {
     }
 
     private clonePoseSnapshot(pose: CameraPoseSnapshot | null | undefined): CameraPoseSnapshot | null {
-        if (!pose) {
-            return null;
-        }
-        const vec = (v: any, fallback: { x: number; y: number; z: number }) => ({
-            x: Number(v?.x ?? v?.[0] ?? fallback.x) || fallback.x,
-            y: Number(v?.y ?? v?.[1] ?? fallback.y) || fallback.y,
-            z: Number(v?.z ?? v?.[2] ?? fallback.z) || fallback.z
-        });
-        const focalPoint = vec(pose.focalPoint, { x: 0, y: 0, z: 0 });
-        const fpv = pose.fpvPosition ? vec(pose.fpvPosition, focalPoint) : undefined;
-        return {
-            focalPoint,
-            azim: Number(pose.azim ?? 0) || 0,
-            elev: Number(pose.elev ?? 0) || 0,
-            distance: Number(pose.distance ?? 1) || 1,
-            roll: Number(pose.roll ?? 0) || 0,
-            navMode: pose.navMode === 'fpv' ? 'fpv' : 'orbit',
-            fpvPosition: fpv,
-            ortho: pose.ortho ?? false,
-            lockFraming: !!pose.lockFraming
-        };
+        return clonePoseSnapshotCamera(pose);
     }
 
     private captureCameraPose(): CameraPoseSnapshot | null {
-        const serialized = this.scene?.camera?.docSerialize?.();
-        if (!serialized) {
-            return null;
-        }
-        const vec = (v: any, fallback: { x: number; y: number; z: number }) => ({
-            x: Number(v?.x ?? v?.[0] ?? fallback.x) || fallback.x,
-            y: Number(v?.y ?? v?.[1] ?? fallback.y) || fallback.y,
-            z: Number(v?.z ?? v?.[2] ?? fallback.z) || fallback.z
-        });
-        const focalPoint = vec(serialized.focalPoint, { x: 0, y: 0, z: 0 });
-        const pose: CameraPoseSnapshot = {
-            focalPoint,
-            azim: Number(serialized.azim ?? 0) || 0,
-            elev: Number(serialized.elev ?? 0) || 0,
-            distance: Number(serialized.distance ?? 1) || 1,
-            roll: Number(serialized.roll ?? 0) || 0,
-            navMode: serialized.navMode === 'fpv' ? 'fpv' : 'orbit',
-            ortho: !!serialized.ortho,
-            lockFraming: !!this.scene.camera.lockFraming
-        };
-        if (serialized.fpvPosition) {
-            pose.fpvPosition = vec(serialized.fpvPosition, focalPoint);
-        }
-        return this.clonePoseSnapshot(pose);
+        return captureCameraPoseCamera(this.scene);
     }
 
     private normalizeViewportPose(pose: CameraPoseSnapshot, allowOrtho: boolean) {
-        pose.navMode = pose.navMode === 'fpv' ? 'fpv' : 'orbit';
-        pose.ortho = !!pose.ortho;
-        if (pose.navMode === 'fpv') {
-            pose.ortho = false;
-        }
-        if (pose.ortho) {
-            pose.navMode = 'orbit';
-        }
-        if (!allowOrtho) {
-            pose.ortho = false;
-        }
+        normalizeViewportPoseCamera(pose, allowOrtho);
     }
 
     private forceMainCameraPoseOrthoOff(pose: CameraPoseSnapshot | null) {
@@ -537,89 +418,23 @@ export class CameraFramesController {
     }
 
     private calcForwardVec(result: Vec3, azim: number, elev: number) {
-        const ex = elev * DEG2RAD;
-        const ey = azim * DEG2RAD;
-        const s1 = Math.sin(-ex);
-        const c1 = Math.cos(-ex);
-        const s2 = Math.sin(-ey);
-        const c2 = Math.cos(-ey);
-        result.set(-c1 * s2, s1, c1 * c2);
+        calcForwardVecCamera(result, azim, elev);
     }
 
     private buildCameraBasis(pose: CameraPoseSnapshot | null): CameraBasis | null {
-        const snap = this.clonePoseSnapshot(pose);
-        if (!snap) {
-            return null;
-        }
-        const forward = new Vec3();
-        this.calcForwardVec(forward, snap.azim, snap.elev);
-        if (forward.lengthSq() > 0) {
-            forward.normalize();
-        }
-        const yawPitch = new Quat();
-        yawPitch.setFromEulerAngles(snap.elev, snap.azim, 0);
-        const rollAxis = new Vec3(0, 0, -1);
-        yawPitch.transformVector(rollAxis, rollAxis);
-        const rollQuat = new Quat();
-        rollQuat.setFromAxisAngle(rollAxis, snap.roll ?? 0);
-        const rotation = new Quat();
-        rotation.mul2(rollQuat, yawPitch);
-
-        const right = new Vec3(1, 0, 0);
-        rotation.transformVector(right, right);
-        const up = new Vec3(0, 1, 0);
-        rotation.transformVector(up, up);
-        const forwardWorld = new Vec3(0, 0, -1);
-        rotation.transformVector(forwardWorld, forwardWorld);
-
-        const focalPoint = new Vec3(snap.focalPoint.x, snap.focalPoint.y, snap.focalPoint.z);
-        const framingFactor = snap.lockFraming ? 1 : (this.scene.camera.fovFactor || 1);
-        const worldDist = (snap.distance || 1) * (this.scene.camera.sceneRadius || 1) / (framingFactor || 1e-6);
-        const position = new Vec3();
-        if (snap.navMode === 'fpv') {
-            const fpv = snap.fpvPosition ? new Vec3(snap.fpvPosition.x, snap.fpvPosition.y, snap.fpvPosition.z) : focalPoint.clone();
-            position.copy(fpv);
-        } else {
-            position.copy(forward.mulScalar(worldDist).add(focalPoint));
-        }
-
-        return {
-            position,
-            focalPoint,
-            rotation,
-            forward: forwardWorld,
-            right,
-            up
-        };
+        return buildCameraBasisCamera(this.scene, pose);
     }
 
     private getPoseWorldDistance(pose: CameraPoseSnapshot | null) {
-        const snap = this.clonePoseSnapshot(pose);
-        if (!snap) {
-            return 0;
-        }
-        const framingFactor = snap.lockFraming ? 1 : (this.scene.camera.fovFactor || 1);
-        const sceneRadius = this.scene.camera.sceneRadius || 1;
-        return Math.max(1e-6, (snap.distance || 1) * sceneRadius / (framingFactor || 1e-6));
+        return getPoseWorldDistanceCamera(this.scene, pose);
     }
 
     private worldDistanceToNormalized(distance: number, pose: CameraPoseSnapshot | null) {
-        const snap = this.clonePoseSnapshot(pose);
-        const framingFactor = snap?.lockFraming ? 1 : (this.scene.camera.fovFactor || 1);
-        const sceneRadius = this.scene.camera.sceneRadius || 1;
-        return Math.max(1e-6, distance * (framingFactor || 1e-6) / (sceneRadius || 1e-6));
+        return worldDistanceToNormalizedCamera(this.scene, distance, pose);
     }
 
     private poseToTransform(pose: CameraPoseSnapshot | null) {
-        const basis = this.buildCameraBasis(pose);
-        const snap = this.clonePoseSnapshot(pose);
-        if (!basis || !snap) {
-            return null;
-        }
-        return {
-            position: { x: basis.position.x, y: basis.position.y, z: basis.position.z },
-            rotation: { yaw: snap.azim ?? 0, pitch: snap.elev ?? 0, roll: snap.roll ?? 0 }
-        };
+        return poseToTransformCamera(this.scene, pose);
     }
 
     private getMainCameraTransform() {
@@ -880,80 +695,17 @@ export class CameraFramesController {
         }
     }
 
-    private buildFrustumPoints(frustum: ReturnType<CameraFramesController['computeEffectiveFrustum']> | null, basis: CameraBasis): Vec3[] | null {
-        if (!basis) {
-            return null;
-        }
-
-        let left: number;
-        let right: number;
-        let top: number;
-        let bottom: number;
-        let near: number;
-
-        if (frustum) {
-            left = frustum.left;
-            right = frustum.right;
-            top = frustum.top;
-            bottom = frustum.bottom;
-            near = frustum.near;
-        } else {
-            // フラスタム情報が取れない場合のフォールバック（レンダーボックスのアスペクトだけ維持）
-            const rb = this.state.renderBox;
-            const aspect = (rb.baseSize.w * rb.scale.kx) / (rb.baseSize.h * rb.scale.ky || 1);
-            const baseFovDeg = rb.projection?.baseFov ?? this.scene.camera?.fov ?? 60;
-            const baseFovRad = baseFovDeg * DEG2RAD;
-            const horizontalRad = this.baseFovToHorizontalRad(baseFovRad, this.lockFovAxis ?? 'horizontal', aspect);
-            const halfW = Math.tan(horizontalRad * 0.5);
-            const halfH = halfW / aspect;
-            left = -halfW;
-            right = halfW;
-            bottom = -halfH;
-            top = halfH;
-            near = 1;
-        }
-
-        const nearSafe = Math.max(near, 1e-4);
-
-        // 視覚化用距離: 「レンズmm -> メートル換算 * 12倍」で計算し、0.2m〜2mにクランプ
-        const hfovRadForMm = (() => {
-            if (frustum) {
-                const width = right - left;
-                return 2 * Math.atan(width / (2 * nearSafe));
-            }
-            return this.baseFovRad || ((this.state.renderBox.projection?.baseFov ?? 60) * DEG2RAD);
-        })();
-        const crop = this.cropFactor(this.state.renderBox);
-        const eqMm = this.eqMmForFov(hfovRadForMm * RAD2DEG, crop);
-        const distanceRaw = (eqMm / 1000) * 12;
-        const baseDistance = Math.min(2, Math.max(0.2, (isFinite(distanceRaw) && distanceRaw > 0) ? distanceRaw : 0.5));
-
-        const forward = basis.forward.clone();
-        if (forward.lengthSq() > 0) {
-            forward.normalize();
-        }
-        const camRight = basis.right.clone();
-        const camUp = basis.up.clone();
-        const scale = baseDistance / nearSafe;
-        const scaledLeft = left * scale;
-        const scaledRight = right * scale;
-        const scaledTop = top * scale;
-        const scaledBottom = bottom * scale;
-
-        const apex = basis.position.clone();
-        const baseCenter = apex.clone().add(forward.mulScalar(baseDistance));
-        const makeBaseCorner = (x: number, y: number) => {
-            const p = baseCenter.clone();
-            p.add(camRight.clone().mulScalar(x));
-            p.add(camUp.clone().mulScalar(y));
-            return p;
-        };
-        const baseTl = makeBaseCorner(scaledLeft, scaledTop);
-        const baseTr = makeBaseCorner(scaledRight, scaledTop);
-        const baseBr = makeBaseCorner(scaledRight, scaledBottom);
-        const baseBl = makeBaseCorner(scaledLeft, scaledBottom);
-        // 0: apex, 1-4: base (TL, TR, BR, BL)
-        return [apex, baseTl, baseTr, baseBr, baseBl];
+    private buildFrustumPoints(frustum: EffectiveFrustum | null, basis: CameraBasis): Vec3[] | null {
+        return buildFrustumPointsCamera({
+            frustum,
+            basis,
+            renderBox: this.state.renderBox,
+            scene: this.scene,
+            lockFovAxis: this.lockFovAxis,
+            baseFovRad: this.baseFovRad,
+            baseFovToHorizontalRad: (baseFovRad, axis, aspect) => this.baseFovToHorizontalRad(baseFovRad, axis, aspect),
+            cropFactor: renderBox => this.cropFactor(renderBox)
+        });
     }
 
     private isSamePose(a: CameraPoseSnapshot | null, b: CameraPoseSnapshot | null) {
@@ -979,7 +731,7 @@ export class CameraFramesController {
             fpvEq();
     }
 
-    private isSameFrustum(a: ReturnType<CameraFramesController['computeEffectiveFrustum']> | null, b: ReturnType<CameraFramesController['computeEffectiveFrustum']> | null) {
+    private isSameFrustum(a: EffectiveFrustum | null, b: EffectiveFrustum | null) {
         if (!a || !b) return false;
         const eq = (x: number, y: number) => Math.abs(x - y) < 1e-4;
         return eq(a.left, b.left) &&
@@ -991,127 +743,41 @@ export class CameraFramesController {
     }
 
     private getFrustumDebugPoints() {
-        const pose = this.clonePoseSnapshot(this.state.mainCameraPose);
-        if (!pose) {
-            return null;
-        }
-        const frustum = this.computeEffectiveFrustum();
-        const cache = this.frustumDebugCache;
-        const poseChanged = !cache.pose || !this.isSamePose(cache.pose, pose) || cache.version !== FRUSTUM_DEBUG_CACHE_VERSION;
-        const frustumChanged = !cache.frustum || !frustum || !this.isSameFrustum(cache.frustum, frustum);
-        if (poseChanged || frustumChanged || !cache.points) {
-            const basis = this.buildCameraBasis(pose);
-            if (!basis) {
-                return null;
+        return getFrustumDebugPointsCamera({
+            mainCameraPose: this.state.mainCameraPose,
+            scene: this.scene,
+            renderBox: this.state.renderBox,
+            lockFovAxis: this.lockFovAxis,
+            baseFovRad: this.baseFovRad,
+            baseFovToHorizontalRad: (baseFovRad, axis, aspect) => this.baseFovToHorizontalRad(baseFovRad, axis, aspect),
+            cropFactor: renderBox => this.cropFactor(renderBox),
+            frustumDebugCache: this.frustumDebugCache,
+            frustumDebugCacheVersion: FRUSTUM_DEBUG_CACHE_VERSION,
+            computeEffectiveFrustum: () => this.computeEffectiveFrustum(),
+            isSamePose: (a, b) => this.isSamePose(a, b),
+            isSameFrustum: (a, b) => this.isSameFrustum(a, b),
+            setFrustumDebugCache: (value) => {
+                this.frustumDebugCache = value;
             }
-            const points = this.buildFrustumPoints(frustum, basis);
-            if (!points) {
-                return null;
-            }
-            this.frustumDebugCache = {
-                pose,
-                frustum: frustum ? { ...frustum } : null,
-                points,
-                version: FRUSTUM_DEBUG_CACHE_VERSION
-            };
-        }
-        return this.frustumDebugCache.points;
+        });
     }
 
     private drawMainCameraFrustum() {
-        this.ensureUiTargetAvailability();
-        if (this.state.enabled) {
-            return;
-        }
-        if (!this.state.mainCameraPose) {
-            // 空シーンなどで mainCameraPose が消えている場合は現在のカメラを初期値として確保する
-            const fallback = this.captureCameraPose();
-            if (fallback) {
-                this.state.mainCameraPose = this.forceMainCameraPoseOrthoOff(fallback);
-            } else {
-                return;
-            }
-        }
-        if (this.scene.camera.targetSize) {
-            return;
-        }
-        const points = this.getFrustumDebugPoints();
-        if (!points || points.length < 5) {
-            return;
-        }
-        const color = this.mainCameraSelected ? FRUSTUM_SELECTED_COLOR : FRUSTUM_DEBUG_COLOR;
-        const draw = (a: number, b: number) => this.scene.app.drawLine(points[a], points[b], color, true, this.scene.debugLayer);
-        // base rectangle
-        draw(1, 2);
-        draw(2, 3);
-        draw(3, 4);
-        draw(4, 1);
-        // sides
-        draw(0, 1);
-        draw(0, 2);
-        draw(0, 3);
-        draw(0, 4);
-    }
-
-    private projectFrustumToScreen(points: Vec3[]) {
-        if (!points || points.length === 0) {
-            return null;
-        }
-        const targetSize = this.scene?.targetSize ?? { width: this.viewport.vw, height: this.viewport.vh };
-        const width = targetSize.width || this.viewport.vw;
-        const height = targetSize.height || this.viewport.vh;
-        const projected: { x: number; y: number; z: number; }[] = [];
-        const screen = new Vec3();
-        points.forEach((p) => {
-            this.scene.camera.worldToScreen(p, screen);
-            projected.push({
-                x: screen.x * width,
-                y: screen.y * height,
-                z: screen.z
-            });
+        drawMainCameraFrustumCamera({
+            stateEnabled: this.state.enabled,
+            mainCameraPose: this.state.mainCameraPose,
+            setMainCameraPose: (pose) => {
+                this.state.mainCameraPose = pose;
+            },
+            scene: this.scene,
+            ensureUiTargetAvailability: () => this.ensureUiTargetAvailability(),
+            captureCameraPose: () => this.captureCameraPose(),
+            forceMainCameraPoseOrthoOff: pose => this.forceMainCameraPoseOrthoOff(pose),
+            getFrustumDebugPoints: () => this.getFrustumDebugPoints(),
+            mainCameraSelected: this.mainCameraSelected,
+            frustumDebugColor: FRUSTUM_DEBUG_COLOR,
+            frustumSelectedColor: FRUSTUM_SELECTED_COLOR
         });
-        return projected;
-    }
-
-    private distanceToSegment(px: number, py: number, a: { x: number; y: number; }, b: { x: number; y: number; }) {
-        const vx = b.x - a.x;
-        const vy = b.y - a.y;
-        const wx = px - a.x;
-        const wy = py - a.y;
-        const lenSq = vx * vx + vy * vy;
-        const t = lenSq > 0 ? Math.max(0, Math.min(1, (wx * vx + wy * vy) / lenSq)) : 0;
-        const projX = a.x + t * vx;
-        const projY = a.y + t * vy;
-        return Math.hypot(px - projX, py - projY);
-    }
-
-    private intersectPointerWithPlane(clientX: number, clientY: number, planePoint: Vec3, planeNormal: Vec3) {
-        if (!planeNormal || planeNormal.lengthSq() < 1e-6) {
-            return null;
-        }
-        const normal = planeNormal.clone();
-        normal.normalize();
-        const ray = this.workRay;
-        const rect = this.canvasContainer.getBoundingClientRect();
-        const targetSize = this.scene?.targetSize ?? { width: rect.width, height: rect.height };
-        const scaleX = rect.width > 0 ? targetSize.width / rect.width : 1;
-        const scaleY = rect.height > 0 ? targetSize.height / rect.height : 1;
-        const sx = (clientX - rect.left) * scaleX;
-        const sy = (clientY - rect.top) * scaleY;
-        if (!this.scene.camera.getRay(sx, sy, ray, { space: 'target' })) {
-            return null;
-        }
-        const denom = ray.direction.dot(normal);
-        if (Math.abs(denom) < 1e-6) {
-            return null;
-        }
-        const toPoint = this.workVec.copy(planePoint).sub(ray.origin);
-        const t = toPoint.dot(normal) / denom;
-        if (!isFinite(t)) {
-            return null;
-        }
-        const hit = ray.direction.clone().mulScalar(t).add(ray.origin);
-        return hit;
     }
 
     private registerEvents() {
@@ -1436,7 +1102,21 @@ export class CameraFramesController {
             if (!this.state.enabled) {
                 return;
             }
-            await this.renderImage(options);
+            await renderImage({
+                events: this.events,
+                scene: this.scene,
+                getState: () => this.state,
+                applyCameraPose: (pose, opts) => this.applyCameraPose(pose, opts),
+                normalizeFormat: format => this.normalizeFormat(format),
+                resolveFilename: (name, format) => this.resolveFilename(name, format),
+                renderFrameOverlay: (width, height) => this.renderFrameOverlay(width, height),
+                renderFrameOverlaysByManagement: (width, height) => this.renderFrameOverlaysByManagement(width, height),
+                getCompressor: () => this.getCompressor(),
+                requestRender: () => this.requestRender(),
+                syncCameraFrustum: () => this.syncCameraFrustum(),
+                clearViewportNearOverride: () => this.clearViewportNearOverride(),
+                options
+            });
         });
 
         // doc serialize / deserialize
@@ -1705,217 +1385,149 @@ export class CameraFramesController {
     }
 
     private applyNearClipOverride() {
-        if (!this.state.enabled) {
-            return;
-        }
-        const near = this.state.nearClip;
-        if (typeof near === 'number' && isFinite(near)) {
-            this.events.fire('camera.setNearOverride', near);
-        } else {
-            this.events.fire('camera.setNearOverride', null);
-        }
+        applyNearClipOverrideCamera({
+            stateEnabled: this.state.enabled,
+            nearClip: this.state.nearClip,
+            events: this.events
+        });
     }
 
     private setNearClip(value: number | null, suppressHistory = false) {
-        const apply = () => {
-            const sanitized = this.computeSafeNearClip(value);
-            if (this.state.nearClip === sanitized) return;
-            this.state.nearClip = sanitized;
-            if (this.state.enabled) {
-                this.applyNearClipOverride();
-                this.rebuildBaseFrustum();
-                this.syncCameraFrustum();
-            } else if (this.uiTarget === 'main') {
-                this.rebuildBaseFrustum();
+        setNearClipCamera({
+            value,
+            suppressHistory,
+            getStateEnabled: () => this.state.enabled,
+            getUiTarget: () => this.uiTarget,
+            getNearClip: () => this.state.nearClip,
+            setNearClipState: (next) => {
+                this.state.nearClip = next;
+            },
+            applyNearClipOverride: () => this.applyNearClipOverride(),
+            rebuildBaseFrustum: () => this.rebuildBaseFrustum(),
+            syncCameraFrustum: () => this.syncCameraFrustum(),
+            requestRender: () => this.requestRender(),
+            events: this.events,
+            snapshot: () => this.snapshot(),
+            historyDebounced: (label, fn) => this.historyDebounced(label, fn),
+            invalidateFrustumDebugCache: () => {
                 this.frustumDebugCache.points = null;
                 this.frustumDebugCache.pose = null;
             }
-            this.requestRender();
-            this.events.fire('cameraFrames.stateChanged', this.snapshot());
-        };
-
-        if (suppressHistory) {
-            apply();
-        } else {
-            this.historyDebounced('cameraFrames.nearClip', apply);
-        }
+        });
     }
 
     private computeSafeNearClip(value: number | null | undefined) {
-        const raw = (typeof value === 'number' && isFinite(value)) ? value : NaN;
-        if (!isFinite(raw) || raw <= 0) {
-            return DEFAULT_NEAR_CLIP;
-        }
-        return Math.max(MIN_NEAR_CLIP, raw);
+        return computeSafeNearClipCamera(value);
     }
 
     private updateViewportNearTargetSizeState() {
-        const active = !!this.scene.camera.targetSize;
-        if (active === this.viewportNearTargetSizeActive) {
-            return;
-        }
-        this.viewportNearTargetSizeActive = active;
-        this.clearViewportNearOverride();
-        if (!active) {
-            this.scheduleViewportNearOverride(0);
-        }
+        updateViewportNearTargetSizeStateCamera({
+            scene: this.scene,
+            viewportNearTargetSizeActive: this.viewportNearTargetSizeActive,
+            setViewportNearTargetSizeActive: (value) => {
+                this.viewportNearTargetSizeActive = value;
+            },
+            clearViewportNearOverride: () => this.clearViewportNearOverride(),
+            scheduleViewportNearOverride: delayMs => this.scheduleViewportNearOverride(delayMs)
+        });
     }
 
     private shouldApplyViewportNearOverride() {
-        return !this.state.enabled && this.uiTarget === 'viewport' && !this.scene.camera.targetSize && !this.scene.camera.ortho;
+        return shouldApplyViewportNearOverrideCamera({
+            stateEnabled: this.state.enabled,
+            uiTarget: this.uiTarget,
+            scene: this.scene
+        });
     }
 
     private clearViewportNearOverride() {
-        if (this.viewportNearDebounceId !== null) {
-            window.clearTimeout(this.viewportNearDebounceId);
-            this.viewportNearDebounceId = null;
-        }
-        if (this.viewportNearOverrideActive || this.viewportNearOverride !== null) {
-            this.viewportNearOverrideActive = false;
-            this.viewportNearOverride = null;
-            this.events.fire('camera.setNearOverride', null, { transient: true });
-        }
+        clearViewportNearOverrideCamera({
+            viewportNearDebounceId: this.viewportNearDebounceId,
+            setViewportNearDebounceId: (value) => {
+                this.viewportNearDebounceId = value;
+            },
+            viewportNearOverrideActive: this.viewportNearOverrideActive,
+            setViewportNearOverrideActive: (value) => {
+                this.viewportNearOverrideActive = value;
+            },
+            viewportNearOverride: this.viewportNearOverride,
+            setViewportNearOverride: (value) => {
+                this.viewportNearOverride = value;
+            },
+            events: this.events
+        });
     }
 
     private scheduleViewportNearOverride(delayMs = 200) {
-        if (!this.shouldApplyViewportNearOverride()) {
-            return;
-        }
-        if (this.viewportNearDebounceId !== null) {
-            window.clearTimeout(this.viewportNearDebounceId);
-        }
-        this.viewportNearDebounceId = window.setTimeout(() => {
-            this.viewportNearDebounceId = null;
-            this.applyViewportNearOverride();
-        }, delayMs);
+        scheduleViewportNearOverrideCamera({
+            delayMs,
+            shouldApplyViewportNearOverride: () => this.shouldApplyViewportNearOverride(),
+            viewportNearDebounceId: this.viewportNearDebounceId,
+            setViewportNearDebounceId: (value) => {
+                this.viewportNearDebounceId = value;
+            },
+            applyViewportNearOverride: () => this.applyViewportNearOverride()
+        });
     }
 
     private applyViewportNearOverride() {
-        if (!this.shouldApplyViewportNearOverride()) {
-            return;
-        }
-        const now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
-        if (now - this.viewportNearLastSampleTs < 100) {
-            return;
-        }
-        this.viewportNearLastSampleTs = now;
-
-        const candidate = this.computeViewportNearCandidate();
-        if (candidate === null) {
-            if (this.viewportNearOverrideActive) {
-                this.clearViewportNearOverride();
-            }
-            return;
-        }
-
-        const prev = this.viewportNearOverride;
-        if (prev !== null) {
-            const absDelta = Math.abs(candidate - prev);
-            const relDelta = absDelta / Math.max(prev, MIN_NEAR_CLIP);
-            if (absDelta < 1e-3 && relDelta < 0.2) {
-                return;
-            }
-        }
-
-        this.viewportNearOverride = candidate;
-        this.viewportNearOverrideActive = true;
-        this.events.fire('camera.setNearOverride', candidate, { transient: true });
+        applyViewportNearOverrideCamera({
+            shouldApplyViewportNearOverride: () => this.shouldApplyViewportNearOverride(),
+            viewportNearLastSampleTs: this.viewportNearLastSampleTs,
+            setViewportNearLastSampleTs: (value) => {
+                this.viewportNearLastSampleTs = value;
+            },
+            computeViewportNearCandidate: () => this.computeViewportNearCandidate(),
+            viewportNearOverride: this.viewportNearOverride,
+            setViewportNearOverride: (value) => {
+                this.viewportNearOverride = value;
+            },
+            viewportNearOverrideActive: this.viewportNearOverrideActive,
+            setViewportNearOverrideActive: (value) => {
+                this.viewportNearOverrideActive = value;
+            },
+            clearViewportNearOverride: () => this.clearViewportNearOverride(),
+            events: this.events
+        });
     }
 
     private computeViewportNearCandidate(): number | null {
-        const canvas = this.scene?.canvas;
-        const targetSize = this.scene?.targetSize;
-        if (!canvas || !targetSize || targetSize.width <= 0 || targetSize.height <= 0) {
-            return null;
-        }
-        const w = canvas.clientWidth ?? 0;
-        const h = canvas.clientHeight ?? 0;
-        if (!(w > 0 && h > 0)) {
-            return null;
-        }
-        if (this.scene.getElementsByType(ElementType.splat).length === 0) {
-            return null;
-        }
-
-        const cx = w * 0.5;
-        const cy = h * 0.5;
-        const dx = w * 0.35;
-        const dy = h * 0.35;
-        const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
-        const samples = [
-            { x: cx, y: cy },
-            { x: cx + dx, y: cy },
-            { x: cx - dx, y: cy },
-            { x: cx, y: cy + dy },
-            { x: cx, y: cy - dy }
-        ];
-
-        let minDist: number | null = null;
-        for (const sample of samples) {
-            const x = clamp(sample.x, 0, w - 1);
-            const y = clamp(sample.y, 0, h - 1);
-            const hit = this.scene.camera.intersect(x, y);
-            const distance = hit?.distance;
-            if (typeof distance !== 'number' || !isFinite(distance) || distance <= 0) {
-                continue;
-            }
-            if (minDist === null || distance < minDist) {
-                minDist = distance;
-            }
-        }
-        if (minDist === null) {
-            return null;
-        }
-
-        const far = this.scene.camera.far;
-        const sceneRadius = this.scene.camera.sceneRadius;
-        const maxCandidates: number[] = [];
-        if (typeof far === 'number' && isFinite(far) && far > 0) {
-            maxCandidates.push(far * 0.1);
-        }
-        if (typeof sceneRadius === 'number' && isFinite(sceneRadius) && sceneRadius > 0) {
-            maxCandidates.push(sceneRadius * 0.1);
-        }
-        const maxNear = maxCandidates.length ? Math.min(...maxCandidates) : null;
-
-        let near = minDist * 0.05;
-        if (maxNear !== null && near > maxNear) {
-            near = maxNear;
-        }
-        near = Math.max(MIN_NEAR_CLIP, near);
-        if (!isFinite(near) || near <= 0) {
-            return null;
-        }
-        return near;
+        return computeViewportNearCandidateCamera({ scene: this.scene });
     }
 
     private enforceSafeNearClip() {
-        if (!this.state.enabled) {
-            return;
-        }
-        if (this.nearClipGuardSeed !== this.state.nearClip) {
-            return;
-        }
-        const currentNear = this.state.nearClip ?? this.events.invoke('camera.near');
-        const safeNear = this.computeSafeNearClip(currentNear);
-        if (this.state.nearClip !== safeNear) {
-            this.setNearClip(safeNear, true);
-        }
+        enforceSafeNearClipCamera({
+            stateEnabled: this.state.enabled,
+            nearClipGuardSeed: this.nearClipGuardSeed,
+            nearClip: this.state.nearClip,
+            events: this.events,
+            setNearClip: (value, suppressHistory) => this.setNearClip(value, suppressHistory)
+        });
     }
 
     private scheduleNearClipGuard(frames = 2) {
-        this.nearClipGuardSeed = this.state.nearClip ?? null;
-        this.pendingNearClipGuard = Math.max(this.pendingNearClipGuard, frames);
+        scheduleNearClipGuardCamera({
+            frames,
+            nearClip: this.state.nearClip,
+            pendingNearClipGuard: this.pendingNearClipGuard,
+            setPendingNearClipGuard: (value) => {
+                this.pendingNearClipGuard = value;
+            },
+            setNearClipGuardSeed: (value) => {
+                this.nearClipGuardSeed = value;
+            }
+        });
     }
 
     private runPendingNearClipGuard() {
-        if (!this.state.enabled || this.pendingNearClipGuard <= 0) {
-            return;
-        }
-        this.pendingNearClipGuard--;
-        if (this.pendingNearClipGuard === 0) {
-            this.enforceSafeNearClip();
-        }
+        runPendingNearClipGuardCamera({
+            stateEnabled: this.state.enabled,
+            pendingNearClipGuard: this.pendingNearClipGuard,
+            setPendingNearClipGuard: (value) => {
+                this.pendingNearClipGuard = value;
+            },
+            enforceSafeNearClip: () => this.enforceSafeNearClip()
+        });
     }
 
     private setRenderBoxScale(xPct: number, yPct: number) {
@@ -2027,7 +1639,7 @@ export class CameraFramesController {
             const minMm = info.minEqMm;
             const maxMm = info.maxEqMm;
             const clampedMm = Math.min(maxMm, Math.max(minMm, eqMm));
-            const targetHfovDeg = this.clampFov(this.eqMmToHfov(clampedMm, crop));
+            const targetHfovDeg = clampFov(this.eqMmToHfov(clampedMm, crop));
             const targetHfovRad = targetHfovDeg * DEG2RAD;
             const axisFovDeg = this.horizontalRadToAxisDeg(targetHfovRad);
             const projection = this.state.renderBox.projection ?? { type: 'perspective' as const };
@@ -2119,29 +1731,13 @@ export class CameraFramesController {
     }
 
     private logicalToScreen(x: number, y: number) {
-        const rb = this.state.renderBox;
         const mapping = this.computeViewportMapping();
-        const effectiveScale = mapping.viewScale;
-        const leftLogical = rb.center.cx - mapping.logicalW * 0.5;
-        const topLogical = rb.center.cy - mapping.logicalH * 0.5;
-        const sx = mapping.rectPxRaw.x + (x - leftLogical) * effectiveScale;
-        const sy = mapping.rectPxRaw.y + (y - topLogical) * effectiveScale;
-        return { x: sx, y: sy };
+        return logicalToScreenViewport(x, y, this.state.renderBox, mapping);
     }
 
     private screenToLogical(px: number, py: number) {
-        const rb = this.state.renderBox;
         const mapping = this.computeViewportMapping();
-        const effectiveScale = mapping.viewScale;
-        const leftLogical = rb.center.cx - mapping.logicalW * 0.5;
-        const topLogical = rb.center.cy - mapping.logicalH * 0.5;
-        const lx = leftLogical + (px - mapping.rectPxRaw.x) / effectiveScale;
-        const ly = topLogical + (py - mapping.rectPxRaw.y) / effectiveScale;
-        return { x: lx, y: ly };
-    }
-
-    private clampFov(hfov: number) {
-        return Math.min(HFOV_MAX, Math.max(HFOV_MIN, hfov));
+        return screenToLogicalViewport(px, py, this.state.renderBox, mapping);
     }
 
     private normalizeViewZoomPct(value?: number) {
@@ -2152,115 +1748,13 @@ export class CameraFramesController {
     // 毎回状態から再計算し、ズームやスケールの累積誤差を持たせない。
     // camera.targetSize が設定されている間だけ書き出しモードの 1:1 計算に切り替わる。
     private computeViewportMapping(updateFitScale: boolean = false): ViewportMapping {
-        const rb = this.state.renderBox;
-
-        // 書き出しモード判定: Sceneカメラに targetSize が設定されていれば書き出し中
-        const targetSize = this.scene.camera.targetSize;
-        const isExporting = !!targetSize;
-
-        // ビューポートサイズ: 書き出し時はターゲットサイズ、プレビュー時はキャンバスサイズ
-        const vw = isExporting ? targetSize.width : this.viewport.vw;
-        const vh = isExporting ? targetSize.height : this.viewport.vh;
-
-        const logicalW = Math.max(1e-6, rb.baseSize.w * rb.scale.kx);
-        const logicalH = Math.max(1e-6, rb.baseSize.h * rb.scale.ky);
-
-        const autoFit = Math.min(
-            vw > 0 ? vw / logicalW : 1,
-            vh > 0 ? vh / logicalH : 1
-        ) || 1;
-
-        const prevViewport = rb.lastViewport ?? { vw, vh };
-        const viewportChanged = prevViewport.vw !== vw || prevViewport.vh !== vh;
-
-        // パラメータ決定
-        // 書き出し時: Zoom=100%, FitScale=1.0 (等倍出力), Center=画面中央
-        // プレビュー時: UI設定値を使用
-        const viewZoomPct = isExporting ? 100 : this.normalizeViewZoomPct(rb.viewZoomPct);
-        const zoomScale = viewZoomPct / 100;
-
-        let fitScale = rb.fitScale;
-        const prevFitScaleRaw = rb.fitScale;
-        const prevFitScaleSafe = (isFinite(prevFitScaleRaw) && prevFitScaleRaw > 0) ? prevFitScaleRaw : autoFit;
-
-        // プレビュー時のみ FitScale を更新する。リサイズや復元時に autoFit を採用し、
-        // viewZoom 変更などでは fitScale を触らない。
-        const shouldUpdateFitScale = !isExporting && (updateFitScale || !isFinite(prevFitScaleRaw) || prevFitScaleRaw <= 0);
-        if (shouldUpdateFitScale) {
-            fitScale = autoFit;
-            rb.fitScale = fitScale;
-        }
-
-        const prevViewScale = Math.max(1e-6, prevFitScaleSafe * zoomScale);
-        // ViewScale
-        // 書き出し時は 1.0 (1:1)
-        const viewScale = isExporting ? 1.0 : Math.max(1e-6, fitScale * zoomScale);
-
-        // Center
-        // 書き出し時は中央、プレビュー時は設定値
-        let cx = isExporting ? vw / 2 : rb.center.cx;
-        let cy = isExporting ? vh / 2 : rb.center.cy;
-
-        // リサイズ時はアンカーのスクリーン座標を維持するために center を補正する
-        const shouldPreserveAnchor = !isExporting && updateFitScale && viewportChanged;
-        if (shouldPreserveAnchor) {
-            const anchor = rb.anchor ?? { ax: 0.5, ay: 0.5 };
-            if (isFinite(anchor.ax) && isFinite(anchor.ay)) {
-                const anchorOffsetX = (anchor.ax - 0.5) * logicalW * prevViewScale;
-                const anchorOffsetY = (anchor.ay - 0.5) * logicalH * prevViewScale;
-                const anchorPx = rb.center.cx + anchorOffsetX;
-                const anchorPy = rb.center.cy + anchorOffsetY;
-
-                const newAnchorOffsetX = (anchor.ax - 0.5) * logicalW * viewScale;
-                const newAnchorOffsetY = (anchor.ay - 0.5) * logicalH * viewScale;
-
-                cx = anchorPx - newAnchorOffsetX;
-                cy = anchorPy - newAnchorOffsetY;
-                rb.center = { cx, cy };
-            }
-        }
-        if (!isExporting && updateFitScale) {
-            rb.lastViewport = { vw, vh };
-        }
-
-        const displayW = logicalW * viewScale;
-        const displayH = logicalH * viewScale;
-
-        const rectXRaw = cx - displayW * 0.5;
-        const rectYRaw = cy - displayH * 0.5;
-
-        const rectPxRaw = { x: rectXRaw, y: rectYRaw, w: displayW, h: displayH };
-
-        // クリップ計算 (UI表示用)
-        const clippedX = Math.max(0, Math.min(vw, rectXRaw));
-        const clippedY = Math.max(0, Math.min(vh, rectYRaw));
-        const clippedW = Math.max(0, Math.min(vw, rectXRaw + displayW) - clippedX);
-        const clippedH = Math.max(0, Math.min(vh, rectYRaw + displayH) - clippedY);
-
-        const rectPx = { x: clippedX, y: clippedY, w: clippedW, h: clippedH };
-        const rectNorm = {
-            x: vw > 0 ? rectPx.x / vw : 0,
-            y: vh > 0 ? rectPx.y / vh : 0,
-            w: vw > 0 ? rectPx.w / vw : 1,
-            h: vh > 0 ? rectPx.h / vh : 1
-        };
-        const rectNormRaw = {
-            x: vw > 0 ? rectXRaw / vw : 0,
-            y: vh > 0 ? rectYRaw / vh : 0,
-            w: vw > 0 ? displayW / vw : 1,
-            h: vh > 0 ? displayH / vh : 1
-        };
-
-        return {
-            fitScale,
-            viewScale,
-            logicalW,
-            logicalH,
-            rectPx,
-            rectNorm,
-            rectPxRaw,
-            rectNormRaw
-        };
+        return computeViewportMappingViewport(
+            this.state.renderBox,
+            this.viewport,
+            this.scene.camera.targetSize,
+            updateFitScale,
+            (value?: number) => this.normalizeViewZoomPct(value)
+        );
     }
 
     private cropFactor(renderBox: RenderBoxState) {
@@ -2292,215 +1786,65 @@ export class CameraFramesController {
     }
 
     private rebuildBaseFrustum() {
-        const rb = this.state.renderBox;
-        const projection = rb.projection ?? { type: 'perspective' as const };
-        const axis = this.lockFovAxis ?? 'horizontal';
-
-        // CAMERA FRAMES v6 では水平FOVを基準に保持し、縦横スケールやズームに左右されない土台を再生成する。
-        // 修正: 構図基準(Base Frustum)のアスペクト比は RenderBox の Base Size に合わせる
-        // これにより、RenderBoxがA4ならA4のフラスタム、16:9なら16:9のフラスタムが生成され、
-        // ピクセルマッピング時の縦横比歪みを防止する。
-        const rbW = rb.baseSize.w;
-        const rbH = rb.baseSize.h;
-        const aspect = (rbW > 0 && rbH > 0) ? rbW / rbH : this.baseAspect();
-
-        const baseFovDeg = projection.baseFov ?? this.scene.camera.fov ?? HFOV_MIN;
-        const baseFovRadAxis = baseFovDeg * DEG2RAD;
-        const horizontalRad = this.baseFovToHorizontalRad(baseFovRadAxis, axis, aspect);
-        const clampedHorizontalDeg = this.clampFov(horizontalRad * RAD2DEG);
-        const clampedHorizontalRad = clampedHorizontalDeg * DEG2RAD;
-        this.baseFovRad = clampedHorizontalRad;
-        const axisBaseFovDeg = this.horizontalRadToAxisDeg(clampedHorizontalRad);
-
-        const nearRaw = this.state.nearClip ?? this.events.invoke('camera.near') ?? this.scene.camera.near;
-        const farRaw = this.scene.camera.far;
-        const near = (typeof nearRaw === 'number' && isFinite(nearRaw)) ? Math.max(MIN_NEAR_CLIP, nearRaw) : DEFAULT_NEAR_CLIP;
-        const far = (typeof farRaw === 'number' && isFinite(farRaw)) ? farRaw : 1000;
-
-        if (projection.type === 'ortho') {
-            const halfHeight = projection.orthoHalfHeight ?? 1;
-            this.runtimeFrustum = {
-                l0: -halfHeight * aspect,
-                r0: halfHeight * aspect,
-                b0: -halfHeight,
-                t0: halfHeight,
-                near,
-                far
-            };
-        } else {
-            const halfW = near * Math.tan(clampedHorizontalRad * 0.5);
-            const halfH = halfW / aspect;
-            this.runtimeFrustum = {
-                l0: -halfW,
-                r0: halfW,
-                b0: -halfH,
-                t0: halfH,
-                near,
-                far
-            };
-        }
-
-        rb.projection = {
-            ...projection,
-            baseFov: axisBaseFovDeg
-        };
-        if (this.state.enabled) {
-            this.events.fire('camera.setFov', rb.projection.baseFov);
-        }
+        rebuildBaseFrustumCamera({
+            renderBox: this.state.renderBox,
+            scene: this.scene,
+            events: this.events,
+            stateEnabled: this.state.enabled,
+            lockFovAxis: this.lockFovAxis,
+            baseAspect: this.baseAspect(),
+            baseFovToHorizontalRad: (baseFovRad, axis, aspect) => this.baseFovToHorizontalRad(baseFovRad, axis, aspect),
+            horizontalRadToAxisDeg: horizontalRad => this.horizontalRadToAxisDeg(horizontalRad),
+            nearClip: this.state.nearClip,
+            setBaseFovRad: (value) => {
+                this.baseFovRad = value;
+            },
+            setRuntimeFrustum: (value) => {
+                this.runtimeFrustum = value;
+            }
+        });
     }
 
     private computeEffectiveFrustum() {
-        if (!this.runtimeFrustum) {
-            this.rebuildBaseFrustum();
-        }
-        const frustum = this.runtimeFrustum;
-        if (!frustum) {
-            return null;
-        }
-        const rb = this.state.renderBox;
-        const { kx, ky } = rb.scale;
-        const { ax, ay } = rb.anchor;
-
-        // BaseFrustum (構図基準) を レンダーボックスのスケールとアンカーで変形 (Off-axis)
-        // ここでは View Zoom (UI倍率) は適用せず、純粋な「レンダーボックス領域」のフラスタムを計算する。
-
-        const width1 = (frustum.r0 - frustum.l0) * kx;
-        const height1 = (frustum.t0 - frustum.b0) * ky;
-        const left1 = frustum.l0 + ax * ((frustum.r0 - frustum.l0) - width1);
-        const right1 = left1 + width1;
-        // Y軸 (Bottom -> Top): PlayCanvasはY-up。ay=0はUI上でTop(上)を指すため、
-        // フラスタム(Y-up)計算においては (1.0 - ay) として反転させる必要がある。
-        // ay=0(上) -> 係数1.0 -> bottom = t0 - h -> top = t0 (上辺固定: 正解)
-        // ay=1(下) -> 係数0.0 -> bottom = b0 -> 下辺固定 (正解)
-        const bottom1 = frustum.b0 + (1.0 - ay) * ((frustum.t0 - frustum.b0) - height1);
-        const top1 = bottom1 + height1;
-
-        const camFarRaw = this.scene.camera.far;
-        const far = (typeof camFarRaw === 'number' && isFinite(camFarRaw) && camFarRaw > frustum.near) ? camFarRaw : Math.max(frustum.near * 2, frustum.far);
-
-        // これは「レンダーボックスの四隅」に対応するフラスタム
-        return {
-            left: left1,
-            right: right1,
-            bottom: bottom1,
-            top: top1,
-            near: frustum.near,
-            far
-        };
+        return computeEffectiveFrustumCamera({
+            getRuntimeFrustum: () => this.runtimeFrustum,
+            rebuildBaseFrustum: () => this.rebuildBaseFrustum(),
+            renderBox: this.state.renderBox,
+            scene: this.scene
+        });
     }
 
     private syncCameraFrustum() {
-        if (!this.state.enabled) {
-            return null;
-        }
-
-        // targetSize 切替も含めて毎回再計算し、既存のフラスタムに依存しない。
-        // 書き出し時は先に targetSize をセットし、ここで setCustomFrustum を上書きする順序を維持する。
-        // 1. 基本となるレンダーボックスのフラスタム (Zoomなし)
-        const rbFrustum = this.computeEffectiveFrustum();
-        if (!rbFrustum) {
-            this.events.fire('camera.setCustomFrustum', null);
-            return null;
-        }
-
-        // 2. 書き出しモード判定
-        const targetSize = this.scene.camera.targetSize;
-        const isExporting = !!targetSize;
-
-        let finalFrustum = rbFrustum;
-
-        if (isExporting) {
-            // 書き出し時: レンダーボックスのフラスタムをそのまま使う
-            // (出力画像サイズ == レンダーボックスサイズ なので一致する)
-            finalFrustum = rbFrustum;
-        } else {
-            // プレビュー時: ビューポート全体をカバーするようにフラスタムを拡張 (Extrapolate)
-
-            // 現在の画面上のレンダーボックス位置 (rectPxRaw) を取得
-            // computeViewportMapping はプレビュー設定で計算される
-            const mapping = this.computeViewportMapping(false);
-            const { rectPxRaw } = mapping;
-            const { vw, vh } = this.viewport;
-
-            // レンダーボックスのフラスタム幅・高さ (Near平面上)
-            const rbW = rbFrustum.right - rbFrustum.left;
-            const rbH = rbFrustum.top - rbFrustum.bottom;
-
-            // 1ピクセルあたりのワールド幅 (Near平面上)
-            // rectPxRaw.w が極端に小さい(0)場合の保護を入れる
-            const pxToWorldX = rectPxRaw.w > 0 ? rbW / rectPxRaw.w : 0;
-            const pxToWorldY = rectPxRaw.h > 0 ? rbH / rectPxRaw.h : 0;
-
-            if (pxToWorldX === 0 || pxToWorldY === 0) {
-                this.events.fire('camera.setCustomFrustum', null);
-                return null;
-            }
-
-            // フラスタム拡張 (Extrapolation)
-            // 画面左端 (x=0) に対応する left
-            // left_screen = rb_left - (レンダーボックス左端までの距離) * スケール
-            const leftScreen = rbFrustum.left - (rectPxRaw.x) * pxToWorldX;
-            const rightScreen = leftScreen + vw * pxToWorldX;
-
-            // 画面上端 (y=0) に対応する top
-            // 注意: DOMのY=0は上、PlayCanvasのProjectionのTopは上 (+Y)
-            // rectPxRaw.y は「上からのピクセル距離」
-            const topScreen = rbFrustum.top + (rectPxRaw.y) * pxToWorldY;
-            const bottomScreen = topScreen - vh * pxToWorldY;
-
-            finalFrustum = {
-                ...rbFrustum,
-                left: leftScreen,
-                right: rightScreen,
-                bottom: bottomScreen,
-                top: topScreen
-            };
-        }
-
-        this.events.fire('camera.setCustomFrustum', finalFrustum);
-        return finalFrustum;
+        return syncCameraFrustumCamera({
+            stateEnabled: this.state.enabled,
+            computeEffectiveFrustum: () => this.computeEffectiveFrustum(),
+            scene: this.scene,
+            events: this.events,
+            viewport: this.viewport,
+            computeViewportMapping: () => this.computeViewportMapping(false)
+        });
     }
 
     private eqMmForFov(hfovDeg: number, crop: number) {
-        const hfovRad = hfovDeg * DEG2RAD;
-        const focalVirtual = W_35MM / (2 * Math.tan(hfovRad * 0.5));
-        return focalVirtual * crop;
+        return eqMmForFovCamera(hfovDeg, crop);
     }
 
     private eqMmToHfov(eqMm: number, crop: number) {
-        const safeEq = Math.max(eqMm, 1e-6);
-        const hfovRad = 2 * Math.atan((W_35MM * crop) / (2 * safeEq));
-        return hfovRad * RAD2DEG;
+        return eqMmToHfovCamera(eqMm, crop);
     }
 
     private calcFovInfo(): FovInfo {
-        const rb = this.state.renderBox;
-        const crop = this.cropFactor(rb);
-        const axis = this.lockFovAxis ?? 'horizontal';
-        const baseAspect = this.baseAspect();
-        const baseFovDeg = rb.projection?.baseFov ?? this.scene.camera.fov;
-        const baseFovRadAxis = (baseFovDeg ?? HFOV_MIN) * DEG2RAD;
-        const hfovRad = this.baseFovToHorizontalRad(baseFovRadAxis, axis, baseAspect);
-        const hfovClamped = this.clampFov(hfovRad * RAD2DEG);
-        const hfovClampedRad = hfovClamped * DEG2RAD;
-        this.baseFovRad = hfovClampedRad;
-
-        const focalVirtual = W_35MM / (2 * Math.tan(hfovClampedRad * 0.5));
-        const eqMm = focalVirtual * crop;
-
-        const hfovFrame = 2 * Math.atan(Math.tan(hfovClampedRad * 0.5) / crop) * RAD2DEG;
-
-        const minEqMm = this.eqMmForFov(HFOV_MAX, crop);
-        const maxEqMm = this.eqMmForFov(HFOV_MIN, crop);
-
-        return {
-            crop,
-            hfovDeg: hfovClamped,
-            hfovFrameDeg: hfovFrame,
-            eqMm,
-            minEqMm,
-            maxEqMm
-        };
+        return calcFovInfoCamera({
+            renderBox: this.state.renderBox,
+            scene: this.scene,
+            lockFovAxis: this.lockFovAxis,
+            baseAspect: this.baseAspect(),
+            baseFovToHorizontalRad: (baseFovRad, axis, aspect) => this.baseFovToHorizontalRad(baseFovRad, axis, aspect),
+            cropFactor: renderBox => this.cropFactor(renderBox),
+            setBaseFovRad: (value) => {
+                this.baseFovRad = value;
+            }
+        });
     }
 
     private viewportLensRange() {
@@ -2525,28 +1869,26 @@ export class CameraFramesController {
     }
 
     private setViewportLensMm(mm: number) {
-        if (this.state.enabled) {
-            return;
-        }
-        const range = this.viewportLensRange();
-        const clamped = Math.min(range.max, Math.max(range.min, mm));
-        const rb = this.state.renderBox;
-        const crop = this.cropFactor(rb);
-        const hfovDeg = this.eqMmToHfov(clamped, crop);
-        this.viewportFovRuntime = hfovDeg;
-        this.events.fire('camera.setFov', hfovDeg);
-        this.emitViewportLensChanged();
+        setViewportLensMmCamera({
+            mm,
+            stateEnabled: this.state.enabled,
+            viewportLensRange: () => this.viewportLensRange(),
+            renderBox: this.state.renderBox,
+            cropFactor: renderBox => this.cropFactor(renderBox),
+            setViewportFovRuntime: (value) => {
+                this.viewportFovRuntime = value;
+            },
+            events: this.events,
+            emitViewportLensChanged: () => this.emitViewportLensChanged()
+        });
     }
 
     private getViewportLensState() {
-        const range = this.viewportLensRange();
-        const mm = this.getViewportLensMm();
-        return {
-            enabled: !this.state.enabled,
-            mm: mm ?? range.max,
-            min: range.min,
-            max: range.max
-        };
+        return getViewportLensStateCamera({
+            stateEnabled: this.state.enabled,
+            viewportLensRange: () => this.viewportLensRange(),
+            getViewportLensMm: () => this.getViewportLensMm()
+        });
     }
 
     private emitViewportLensChanged() {
@@ -2554,413 +1896,134 @@ export class CameraFramesController {
     }
 
     private updateFovInfo() {
-        const next = this.calcFovInfo();
-        const prev = this.fovInfo;
-        this.fovInfo = next;
-        const changed =
-            !prev ||
-            Math.abs(prev.eqMm - next.eqMm) > 1e-4 ||
-            Math.abs(prev.hfovDeg - next.hfovDeg) > 1e-4 ||
-            Math.abs(prev.crop - next.crop) > 1e-4;
-        if (changed) {
-            this.events.fire('cameraFrames.fovInfoChanged', next);
-        }
+        updateFovInfoCamera({
+            calcFovInfo: () => this.calcFovInfo(),
+            getFovInfo: () => this.fovInfo,
+            setFovInfo: (value) => {
+                this.fovInfo = value;
+            },
+            events: this.events
+        });
     }
 
     private frameRotationRad(frame: FrameState) {
-        const deg = frame.rotationDeg ?? 0;
-        return deg * DEG2RAD;
-    }
-
-    private rotateOffset(offset: { x: number; y: number; }, rad: number) {
-        const c = Math.cos(rad);
-        const s = Math.sin(rad);
-        return {
-            x: offset.x * c - offset.y * s,
-            y: offset.x * s + offset.y * c
-        };
-    }
-
-    private normalizeDegrees(deg: number) {
-        const wrapped = ((deg % 360) + 360) % 360;
-        return Math.abs(wrapped - 360) < 1e-6 ? 0 : wrapped;
+        return frameRotationRadGeometry(frame, DEG2RAD);
     }
 
     private frameCenterLogical(frame: FrameState, logicalW: number, logicalH: number) {
-        const { renderBox } = this.state;
-        return {
-            x: renderBox.center.cx + (frame.pos.x - 0.5) * logicalW,
-            y: renderBox.center.cy + (frame.pos.y - 0.5) * logicalH
-        };
+        return frameCenterLogicalGeometry(frame, this.state.renderBox, logicalW, logicalH);
     }
 
     private frameRectsScreen() {
-        const rb = this.state.renderBox;
         const mapping = this.computeViewportMapping();
-        const logicalW = mapping.logicalW;
-        const logicalH = mapping.logicalH;
-        const effectiveScale = mapping.viewScale;
-        const leftLogical = rb.center.cx - mapping.logicalW * 0.5;
-        const topLogical = rb.center.cy - mapping.logicalH * 0.5;
-        const logicalToScreen = (x: number, y: number) => ({
-            x: mapping.rectPxRaw.x + (x - leftLogical) * effectiveScale,
-            y: mapping.rectPxRaw.y + (y - topLogical) * effectiveScale
-        });
-        const framesSorted = this.state.frames.slice().sort((a, b) => a.order - b.order);
-        return framesSorted.map((frame) => {
-            const frameW = frame.baseSize.w * frame.scaleK;
-            const frameH = frame.baseSize.h * frame.scaleK;
-            const centerLogical = this.frameCenterLogical(frame, logicalW, logicalH);
-            const centerScreen = logicalToScreen(centerLogical.x, centerLogical.y);
-            const rotationRad = this.frameRotationRad(frame);
-            const hw = frameW * 0.5;
-            const hh = frameH * 0.5;
-            const cornersLogical = [
-                { x: -hw, y: -hh },
-                { x: hw, y: -hh },
-                { x: hw, y: hh },
-                { x: -hw, y: hh }
-            ].map((off) => {
-                const rotated = this.rotateOffset(off, rotationRad);
-                return { x: centerLogical.x + rotated.x, y: centerLogical.y + rotated.y };
-            });
-            const cornersScreen = cornersLogical.map(p => logicalToScreen(p.x, p.y));
-            let minX = Number.POSITIVE_INFINITY;
-            let minY = Number.POSITIVE_INFINITY;
-            let maxX = Number.NEGATIVE_INFINITY;
-            let maxY = Number.NEGATIVE_INFINITY;
-            cornersScreen.forEach((p) => {
-                minX = Math.min(minX, p.x);
-                minY = Math.min(minY, p.y);
-                maxX = Math.max(maxX, p.x);
-                maxY = Math.max(maxY, p.y);
-            });
-            const bounding = { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
-            return {
-                frame,
-                logicalW,
-                logicalH,
-                frameW,
-                frameH,
-                centerLogical,
-                centerScreen,
-                rotationRad,
-                cornersLogical,
-                cornersScreen,
-                effectiveScale,
-                bounding
-            };
-        });
-    }
-
-    private handleRects(frameRect: ReturnType<CameraFramesController['frameRectsScreen']>[number]) {
-        const size = 10;
-        const { centerLogical, frameW, frameH, rotationRad, effectiveScale } = frameRect;
-        const anchorLogical = this.frameAnchorLogical(frameRect.frame, frameRect.logicalW, frameRect.logicalH);
-        const anchorScreen = this.logicalToScreen(anchorLogical.x, anchorLogical.y);
-        const handles = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'].map((id) => {
-            const pos = this.getHandleLogicalPosition(id, centerLogical, frameW, frameH, rotationRad);
-            const screen = this.logicalToScreen(pos.x, pos.y);
-            return { id, x: screen.x, y: screen.y };
-        });
-        handles.push({ id: 'anchor', x: anchorScreen.x, y: anchorScreen.y });
-        const gapPx = 30;
-        const logicalGap = gapPx / Math.max(1e-6, effectiveScale);
-        const rotateOffset = this.rotateOffset({ x: 0, y: -(frameH * 0.5 + logicalGap) }, rotationRad);
-        const rotateLogical = { x: centerLogical.x + rotateOffset.x, y: centerLogical.y + rotateOffset.y };
-        const rotateScreen = this.logicalToScreen(rotateLogical.x, rotateLogical.y);
-        handles.push({ id: 'rotate', x: rotateScreen.x, y: rotateScreen.y });
-        return handles.map(h => ({
-            ...h,
-            rect: { x: h.x - size * 0.5, y: h.y - size * 0.5, w: size, h: size }
-        }));
+        return frameRectsScreenGeometry(
+            this.state.frames,
+            this.state.renderBox,
+            mapping.logicalW,
+            mapping.logicalH,
+            mapping.viewScale,
+            (x, y) => logicalToScreenViewport(x, y, this.state.renderBox, mapping),
+            DEG2RAD
+        );
     }
 
     private frameAnchorLogical(frame: FrameState, logicalW: number, logicalH: number) {
-        const anchor = frame.anchor ?? { x: frame.pos?.x ?? 0.5, y: frame.pos?.y ?? 0.5 };
-        return {
-            x: this.state.renderBox.center.cx + (anchor.x - 0.5) * logicalW,
-            y: this.state.renderBox.center.cy + (anchor.y - 0.5) * logicalH
-        };
+        return frameAnchorLogicalGeometry(frame, this.state.renderBox, logicalW, logicalH);
     }
 
     private getHandleLogicalOffset(handleId: string, frameW: number, frameH: number) {
-        const hw = frameW * 0.5;
-        const hh = frameH * 0.5;
-        switch (handleId) {
-            case 'nw': return { x: -hw, y: -hh };
-            case 'n': return { x: 0, y: -hh };
-            case 'ne': return { x: hw, y: -hh };
-            case 'e': return { x: hw, y: 0 };
-            case 'se': return { x: hw, y: hh };
-            case 's': return { x: 0, y: hh };
-            case 'sw': return { x: -hw, y: hh };
-            case 'w': return { x: -hw, y: 0 };
-            default: return { x: 0, y: 0 };
-        }
+        return getHandleLogicalOffsetGeometry(handleId, frameW, frameH);
     }
 
     private getHandleLogicalPosition(handleId: string, center: { x: number; y: number; }, frameW: number, frameH: number, rotationRad: number) {
-        const off = this.getHandleLogicalOffset(handleId, frameW, frameH);
-        const rotated = this.rotateOffset(off, rotationRad);
-        return { x: center.x + rotated.x, y: center.y + rotated.y };
+        return getHandleLogicalPositionGeometry(handleId, center, frameW, frameH, rotationRad);
     }
 
     private getAnchorLogicalForHandle(handleId: string | undefined, frame: FrameState, center: { x: number; y: number; }, frameW: number, frameH: number, logicalW: number, logicalH: number, rotationRad: number) {
-        if (!handleId) {
-            return center;
-        }
-        if (handleId === 'anchor' || handleId === 'rotate') {
-            return this.frameAnchorLogical(frame, logicalW, logicalH);
-        }
-        const off = this.getHandleLogicalOffset(handleId, frameW, frameH);
-        const rotated = this.rotateOffset(off, rotationRad);
-        return { x: center.x - rotated.x, y: center.y - rotated.y };
+        return getAnchorLogicalForHandleGeometry(
+            handleId,
+            frame,
+            this.state.renderBox,
+            center,
+            frameW,
+            frameH,
+            logicalW,
+            logicalH,
+            rotationRad
+        );
     }
 
-    private strokeFrameOutlinePath(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number) {
-        const expand = FRAME_OUTLINE_WIDTH_PX * 0.5;
-        ctx.strokeRect(x - expand, y - expand, w + expand * 2, h + expand * 2);
+    private hitTestHandle(px: number, py: number) {
+        return hitTestHandleGeometry(
+            px,
+            py,
+            this.frameRectsScreen(),
+            this.selectedId,
+            this.state.renderBox,
+            (x, y) => this.logicalToScreen(x, y)
+        );
     }
 
-    private snapAxisAlignedRect(centerX: number, centerY: number, w: number, h: number) {
-        const left = Math.round(centerX - w * 0.5);
-        const right = Math.round(centerX + w * 0.5);
-        const top = Math.round(centerY - h * 0.5);
-        const bottom = Math.round(centerY + h * 0.5);
-        return {
-            x: left,
-            y: top,
-            w: Math.max(0, right - left),
-            h: Math.max(0, bottom - top)
-        };
-    }
-
-    private drawMask(rects: ReturnType<CameraFramesController['frameRectsScreen']>) {
-        const { mask } = this.state;
-        if (!mask?.enabled || rects.length === 0) {
-            return;
-        }
-        const ctx = this.overlayCtx;
-        const { vw, vh } = this.viewport;
-
-        const filtered = mask.scope === 'selected' ? rects.filter(r => r.frame.selected) : rects;
-        const targetRects = filtered.length > 0 ? filtered : rects;
-        if (targetRects.length === 0) {
-            return;
-        }
-
-        // compute bounding box
-        let minX = Number.POSITIVE_INFINITY;
-        let minY = Number.POSITIVE_INFINITY;
-        let maxX = Number.NEGATIVE_INFINITY;
-        let maxY = Number.NEGATIVE_INFINITY;
-
-        targetRects.forEach((r) => {
-            const b = r.bounding;
-            minX = Math.min(minX, b.x);
-            minY = Math.min(minY, b.y);
-            maxX = Math.max(maxX, b.x + b.w);
-            maxY = Math.max(maxY, b.y + b.h);
-        });
-
-        ctx.save();
-        ctx.fillStyle = `rgba(0,0,0,${mask.opacity ?? 0.8})`;
-        ctx.beginPath();
-        ctx.rect(0, 0, vw, vh);
-        ctx.rect(minX, minY, maxX - minX, maxY - minY);
-        ctx.fill('evenodd');
-        ctx.restore();
+    private hitTestFrameBorder(px: number, py: number) {
+        return hitTestFrameBorderGeometry(
+            px,
+            py,
+            this.frameRectsScreen(),
+            (x, y) => this.screenToLogical(x, y)
+        );
     }
 
     private drawOverlay() {
-        const ctx = this.overlayCtx;
-        const { vw, vh } = this.viewport;
-        ctx.clearRect(0, 0, vw, vh);
-
-        if (!this.state.enabled) {
-            return;
-        }
-
-        const rb = this.state.renderBox;
-        const mapping = this.computeViewportMapping();
-        const logicalW = mapping.logicalW;
-        const logicalH = mapping.logicalH;
-        const leftTop = this.logicalToScreen(rb.center.cx - logicalW * 0.5, rb.center.cy - logicalH * 0.5);
-        const rightBottom = this.logicalToScreen(rb.center.cx + logicalW * 0.5, rb.center.cy + logicalH * 0.5);
-
-        // render box
-        ctx.save();
-        ctx.strokeStyle = 'rgba(255,255,255,0.9)';
-        ctx.lineWidth = 1;
-        ctx.setLineDash([4, 3]);
-        ctx.strokeRect(leftTop.x, leftTop.y, rightBottom.x - leftTop.x, rightBottom.y - leftTop.y);
-        ctx.restore();
-
-        const rects = this.frameRectsScreen();
-
-        // mask
-        this.drawMask(rects);
-
-        // frames
-        rects.forEach((r) => {
-            const wScreen = r.frameW * r.effectiveScale;
-            const hScreen = r.frameH * r.effectiveScale;
-            ctx.save();
-            ctx.translate(r.centerScreen.x, r.centerScreen.y);
-            ctx.rotate(r.rotationRad);
-            ctx.strokeStyle = '#ff0000';
-            ctx.lineWidth = FRAME_OUTLINE_WIDTH_PX;
-            ctx.setLineDash([]);
-            this.strokeFrameOutlinePath(ctx, -wScreen * 0.5, -hScreen * 0.5, wScreen, hScreen);
-            if (r.frame.selected) {
-                ctx.strokeStyle = 'rgba(255,255,255,0.7)';
-                ctx.setLineDash([3, 2]);
-                ctx.lineWidth = 1;
-                this.strokeFrameOutlinePath(ctx, -wScreen * 0.5, -hScreen * 0.5, wScreen, hScreen);
-            }
-            ctx.restore();
+        const enabled = this.state.enabled;
+        const mapping = enabled ? this.computeViewportMapping() : null;
+        const rects = enabled ? this.frameRectsScreen() : [];
+        drawOverlayOverlay({
+            ctx: this.overlayCtx,
+            viewport: this.viewport,
+            enabled,
+            renderBox: this.state.renderBox,
+            mapping,
+            logicalToScreen: (x, y) => this.logicalToScreen(x, y),
+            frameRects: rects,
+            mask: this.state.mask
         });
-
-        // handles (選択時のみ)
-        const selectedRect = rects.find(r => r.frame.selected);
-        if (selectedRect) {
-            const handles = this.handleRects(selectedRect);
-            ctx.save();
-            ctx.fillStyle = '#ffffff';
-            ctx.strokeStyle = '#ff0000';
-            handles.forEach((h) => {
-                ctx.fillRect(h.rect.x, h.rect.y, h.rect.w, h.rect.h);
-                ctx.strokeRect(h.rect.x, h.rect.y, h.rect.w, h.rect.h);
-            });
-            ctx.restore();
-        }
     }
 
     // pointer interactions --------------------------------------------------
 
     private onHover(e: PointerEvent) {
-        this.lastPointer = { x: e.clientX, y: e.clientY };
-        this.ensureUiTargetAvailability();
-
-        const rect = this.canvasContainer.getBoundingClientRect();
-        const px = e.clientX - rect.left;
-        const py = e.clientY - rect.top;
-
-        if (this.frustumDragState) {
-            this.overlay.style.pointerEvents = 'auto';
-            this.overlay.style.cursor = 'grabbing';
-            return;
-        }
-
-        // Gizmo優先チェック: ギズモにヒットしたらオーバーレイは透過する
-        if (hitTestGizmo(this.scene, e.clientX, e.clientY)) {
-            this.overlay.style.pointerEvents = 'none';
-            this.overlay.style.cursor = '';
-            return;
-        }
-
-        if (!this.state.enabled) {
-            this.overlay.style.pointerEvents = 'none';
-            this.overlay.style.cursor = '';
-            return;
-        }
-        if (this.dragState) {
-            this.overlay.style.pointerEvents = 'auto';
-            this.overlay.style.cursor = this.dragState.mode === 'pan' ? 'grabbing' : '';
-            return;
-        }
-
-        if (e.shiftKey) {
-            this.overlay.style.pointerEvents = 'auto';
-            this.overlay.style.cursor = 'grab';
-            return;
-        }
-
-        const handleHit = this.hitTestHandle(px, py);
-        const borderHit = !handleHit && this.hitTestFrameBorder(px, py);
-
-        this.overlay.style.pointerEvents = (handleHit || borderHit) ? 'auto' : 'none';
-        this.overlay.style.cursor = this.getCursorForHit(handleHit?.handleId, borderHit);
+        onHoverPointer({
+            event: e,
+            canvasContainer: this.canvasContainer,
+            overlay: this.overlay,
+            scene: this.scene,
+            state: this.state,
+            dragState: this.dragState,
+            frustumDragState: this.frustumDragState,
+            setLastPointer: (value) => {
+                this.lastPointer = value;
+            },
+            ensureUiTargetAvailability: () => this.ensureUiTargetAvailability(),
+            hitTestHandle: (px, py) => this.hitTestHandle(px, py),
+            hitTestFrameBorder: (px, py) => this.hitTestFrameBorder(px, py)
+        });
     }
 
-    private onContainerPointerDown(_e: PointerEvent) {
-        // クリックでの対象切り替えは行わない（パネルUI経由でのみ操作対象を変更）
+    private onContainerPointerDown(e: PointerEvent) {
+        onContainerPointerDownPointer(e);
     }
 
     private updatePointerFromLast() {
-        if (!this.lastPointer) {
-            this.overlay.style.pointerEvents = 'none';
-            return;
-        }
-        this.ensureUiTargetAvailability();
-        const rect = this.canvasContainer.getBoundingClientRect();
-        const px = this.lastPointer.x - rect.left;
-        const py = this.lastPointer.y - rect.top;
-        if (this.frustumDragState) {
-            this.overlay.style.pointerEvents = 'auto';
-            this.overlay.style.cursor = 'grabbing';
-            return;
-        }
-        if (!this.state.enabled) {
-            this.overlay.style.pointerEvents = 'none';
-            this.overlay.style.cursor = '';
-            return;
-        }
-        const handleHit = this.hitTestHandle(px, py);
-        const borderHit = !handleHit && this.hitTestFrameBorder(px, py);
-        this.overlay.style.pointerEvents = (handleHit || borderHit) && this.state.enabled ? 'auto' : 'none';
-        this.overlay.style.cursor = this.getCursorForHit(handleHit?.handleId, borderHit);
-    }
-
-    private isPointInRect(px: number, py: number, r: { x: number; y: number; w: number; h: number; }) {
-        return px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h;
-    }
-
-    private hitTestHandle(px: number, py: number) {
-        const rects = this.frameRectsScreen().sort((a, b) => a.frame.order - b.frame.order);
-        for (let i = rects.length - 1; i >= 0; i--) {
-            const r = rects[i];
-            // ハンドルは選択中のフレームのみ有効
-            if (r.frame.id !== this.selectedId) {
-                continue;
-            }
-            const handles = this.handleRects(r);
-            const hit = handles.find(h => this.isPointInRect(px, py, h.rect));
-            if (hit) {
-                return { frame: r.frame, handleId: hit.id, frameRect: r, handle: hit };
-            }
-        }
-        return null;
-    }
-
-    private getCursorForHit(handleId: string | undefined, borderHit: any) {
-        if (handleId) {
-            switch (handleId) {
-                case 'nw':
-                case 'se':
-                    return 'nwse-resize';
-                case 'ne':
-                case 'sw':
-                    return 'nesw-resize';
-                case 'n':
-                case 's':
-                    return 'ns-resize';
-                case 'e':
-                case 'w':
-                    return 'ew-resize';
-                case 'anchor':
-                    return 'move';
-                case 'rotate':
-                    return 'grab';
-                default:
-                    return 'default';
-            }
-        }
-        if (borderHit) {
-            return 'move';
-        }
-        return '';
+        updatePointerFromLastPointer({
+            lastPointer: this.lastPointer,
+            canvasContainer: this.canvasContainer,
+            overlay: this.overlay,
+            state: this.state,
+            frustumDragState: this.frustumDragState,
+            ensureUiTargetAvailability: () => this.ensureUiTargetAvailability(),
+            hitTestHandle: (px, py) => this.hitTestHandle(px, py),
+            hitTestFrameBorder: (px, py) => this.hitTestFrameBorder(px, py)
+        });
     }
 
     private applyCameraFramesVersionLabel() {
@@ -2999,30 +2062,6 @@ export class CameraFramesController {
         });
     }
 
-    private hitTestFrameBorder(px: number, py: number) {
-        const HIT = 8;
-        const rects = this.frameRectsScreen().sort((a, b) => a.frame.order - b.frame.order);
-        const logical = this.screenToLogical(px, py);
-        for (let i = rects.length - 1; i >= 0; i--) {
-            const r = rects[i];
-            const margin = HIT / Math.max(1e-6, r.effectiveScale);
-            const dx = logical.x - r.centerLogical.x;
-            const dy = logical.y - r.centerLogical.y;
-            const local = this.rotateOffset({ x: dx, y: dy }, -r.rotationRad);
-            const inside = Math.abs(local.x) <= r.frameW * 0.5 + margin && Math.abs(local.y) <= r.frameH * 0.5 + margin;
-            const inner = Math.abs(local.x) <= Math.max(0, r.frameW * 0.5 - margin) && Math.abs(local.y) <= Math.max(0, r.frameH * 0.5 - margin);
-            if (inside && !inner) {
-                return r.frame;
-            }
-        }
-        return null;
-    }
-
-    private handleFrustumPointerDown(_e: PointerEvent) {
-        // フラスタムクリックによる対象切替・ドラッグは行わない
-        return false;
-    }
-
     private handleFrustumPointerMove(_e: PointerEvent) {
         // フラスタムドラッグは無効化
         return false;
@@ -3034,539 +2073,104 @@ export class CameraFramesController {
     }
 
     private onPointerDown(e: PointerEvent) {
-        if (!this.state.enabled) {
-            return;
-        }
-
-        // Gizmo優先チェック: ギズモにヒットしたら操作開始しない
-        if (hitTestGizmo(this.scene, e.clientX, e.clientY)) {
-            return;
-        }
-
-        const handleHit = this.hitTestHandle(e.offsetX, e.offsetY);
-        const frame = handleHit?.frame ?? this.hitTestFrameBorder(e.offsetX, e.offsetY);
-        if (e.shiftKey && e.button === 0 && !handleHit && !frame) {
-            this.overlay.setPointerCapture(e.pointerId);
-            this.dragState = {
-                frameId: null,
-                startPos: { x: 0, y: 0 },
-                startPointer: { x: e.offsetX, y: e.offsetY },
-                axisLock: null,
-                shiftLock: false,
-                pointerId: e.pointerId,
-                mode: 'pan',
-                startCenterScreen: { x: this.state.renderBox.center.cx, y: this.state.renderBox.center.cy }
-            };
-            this.historyBegin('cameraFrames.renderBoxPan');
-            this.overlay.style.cursor = 'grabbing';
-            e.stopPropagation();
-            e.preventDefault();
-            return;
-        }
-        if (!frame) {
-            return;
-        }
-
-        this.selectFrame(frame.id);
-        this.overlay.setPointerCapture(e.pointerId);
-
-        const rb = this.state.renderBox;
-        const mapping = this.computeViewportMapping();
-        const logicalW = mapping.logicalW;
-        const logicalH = mapping.logicalH;
-        const centerLogical = this.frameCenterLogical(frame, logicalW, logicalH);
-        const frameW = frame.baseSize.w * frame.scaleK;
-        const frameH = frame.baseSize.h * frame.scaleK;
-        const rotationRad = this.frameRotationRad(frame);
-
-        const handleId = handleHit?.handleId;
-        const mode: 'move' | 'resize' | 'anchor' | 'rotate' =
-            handleId === 'anchor' ? 'anchor' :
-                (handleId === 'rotate' ? 'rotate' : (handleId ? 'resize' : 'move'));
-
-        const anchorLogicalDefault = this.getAnchorLogicalForHandle(handleId, frame, centerLogical, frameW, frameH, logicalW, logicalH, rotationRad);
-        const anchorLogical = (mode === 'resize' && e.altKey) ? this.frameAnchorLogical(frame, logicalW, logicalH) : anchorLogicalDefault;
-        const handleLogical = handleId ? this.getHandleLogicalPosition(handleId, centerLogical, frameW, frameH, rotationRad) : null;
-        const startDistance = (mode === 'resize' && handleLogical) ? Math.hypot(handleLogical.x - anchorLogical.x, handleLogical.y - anchorLogical.y) : null;
-        const pointerLogical = this.screenToLogical(e.offsetX, e.offsetY);
-        const startAngle = (mode === 'rotate') ? Math.atan2(pointerLogical.y - anchorLogical.y, pointerLogical.x - anchorLogical.x) : undefined;
-
-        this.dragState = {
-            frameId: frame.id,
-            startPos: { ...frame.pos },
-            startPointer: { x: e.offsetX, y: e.offsetY },
-            axisLock: null,
-            shiftLock: e.shiftKey,
-            pointerId: e.pointerId,
-            mode,
-            handleId,
-            startScaleK: frame.scaleK,
-            startCenterLogical: centerLogical,
-            startAnchorLogical: anchorLogical,
-            startHandleLogical: handleLogical,
-            startDistance,
-            startRotationRad: mode === 'rotate' ? rotationRad : undefined,
-            startAngle
-        };
-        this.historyBegin(`cameraFrames.${mode}`);
-        this.overlay.style.cursor = mode === 'rotate' ? 'grabbing' : this.getCursorForHit(handleId, true);
-
-        e.stopPropagation();
-        e.preventDefault();
-    }
-
-    private onPointerMove(e: PointerEvent) {
-        if (!this.state.enabled) {
-            if (this.handleFrustumPointerMove(e)) {
-                return;
-            }
-            return;
-        }
-        if (!this.dragState || e.pointerId !== this.dragState.pointerId) return;
-        if (this.dragState.mode === 'pan') {
-            this.handlePanDrag(e);
-            this.overlay.style.cursor = 'grabbing';
-            e.stopPropagation();
-            e.preventDefault();
-            return;
-        }
-        const frame = this.state.frames.find(f => f.id === this.dragState.frameId);
-        if (!frame) return;
-
-        const rb = this.state.renderBox;
-        const mapping = this.computeViewportMapping();
-        const logicalW = mapping.logicalW;
-        const logicalH = mapping.logicalH;
-
-        if (this.dragState.mode === 'move') {
-            const dx = e.offsetX - this.dragState.startPointer.x;
-            const dy = e.offsetY - this.dragState.startPointer.y;
-
-            if (this.dragState.shiftLock && !this.dragState.axisLock) {
-                if (Math.abs(dx) + Math.abs(dy) > 5) {
-                    this.dragState.axisLock = Math.abs(dx) >= Math.abs(dy) ? 'x' : 'y';
-                }
-            }
-
-            const effectiveScale = mapping.viewScale;
-            const deltaLocalX = dx / (effectiveScale * logicalW);
-            const deltaLocalY = dy / (effectiveScale * logicalH);
-
-            frame.pos.x = this.dragState.startPos.x + (this.dragState.axisLock === 'y' ? 0 : deltaLocalX);
-            frame.pos.y = this.dragState.startPos.y + (this.dragState.axisLock === 'x' ? 0 : deltaLocalY);
-        } else if (this.dragState.mode === 'anchor') {
-            const logical = this.screenToLogical(e.offsetX, e.offsetY);
-            frame.anchor = {
-                x: 0.5 + (logical.x - rb.center.cx) / logicalW,
-                y: 0.5 + (logical.y - rb.center.cy) / logicalH
-            };
-        } else if (this.dragState.mode === 'resize') {
-            const start = this.dragState;
-            const logical = this.screenToLogical(e.offsetX, e.offsetY);
-            const handleLogical = logical;
-            if (!start.startHandleLogical || !start.startAnchorLogical || !start.startCenterLogical || !start.startScaleK || !start.startDistance) {
-                return;
-            }
-            const d1 = Math.hypot(handleLogical.x - start.startAnchorLogical.x, handleLogical.y - start.startAnchorLogical.y);
-            if (d1 <= 1e-6 || start.startDistance <= 1e-6) return;
-            const s = d1 / start.startDistance;
-
-            const newScaleK = start.startScaleK * s;
-            const MIN_K = 0.10;  // 10%
-            const MAX_K = 4.0;   // 400%
-            const clampedK = Math.min(MAX_K, Math.max(MIN_K, newScaleK));
-            frame.scaleK = clampedK;
-            frame.scalePct = clampedK * 100;
-
-            const newCenter = {
-                x: start.startAnchorLogical.x + (start.startCenterLogical.x - start.startAnchorLogical.x) * s,
-                y: start.startAnchorLogical.y + (start.startCenterLogical.y - start.startAnchorLogical.y) * s
-            };
-
-            frame.pos.x = 0.5 + (newCenter.x - rb.center.cx) / logicalW;
-            frame.pos.y = 0.5 + (newCenter.y - rb.center.cy) / logicalH;
-        } else if (this.dragState.mode === 'rotate') {
-            this.overlay.style.cursor = 'grabbing';
-            const start = this.dragState;
-            if (!start.startAnchorLogical || !start.startCenterLogical || start.startRotationRad === undefined || start.startAngle === undefined) {
-                return;
-            }
-            const anchorLogical = start.startAnchorLogical;
-            const logical = this.screenToLogical(e.offsetX, e.offsetY);
-            const angle = Math.atan2(logical.y - anchorLogical.y, logical.x - anchorLogical.x);
-            const delta = angle - start.startAngle;
-            const unsnappedNextRad = start.startRotationRad + delta;
-            const useSnap = start.shiftLock || e.shiftKey;
-            const snap = Math.PI / 12; // 15deg snap
-            const nextRad = useSnap ? Math.round(unsnappedNextRad / snap) * snap : unsnappedNextRad;
-            this.applyFrameRotationFromStart(frame, start, nextRad, logicalW, logicalH);
-        }
-
-        this.requestRender();
-        this.events.fire('cameraFrames.stateChanged', this.snapshot());
-
-        e.stopPropagation();
-        e.preventDefault();
-    }
-
-    private clampCenterToViewport(cx: number, cy: number, rectW: number, rectH: number, vw: number, vh: number) {
-        const halfW = rectW * 0.5;
-        const halfH = rectH * 0.5;
-        let minCx = -PAN_MARGIN_PX + halfW;
-        let maxCx = vw + PAN_MARGIN_PX - halfW;
-        if (minCx > maxCx) {
-            const mid = (minCx + maxCx) * 0.5;
-            minCx = mid;
-            maxCx = mid;
-        }
-        let minCy = -PAN_MARGIN_PX + halfH;
-        let maxCy = vh + PAN_MARGIN_PX - halfH;
-        if (minCy > maxCy) {
-            const mid = (minCy + maxCy) * 0.5;
-            minCy = mid;
-            maxCy = mid;
-        }
-        return {
-            cx: Math.min(maxCx, Math.max(minCx, cx)),
-            cy: Math.min(maxCy, Math.max(minCy, cy))
-        };
-    }
-
-    private handlePanDrag(e: PointerEvent) {
-        const mapping = this.computeViewportMapping();
-        const rectW = mapping.logicalW * mapping.viewScale;
-        const rectH = mapping.logicalH * mapping.viewScale;
-        const vw = this.scene.camera.targetSize?.width ?? this.viewport.vw;
-        const vh = this.scene.camera.targetSize?.height ?? this.viewport.vh;
-        const startCenter = this.dragState.startCenterScreen ?? { x: this.state.renderBox.center.cx, y: this.state.renderBox.center.cy };
-        const dx = e.offsetX - (this.dragState.startPointer?.x ?? e.offsetX);
-        const dy = e.offsetY - (this.dragState.startPointer?.y ?? e.offsetY);
-        const nextCenter = this.clampCenterToViewport(
-            startCenter.x + dx,
-            startCenter.y + dy,
-            rectW,
-            rectH,
-            vw,
-            vh
-        );
-
-        this.state.renderBox.center = nextCenter;
-        this.syncCameraFrustum();
-        this.requestRender();
-        this.events.fire('cameraFrames.stateChanged', this.snapshot());
-    }
-
-    private applyFrameRotationFromStart(frame: FrameState, start: { startCenterLogical?: { x: number; y: number; }; startAnchorLogical?: { x: number; y: number; }; startRotationRad?: number; }, nextRad: number, logicalW: number, logicalH: number) {
-        if (!start.startCenterLogical || !start.startAnchorLogical) {
-            return;
-        }
-        const rb = this.state.renderBox;
-        const baseRad = start.startRotationRad ?? 0;
-        const delta = nextRad - baseRad;
-        const offset = {
-            x: start.startCenterLogical.x - start.startAnchorLogical.x,
-            y: start.startCenterLogical.y - start.startAnchorLogical.y
-        };
-        const rotatedOffset = this.rotateOffset(offset, delta);
-        const newCenter = {
-            x: start.startAnchorLogical.x + rotatedOffset.x,
-            y: start.startAnchorLogical.y + rotatedOffset.y
-        };
-        frame.rotationDeg = this.normalizeDegrees(nextRad * RAD2DEG);
-        frame.pos.x = 0.5 + (newCenter.x - rb.center.cx) / logicalW;
-        frame.pos.y = 0.5 + (newCenter.y - rb.center.cy) / logicalH;
-    }
-
-    private onPointerUp(e: PointerEvent) {
-        if (this.handleFrustumPointerUp(e)) {
-            return;
-        }
-        if (this.dragState && e.pointerId === this.dragState.pointerId) {
-            this.historyCommit('cameraFrames.drag');
-            this.overlay.releasePointerCapture(e.pointerId);
-            this.dragState = null;
-            this.lastPointer = { x: e.clientX, y: e.clientY };
-            this.updatePointerFromLast();
-            this.overlay.style.cursor = e.shiftKey ? 'grab' : '';
-            e.stopPropagation();
-            e.preventDefault();
-        }
-    }
-
-    private onDoubleClick(e: MouseEvent) {
-        if (!this.state.enabled) return;
-        const handleHit = this.hitTestHandle(e.offsetX, e.offsetY);
-        if (handleHit?.handleId === 'anchor') {
-            this.resetAnchorToCenter(handleHit.frame);
-        } else if (handleHit?.handleId === 'rotate') {
-            this.resetFrameRotation(handleHit.frame);
-        } else {
-            return;
-        }
-        e.stopPropagation();
-        e.preventDefault();
-    }
-
-    private resetFrameRotation(frame: FrameState | null) {
-        this.historyRecord('cameraFrames.resetRotation', () => {
-            if (!frame) {
-                return;
-            }
-            const rb = this.state.renderBox;
-            const logicalW = rb.baseSize.w * rb.scale.kx;
-            const logicalH = rb.baseSize.h * rb.scale.ky;
-            const start = {
-                startCenterLogical: this.frameCenterLogical(frame, logicalW, logicalH),
-                startAnchorLogical: this.frameAnchorLogical(frame, logicalW, logicalH),
-                startRotationRad: this.frameRotationRad(frame)
-            };
-            this.applyFrameRotationFromStart(frame, start, 0, logicalW, logicalH);
-            this.requestRender();
-            this.events.fire('cameraFrames.stateChanged', this.snapshot());
-            this.updatePointerFromLast();
+        onPointerDownPointer({
+            event: e,
+            state: this.state,
+            scene: this.scene,
+            overlay: this.overlay,
+            setDragState: (value) => {
+                this.dragState = value;
+            },
+            selectFrame: id => this.selectFrame(id),
+            computeViewportMapping: () => this.computeViewportMapping(),
+            frameCenterLogical: (frame, logicalW, logicalH) => this.frameCenterLogical(frame, logicalW, logicalH),
+            frameRotationRad: frame => this.frameRotationRad(frame),
+            getAnchorLogicalForHandle: (handleId, frame, centerLogical, frameW, frameH, logicalW, logicalH, rotationRad) => {
+                return this.getAnchorLogicalForHandle(handleId, frame, centerLogical, frameW, frameH, logicalW, logicalH, rotationRad);
+            },
+            frameAnchorLogical: (frame, logicalW, logicalH) => this.frameAnchorLogical(frame, logicalW, logicalH),
+            getHandleLogicalPosition: (handleId, centerLogical, frameW, frameH, rotationRad) => {
+                return this.getHandleLogicalPosition(handleId, centerLogical, frameW, frameH, rotationRad);
+            },
+            screenToLogical: (x, y) => this.screenToLogical(x, y),
+            hitTestHandle: (px, py) => this.hitTestHandle(px, py),
+            hitTestFrameBorder: (px, py) => this.hitTestFrameBorder(px, py),
+            historyBegin: label => this.historyBegin(label)
         });
     }
 
-    private resetAnchorToCenter(frame: FrameState | null) {
-        this.historyRecord('cameraFrames.resetAnchor', () => {
-            if (!frame) {
-                return;
-            }
-            frame.anchor = { x: frame.pos.x, y: frame.pos.y };
-            this.requestRender();
+    private onPointerMove(e: PointerEvent) {
+        onPointerMovePointer({
+            event: e,
+            state: this.state,
+            dragState: this.dragState,
+            overlay: this.overlay,
+            scene: this.scene,
+            viewport: this.viewport,
+            handleFrustumPointerMove: event => this.handleFrustumPointerMove(event),
+            computeViewportMapping: () => this.computeViewportMapping(),
+            screenToLogical: (x, y) => this.screenToLogical(x, y),
+            syncCameraFrustum: () => this.syncCameraFrustum(),
+            requestRender: () => this.requestRender(),
+            fireStateChanged: () => this.events.fire('cameraFrames.stateChanged', this.snapshot())
+        });
+    }
+
+    private onPointerUp(e: PointerEvent) {
+        onPointerUpPointer({
+            event: e,
+            dragState: this.dragState,
+            overlay: this.overlay,
+            setDragState: (value) => {
+                this.dragState = value;
+            },
+            handleFrustumPointerUp: event => this.handleFrustumPointerUp(event),
+            historyCommit: label => this.historyCommit(label),
+            setLastPointer: (value) => {
+                this.lastPointer = value;
+            },
+            updatePointerFromLast: () => this.updatePointerFromLast()
+        });
+    }
+
+    private onDoubleClick(e: MouseEvent) {
+        const fireStateChanged = () => {
             this.events.fire('cameraFrames.stateChanged', this.snapshot());
-            this.updatePointerFromLast();
+        };
+        onDoubleClickPointer({
+            event: e,
+            state: this.state,
+            hitTestHandle: (px, py) => this.hitTestHandle(px, py),
+            resetAnchorToCenter: (frame) => {
+                resetAnchorToCenterPointer({
+                    frame,
+                    historyRecord: (label, fn) => this.historyRecord(label, fn),
+                    requestRender: () => this.requestRender(),
+                    fireStateChanged,
+                    updatePointerFromLast: () => this.updatePointerFromLast()
+                });
+            },
+            resetFrameRotation: (frame) => {
+                resetFrameRotationPointer({
+                    frame,
+                    state: this.state,
+                    historyRecord: (label, fn) => this.historyRecord(label, fn),
+                    frameCenterLogical: (target, logicalW, logicalH) => this.frameCenterLogical(target, logicalW, logicalH),
+                    frameAnchorLogical: (target, logicalW, logicalH) => this.frameAnchorLogical(target, logicalW, logicalH),
+                    frameRotationRad: target => this.frameRotationRad(target),
+                    requestRender: () => this.requestRender(),
+                    fireStateChanged,
+                    updatePointerFromLast: () => this.updatePointerFromLast()
+                });
+            }
         });
     }
 
     // rendering to image ---------------------------------------------------
 
-    private drawFramesToCtx(ctx: CanvasRenderingContext2D, rb: RenderBoxState, width: number, height: number, frames: FrameState[]) {
-        const logicalW = rb.baseSize.w * rb.scale.kx;
-        const logicalH = rb.baseSize.h * rb.scale.ky;
-        const boxLeft = width * 0.5 - logicalW * 0.5;
-        const boxTop = height * 0.5 - logicalH * 0.5;
-        ctx.save();
-        ctx.beginPath();
-        ctx.rect(boxLeft, boxTop, logicalW, logicalH);
-        ctx.clip();
-
-        const framesSorted = frames.slice().sort((a, b) => a.order - b.order);
-        framesSorted.forEach((frame) => {
-            const frameW = frame.baseSize.w * frame.scaleK;
-            const frameH = frame.baseSize.h * frame.scaleK;
-            const centerX = width * 0.5 + (frame.pos.x - 0.5) * logicalW;
-            const centerY = height * 0.5 + (frame.pos.y - 0.5) * logicalH;
-            const rotationRad = this.frameRotationRad(frame);
-            const lineWidth = FRAME_OUTLINE_WIDTH_PX;
-            ctx.save();
-            ctx.strokeStyle = '#ff0000';
-            ctx.lineWidth = lineWidth;
-
-            // 回転が 90 度刻み（軸揃い）の場合はピクセルグリッドにスナップしてシャープに描く
-            const quarterTurn = Math.PI * 0.5;
-            const nearestQuarter = Math.round(rotationRad / quarterTurn);
-            const alignedRad = nearestQuarter * quarterTurn;
-            const isAxisAligned = Math.abs(rotationRad - alignedRad) < 1e-3;
-
-            if (isAxisAligned) {
-                const swap = (Math.abs(nearestQuarter) % 2) === 1;
-                const w = swap ? frameH : frameW;
-                const h = swap ? frameW : frameH;
-                const snapped = this.snapAxisAlignedRect(centerX, centerY, w, h);
-                this.strokeFrameOutlinePath(ctx, snapped.x, snapped.y, snapped.w, snapped.h);
-            } else {
-                ctx.translate(centerX, centerY);
-                ctx.rotate(rotationRad);
-                this.strokeFrameOutlinePath(ctx, -frameW * 0.5, -frameH * 0.5, frameW, frameH);
-            }
-            ctx.restore();
-        });
-
-        ctx.restore();
-    }
-
-    private canvasFromPixels(pixels: Uint8Array | Uint8ClampedArray, width: number, height: number) {
-        const canvas = document.createElement('canvas');
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) {
-            throw new Error('Failed to acquire 2D context for overlay render');
-        }
-        const view = pixels instanceof Uint8ClampedArray ? pixels : new Uint8ClampedArray(pixels);
-        const imgData = new ImageData(width, height);
-        imgData.data.set(view);
-        ctx.putImageData(imgData, 0, 0);
-        return canvas;
-    }
-
-    private async renderBase(width: number, height: number) {
-        // ベース描画には下絵を混ぜない（PSD で独立レイヤー化し、PNG も CPU 合成で制御する）
-        const pixels = await this.events.invoke('render.offscreen', width, height, { includeReferenceImage: false }) as Uint8Array;
-        if (!pixels) {
-            throw new Error('render.offscreen returned empty buffer');
-        }
-        return pixels;
-    }
-
-    private async renderReferenceLayers(width: number, height: number, options?: { applyOpacity?: boolean; }): Promise<ReferenceExportLayer[]> {
-        const layers = await this.events.invoke('referenceImages.renderExportLayers', width, height, options) as ReferenceExportLayer[] | null;
-        return Array.isArray(layers) ? layers : [];
-    }
-
-    private async renderOverlayLayer(width: number, height: number, options: { includeGrid?: boolean; includeEyeLevel?: boolean; }): Promise<HTMLCanvasElement | null> {
-        const includeGrid = !!options.includeGrid;
-        const includeEyeLevel = !!options.includeEyeLevel;
-        if (!includeGrid && !includeEyeLevel) {
-            return null;
-        }
-        const pixels = await this.events.invoke('render.offscreen', width, height, {
-            includeGrid,
-            includeEyeLevel,
-            overlaysOnly: true,
-            unpremultiplyAlpha: true
-        }) as Uint8Array;
-        if (!pixels) {
-            throw new Error('render.offscreen returned empty overlay buffer');
-        }
-        return this.canvasFromPixels(pixels, width, height);
-    }
-
-    private async renderOverlayLayers(width: number, height: number): Promise<{ grid: HTMLCanvasElement | null; eyeLevel: HTMLCanvasElement | null; } | null> {
-        if (!this.state.exportGridOverlay) {
-            return null;
-        }
-        const grid = await this.renderOverlayLayer(width, height, { includeGrid: true });
-        const eyeLevel = await this.renderOverlayLayer(width, height, { includeEyeLevel: true });
-        return { grid, eyeLevel };
-    }
-
-    private async renderModelLayers(width: number, height: number): Promise<Array<{ name: string; canvas: HTMLCanvasElement; }>> {
-        if (!this.state.exportModelLayers) {
-            return [];
-        }
-
-        const models = ((this.events.invoke('mesh.list') as Model[] | null) ?? []).filter((model) => {
-            return !!model && !!model.entity && model.visible && model.entity.enabled !== false;
-        });
-
-        if (models.length === 0) {
-            return [];
-        }
-
-        const overlays: Array<{ name: string; canvas: HTMLCanvasElement; }> = [];
-
-        const modelStates = models.map(model => ({
-            model,
-            enabled: model.entity.enabled
-        }));
-
-        const layers = this.scene.app.scene.layers;
-        const worldLayer = layers.getLayerByName('World');
-        const restoreLayers: Array<{ layer: any; enabled: boolean; }> = [];
-        const rememberLayer = (layer?: any) => {
-            if (!layer) return;
-            restoreLayers.push({ layer, enabled: layer.enabled });
-        };
-
-        const layersToDisable = [
-            worldLayer,
-            this.scene.overlayLayer,
-            this.scene.debugLayer,
-            this.scene.gizmoLayer,
-            this.scene.backgroundLayer,
-            this.scene.shadowLayer,
-            this.scene.exportOverlayLayer
-        ];
-        layersToDisable.forEach(rememberLayer);
-
-        const prevRenderFlags = { ...this.scene.renderFlags };
-        const prevGridVisible = this.scene.grid.visible;
-        const prevEyeVisible = this.scene.eyeLevel.visible;
-        const prevRenderOverlays = this.scene.camera.renderOverlays;
-
-        try {
-            layersToDisable.forEach((layer) => {
-                if (layer) {
-                    layer.enabled = false;
-                }
-            });
-
-            this.scene.renderFlags.forceGridOverlay = false;
-            this.scene.renderFlags.forceEyeLevelOverlay = false;
-            this.scene.renderFlags.eyeLevelLayerOverride = null;
-            this.scene.renderFlags.gridLayerOverride = null;
-            this.scene.renderFlags.hideBounds = true;
-            this.scene.grid.visible = false;
-            this.scene.eyeLevel.visible = false;
-            this.scene.camera.renderOverlays = false;
-
-            modelStates.forEach(({ model }) => {
-                model.entity.enabled = false;
-            });
-
-            for (const { model } of modelStates) {
-                model.entity.enabled = true;
-                const pixels = await this.events.invoke('render.offscreen', width, height, {
-                    unpremultiplyAlpha: true
-                }) as Uint8Array;
-                if (pixels && pixels.length > 0) {
-                    overlays.push({
-                        name: localize('panel.camera-frames.export.model-layer', { name: model.name ?? 'Model' }),
-                        canvas: this.canvasFromPixels(pixels, width, height)
-                    });
-                }
-                model.entity.enabled = false;
-            }
-        } finally {
-            modelStates.forEach(({ model, enabled }) => {
-                model.entity.enabled = enabled;
-            });
-            restoreLayers.forEach(({ layer, enabled }) => {
-                layer.enabled = enabled;
-            });
-            this.scene.renderFlags.forceGridOverlay = prevRenderFlags.forceGridOverlay;
-            this.scene.renderFlags.forceEyeLevelOverlay = prevRenderFlags.forceEyeLevelOverlay;
-            this.scene.renderFlags.eyeLevelLayerOverride = prevRenderFlags.eyeLevelLayerOverride;
-            this.scene.renderFlags.gridLayerOverride = prevRenderFlags.gridLayerOverride;
-            this.scene.renderFlags.hideBounds = prevRenderFlags.hideBounds;
-            this.scene.grid.visible = prevGridVisible;
-            this.scene.eyeLevel.visible = prevEyeVisible;
-            this.scene.camera.renderOverlays = prevRenderOverlays;
-        }
-
-        return overlays;
-    }
-
-    private mergeOverlayCanvases(width: number, height: number, overlays: Array<HTMLCanvasElement | null | undefined>): HTMLCanvasElement | null {
-        const valid = overlays.filter((layer): layer is HTMLCanvasElement => !!layer);
-        if (valid.length === 0) {
-            return null;
-        }
-        const canvas = document.createElement('canvas');
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) {
-            throw new Error('Failed to acquire 2D context for merged overlays');
-        }
-        valid.forEach(layer => ctx.drawImage(layer, 0, 0));
-        return canvas;
-    }
-
     private renderFrameOverlay(width: number, height: number, frames?: FrameState[]) {
-        const canvas = document.createElement('canvas');
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) {
-            throw new Error('Failed to acquire 2D context for frame overlay');
-        }
-
         const framesToDraw = frames ?? this.state.frames;
-        this.drawFramesToCtx(ctx, this.state.renderBox, width, height, framesToDraw);
-        return { canvas };
+        return renderFrameOverlayOverlay(width, height, this.state.renderBox, framesToDraw);
     }
 
     private frameManagementName(frameId: string | null | undefined) {
@@ -3577,24 +2181,13 @@ export class CameraFramesController {
     }
 
     private renderFrameOverlaysByManagement(width: number, height: number) {
-        const framesSorted = this.state.frames.slice().sort((a, b) => a.order - b.order);
-        const order: string[] = [];
-        const groups = new Map<string, FrameState[]>();
-
-        framesSorted.forEach((frame) => {
-            const name = this.frameManagementName(frame.id);
-            if (!groups.has(name)) {
-                groups.set(name, []);
-                order.push(name);
-            }
-            groups.get(name).push(frame);
-        });
-
-        return order.map((name) => {
-            const groupFrames = groups.get(name) ?? [];
-            const { canvas } = this.renderFrameOverlay(width, height, groupFrames);
-            return { name, canvas };
-        });
+        return renderFrameOverlaysByManagementOverlay(
+            width,
+            height,
+            this.state.renderBox,
+            this.state.frames,
+            frameId => this.frameManagementName(frameId)
+        );
     }
 
     private getCompressor() {
@@ -3604,477 +2197,107 @@ export class CameraFramesController {
         return this.compressor;
     }
 
-    private flipForCompressor(data: Uint32Array, width: number, height: number) {
-        // render.offscreen() は既に y 軸を反転済みだが、PngCompressor でもう一度反転されるため、
-        // ここでバッファを bottom-up に戻しておく（ダブルフリップ対策）。
-        const flipped = new Uint32Array(data.length);
-        for (let y = 0; y < height; y++) {
-            const srcStart = (height - 1 - y) * width;
-            const dstStart = y * width;
-            flipped.set(data.subarray(srcStart, srcStart + width), dstStart);
-        }
-        return flipped;
-    }
-
-    private downloadArrayBuffer(arrayBuffer: ArrayBuffer, filename: string) {
-        const blob = new Blob([arrayBuffer], { type: 'application/octet-stream' });
-        const url = URL.createObjectURL(blob);
-        const el = document.createElement('a');
-        el.href = url;
-        el.download = filename;
-        el.click();
-        URL.revokeObjectURL(url);
-    }
-
-    private addPngDpi(arrayBuffer: ArrayBuffer, dpi: number) {
-        const data = new Uint8Array(arrayBuffer);
-        const PNG_SIG = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
-        if (data.length < 33 || !PNG_SIG.every((b, i) => data[i] === b)) {
-            return arrayBuffer;
-        }
-
-        const readUint32BE = (offset: number) => {
-            return (data[offset] << 24) | (data[offset + 1] << 16) | (data[offset + 2] << 8) | data[offset + 3];
-        };
-
-        let ihdrEnd = -1;
-        let offset = 8; // after signature
-        while (offset + 8 <= data.length) {
-            const length = readUint32BE(offset);
-            const type = String.fromCharCode(data[offset + 4], data[offset + 5], data[offset + 6], data[offset + 7]);
-            const chunkEnd = offset + 8 + length + 4;
-            if (chunkEnd > data.length) {
-                break;
-            }
-            if (type === 'IHDR') {
-                ihdrEnd = chunkEnd;
-                break;
-            }
-            offset = chunkEnd;
-        }
-
-        if (ihdrEnd < 0) {
-            return arrayBuffer;
-        }
-
-        const ppm = Math.max(1, Math.round(dpi * 39.37007874015748)); // pixels per meter
-
-        const chunk = new Uint8Array(4 + 4 + 9 + 4);
-        const view = new DataView(chunk.buffer);
-        view.setUint32(0, 9); // data length
-        chunk.set([0x70, 0x48, 0x59, 0x73], 4); // 'pHYs'
-        view.setUint32(8, ppm, false);  // X pixels per unit
-        view.setUint32(12, ppm, false); // Y pixels per unit
-        chunk[16] = 1; // unit: meter
-
-        const crc = new Crc();
-        crc.update(chunk.subarray(4, 17)); // type + data
-        view.setUint32(17, crc.value(), false);
-
-        const result = new Uint8Array(data.length + chunk.length);
-        result.set(data.subarray(0, ihdrEnd), 0);
-        result.set(chunk, ihdrEnd);
-        result.set(data.subarray(ihdrEnd), ihdrEnd + chunk.length);
-        return result.buffer;
-    }
-
-    private async renderPng(params: { basePixels: Uint8Array; referenceLayers?: ReferenceExportLayer[]; frameOverlay: HTMLCanvasElement; gridOverlay?: HTMLCanvasElement | null; eyeLevelOverlay?: HTMLCanvasElement | null; width: number; height: number; filename: string; }) {
-        const { basePixels, referenceLayers, frameOverlay, gridOverlay, eyeLevelOverlay, width, height, filename } = params;
-        const canvas = document.createElement('canvas');
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) {
-            throw new Error('Failed to acquire 2D context for PNG render');
-        }
-
-        const imgData = new ImageData(new Uint8ClampedArray(basePixels), width, height);
-        ctx.putImageData(imgData, 0, 0);
-        if (gridOverlay) {
-            ctx.globalCompositeOperation = 'destination-over';
-            ctx.drawImage(gridOverlay, 0, 0);
-            ctx.globalCompositeOperation = 'source-over';
-        }
-        const refLayers = Array.isArray(referenceLayers) ? referenceLayers : [];
-        const backLayers = refLayers.filter(l => l?.group === 'back');
-        const frontLayers = refLayers.filter(l => l?.group === 'front');
-        if (backLayers.length > 0) {
-            ctx.globalCompositeOperation = 'destination-over';
-            backLayers.slice().reverse().forEach((layer) => {
-                const bounds = layer.bounds;
-                ctx.drawImage(layer.canvas, bounds?.left ?? 0, bounds?.top ?? 0);
-            });
-            ctx.globalCompositeOperation = 'source-over';
-        }
-        frontLayers.forEach((layer) => {
-            const bounds = layer.bounds;
-            ctx.drawImage(layer.canvas, bounds?.left ?? 0, bounds?.top ?? 0);
-        });
-        if (eyeLevelOverlay) {
-            ctx.drawImage(eyeLevelOverlay, 0, 0);
-        }
-        ctx.drawImage(frameOverlay, 0, 0);
-
-        const merged = new Uint32Array(ctx.getImageData(0, 0, width, height).data.buffer);
-        const flipped = this.flipForCompressor(merged, width, height);
-
-        const compressor = this.getCompressor();
-        let arrayBuffer = await compressor.compress(flipped, width, height);
-        arrayBuffer = this.addPngDpi(arrayBuffer, 150);
-        this.downloadArrayBuffer(arrayBuffer, filename);
-    }
-
-    private async renderPsd(params: { basePixels: Uint8ClampedArray; underlays?: PsdOverlayLayer[]; overlays: PsdOverlayLayer[]; width: number; height: number; filename: string; }) {
-        const { basePixels, underlays, overlays, width, height, filename } = params;
-        await exportPsd({
-            basePixels,
-            underlays,
-            overlays,
-            width,
-            height,
-            filename
-        });
-    }
-
-    private async renderImage(options?: { format?: ExportFormat; filename?: string }) {
-        const rb = this.state.renderBox;
-        const width = Math.round(rb.baseSize.w * rb.scale.kx);
-        const height = Math.round(rb.baseSize.h * rb.scale.ky);
-
-        if (width <= 0 || height <= 0) {
-            return;
-        }
-
-        if (this.state.enabled && this.state.mainCameraPose) {
-            this.applyCameraPose(this.state.mainCameraPose, { silent: true, allowOrtho: false });
-        }
-
-        const format = this.normalizeFormat(options?.format ?? this.state.exportFormat);
-        const filename = this.resolveFilename(options?.filename ?? this.state.exportName, format);
-
-        try {
-            // 書き出し前に明示的にエクスポート用フラスタムを適用し、副作用イベント(camera.resize)頼りを排除
-            this.syncExportFrustum(width, height);
-            const basePixels = await this.renderBase(width, height);
-            const debugOverlays = await this.renderOverlayLayers(width, height);
-            const referenceLayers = await this.renderReferenceLayers(width, height, { applyOpacity: format !== 'psd' });
-
-            if (format === 'psd') {
-                const referenceUnderlays: PsdOverlayLayer[] = referenceLayers
-                .filter(layer => layer.group === 'back')
-                .map(layer => ({ name: layer.name, canvas: layer.canvas, opacity: layer.opacity, bounds: layer.bounds }));
-                const referenceOverlays: PsdOverlayLayer[] = referenceLayers
-                .filter(layer => layer.group === 'front')
-                .map(layer => ({ name: layer.name, canvas: layer.canvas, opacity: layer.opacity, bounds: layer.bounds }));
-                const modelOverlays = await this.renderModelLayers(width, height);
-                const frameOverlays = this.renderFrameOverlaysByManagement(width, height);
-                const overlayLayers = [
-                    ...(debugOverlays?.grid ? [{ name: localize('panel.camera-frames.export.grid-layer.grid'), canvas: debugOverlays.grid }] : []),
-                    ...(debugOverlays?.eyeLevel ? [{ name: localize('panel.camera-frames.export.grid-layer.eye-level'), canvas: debugOverlays.eyeLevel }] : []),
-                    ...modelOverlays,
-                    ...referenceOverlays,
-                    ...frameOverlays
-                ];
-                await this.renderPsd({
-                    basePixels: basePixels instanceof Uint8ClampedArray ? basePixels : new Uint8ClampedArray(basePixels),
-                    underlays: referenceUnderlays.length > 0 ? referenceUnderlays : undefined,
-                    overlays: overlayLayers,
-                    width,
-                    height,
-                    filename
-                });
-            } else {
-                const overlay = this.renderFrameOverlay(width, height);
-                const gridOverlay = this.mergeOverlayCanvases(width, height, [debugOverlays?.grid]);
-                const eyeLevelOverlay = this.mergeOverlayCanvases(width, height, [debugOverlays?.eyeLevel]);
-                await this.renderPng({
-                    basePixels,
-                    referenceLayers,
-                    frameOverlay: overlay.canvas,
-                    gridOverlay,
-                    eyeLevelOverlay,
-                    width,
-                    height,
-                    filename
-                });
-            }
-        } catch (error) {
-            console.error('cameraFrames.render failed', error);
-            await this.events.invoke('showPopup', {
-                type: 'error',
-                header: 'Camera Frames',
-                message: `'${(error as Error)?.message ?? error}'`
-            });
-        } finally {
-            // --- 修正箇所: ビューの復元 ---
-            // render.offscreen が終了し、scene.camera.targetSize は null に戻っている。
-            // ここで syncCameraFrustum を呼ぶことで、「Exportモード」から「Previewモード」の計算に戻り、
-            // 元の ViewZoomPct が適用されたフラスタムがカメラに再設定される。
-            if (this.state.enabled) {
-                this.syncCameraFrustum();
-                this.requestRender();
-            }
-        }
-    }
-
-    // 書き出し開始前に、指定サイズを前提としたエクスポート用フラスタムを明示的にカメラへ適用する
-    // camera.resize などの副作用イベントに依存しない安全策。
-    private syncExportFrustum(width: number, height: number) {
-        // 一時的に targetSize を設定して export モードの計算を行い、終わったら戻す
-        // targetSize の切替はここに集約し、モード混在や累積誤差を防ぐ。
-        this.clearViewportNearOverride();
-        const prevTarget = this.scene.camera.targetSize ? { ...this.scene.camera.targetSize } : null;
-        this.scene.camera.targetSize = { width, height };
-        this.syncCameraFrustum();
-        this.scene.camera.targetSize = prevTarget;
-    }
-
     // serialization --------------------------------------------------------
 
     public snapshot(): CameraFramesState {
-        return {
-            enabled: this.state.enabled,
-            renderBox: JSON.parse(JSON.stringify(this.state.renderBox)),
-            frames: this.state.frames.map(cloneFrame),
-            mask: { ...this.state.mask },
-            mainCameraPose: this.clonePoseSnapshot(this.state.mainCameraPose),
-            nearClip: this.state.nearClip,
-            exportName: this.state.exportName,
-            exportFormat: this.normalizeFormat(this.state.exportFormat),
-            exportGridOverlay: !!this.state.exportGridOverlay,
-            exportModelLayers: !!this.state.exportModelLayers
-        };
+        return snapshotSerialize({
+            state: this.state,
+            clonePoseSnapshot: pose => this.clonePoseSnapshot(pose),
+            normalizeFormat: format => this.normalizeFormat(format)
+        });
     }
 
     public applySnapshot(snapshot: CameraFramesState) {
-        this.applyingHistory = true;
-        try {
-            this.state = JSON.parse(JSON.stringify(snapshot));
-            this.normalizeMainRenderBoxProjection(this.scene.camera.fov);
-            this.state.mask = {
-                ...DEFAULT_MASK,
-                ...(this.state.mask ?? {}),
-                scope: normalizeMaskScope(this.state.mask?.scope, DEFAULT_MASK.scope)
-            };
-            this.state.mainCameraPose = this.clonePoseSnapshot(this.state.mainCameraPose);
-            this.forceMainCameraPoseOrthoOff(this.state.mainCameraPose);
-            if (!this.state.mainCameraPose) {
-                this.state.mainCameraPose = this.forceMainCameraPoseOrthoOff(this.clonePoseSnapshot(this.captureCameraPose()));
-            }
-            this.viewportPoseRuntime = null;
-            this.viewportPoseRuntimeWorldDistance = null;
-            if (!this.state.enabled) {
-                this.hasEnteredViewportOnce = true;
-            }
-            this.selectedId = this.state.frames.find(f => f.selected)?.id ?? null;
-            this.state.nearClip = this.computeSafeNearClip(this.state.nearClip);
-            this.state.exportGridOverlay = !!this.state.exportGridOverlay;
-            this.state.exportModelLayers = !!this.state.exportModelLayers;
-            this.overlay.style.pointerEvents = 'none';
-            this.rebuildBaseFrustum();
-            if (this.state.enabled) {
-                if (this.state.mainCameraPose) {
-                    this.applyCameraPose(this.state.mainCameraPose, { silent: true, allowOrtho: false });
-                }
-                this.applyNearClipOverride();
-                this.computeViewportMapping(true);
-                this.syncCameraFrustum();
-                this.scheduleNearClipGuard();
-            } else {
-                this.events.fire('camera.setNearOverride', null);
-                this.events.fire('camera.setCustomFrustum', null);
-            }
-            this.requestRender();
-            this.events.fire('cameraFrames.stateChanged', this.snapshot());
-            this.updatePointerFromLast();
-            this.updateFovInfo();
-            this.frustumDebugCache.points = null;
-            this.frustumDebugCache.pose = null;
-        } finally {
-            this.applyingHistory = false;
-        }
+        applySnapshotSerialize({
+            snapshot,
+            sceneCameraFov: this.scene.camera.fov,
+            setApplyingHistory: (value) => {
+                this.applyingHistory = value;
+            },
+            setState: (value) => {
+                this.state = value;
+            },
+            normalizeMainRenderBoxProjection: baseFov => this.normalizeMainRenderBoxProjection(baseFov),
+            clonePoseSnapshot: pose => this.clonePoseSnapshot(pose),
+            forceMainCameraPoseOrthoOff: pose => this.forceMainCameraPoseOrthoOff(pose),
+            captureCameraPose: () => this.captureCameraPose(),
+            computeSafeNearClip: value => this.computeSafeNearClip(value),
+            setViewportPoseRuntime: (value) => {
+                this.viewportPoseRuntime = value;
+            },
+            setViewportPoseRuntimeWorldDistance: (value) => {
+                this.viewportPoseRuntimeWorldDistance = value;
+            },
+            setHasEnteredViewportOnce: (value) => {
+                this.hasEnteredViewportOnce = value;
+            },
+            setSelectedId: (value) => {
+                this.selectedId = value;
+            },
+            overlay: this.overlay,
+            frustumDebugCache: this.frustumDebugCache,
+            rebuildBaseFrustum: () => this.rebuildBaseFrustum(),
+            applyCameraPose: (pose, options) => this.applyCameraPose(pose, options),
+            applyNearClipOverride: () => this.applyNearClipOverride(),
+            computeViewportMapping: updateFitScale => this.computeViewportMapping(updateFitScale),
+            syncCameraFrustum: () => this.syncCameraFrustum(),
+            scheduleNearClipGuard: () => this.scheduleNearClipGuard(),
+            requestRender: () => this.requestRender(),
+            events: this.events,
+            fireStateChanged: () => this.events.fire('cameraFrames.stateChanged', this.snapshot()),
+            updatePointerFromLast: () => this.updatePointerFromLast(),
+            updateFovInfo: () => this.updateFovInfo()
+        });
     }
 
     private serialize() {
-        const snap = this.snapshot();
-        return {
-            ...snap,
+        return serializeSerialize({
+            snapshot: () => this.snapshot(),
             selectedId: this.selectedId,
             version: cameraFramesVersion
-        };
+        });
     }
 
     private deserialize(docState: any) {
-        if (!docState) {
-            const initialPose = this.captureCameraPose();
-            this.state = {
-                enabled: false,
-                renderBox: DEFAULT_RENDERBOX(),
-                frames: [],
-                mask: { ...DEFAULT_MASK },
-                mainCameraPose: this.forceMainCameraPoseOrthoOff(this.clonePoseSnapshot(initialPose)),
-                nearClip: null,
-                exportName: 'cf-output',
-                exportFormat: 'png',
-                exportGridOverlay: false,
-                exportModelLayers: false
-            };
-            this.normalizeMainRenderBoxProjection(this.scene.camera.fov);
-            this.selectedId = null;
-            this.viewportPoseRuntime = null;
-            this.viewportPoseRuntimeWorldDistance = null;
-            this.hasEnteredViewportOnce = false;
-            this.rebuildBaseFrustum();
-            if (this.state.enabled && this.state.mainCameraPose) {
-                this.applyCameraPose(this.state.mainCameraPose, { silent: true, allowOrtho: false });
-                this.syncCameraFrustum();
-            }
-            this.updateFovInfo();
-            this.requestRender();
-            this.events.fire('cameraFrames.stateChanged', this.snapshot());
-            return;
-        }
-
-        const _stateVersion = docState.version ?? 0; // reserved for future migrations
-
-        const rb = docState.renderBox ?? DEFAULT_RENDERBOX();
-        const exportName = typeof docState.exportName === 'string' ? docState.exportName : 'cf-output';
-        const exportFormat = this.normalizeFormat(docState.exportFormat ?? 'psd');
-        const exportGridOverlay = !!docState.exportGridOverlay;
-        const exportModelLayers = !!docState.exportModelLayers;
-        const maskScope = normalizeMaskScope(docState.mask?.scope, DEFAULT_MASK.scope);
-        const frames = (docState.frames ?? []).map((f: FrameState) => ({
-            id: f.id,
-            pos: { ...f.pos },
-            scalePct: f.scalePct ?? 100,
-            scaleK: (f.scalePct ?? 100) / 100,
-            baseSize: f.baseSize ?? { ...DEFAULT_FRAME_BASE },
-            order: f.order ?? 0,
-            rotationDeg: (typeof f.rotationDeg === 'number' && isFinite(f.rotationDeg)) ? f.rotationDeg : 0,
-            anchor: f.anchor ? { ...f.anchor } : { x: f.pos?.x ?? 0.5, y: f.pos?.y ?? 0.5 }
-        }));
-
-        const baseSize = rb.baseSize ?? DEFAULT_RENDERBOX().baseSize;
-        const MIN_PCT = 100;
-        const MAX_DIM = 16000;
-        const rawScalePctX = rb.scalePct?.x ?? 100;
-        const rawScalePctY = rb.scalePct?.y ?? 100;
-        const maxScalePctX = baseSize.w > 0 ? Math.floor((MAX_DIM / baseSize.w) * 100) : MIN_PCT;
-        const maxScalePctY = baseSize.h > 0 ? Math.floor((MAX_DIM / baseSize.h) * 100) : MIN_PCT;
-        const clampedScalePctX = Math.min(maxScalePctX, Math.max(MIN_PCT, rawScalePctX));
-        const clampedScalePctY = Math.min(maxScalePctY, Math.max(MIN_PCT, rawScalePctY));
-        const scalePct = { x: clampedScalePctX, y: clampedScalePctY };
-        const scale = {
-            kx: rb.scale?.kx ?? scalePct.x / 100,
-            ky: rb.scale?.ky ?? scalePct.y / 100
-        };
-        const legacyUiScale = (typeof rb.uiScale === 'number' && isFinite(rb.uiScale)) ? rb.uiScale : undefined;
-        const viewZoomPct = this.normalizeViewZoomPct(rb.viewZoomPct ?? (legacyUiScale !== undefined ? legacyUiScale * 100 : undefined));
-        const lastViewport = rb.lastViewport ?? { ...this.viewport };
-        const logicalW = baseSize.w * scale.kx;
-        const logicalH = baseSize.h * scale.ky;
-        const autoFit = Math.min(
-            lastViewport.vw > 0 ? lastViewport.vw / logicalW : 1,
-            lastViewport.vh > 0 ? lastViewport.vh / logicalH : 1
-        ) || 1;
-        const legacyViewScale = (typeof rb.viewScale === 'number' && isFinite(rb.viewScale)) ? rb.viewScale : null;
-        const fitScale = (() => {
-            if (legacyViewScale) {
-                const divisor = legacyUiScale ?? (viewZoomPct / 100);
-                if (divisor > 0) {
-                    const fit = legacyViewScale / divisor;
-                    if (isFinite(fit) && fit > 0) {
-                        return fit;
-                    }
-                }
-            }
-            if (isFinite(rb.fitScale) && rb.fitScale > 0) {
-                return rb.fitScale;
-            }
-            return autoFit;
-        })();
-        const projection = (() => {
-            const raw = rb.projection ?? {};
-            let baseFov = this.scene.camera.fov;
-            if (typeof raw.baseFov === 'number' && isFinite(raw.baseFov)) {
-                baseFov = raw.baseFov;
-            } else if (typeof (raw as any).fovY === 'number' && isFinite((raw as any).fovY)) {
-                baseFov = (raw as any).fovY;
-            }
-            return {
-                type: raw.type ?? 'perspective',
-                baseFov,
-                orthoHalfHeight: raw.orthoHalfHeight
-            };
-        })();
-        const mainCameraPose = this.clonePoseSnapshot(docState.mainCameraPose);
-
-        this.state = {
-            enabled: !!docState.enabled,
-            renderBox: {
-                ...DEFAULT_RENDERBOX(),
-                baseSize,
-                scalePct,
-                scale,
-                anchor: rb.anchor ?? { ax: 0.5, ay: 0.5 },
-                center: rb.center ?? { cx: this.viewport.vw / 2, cy: this.viewport.vh / 2 },
-                fitScale,
-                viewZoomPct,
-                lastViewport,
-                projection
+        deserializeSerialize({
+            docState,
+            scene: this.scene,
+            viewport: this.viewport,
+            events: this.events,
+            normalizeFormat: format => this.normalizeFormat(format),
+            normalizeViewZoomPct: value => this.normalizeViewZoomPct(value),
+            clonePoseSnapshot: pose => this.clonePoseSnapshot(pose),
+            forceMainCameraPoseOrthoOff: pose => this.forceMainCameraPoseOrthoOff(pose),
+            captureCameraPose: () => this.captureCameraPose(),
+            normalizeMainRenderBoxProjection: baseFov => this.normalizeMainRenderBoxProjection(baseFov),
+            computeSafeNearClip: value => this.computeSafeNearClip(value),
+            setState: (value) => {
+                this.state = value;
             },
-            frames,
-            mask: {
-                ...DEFAULT_MASK,
-                ...(docState.mask ?? {}),
-                scope: maskScope
+            setSelectedId: (value) => {
+                this.selectedId = value;
             },
-            nearClip: (typeof docState.nearClip === 'number' && isFinite(docState.nearClip)) ? docState.nearClip : null,
-            exportName,
-            exportFormat,
-            exportGridOverlay,
-            exportModelLayers,
-            mainCameraPose
-        };
-
-        this.normalizeMainRenderBoxProjection(this.scene.camera.fov);
-        this.forceMainCameraPoseOrthoOff(this.state.mainCameraPose);
-        this.state.nearClip = this.computeSafeNearClip(this.state.nearClip);
-        if (!this.state.mainCameraPose) {
-            this.state.mainCameraPose = this.forceMainCameraPoseOrthoOff(this.clonePoseSnapshot(this.captureCameraPose()));
-        }
-
-        this.overlay.style.pointerEvents = 'none';
-        this.viewportPoseRuntime = null;
-        this.viewportPoseRuntimeWorldDistance = null;
-        this.hasEnteredViewportOnce = !this.state.enabled;
-
-        this.selectedId = (docState && Object.prototype.hasOwnProperty.call(docState, 'selectedId')) ?
-            docState.selectedId :
-            (frames[0]?.id ?? null);
-        this.state.frames.forEach((f) => {
-            f.selected = f.id === this.selectedId;
+            setViewportPoseRuntime: (value) => {
+                this.viewportPoseRuntime = value;
+            },
+            setViewportPoseRuntimeWorldDistance: (value) => {
+                this.viewportPoseRuntimeWorldDistance = value;
+            },
+            setHasEnteredViewportOnce: (value) => {
+                this.hasEnteredViewportOnce = value;
+            },
+            overlay: this.overlay,
+            rebuildBaseFrustum: () => this.rebuildBaseFrustum(),
+            applyCameraPose: (pose, options) => this.applyCameraPose(pose, options),
+            applyNearClipOverride: () => this.applyNearClipOverride(),
+            computeViewportMapping: updateFitScale => this.computeViewportMapping(updateFitScale),
+            syncCameraFrustum: () => this.syncCameraFrustum(),
+            scheduleNearClipGuard: () => this.scheduleNearClipGuard(),
+            requestRender: () => this.requestRender(),
+            fireStateChanged: () => this.events.fire('cameraFrames.stateChanged', this.snapshot()),
+            updatePointerFromLast: () => this.updatePointerFromLast(),
+            updateFovInfo: () => this.updateFovInfo()
         });
-
-        // 現在の viewport に合わせて rect を整合
-        this.computeViewportMapping(false);
-        this.rebuildBaseFrustum();
-        if (this.state.enabled) {
-            if (this.state.mainCameraPose) {
-                this.applyCameraPose(this.state.mainCameraPose, { silent: true, allowOrtho: false });
-            }
-            this.applyNearClipOverride();
-            this.syncCameraFrustum();
-        } else {
-            this.events.fire('camera.setNearOverride', null);
-            this.events.fire('camera.setCustomFrustum', null);
-        }
-
-        this.scheduleNearClipGuard();
-        this.requestRender();
-        this.events.fire('cameraFrames.stateChanged', this.snapshot());
-        this.updatePointerFromLast();
-        this.updateFovInfo();
     }
 }
 
