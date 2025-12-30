@@ -1,8 +1,20 @@
 import { Quat, Vec3 } from 'playcanvas';
+import type { Color } from 'playcanvas';
 
 import { DEG2RAD, HFOV_MAX, HFOV_MIN, RAD2DEG, W_35MM } from './camera-frames-constants';
+import { DEFAULT_NEAR_CLIP, MIN_NEAR_CLIP } from './clip-constants';
 import { clampFov } from './camera-frames-math';
-import type { CameraBasis, CameraPoseSnapshot, FovInfo, RenderBoxState } from './camera-frames-types';
+import type {
+    CameraBasis,
+    CameraFrustum,
+    CameraPoseSnapshot,
+    EffectiveFrustum,
+    FovInfo,
+    FrustumDebugCache,
+    RenderBoxState,
+    Viewport,
+    ViewportMapping
+} from './camera-frames-types';
 import type { Events } from './events';
 import type { Scene } from './scene';
 
@@ -15,6 +27,15 @@ type SetBaseFovRad = (value: number) => void;
 type SetFovInfo = (value: FovInfo) => void;
 type SetViewportFovRuntime = (value: number) => void;
 type ViewportLensRange = () => { min: number; max: number; };
+type HorizontalRadToAxisDeg = (horizontalRad: number) => number;
+type GetRuntimeFrustum = () => CameraFrustum | null;
+type SetRuntimeFrustum = (value: CameraFrustum | null) => void;
+type ComputeEffectiveFrustum = () => EffectiveFrustum | null;
+type ComputeViewportMapping = () => ViewportMapping;
+type IsSamePose = (a: CameraPoseSnapshot | null, b: CameraPoseSnapshot | null) => boolean;
+type IsSameFrustum = (a: EffectiveFrustum | null, b: EffectiveFrustum | null) => boolean;
+type SetFrustumDebugCache = (value: FrustumDebugCache) => void;
+type SetMainCameraPose = (pose: CameraPoseSnapshot | null) => void;
 
 type CalcFovInfoParams = {
     renderBox: RenderBoxState;
@@ -48,6 +69,77 @@ type SetViewportLensMmParams = {
     setViewportFovRuntime: SetViewportFovRuntime;
     events: Events;
     emitViewportLensChanged: EmitViewportLensChanged;
+};
+
+type RebuildBaseFrustumParams = {
+    renderBox: RenderBoxState;
+    scene: Scene;
+    events: Events;
+    stateEnabled: boolean;
+    lockFovAxis: 'horizontal' | 'vertical' | undefined;
+    baseAspect: number;
+    baseFovToHorizontalRad: BaseFovToHorizontalRad;
+    horizontalRadToAxisDeg: HorizontalRadToAxisDeg;
+    nearClip: number | null;
+    setBaseFovRad: SetBaseFovRad;
+    setRuntimeFrustum: SetRuntimeFrustum;
+};
+
+type ComputeEffectiveFrustumParams = {
+    getRuntimeFrustum: GetRuntimeFrustum;
+    rebuildBaseFrustum: () => void;
+    renderBox: RenderBoxState;
+    scene: Scene;
+};
+
+type SyncCameraFrustumParams = {
+    stateEnabled: boolean;
+    computeEffectiveFrustum: ComputeEffectiveFrustum;
+    scene: Scene;
+    events: Events;
+    viewport: Viewport;
+    computeViewportMapping: ComputeViewportMapping;
+};
+
+type BuildFrustumPointsParams = {
+    frustum: EffectiveFrustum | null;
+    basis: CameraBasis | null;
+    renderBox: RenderBoxState;
+    scene: Scene;
+    lockFovAxis: 'horizontal' | 'vertical' | undefined;
+    baseFovRad: number;
+    baseFovToHorizontalRad: BaseFovToHorizontalRad;
+    cropFactor: CropFactor;
+};
+
+type GetFrustumDebugPointsParams = {
+    mainCameraPose: CameraPoseSnapshot | null;
+    scene: Scene;
+    renderBox: RenderBoxState;
+    lockFovAxis: 'horizontal' | 'vertical' | undefined;
+    baseFovRad: number;
+    baseFovToHorizontalRad: BaseFovToHorizontalRad;
+    cropFactor: CropFactor;
+    frustumDebugCache: FrustumDebugCache;
+    frustumDebugCacheVersion: number;
+    computeEffectiveFrustum: ComputeEffectiveFrustum;
+    isSamePose: IsSamePose;
+    isSameFrustum: IsSameFrustum;
+    setFrustumDebugCache: SetFrustumDebugCache;
+};
+
+type DrawMainCameraFrustumParams = {
+    stateEnabled: boolean;
+    mainCameraPose: CameraPoseSnapshot | null;
+    setMainCameraPose: SetMainCameraPose;
+    scene: Scene;
+    ensureUiTargetAvailability: () => void;
+    captureCameraPose: () => CameraPoseSnapshot | null;
+    forceMainCameraPoseOrthoOff: (pose: CameraPoseSnapshot | null) => CameraPoseSnapshot | null;
+    getFrustumDebugPoints: () => Vec3[] | null;
+    mainCameraSelected: boolean;
+    frustumDebugColor: Color;
+    frustumSelectedColor: Color;
 };
 
 export const clonePoseSnapshot = (pose: CameraPoseSnapshot | null | undefined): CameraPoseSnapshot | null => {
@@ -298,4 +390,374 @@ export const getViewportLensState = ({
         min: range.min,
         max: range.max
     };
+};
+
+export const rebuildBaseFrustum = ({
+    renderBox,
+    scene,
+    events,
+    stateEnabled,
+    lockFovAxis,
+    baseAspect,
+    baseFovToHorizontalRad,
+    horizontalRadToAxisDeg,
+    nearClip,
+    setBaseFovRad,
+    setRuntimeFrustum
+}: RebuildBaseFrustumParams) => {
+    const rb = renderBox;
+    const projection = rb.projection ?? { type: 'perspective' as const };
+    const axis = lockFovAxis ?? 'horizontal';
+
+    // CAMERA FRAMES v6 keeps horizontal FOV as the base so scale/zoom do not affect the base frustum.
+    // The base frustum aspect follows the RenderBox base size to avoid pixel mapping distortion.
+    const rbW = rb.baseSize.w;
+    const rbH = rb.baseSize.h;
+    const aspect = (rbW > 0 && rbH > 0) ? rbW / rbH : baseAspect;
+
+    const baseFovDeg = projection.baseFov ?? scene.camera.fov ?? HFOV_MIN;
+    const baseFovRadAxis = baseFovDeg * DEG2RAD;
+    const horizontalRad = baseFovToHorizontalRad(baseFovRadAxis, axis, aspect);
+    const clampedHorizontalDeg = clampFov(horizontalRad * RAD2DEG);
+    const clampedHorizontalRad = clampedHorizontalDeg * DEG2RAD;
+    setBaseFovRad(clampedHorizontalRad);
+    const axisBaseFovDeg = horizontalRadToAxisDeg(clampedHorizontalRad);
+
+    const nearRaw = nearClip ?? events.invoke('camera.near') ?? scene.camera.near;
+    const farRaw = scene.camera.far;
+    const near = (typeof nearRaw === 'number' && isFinite(nearRaw)) ? Math.max(MIN_NEAR_CLIP, nearRaw) : DEFAULT_NEAR_CLIP;
+    const far = (typeof farRaw === 'number' && isFinite(farRaw)) ? farRaw : 1000;
+
+    let runtimeFrustum: CameraFrustum;
+    if (projection.type === 'ortho') {
+        const halfHeight = projection.orthoHalfHeight ?? 1;
+        runtimeFrustum = {
+            l0: -halfHeight * aspect,
+            r0: halfHeight * aspect,
+            b0: -halfHeight,
+            t0: halfHeight,
+            near,
+            far
+        };
+    } else {
+        const halfW = near * Math.tan(clampedHorizontalRad * 0.5);
+        const halfH = halfW / aspect;
+        runtimeFrustum = {
+            l0: -halfW,
+            r0: halfW,
+            b0: -halfH,
+            t0: halfH,
+            near,
+            far
+        };
+    }
+    setRuntimeFrustum(runtimeFrustum);
+
+    rb.projection = {
+        ...projection,
+        baseFov: axisBaseFovDeg
+    };
+    if (stateEnabled) {
+        events.fire('camera.setFov', rb.projection.baseFov);
+    }
+    return runtimeFrustum;
+};
+
+export const computeEffectiveFrustum = ({
+    getRuntimeFrustum,
+    rebuildBaseFrustum,
+    renderBox,
+    scene
+}: ComputeEffectiveFrustumParams) => {
+    let frustum = getRuntimeFrustum();
+    if (!frustum) {
+        rebuildBaseFrustum();
+        frustum = getRuntimeFrustum();
+    }
+    if (!frustum) {
+        return null;
+    }
+    const rb = renderBox;
+    const { kx, ky } = rb.scale;
+    const { ax, ay } = rb.anchor;
+
+    // Transform the base frustum by render-box scale/anchor (off-axis).
+    // View zoom (UI scale) is not applied here.
+
+    const width1 = (frustum.r0 - frustum.l0) * kx;
+    const height1 = (frustum.t0 - frustum.b0) * ky;
+    const left1 = frustum.l0 + ax * ((frustum.r0 - frustum.l0) - width1);
+    const right1 = left1 + width1;
+    // Y axis (bottom -> top): PlayCanvas is Y-up. UI ay=0 is "top", so flip with (1.0 - ay).
+    // ay=0 -> bottom=t0-h, top=t0; ay=1 -> bottom=b0 (bottom anchored).
+    const bottom1 = frustum.b0 + (1.0 - ay) * ((frustum.t0 - frustum.b0) - height1);
+    const top1 = bottom1 + height1;
+
+    const camFarRaw = scene.camera.far;
+    const far = (typeof camFarRaw === 'number' && isFinite(camFarRaw) && camFarRaw > frustum.near) ? camFarRaw : Math.max(frustum.near * 2, frustum.far);
+
+    // Frustum that matches the render box corners.
+    return {
+        left: left1,
+        right: right1,
+        bottom: bottom1,
+        top: top1,
+        near: frustum.near,
+        far
+    };
+};
+
+export const syncCameraFrustum = ({
+    stateEnabled,
+    computeEffectiveFrustum,
+    scene,
+    events,
+    viewport,
+    computeViewportMapping
+}: SyncCameraFrustumParams) => {
+    if (!stateEnabled) {
+        return null;
+    }
+
+    // Always recompute (including targetSize switches).
+    // Export sets targetSize first, then overwrites setCustomFrustum here.
+    // 1) Base render-box frustum (no zoom).
+    const rbFrustum = computeEffectiveFrustum();
+    if (!rbFrustum) {
+        events.fire('camera.setCustomFrustum', null);
+        return null;
+    }
+
+    // 2) Export mode check.
+    const targetSize = scene.camera.targetSize;
+    const isExporting = !!targetSize;
+
+    let finalFrustum = rbFrustum;
+
+    if (isExporting) {
+        // Export: use the render-box frustum as-is (output size matches render box).
+        finalFrustum = rbFrustum;
+    } else {
+        // Preview: extrapolate frustum to cover the full viewport.
+        // computeViewportMapping uses preview settings.
+        const mapping = computeViewportMapping();
+        const { rectPxRaw } = mapping;
+        const { vw, vh } = viewport;
+
+        // Render-box frustum size on the near plane.
+        const rbW = rbFrustum.right - rbFrustum.left;
+        const rbH = rbFrustum.top - rbFrustum.bottom;
+
+        // World size per pixel on the near plane. Guard against zero rectPxRaw.
+        const pxToWorldX = rectPxRaw.w > 0 ? rbW / rectPxRaw.w : 0;
+        const pxToWorldY = rectPxRaw.h > 0 ? rbH / rectPxRaw.h : 0;
+
+        if (pxToWorldX === 0 || pxToWorldY === 0) {
+            events.fire('camera.setCustomFrustum', null);
+            return null;
+        }
+
+        // Extrapolate to screen edges.
+        const leftScreen = rbFrustum.left - (rectPxRaw.x) * pxToWorldX;
+        const rightScreen = leftScreen + vw * pxToWorldX;
+
+        // Screen top (y=0): DOM Y=0 is top, PlayCanvas top is +Y.
+        const topScreen = rbFrustum.top + (rectPxRaw.y) * pxToWorldY;
+        const bottomScreen = topScreen - vh * pxToWorldY;
+
+        finalFrustum = {
+            ...rbFrustum,
+            left: leftScreen,
+            right: rightScreen,
+            bottom: bottomScreen,
+            top: topScreen
+        };
+    }
+
+    events.fire('camera.setCustomFrustum', finalFrustum);
+    return finalFrustum;
+};
+
+export const buildFrustumPoints = ({
+    frustum,
+    basis,
+    renderBox,
+    scene,
+    lockFovAxis,
+    baseFovRad,
+    baseFovToHorizontalRad,
+    cropFactor
+}: BuildFrustumPointsParams): Vec3[] | null => {
+    if (!basis) {
+        return null;
+    }
+
+    let left: number;
+    let right: number;
+    let top: number;
+    let bottom: number;
+    let near: number;
+
+    if (frustum) {
+        left = frustum.left;
+        right = frustum.right;
+        top = frustum.top;
+        bottom = frustum.bottom;
+        near = frustum.near;
+    } else {
+        // Fallback when frustum is unavailable (keep render-box aspect only).
+        const rb = renderBox;
+        const aspect = (rb.baseSize.w * rb.scale.kx) / (rb.baseSize.h * rb.scale.ky || 1);
+        const baseFovDeg = rb.projection?.baseFov ?? scene.camera?.fov ?? 60;
+        const baseFovRadAxis = baseFovDeg * DEG2RAD;
+        const horizontalRad = baseFovToHorizontalRad(baseFovRadAxis, lockFovAxis ?? 'horizontal', aspect);
+        const halfW = Math.tan(horizontalRad * 0.5);
+        const halfH = halfW / aspect;
+        left = -halfW;
+        right = halfW;
+        bottom = -halfH;
+        top = halfH;
+        near = 1;
+    }
+
+    const nearSafe = Math.max(near, 1e-4);
+
+    // Visualization distance: lens mm -> meters * 12, clamped to 0.2m-2m.
+    const hfovRadForMm = (() => {
+        if (frustum) {
+            const width = right - left;
+            return 2 * Math.atan(width / (2 * nearSafe));
+        }
+        return baseFovRad || ((renderBox.projection?.baseFov ?? 60) * DEG2RAD);
+    })();
+    const crop = cropFactor(renderBox);
+    const eqMm = eqMmForFov(hfovRadForMm * RAD2DEG, crop);
+    const distanceRaw = (eqMm / 1000) * 12;
+    const baseDistance = Math.min(2, Math.max(0.2, (isFinite(distanceRaw) && distanceRaw > 0) ? distanceRaw : 0.5));
+
+    const forward = basis.forward.clone();
+    if (forward.lengthSq() > 0) {
+        forward.normalize();
+    }
+    const camRight = basis.right.clone();
+    const camUp = basis.up.clone();
+    const scale = baseDistance / nearSafe;
+    const scaledLeft = left * scale;
+    const scaledRight = right * scale;
+    const scaledTop = top * scale;
+    const scaledBottom = bottom * scale;
+
+    const apex = basis.position.clone();
+    const baseCenter = apex.clone().add(forward.mulScalar(baseDistance));
+    const makeBaseCorner = (x: number, y: number) => {
+        const p = baseCenter.clone();
+        p.add(camRight.clone().mulScalar(x));
+        p.add(camUp.clone().mulScalar(y));
+        return p;
+    };
+    const baseTl = makeBaseCorner(scaledLeft, scaledTop);
+    const baseTr = makeBaseCorner(scaledRight, scaledTop);
+    const baseBr = makeBaseCorner(scaledRight, scaledBottom);
+    const baseBl = makeBaseCorner(scaledLeft, scaledBottom);
+    // 0: apex, 1-4: base (TL, TR, BR, BL)
+    return [apex, baseTl, baseTr, baseBr, baseBl];
+};
+
+export const getFrustumDebugPoints = ({
+    mainCameraPose,
+    scene,
+    renderBox,
+    lockFovAxis,
+    baseFovRad,
+    baseFovToHorizontalRad,
+    cropFactor,
+    frustumDebugCache,
+    frustumDebugCacheVersion,
+    computeEffectiveFrustum,
+    isSamePose,
+    isSameFrustum,
+    setFrustumDebugCache
+}: GetFrustumDebugPointsParams) => {
+    const pose = clonePoseSnapshot(mainCameraPose);
+    if (!pose) {
+        return null;
+    }
+    const frustum = computeEffectiveFrustum();
+    const cache = frustumDebugCache;
+    const poseChanged = !cache.pose || !isSamePose(cache.pose, pose) || cache.version !== frustumDebugCacheVersion;
+    const frustumChanged = !cache.frustum || !frustum || !isSameFrustum(cache.frustum, frustum);
+    if (poseChanged || frustumChanged || !cache.points) {
+        const basis = buildCameraBasis(scene, pose);
+        if (!basis) {
+            return null;
+        }
+        const points = buildFrustumPoints({
+            frustum,
+            basis,
+            renderBox,
+            scene,
+            lockFovAxis,
+            baseFovRad,
+            baseFovToHorizontalRad,
+            cropFactor
+        });
+        if (!points) {
+            return null;
+        }
+        setFrustumDebugCache({
+            pose,
+            frustum: frustum ? { ...frustum } : null,
+            points,
+            version: frustumDebugCacheVersion
+        });
+        return points;
+    }
+    return cache.points;
+};
+
+export const drawMainCameraFrustum = ({
+    stateEnabled,
+    mainCameraPose,
+    setMainCameraPose,
+    scene,
+    ensureUiTargetAvailability,
+    captureCameraPose,
+    forceMainCameraPoseOrthoOff,
+    getFrustumDebugPoints,
+    mainCameraSelected,
+    frustumDebugColor,
+    frustumSelectedColor
+}: DrawMainCameraFrustumParams) => {
+    ensureUiTargetAvailability();
+    if (stateEnabled) {
+        return;
+    }
+    if (!mainCameraPose) {
+        // If mainCameraPose is missing (e.g. empty scene), capture the current camera pose.
+        const fallback = captureCameraPose();
+        if (fallback) {
+            setMainCameraPose(forceMainCameraPoseOrthoOff(fallback));
+        } else {
+            return;
+        }
+    }
+    if (scene.camera.targetSize) {
+        return;
+    }
+    const points = getFrustumDebugPoints();
+    if (!points || points.length < 5) {
+        return;
+    }
+    const color = mainCameraSelected ? frustumSelectedColor : frustumDebugColor;
+    const draw = (a: number, b: number) => scene.app.drawLine(points[a], points[b], color, true, scene.debugLayer);
+    // base rectangle
+    draw(1, 2);
+    draw(2, 3);
+    draw(3, 4);
+    draw(4, 1);
+    // sides
+    draw(0, 1);
+    draw(0, 2);
+    draw(0, 3);
+    draw(0, 4);
 };

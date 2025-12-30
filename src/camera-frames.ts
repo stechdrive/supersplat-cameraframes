@@ -16,17 +16,23 @@ import {
 } from './camera-frames-constants';
 import {
     buildCameraBasis as buildCameraBasisCamera,
+    buildFrustumPoints as buildFrustumPointsCamera,
     calcFovInfo as calcFovInfoCamera,
     calcForwardVec as calcForwardVecCamera,
     captureCameraPose as captureCameraPoseCamera,
     clonePoseSnapshot as clonePoseSnapshotCamera,
+    computeEffectiveFrustum as computeEffectiveFrustumCamera,
+    drawMainCameraFrustum as drawMainCameraFrustumCamera,
     eqMmForFov as eqMmForFovCamera,
     eqMmToHfov as eqMmToHfovCamera,
+    getFrustumDebugPoints as getFrustumDebugPointsCamera,
     getViewportLensState as getViewportLensStateCamera,
     getPoseWorldDistance as getPoseWorldDistanceCamera,
     normalizeViewportPose as normalizeViewportPoseCamera,
     poseToTransform as poseToTransformCamera,
+    rebuildBaseFrustum as rebuildBaseFrustumCamera,
     setViewportLensMm as setViewportLensMmCamera,
+    syncCameraFrustum as syncCameraFrustumCamera,
     updateFovInfo as updateFovInfoCamera,
     worldDistanceToNormalized as worldDistanceToNormalizedCamera
 } from './camera-frames-camera';
@@ -674,79 +680,16 @@ export class CameraFramesController {
     }
 
     private buildFrustumPoints(frustum: EffectiveFrustum | null, basis: CameraBasis): Vec3[] | null {
-        if (!basis) {
-            return null;
-        }
-
-        let left: number;
-        let right: number;
-        let top: number;
-        let bottom: number;
-        let near: number;
-
-        if (frustum) {
-            left = frustum.left;
-            right = frustum.right;
-            top = frustum.top;
-            bottom = frustum.bottom;
-            near = frustum.near;
-        } else {
-            // フラスタム情報が取れない場合のフォールバック（レンダーボックスのアスペクトだけ維持）
-            const rb = this.state.renderBox;
-            const aspect = (rb.baseSize.w * rb.scale.kx) / (rb.baseSize.h * rb.scale.ky || 1);
-            const baseFovDeg = rb.projection?.baseFov ?? this.scene.camera?.fov ?? 60;
-            const baseFovRad = baseFovDeg * DEG2RAD;
-            const horizontalRad = this.baseFovToHorizontalRad(baseFovRad, this.lockFovAxis ?? 'horizontal', aspect);
-            const halfW = Math.tan(horizontalRad * 0.5);
-            const halfH = halfW / aspect;
-            left = -halfW;
-            right = halfW;
-            bottom = -halfH;
-            top = halfH;
-            near = 1;
-        }
-
-        const nearSafe = Math.max(near, 1e-4);
-
-        // 視覚化用距離: 「レンズmm -> メートル換算 * 12倍」で計算し、0.2m〜2mにクランプ
-        const hfovRadForMm = (() => {
-            if (frustum) {
-                const width = right - left;
-                return 2 * Math.atan(width / (2 * nearSafe));
-            }
-            return this.baseFovRad || ((this.state.renderBox.projection?.baseFov ?? 60) * DEG2RAD);
-        })();
-        const crop = this.cropFactor(this.state.renderBox);
-        const eqMm = this.eqMmForFov(hfovRadForMm * RAD2DEG, crop);
-        const distanceRaw = (eqMm / 1000) * 12;
-        const baseDistance = Math.min(2, Math.max(0.2, (isFinite(distanceRaw) && distanceRaw > 0) ? distanceRaw : 0.5));
-
-        const forward = basis.forward.clone();
-        if (forward.lengthSq() > 0) {
-            forward.normalize();
-        }
-        const camRight = basis.right.clone();
-        const camUp = basis.up.clone();
-        const scale = baseDistance / nearSafe;
-        const scaledLeft = left * scale;
-        const scaledRight = right * scale;
-        const scaledTop = top * scale;
-        const scaledBottom = bottom * scale;
-
-        const apex = basis.position.clone();
-        const baseCenter = apex.clone().add(forward.mulScalar(baseDistance));
-        const makeBaseCorner = (x: number, y: number) => {
-            const p = baseCenter.clone();
-            p.add(camRight.clone().mulScalar(x));
-            p.add(camUp.clone().mulScalar(y));
-            return p;
-        };
-        const baseTl = makeBaseCorner(scaledLeft, scaledTop);
-        const baseTr = makeBaseCorner(scaledRight, scaledTop);
-        const baseBr = makeBaseCorner(scaledRight, scaledBottom);
-        const baseBl = makeBaseCorner(scaledLeft, scaledBottom);
-        // 0: apex, 1-4: base (TL, TR, BR, BL)
-        return [apex, baseTl, baseTr, baseBr, baseBl];
+        return buildFrustumPointsCamera({
+            frustum,
+            basis,
+            renderBox: this.state.renderBox,
+            scene: this.scene,
+            lockFovAxis: this.lockFovAxis,
+            baseFovRad: this.baseFovRad,
+            baseFovToHorizontalRad: (baseFovRad, axis, aspect) => this.baseFovToHorizontalRad(baseFovRad, axis, aspect),
+            cropFactor: (renderBox) => this.cropFactor(renderBox)
+        });
     }
 
     private isSamePose(a: CameraPoseSnapshot | null, b: CameraPoseSnapshot | null) {
@@ -784,66 +727,41 @@ export class CameraFramesController {
     }
 
     private getFrustumDebugPoints() {
-        const pose = this.clonePoseSnapshot(this.state.mainCameraPose);
-        if (!pose) {
-            return null;
-        }
-        const frustum = this.computeEffectiveFrustum();
-        const cache = this.frustumDebugCache;
-        const poseChanged = !cache.pose || !this.isSamePose(cache.pose, pose) || cache.version !== FRUSTUM_DEBUG_CACHE_VERSION;
-        const frustumChanged = !cache.frustum || !frustum || !this.isSameFrustum(cache.frustum, frustum);
-        if (poseChanged || frustumChanged || !cache.points) {
-            const basis = this.buildCameraBasis(pose);
-            if (!basis) {
-                return null;
+        return getFrustumDebugPointsCamera({
+            mainCameraPose: this.state.mainCameraPose,
+            scene: this.scene,
+            renderBox: this.state.renderBox,
+            lockFovAxis: this.lockFovAxis,
+            baseFovRad: this.baseFovRad,
+            baseFovToHorizontalRad: (baseFovRad, axis, aspect) => this.baseFovToHorizontalRad(baseFovRad, axis, aspect),
+            cropFactor: (renderBox) => this.cropFactor(renderBox),
+            frustumDebugCache: this.frustumDebugCache,
+            frustumDebugCacheVersion: FRUSTUM_DEBUG_CACHE_VERSION,
+            computeEffectiveFrustum: () => this.computeEffectiveFrustum(),
+            isSamePose: (a, b) => this.isSamePose(a, b),
+            isSameFrustum: (a, b) => this.isSameFrustum(a, b),
+            setFrustumDebugCache: (value) => {
+                this.frustumDebugCache = value;
             }
-            const points = this.buildFrustumPoints(frustum, basis);
-            if (!points) {
-                return null;
-            }
-            this.frustumDebugCache = {
-                pose,
-                frustum: frustum ? { ...frustum } : null,
-                points,
-                version: FRUSTUM_DEBUG_CACHE_VERSION
-            };
-        }
-        return this.frustumDebugCache.points;
+        });
     }
 
     private drawMainCameraFrustum() {
-        this.ensureUiTargetAvailability();
-        if (this.state.enabled) {
-            return;
-        }
-        if (!this.state.mainCameraPose) {
-            // 空シーンなどで mainCameraPose が消えている場合は現在のカメラを初期値として確保する
-            const fallback = this.captureCameraPose();
-            if (fallback) {
-                this.state.mainCameraPose = this.forceMainCameraPoseOrthoOff(fallback);
-            } else {
-                return;
-            }
-        }
-        if (this.scene.camera.targetSize) {
-            return;
-        }
-        const points = this.getFrustumDebugPoints();
-        if (!points || points.length < 5) {
-            return;
-        }
-        const color = this.mainCameraSelected ? FRUSTUM_SELECTED_COLOR : FRUSTUM_DEBUG_COLOR;
-        const draw = (a: number, b: number) => this.scene.app.drawLine(points[a], points[b], color, true, this.scene.debugLayer);
-        // base rectangle
-        draw(1, 2);
-        draw(2, 3);
-        draw(3, 4);
-        draw(4, 1);
-        // sides
-        draw(0, 1);
-        draw(0, 2);
-        draw(0, 3);
-        draw(0, 4);
+        drawMainCameraFrustumCamera({
+            stateEnabled: this.state.enabled,
+            mainCameraPose: this.state.mainCameraPose,
+            setMainCameraPose: (pose) => {
+                this.state.mainCameraPose = pose;
+            },
+            scene: this.scene,
+            ensureUiTargetAvailability: () => this.ensureUiTargetAvailability(),
+            captureCameraPose: () => this.captureCameraPose(),
+            forceMainCameraPoseOrthoOff: (pose) => this.forceMainCameraPoseOrthoOff(pose),
+            getFrustumDebugPoints: () => this.getFrustumDebugPoints(),
+            mainCameraSelected: this.mainCameraSelected,
+            frustumDebugColor: FRUSTUM_DEBUG_COLOR,
+            frustumSelectedColor: FRUSTUM_SELECTED_COLOR
+        });
     }
 
     private projectFrustumToScreen(points: Vec3[]) {
@@ -1981,173 +1899,43 @@ export class CameraFramesController {
     }
 
     private rebuildBaseFrustum() {
-        const rb = this.state.renderBox;
-        const projection = rb.projection ?? { type: 'perspective' as const };
-        const axis = this.lockFovAxis ?? 'horizontal';
-
-        // CAMERA FRAMES v6 では水平FOVを基準に保持し、縦横スケールやズームに左右されない土台を再生成する。
-        // 修正: 構図基準(Base Frustum)のアスペクト比は RenderBox の Base Size に合わせる
-        // これにより、RenderBoxがA4ならA4のフラスタム、16:9なら16:9のフラスタムが生成され、
-        // ピクセルマッピング時の縦横比歪みを防止する。
-        const rbW = rb.baseSize.w;
-        const rbH = rb.baseSize.h;
-        const aspect = (rbW > 0 && rbH > 0) ? rbW / rbH : this.baseAspect();
-
-        const baseFovDeg = projection.baseFov ?? this.scene.camera.fov ?? HFOV_MIN;
-        const baseFovRadAxis = baseFovDeg * DEG2RAD;
-        const horizontalRad = this.baseFovToHorizontalRad(baseFovRadAxis, axis, aspect);
-        const clampedHorizontalDeg = clampFov(horizontalRad * RAD2DEG);
-        const clampedHorizontalRad = clampedHorizontalDeg * DEG2RAD;
-        this.baseFovRad = clampedHorizontalRad;
-        const axisBaseFovDeg = this.horizontalRadToAxisDeg(clampedHorizontalRad);
-
-        const nearRaw = this.state.nearClip ?? this.events.invoke('camera.near') ?? this.scene.camera.near;
-        const farRaw = this.scene.camera.far;
-        const near = (typeof nearRaw === 'number' && isFinite(nearRaw)) ? Math.max(MIN_NEAR_CLIP, nearRaw) : DEFAULT_NEAR_CLIP;
-        const far = (typeof farRaw === 'number' && isFinite(farRaw)) ? farRaw : 1000;
-
-        if (projection.type === 'ortho') {
-            const halfHeight = projection.orthoHalfHeight ?? 1;
-            this.runtimeFrustum = {
-                l0: -halfHeight * aspect,
-                r0: halfHeight * aspect,
-                b0: -halfHeight,
-                t0: halfHeight,
-                near,
-                far
-            };
-        } else {
-            const halfW = near * Math.tan(clampedHorizontalRad * 0.5);
-            const halfH = halfW / aspect;
-            this.runtimeFrustum = {
-                l0: -halfW,
-                r0: halfW,
-                b0: -halfH,
-                t0: halfH,
-                near,
-                far
-            };
-        }
-
-        rb.projection = {
-            ...projection,
-            baseFov: axisBaseFovDeg
-        };
-        if (this.state.enabled) {
-            this.events.fire('camera.setFov', rb.projection.baseFov);
-        }
+        rebuildBaseFrustumCamera({
+            renderBox: this.state.renderBox,
+            scene: this.scene,
+            events: this.events,
+            stateEnabled: this.state.enabled,
+            lockFovAxis: this.lockFovAxis,
+            baseAspect: this.baseAspect(),
+            baseFovToHorizontalRad: (baseFovRad, axis, aspect) => this.baseFovToHorizontalRad(baseFovRad, axis, aspect),
+            horizontalRadToAxisDeg: (horizontalRad) => this.horizontalRadToAxisDeg(horizontalRad),
+            nearClip: this.state.nearClip,
+            setBaseFovRad: (value) => {
+                this.baseFovRad = value;
+            },
+            setRuntimeFrustum: (value) => {
+                this.runtimeFrustum = value;
+            }
+        });
     }
 
     private computeEffectiveFrustum() {
-        if (!this.runtimeFrustum) {
-            this.rebuildBaseFrustum();
-        }
-        const frustum = this.runtimeFrustum;
-        if (!frustum) {
-            return null;
-        }
-        const rb = this.state.renderBox;
-        const { kx, ky } = rb.scale;
-        const { ax, ay } = rb.anchor;
-
-        // BaseFrustum (構図基準) を レンダーボックスのスケールとアンカーで変形 (Off-axis)
-        // ここでは View Zoom (UI倍率) は適用せず、純粋な「レンダーボックス領域」のフラスタムを計算する。
-
-        const width1 = (frustum.r0 - frustum.l0) * kx;
-        const height1 = (frustum.t0 - frustum.b0) * ky;
-        const left1 = frustum.l0 + ax * ((frustum.r0 - frustum.l0) - width1);
-        const right1 = left1 + width1;
-        // Y軸 (Bottom -> Top): PlayCanvasはY-up。ay=0はUI上でTop(上)を指すため、
-        // フラスタム(Y-up)計算においては (1.0 - ay) として反転させる必要がある。
-        // ay=0(上) -> 係数1.0 -> bottom = t0 - h -> top = t0 (上辺固定: 正解)
-        // ay=1(下) -> 係数0.0 -> bottom = b0 -> 下辺固定 (正解)
-        const bottom1 = frustum.b0 + (1.0 - ay) * ((frustum.t0 - frustum.b0) - height1);
-        const top1 = bottom1 + height1;
-
-        const camFarRaw = this.scene.camera.far;
-        const far = (typeof camFarRaw === 'number' && isFinite(camFarRaw) && camFarRaw > frustum.near) ? camFarRaw : Math.max(frustum.near * 2, frustum.far);
-
-        // これは「レンダーボックスの四隅」に対応するフラスタム
-        return {
-            left: left1,
-            right: right1,
-            bottom: bottom1,
-            top: top1,
-            near: frustum.near,
-            far
-        };
+        return computeEffectiveFrustumCamera({
+            getRuntimeFrustum: () => this.runtimeFrustum,
+            rebuildBaseFrustum: () => this.rebuildBaseFrustum(),
+            renderBox: this.state.renderBox,
+            scene: this.scene
+        });
     }
 
     private syncCameraFrustum() {
-        if (!this.state.enabled) {
-            return null;
-        }
-
-        // targetSize 切替も含めて毎回再計算し、既存のフラスタムに依存しない。
-        // 書き出し時は先に targetSize をセットし、ここで setCustomFrustum を上書きする順序を維持する。
-        // 1. 基本となるレンダーボックスのフラスタム (Zoomなし)
-        const rbFrustum = this.computeEffectiveFrustum();
-        if (!rbFrustum) {
-            this.events.fire('camera.setCustomFrustum', null);
-            return null;
-        }
-
-        // 2. 書き出しモード判定
-        const targetSize = this.scene.camera.targetSize;
-        const isExporting = !!targetSize;
-
-        let finalFrustum = rbFrustum;
-
-        if (isExporting) {
-            // 書き出し時: レンダーボックスのフラスタムをそのまま使う
-            // (出力画像サイズ == レンダーボックスサイズ なので一致する)
-            finalFrustum = rbFrustum;
-        } else {
-            // プレビュー時: ビューポート全体をカバーするようにフラスタムを拡張 (Extrapolate)
-
-            // 現在の画面上のレンダーボックス位置 (rectPxRaw) を取得
-            // computeViewportMapping はプレビュー設定で計算される
-            const mapping = this.computeViewportMapping(false);
-            const { rectPxRaw } = mapping;
-            const { vw, vh } = this.viewport;
-
-            // レンダーボックスのフラスタム幅・高さ (Near平面上)
-            const rbW = rbFrustum.right - rbFrustum.left;
-            const rbH = rbFrustum.top - rbFrustum.bottom;
-
-            // 1ピクセルあたりのワールド幅 (Near平面上)
-            // rectPxRaw.w が極端に小さい(0)場合の保護を入れる
-            const pxToWorldX = rectPxRaw.w > 0 ? rbW / rectPxRaw.w : 0;
-            const pxToWorldY = rectPxRaw.h > 0 ? rbH / rectPxRaw.h : 0;
-
-            if (pxToWorldX === 0 || pxToWorldY === 0) {
-                this.events.fire('camera.setCustomFrustum', null);
-                return null;
-            }
-
-            // フラスタム拡張 (Extrapolation)
-            // 画面左端 (x=0) に対応する left
-            // left_screen = rb_left - (レンダーボックス左端までの距離) * スケール
-            const leftScreen = rbFrustum.left - (rectPxRaw.x) * pxToWorldX;
-            const rightScreen = leftScreen + vw * pxToWorldX;
-
-            // 画面上端 (y=0) に対応する top
-            // 注意: DOMのY=0は上、PlayCanvasのProjectionのTopは上 (+Y)
-            // rectPxRaw.y は「上からのピクセル距離」
-            const topScreen = rbFrustum.top + (rectPxRaw.y) * pxToWorldY;
-            const bottomScreen = topScreen - vh * pxToWorldY;
-
-            finalFrustum = {
-                ...rbFrustum,
-                left: leftScreen,
-                right: rightScreen,
-                bottom: bottomScreen,
-                top: topScreen
-            };
-        }
-
-        this.events.fire('camera.setCustomFrustum', finalFrustum);
-        return finalFrustum;
+        return syncCameraFrustumCamera({
+            stateEnabled: this.state.enabled,
+            computeEffectiveFrustum: () => this.computeEffectiveFrustum(),
+            scene: this.scene,
+            events: this.events,
+            viewport: this.viewport,
+            computeViewportMapping: () => this.computeViewportMapping(false)
+        });
     }
 
     private eqMmForFov(hfovDeg: number, crop: number) {
