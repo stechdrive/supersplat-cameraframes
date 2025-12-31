@@ -39,6 +39,8 @@ class Splat extends Element {
     splatData: GSplatData;
     numSplats = 0;
     numDeleted = 0;
+    numHidden = 0;
+    numVisible = 0;
     numLocked = 0;
     numSelected = 0;
     entity: Entity;
@@ -147,6 +149,8 @@ class Splat extends Element {
             this.numLocked = result.numLocked;
             this.numSelected = result.numSelected;
             this.numDeleted = result.numDeleted;
+            this.numHidden = result.numHidden;
+            this.numVisible = result.numVisible;
         }
 
         this.makeSelectionBoundDirty();

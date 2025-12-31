@@ -238,16 +238,26 @@ class SplatRenderSystem {
         let numSelected = 0;
         let numLocked = 0;
         let numDeleted = 0;
+        let numHidden = 0;
         for (let i = 0; i < state.length; ++i) {
             const s = state[i];
-            if (s & State.deleted) {
+            const isDeleted = (s & State.deleted) !== 0;
+            if (isDeleted) {
                 numDeleted++;
-            } else if (s & State.locked) {
+                continue;
+            }
+            if (s & State.hidden) {
+                numHidden++;
+            }
+            if (s & State.locked) {
                 numLocked++;
-            } else if (s & State.selected) {
+            }
+            if ((s & State.selected) !== 0 && (s & (State.locked | State.hidden)) === 0) {
                 numSelected++;
             }
         }
+        const numSplats = state.length - numDeleted;
+        const numVisible = numSplats - numHidden;
 
         this.rebuildSorterMapping();
 
@@ -262,7 +272,9 @@ class SplatRenderSystem {
             numSelected,
             numLocked,
             numDeleted,
-            numSplats: state.length - numDeleted
+            numHidden,
+            numVisible,
+            numSplats
         };
     }
 
@@ -421,8 +433,9 @@ class SplatRenderSystem {
         const state = this.globalState;
         const total = this.globalIdToSplat.length;
         let active = 0;
+        const skipMask = State.deleted | State.hidden;
         for (let i = 0; i < total; i++) {
-            if ((state[i] & State.deleted) === 0) {
+            if ((state[i] & skipMask) === 0) {
                 active++;
             }
         }
@@ -431,7 +444,7 @@ class SplatRenderSystem {
             mapping = new Uint32Array(active);
             let idx = 0;
             for (let i = 0; i < total; i++) {
-                if ((state[i] & State.deleted) === 0) {
+                if ((state[i] & skipMask) === 0) {
                     mapping[idx++] = i;
                 }
             }
