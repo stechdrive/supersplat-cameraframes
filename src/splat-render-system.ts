@@ -155,7 +155,9 @@ class SplatRenderSystem {
     }
 
     scheduleRebuildForVisibility(immediate = false) {
-        if (this.sources.every(splat => splat.visible)) {
+        const allVisible = this.sources.every(splat => splat.visible);
+        const allActive = this.sources.every(splat => this.isSplatActive(splat));
+        if (allVisible && allActive && !immediate) {
             this.visibilityRebuildPending = false;
             this.visibilityRebuildImmediate = false;
             this.clearVisibilityRebuildTimer();
