@@ -11,6 +11,8 @@ import { TransformHandler } from './transform-handler';
 const mat = new Mat4();
 const mat2 = new Mat4();
 const transform = new Transform();
+const blockedMask = State.locked | State.deleted | State.hidden;
+const selectedActive = (state: number) => (state & State.selected) !== 0 && (state & blockedMask) === 0;
 
 class SplatsTransformHandler implements TransformHandler {
     events: Events;
@@ -109,7 +111,7 @@ class SplatsTransformHandler implements TransformHandler {
         paletteMap.clear();
 
         for (let i = 0; i < state.length; ++i) {
-            if (state[i] === State.selected) {
+            if (selectedActive(state[i])) {
                 const oldIdx = indices[i];
                 let newIdx;
                 if (!paletteMap.has(oldIdx)) {
@@ -124,13 +126,15 @@ class SplatsTransformHandler implements TransformHandler {
         }
 
         // initialize transforms
+        transformPalette.beginUpdate();
         this.paletteMap.forEach((newIdx, oldIdx) => {
             transformPalette.getTransform(oldIdx, mat);
             transformPalette.setTransform(newIdx, mat);
         });
+        transformPalette.endUpdate();
 
         splat.scene.renderSystem.updateTransformIndices(splat, indices);
-        splat.scene.renderSystem.updateTransform(splat);
+        splat.scene.renderSystem.updateTransform(splat, true);
 
         splat.selectionAlpha = 0;
         splat.scene.outline.enabled = false;
@@ -147,11 +151,13 @@ class SplatsTransformHandler implements TransformHandler {
 
         // update the transform palette
         const { transformPalette } = this.splat;
+        transformPalette.beginUpdate();
         this.paletteMap.forEach((newIdx, oldIdx) => {
             transformPalette.getTransform(oldIdx, mat2);
             mat2.mul2(mat, mat2);
             transformPalette.setTransform(newIdx, mat2);
         });
+        transformPalette.endUpdate();
 
         this.splat.scene.renderSystem.updateTransform(this.splat, true);
         this.splat.makeSelectionBoundDirty();
