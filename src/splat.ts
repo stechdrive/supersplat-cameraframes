@@ -341,7 +341,7 @@ class Splat extends Element {
         return this.worldBound.center;
     }
 
-    move(position?: Vec3, rotation?: Quat, scale?: Vec3) {
+    move(position?: Vec3, rotation?: Quat, scale?: Vec3, skipCenterUpdate = false) {
         const entity = this.entity;
         if (position) {
             entity.setLocalPosition(position);
@@ -354,7 +354,7 @@ class Splat extends Element {
         }
 
         this.makeSelectionBoundDirty();
-        this.scene.renderSystem.updateTransform(this);
+        this.scene.renderSystem.updateTransform(this, skipCenterUpdate);
         this.scene.events.fire('splat.moved', this);
     }
 
