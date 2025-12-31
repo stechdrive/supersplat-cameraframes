@@ -33,6 +33,11 @@ const buildIndex = (total: number, pred: (i: number) => boolean) => {
     return result;
 };
 
+const hiddenMask = (State as { hidden?: number }).hidden ?? 0;
+const blockedMask = State.locked | State.deleted | hiddenMask;
+const selectable = (state: number) => (state & blockedMask) === 0;
+const selectedActive = (state: number) => (state & State.selected) !== 0 && (state & blockedMask) === 0;
+
 type filterFunc = (state: number, index: number) => boolean;
 type doFunc = (state: number) => number;
 type undoFunc = (state: number) => number;
@@ -87,7 +92,7 @@ class SelectAllOp extends StateOp {
 
     constructor(splat: Splat) {
         super(splat,
-            state => state === 0,
+            state => selectable(state) && (state & State.selected) === 0,
             state => state | State.selected,
             state => state & (~State.selected)
         );
@@ -99,7 +104,7 @@ class SelectNoneOp extends StateOp {
 
     constructor(splat: Splat) {
         super(splat,
-            state => state === State.selected,
+            state => selectedActive(state),
             state => state & (~State.selected),
             state => state | State.selected
         );
@@ -111,7 +116,7 @@ class SelectInvertOp extends StateOp {
 
     constructor(splat: Splat) {
         super(splat,
-            state => (state & (State.locked | State.deleted)) === 0,
+            state => selectable(state),
             state => state ^ State.selected,
             state => state ^ State.selected
         );
@@ -123,9 +128,9 @@ class SelectOp extends StateOp {
 
     constructor(splat: Splat, op: 'add'|'remove'|'set', filter: (i: number) => boolean) {
         const filterFunc = {
-            add: (state: number, index: number) => (state === 0) && filter(index),
-            remove: (state: number, index: number) => (state === State.selected) && filter(index),
-            set: (state: number, index: number) => (state === State.selected) !== filter(index)
+            add: (state: number, index: number) => selectable(state) && (state & State.selected) === 0 && filter(index),
+            remove: (state: number, index: number) => selectedActive(state) && filter(index),
+            set: (state: number, index: number) => selectable(state) && (selectedActive(state) !== filter(index))
         };
 
         const doIt = {
@@ -149,7 +154,7 @@ class HideSelectionOp extends StateOp {
 
     constructor(splat: Splat) {
         super(splat,
-            state => state === State.selected,
+            state => selectedActive(state),
             state => state | State.locked,
             state => state & (~State.locked),
             State.locked
@@ -162,7 +167,7 @@ class UnhideAllOp extends StateOp {
 
     constructor(splat: Splat) {
         super(splat,
-            state => (state & (State.locked | State.deleted)) === State.locked,
+            state => (state & State.locked) !== 0 && (state & State.deleted) === 0,
             state => state & (~State.locked),
             state => state | State.locked,
             State.locked
@@ -175,7 +180,7 @@ class DeleteSelectionOp extends StateOp {
 
     constructor(splat: Splat) {
         super(splat,
-            state => state === State.selected,
+            state => selectedActive(state),
             state => state | State.deleted,
             state => state & (~State.deleted),
             State.deleted
@@ -247,7 +252,7 @@ class SplatsTransformOp {
 
         // update splat transform palette indices
         for (let i = 0; i < state.length; ++i) {
-            if (state[i] === State.selected) {
+            if (selectedActive(state[i])) {
                 indices[i] = paletteMap.get(indices[i]);
             }
         }
@@ -256,11 +261,13 @@ class SplatsTransformOp {
 
         // update transform palette
         const { transformPalette } = splat;
+        transformPalette.beginUpdate();
         this.paletteMap.forEach((newIdx, oldIdx) => {
             transformPalette.getTransform(oldIdx, mat);
             mat.mul2(transform, mat);
             transformPalette.setTransform(newIdx, mat);
         });
+        transformPalette.endUpdate();
 
         splat.scene.renderSystem.updateTransform(splat);
         splat.scene.renderSystem.updateTransformIndices(splat, indices);
@@ -281,7 +288,7 @@ class SplatsTransformOp {
 
         // restore the original transform indices
         for (let i = 0; i < state.length; ++i) {
-            if (state[i] === State.selected) {
+            if (selectedActive(state[i])) {
                 indices[i] = inverseMap.get(indices[i]);
             }
         }
