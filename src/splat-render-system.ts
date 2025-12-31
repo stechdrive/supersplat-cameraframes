@@ -67,6 +67,8 @@ class SplatRenderSystem {
     private visibilityRebuildImmediate = false;
     private pivotActive = false;
     private visibilityRebuildDebounceMs = 400;
+    private sorterCentersDirty = false;
+    private sorterMapping: Uint32Array | null = null;
 
     constructor(scene: Scene) {
         this.scene = scene;
@@ -97,6 +99,13 @@ class SplatRenderSystem {
                     this.startVisibilityRebuildTimer();
                 }
             }
+        });
+
+        this.scene.events.on('splat.positionsChanged', (splat: Splat) => {
+            if (!this.isSplatActive(splat)) {
+                return;
+            }
+            this.markSorterCentersDirty();
         });
     }
 
@@ -214,6 +223,23 @@ class SplatRenderSystem {
             window.clearTimeout(this.visibilityRebuildTimer);
             this.visibilityRebuildTimer = null;
         }
+    }
+
+    private markSorterCentersDirty() {
+        this.sorterCentersDirty = true;
+    }
+
+    private flushSorterCenters() {
+        if (!this.sorterCentersDirty) {
+            return;
+        }
+        const instance = this.mergedEntity.gsplat?.instance;
+        if (!instance?.sorter) {
+            return;
+        }
+
+        this.sorterCentersDirty = false;
+        instance.sorter.setMapping(this.sorterMapping);
     }
 
     mapPickId(id: number) {
@@ -466,6 +492,7 @@ class SplatRenderSystem {
                 if (instance.sorter) {
                     (instance.sorter as any).centers = centers;
                 }
+                this.markSorterCentersDirty();
             }
         }
     }
@@ -511,6 +538,7 @@ class SplatRenderSystem {
     private rebuildSorterMapping() {
         const instance = this.mergedEntity.gsplat?.instance;
         if (!instance || !this.globalState) {
+            this.sorterMapping = null;
             return;
         }
 
@@ -534,7 +562,12 @@ class SplatRenderSystem {
             }
         }
 
-        instance.sorter.setMapping(mapping);
+        this.sorterMapping = mapping ?? null;
+        if (!instance.sorter) {
+            return;
+        }
+        instance.sorter.setMapping(this.sorterMapping);
+        this.sorterCentersDirty = false;
     }
 
     private applyMaterialBands(bands: number) {
@@ -625,6 +658,8 @@ class SplatRenderSystem {
             this._needsTransformUpdate = false;
         }
 
+        this.flushSorterCenters();
+
         if (this.materialDirty) {
             this.applyMaterialBands(this.scene.events.invoke('view.bands'));
             this.materialDirty = false;
@@ -675,6 +710,8 @@ class SplatRenderSystem {
             this.globalState = null;
             this.globalTransformIndices = null;
             this.globalIdToSplat = [];
+            this.sorterMapping = null;
+            this.sorterCentersDirty = false;
             return;
         }
 
