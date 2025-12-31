@@ -171,6 +171,8 @@ class MeshList extends Container {
         super(args);
 
         const items = new Map<Model, MeshItem>();
+        const itemsByElement = new Map<MeshItem, Model>();
+        let selectionAnchor: Model | null = null;
 
         const edit = new TextInput({
             id: 'mesh-edit'
@@ -182,6 +184,7 @@ class MeshList extends Container {
                 const item = new MeshItem(model.name, edit);
                 this.append(item);
                 items.set(model, item);
+                itemsByElement.set(item, model);
 
                 item.on('visible', () => {
                     events.fire('mesh.setVisible', model, true);
@@ -205,14 +208,26 @@ class MeshList extends Container {
                 if (item) {
                     this.remove(item);
                     items.delete(model);
+                    itemsByElement.delete(item);
+                    if (selectionAnchor === model) {
+                        selectionAnchor = null;
+                    }
                 }
             }
         });
 
-        events.on('selection.changed', (selection: Element) => {
+        events.on('selection.changed', (selection: Element, _prev: Element, list?: Element[]) => {
+            const selectionList = Array.isArray(list) ?
+                list :
+                (events.invoke('selection.list') as Element[] | undefined) ?? [];
+            const selectedModels = new Set(selectionList.filter((item): item is Model => item instanceof Model));
             items.forEach((value, key) => {
-                value.selected = key === selection;
+                value.selected = selectedModels.has(key);
+                value.class[selection === key ? 'add' : 'remove']('active');
             });
+            if (!selectionAnchor || !selectedModels.has(selectionAnchor)) {
+                selectionAnchor = selection instanceof Model ? selection : (selectedModels.values().next().value ?? null);
+            }
         });
 
         events.on('model.name', (model: Model) => {
@@ -229,23 +244,52 @@ class MeshList extends Container {
             }
         });
 
-        this.on('click', (item: MeshItem) => {
-            for (const [key, value] of items) {
-                if (item === value) {
-                    events.fire('mesh.select', key);
-                    break;
+        this.on('click', (item: MeshItem, event: MouseEvent) => {
+            const model = itemsByElement.get(item);
+            if (!model) {
+                return;
+            }
+
+            const toggleKey = event.metaKey || event.ctrlKey;
+            const shiftKey = event.shiftKey;
+            const orderedModels = Array.from(items.keys());
+            let nextSelection: Element[] | null = null;
+
+            if (shiftKey && selectionAnchor) {
+                const anchorIndex = orderedModels.indexOf(selectionAnchor);
+                const clickedIndex = orderedModels.indexOf(model);
+                if (anchorIndex !== -1 && clickedIndex !== -1) {
+                    const start = Math.min(anchorIndex, clickedIndex);
+                    const end = Math.max(anchorIndex, clickedIndex);
+                    const range = orderedModels.slice(start, end + 1);
+                    if (toggleKey) {
+                        const existing = events.invoke('selection.list') as Element[];
+                        const merged = existing.slice();
+                        range.forEach((entry) => {
+                            if (!merged.includes(entry)) {
+                                merged.push(entry);
+                            }
+                        });
+                        nextSelection = merged;
+                    } else {
+                        nextSelection = range;
+                    }
                 }
             }
+
+            if (nextSelection) {
+                events.fire('selection.set', nextSelection, model);
+            } else if (toggleKey) {
+                events.fire('selection.toggle', model);
+            } else {
+                events.fire('selection.set', [model], model);
+            }
+
+            selectionAnchor = model;
         });
 
         this.on('removeClicked', async (item: MeshItem) => {
-            let model: Model | null = null;
-            for (const [key, value] of items) {
-                if (item === value) {
-                    model = key;
-                    break;
-                }
-            }
+            const model = itemsByElement.get(item) ?? null;
 
             if (!model) {
                 return;
@@ -267,8 +311,8 @@ class MeshList extends Container {
         super._onAppendChild(element);
 
         if (element instanceof MeshItem) {
-            element.on('click', () => {
-                this.emit('click', element);
+            element.on('click', (event: MouseEvent) => {
+                this.emit('click', element, event);
             });
 
             element.on('removeClicked', () => {

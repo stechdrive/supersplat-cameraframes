@@ -38,7 +38,8 @@ class TransformTool {
 
         // reattach the gizmo to the pivot
         const reattach = () => {
-            if (!active || !events.invoke('selection')) {
+            const selectionSize = events.invoke('selection.size') as number;
+            if (!active || selectionSize === 0) {
                 if (gizmo.enabled) {
                     gizmo.detach();
                 }

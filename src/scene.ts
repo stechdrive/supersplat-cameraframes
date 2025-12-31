@@ -54,10 +54,12 @@ class Scene {
     boundDirty = true;
     private boundPreviewActive = false;
     private boundPreviewTarget: Element | null = null;
+    private boundPreviewTargets: { target: Element; base: BoundingBox; worldInv: Mat4; }[] = [];
     private boundPreviewBase = new BoundingBox();
     private boundPreviewTargetBase = new BoundingBox();
     private boundPreviewTargetCurrent = new BoundingBox();
     private boundPreviewCurrent = new BoundingBox();
+    private boundPreviewTargetsCombined = new BoundingBox();
     private boundPreviewWorld = new Mat4();
     private boundPreviewWorldInv = new Mat4();
     private boundPreviewDelta = new Mat4();
@@ -495,12 +497,44 @@ class Scene {
 
         this.boundPreviewActive = true;
         this.boundPreviewTarget = target;
+        this.boundPreviewTargets = [];
         this.boundPreviewBase.copy(baseBound);
         this.boundPreviewTargetBase.copy(targetBound);
         this.boundPreviewWorld.copy(entity.getWorldTransform());
         this.boundPreviewWorldInv.copy(this.boundPreviewWorld).invert();
         this.setBoundPreviewCorners(this.boundPreviewTargetBase);
         this.updateBoundPreview(target);
+    }
+
+    beginBoundPreviewMulti(targets: Element[]) {
+        if (!targets || targets.length === 0) {
+            return false;
+        }
+
+        const entries: { target: Element; base: BoundingBox; worldInv: Mat4; }[] = [];
+        targets.forEach((target) => {
+            const entity = this.getBoundPreviewEntity(target);
+            const targetBound = target.worldBound;
+            if (!entity || !targetBound) {
+                return;
+            }
+            const base = new BoundingBox();
+            base.copy(targetBound);
+            const worldInv = new Mat4();
+            worldInv.copy(entity.getWorldTransform()).invert();
+            entries.push({ target, base, worldInv });
+        });
+
+        if (entries.length === 0) {
+            return false;
+        }
+
+        this.boundPreviewActive = true;
+        this.boundPreviewTarget = null;
+        this.boundPreviewTargets = entries;
+        this.boundPreviewBase.copy(this.bound);
+        this.updateBoundPreviewMulti();
+        return true;
     }
 
     updateBoundPreview(target: Element) {
@@ -517,6 +551,38 @@ class Scene {
         this.updateBoundPreviewFromDelta(this.boundPreviewDelta);
     }
 
+    updateBoundPreviewMulti() {
+        if (!this.boundPreviewActive || this.boundPreviewTargets.length === 0) {
+            return;
+        }
+
+        let hasTarget = false;
+        const combined = this.boundPreviewTargetsCombined;
+
+        this.boundPreviewTargets.forEach((entry) => {
+            const entity = this.getBoundPreviewEntity(entry.target);
+            if (!entity) {
+                return;
+            }
+            this.boundPreviewDelta.mul2(entity.getWorldTransform(), entry.worldInv);
+            this.updateBoundPreviewTargetFromDelta(entry.base, this.boundPreviewDelta, this.boundPreviewTargetCurrent);
+            if (!hasTarget) {
+                combined.copy(this.boundPreviewTargetCurrent);
+                hasTarget = true;
+            } else {
+                combined.add(this.boundPreviewTargetCurrent);
+            }
+        });
+
+        if (!hasTarget) {
+            return;
+        }
+
+        this.boundPreviewCurrent.copy(this.boundPreviewBase);
+        this.boundPreviewCurrent.add(combined);
+        this.applyBoundPreviewPadding();
+    }
+
     updateBoundPreviewWithDelta(target: Element, delta: Mat4) {
         if (!this.boundPreviewActive || this.boundPreviewTarget !== target) {
             return;
@@ -531,6 +597,19 @@ class Scene {
 
         this.boundPreviewActive = false;
         this.boundPreviewTarget = null;
+        this.boundPreviewTargets = [];
+        this.boundStorage.copy(this.boundPreviewCurrent);
+        this.scheduleBoundRecalc();
+    }
+
+    endBoundPreviewMulti() {
+        if (!this.boundPreviewActive || this.boundPreviewTargets.length === 0) {
+            return;
+        }
+
+        this.boundPreviewActive = false;
+        this.boundPreviewTarget = null;
+        this.boundPreviewTargets = [];
         this.boundStorage.copy(this.boundPreviewCurrent);
         this.scheduleBoundRecalc();
     }
@@ -563,12 +642,20 @@ class Scene {
     }
 
     private updateBoundPreviewFromDelta(delta: Mat4) {
+        this.updateBoundPreviewTargetFromDelta(this.boundPreviewTargetBase, delta, this.boundPreviewTargetCurrent);
+        this.boundPreviewCurrent.copy(this.boundPreviewBase);
+        this.boundPreviewCurrent.add(this.boundPreviewTargetCurrent);
+        this.applyBoundPreviewPadding();
+    }
+
+    private updateBoundPreviewTargetFromDelta(base: BoundingBox, delta: Mat4, result: BoundingBox) {
         const min = this.boundPreviewMin;
         const max = this.boundPreviewMax;
         const tmp = this.boundPreviewTmp;
         min.set(Infinity, Infinity, Infinity);
         max.set(-Infinity, -Infinity, -Infinity);
 
+        this.setBoundPreviewCorners(base);
         this.boundPreviewCorners.forEach((corner) => {
             delta.transformPoint(corner, tmp);
             min.x = Math.min(min.x, tmp.x);
@@ -579,10 +666,10 @@ class Scene {
             max.z = Math.max(max.z, tmp.z);
         });
 
-        this.boundPreviewTargetCurrent.setMinMax(min, max);
-        this.boundPreviewCurrent.copy(this.boundPreviewBase);
-        this.boundPreviewCurrent.add(this.boundPreviewTargetCurrent);
+        result.setMinMax(min, max);
+    }
 
+    private applyBoundPreviewPadding() {
         const pad = Math.max(1e-3, this.boundPreviewCurrent.halfExtents.length() * 0.02);
         this.boundPreviewCurrent.halfExtents.x += pad;
         this.boundPreviewCurrent.halfExtents.y += pad;

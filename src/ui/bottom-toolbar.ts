@@ -207,6 +207,20 @@ class BottomToolbar extends Container {
             origin.dom.classList[o === 'boundCenter' ? 'add' : 'remove']('active');
         });
 
+        const updateSplatSelectionTools = () => {
+            const enabled = events.invoke('selection.splats') === true;
+            picker.enabled = enabled;
+            polygon.enabled = enabled;
+            brush.enabled = enabled;
+            flood.enabled = enabled;
+            lasso.enabled = enabled;
+            sphere.enabled = enabled;
+            box.enabled = enabled;
+            eyedropper.enabled = enabled;
+        };
+        updateSplatSelectionTools();
+        events.on('selection.changed', updateSplatSelectionTools);
+
         // register tooltips
         tooltips.register(undo, localize('tooltip.bottom-toolbar.undo'));
         tooltips.register(redo, localize('tooltip.bottom-toolbar.redo'));
