@@ -102,6 +102,8 @@ class EntityTransformHandler implements TransformHandler {
             oldt: transform.clone(),
             newt: transform.clone()
         });
+
+        this.target.scene.beginBoundPreview(this.target);
     }
 
     update(transform: Transform) {
@@ -116,9 +118,12 @@ class EntityTransformHandler implements TransformHandler {
         this.target.move(t, r, s);
         this.top.newt.set(t, r, s);
         this.pop.newt.copy(transform);
+        this.target.scene.updateBoundPreview(this.target);
     }
 
     end() {
+        this.target.scene.endBoundPreview(this.target);
+
         // if anything changed then register the op with undo/redo system
         const { oldt, newt } = this.top;
 
