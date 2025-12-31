@@ -2,6 +2,7 @@ import { EntityTransformHandler } from './entity-transform-handler';
 import { Events } from './events';
 import { LightRig } from './light-rig';
 import { Model } from './model';
+import { MultiEntityTransformHandler } from './multi-entity-transform-handler';
 import { registerPivotEvents } from './pivot';
 import { Splat } from './splat';
 import { SplatsTransformHandler } from './splats-transform-handler';
@@ -37,18 +38,23 @@ const registerTransformHandlerEvents = (events: Events) => {
     // bind transform target when selection changes
     const entityTransformHandler = new EntityTransformHandler(events);
     const splatsTransformHandler = new SplatsTransformHandler(events);
+    const multiEntityTransformHandler = new MultiEntityTransformHandler(events);
 
-    const update = (selection: Splat | Model | LightRig) => {
+    const update = () => {
         pop();
-        if (selection instanceof Splat) {
+        const selection = events.invoke('selection') as Splat | Model | LightRig;
+        const selectionSize = events.invoke('selection.size') as number;
+        if (selectionSize >= 2) {
+            push(multiEntityTransformHandler);
+        } else if (selectionSize === 1 && selection instanceof Splat) {
             if (selection.numSelected > 0) {
                 push(splatsTransformHandler);
             } else {
                 push(entityTransformHandler);
             }
-        } else if (selection instanceof Model) {
+        } else if (selectionSize === 1 && selection instanceof Model) {
             push(entityTransformHandler);
-        } else if (selection instanceof LightRig) {
+        } else if (selectionSize === 1 && selection instanceof LightRig) {
             push(entityTransformHandler);
         }
     };

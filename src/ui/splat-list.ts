@@ -174,6 +174,8 @@ class SplatList extends Container {
         super(args);
 
         const items = new Map<Splat, SplatItem>();
+        const itemsByElement = new Map<SplatItem, Splat>();
+        let selectionAnchor: Splat | null = null;
 
         // edit input used during renames
         const edit = new TextInput({
@@ -186,6 +188,7 @@ class SplatList extends Container {
                 const item = new SplatItem(splat.name, edit);
                 this.append(item);
                 items.set(splat, item);
+                itemsByElement.set(item, splat);
 
                 item.on('visible', () => {
                     splat.visible = true;
@@ -211,14 +214,26 @@ class SplatList extends Container {
                 if (item) {
                     this.remove(item);
                     items.delete(splat);
+                    itemsByElement.delete(item);
+                    if (selectionAnchor === splat) {
+                        selectionAnchor = null;
+                    }
                 }
             }
         });
 
-        events.on('selection.changed', (selection: Splat) => {
+        events.on('selection.changed', (selection: Element, _prev: Element, list?: Element[]) => {
+            const selectionList = Array.isArray(list)
+                ? list
+                : (events.invoke('selection.list') as Element[] | undefined) ?? [];
+            const selectedSplats = new Set(selectionList.filter((item): item is Splat => item instanceof Splat));
             items.forEach((value, key) => {
-                value.selected = key === selection;
+                value.selected = selectedSplats.has(key);
+                value.class[selection === key ? 'add' : 'remove']('active');
             });
+            if (!selectionAnchor || !selectedSplats.has(selectionAnchor)) {
+                selectionAnchor = selection instanceof Splat ? selection : (selectedSplats.values().next().value ?? null);
+            }
         });
 
         events.on('splat.name', (splat: Splat) => {
@@ -235,23 +250,52 @@ class SplatList extends Container {
             }
         });
 
-        this.on('click', (item: SplatItem) => {
-            for (const [key, value] of items) {
-                if (item === value) {
-                    events.fire('selection', key);
-                    break;
+        this.on('click', (item: SplatItem, event: MouseEvent) => {
+            const splat = itemsByElement.get(item);
+            if (!splat) {
+                return;
+            }
+
+            const toggleKey = event.metaKey || event.ctrlKey;
+            const shiftKey = event.shiftKey;
+            const orderedSplats = Array.from(items.keys());
+            let nextSelection: Element[] | null = null;
+
+            if (shiftKey && selectionAnchor) {
+                const anchorIndex = orderedSplats.indexOf(selectionAnchor);
+                const clickedIndex = orderedSplats.indexOf(splat);
+                if (anchorIndex !== -1 && clickedIndex !== -1) {
+                    const start = Math.min(anchorIndex, clickedIndex);
+                    const end = Math.max(anchorIndex, clickedIndex);
+                    const range = orderedSplats.slice(start, end + 1);
+                    if (toggleKey) {
+                        const existing = events.invoke('selection.list') as Element[];
+                        const merged = existing.slice();
+                        range.forEach((entry) => {
+                            if (!merged.includes(entry)) {
+                                merged.push(entry);
+                            }
+                        });
+                        nextSelection = merged;
+                    } else {
+                        nextSelection = range;
+                    }
                 }
             }
+
+            if (nextSelection) {
+                events.fire('selection.set', nextSelection, splat);
+            } else if (toggleKey) {
+                events.fire('selection.toggle', splat);
+            } else {
+                events.fire('selection.set', [splat], splat);
+            }
+
+            selectionAnchor = splat;
         });
 
         this.on('removeClicked', async (item: SplatItem) => {
-            let splat;
-            for (const [key, value] of items) {
-                if (item === value) {
-                    splat = key;
-                    break;
-                }
-            }
+            const splat = itemsByElement.get(item);
 
             if (!splat) {
                 return;
@@ -273,8 +317,8 @@ class SplatList extends Container {
         super._onAppendChild(element);
 
         if (element instanceof SplatItem) {
-            element.on('click', () => {
-                this.emit('click', element);
+            element.on('click', (event: MouseEvent) => {
+                this.emit('click', element, event);
             });
 
             element.on('removeClicked', () => {

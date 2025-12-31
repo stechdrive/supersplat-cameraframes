@@ -17,6 +17,10 @@
             background-color: $bcg-darker;
         }
 
+        &.active {
+            box-shadow: inset 2px 0 0 $clr-icon-hilight;
+        }
+
         #splat-edit {
             margin: 0;
             flex-grow: 1;

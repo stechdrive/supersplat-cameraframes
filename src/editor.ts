@@ -28,7 +28,11 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
     // get the list of selected splats (currently limited to just a single one)
     const selectedSplats = () => {
         const selected = events.invoke('selection') as Element;
-        return selected instanceof Splat && selected.visible ? [selected] : [];
+        const selectionSize = events.invoke('selection.size') as number;
+        if (selectionSize !== 1 || !(selected instanceof Splat) || selected.numSelected <= 0) {
+            return [];
+        }
+        return selected.visible ? [selected] : [];
     };
 
     let lastExportCursor = 0;
@@ -294,7 +298,8 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
     // returns true if the selected splat has selected gaussians
     events.function('selection.splats', () => {
         const splat = events.invoke('selection');
-        return splat instanceof Splat ? splat.numSelected > 0 : false;
+        const selectionSize = events.invoke('selection.size');
+        return selectionSize === 1 && splat instanceof Splat && splat.numSelected > 0;
     });
 
     events.on('select.all', () => {

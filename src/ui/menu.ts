@@ -197,20 +197,25 @@ class Menu extends Container {
             onSelect: async () => await events.invoke('show.publishSettingsDialog')
         }]);
 
+        const hasSplatSelection = () => events.invoke('selection.splats');
+
         const selectionMenuPanel = new MenuPanel([{
             text: localize('menu.select.all'),
             icon: createSvg(selectAll),
             extra: 'Ctrl + A',
+            isEnabled: hasSplatSelection,
             onSelect: () => events.fire('select.all')
         }, {
             text: localize('menu.select.none'),
             icon: createSvg(selectNone),
             extra: 'Shift + A',
+            isEnabled: hasSplatSelection,
             onSelect: () => events.fire('select.none')
         }, {
             text: localize('menu.select.invert'),
             icon: createSvg(selectInverse),
             extra: 'Ctrl + I',
+            isEnabled: hasSplatSelection,
             onSelect: () => events.fire('select.invert')
         }, {
             // separator
@@ -218,33 +223,35 @@ class Menu extends Container {
             text: localize('menu.select.lock'),
             icon: createSvg(selectLock),
             extra: 'H',
-            isEnabled: () => events.invoke('selection.splats'),
+            isEnabled: hasSplatSelection,
             onSelect: () => events.fire('select.hide')
         }, {
             text: localize('menu.select.unlock'),
             icon: createSvg(selectUnlock),
             extra: 'U',
+            isEnabled: hasSplatSelection,
             onSelect: () => events.fire('select.unhide')
         }, {
             text: localize('menu.select.delete'),
             icon: createSvg(selectDelete),
             extra: 'Delete',
-            isEnabled: () => events.invoke('selection.splats'),
+            isEnabled: hasSplatSelection,
             onSelect: () => events.fire('select.delete')
         }, {
             text: localize('menu.select.reset'),
+            isEnabled: hasSplatSelection,
             onSelect: () => events.fire('scene.reset')
         }, {
             // separator
         }, {
             text: localize('menu.select.duplicate'),
             icon: createSvg(selectDuplicate),
-            isEnabled: () => events.invoke('selection.splats'),
+            isEnabled: hasSplatSelection,
             onSelect: () => events.fire('select.duplicate')
         }, {
             text: localize('menu.select.separate'),
             icon: createSvg(selectSeparate),
-            isEnabled: () => events.invoke('selection.splats'),
+            isEnabled: hasSplatSelection,
             onSelect: () => events.fire('select.separate')
         }]);
 

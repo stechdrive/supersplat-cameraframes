@@ -7,6 +7,16 @@ interface Tool {
 
 class ToolManager {
     tools = new Map<string, Tool>();
+    selectionTools = new Set([
+        'rectSelection',
+        'brushSelection',
+        'floodSelection',
+        'polygonSelection',
+        'lassoSelection',
+        'sphereSelection',
+        'boxSelection',
+        'eyedropperSelection'
+    ]);
     events: Events;
     active: string | null = null;
 
@@ -41,6 +51,12 @@ class ToolManager {
         events.on('tool.toggleCoordSpace', () => {
             setCoordSpace(coordSpace === 'local' ? 'world' : 'local');
         });
+
+        events.on('selection.changed', () => {
+            if (this.active && this.selectionTools.has(this.active) && !this.events.invoke('selection.splats')) {
+                this.activate(null);
+            }
+        });
     }
 
     register(name: string, tool: Tool) {
@@ -56,6 +72,13 @@ class ToolManager {
     }
 
     activate(toolName: string | null) {
+        if (toolName && this.selectionTools.has(toolName) && !this.events.invoke('selection.splats')) {
+            if (toolName === this.active) {
+                this.activate(null);
+            }
+            return;
+        }
+
         if (toolName === this.active) {
             // re-activating the currently active tool deactivates it
             if (toolName) {
