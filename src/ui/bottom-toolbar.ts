@@ -208,7 +208,7 @@ class BottomToolbar extends Container {
         });
 
         const updateSplatSelectionTools = () => {
-            const enabled = events.invoke('selection.splats') === true;
+            const enabled = events.invoke('selection.splatActive') === true;
             picker.enabled = enabled;
             polygon.enabled = enabled;
             brush.enabled = enabled;

@@ -25,14 +25,23 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
         return Math.min(1, Math.max(0, 0.5 + value * SH_C0));
     };
 
-    // get the list of selected splats (currently limited to just a single one)
-    const selectedSplats = () => {
+    // get the list of active splats (currently limited to just a single one)
+    const activeSplats = () => {
         const selected = events.invoke('selection') as Element;
         const selectionSize = events.invoke('selection.size') as number;
-        if (selectionSize !== 1 || !(selected instanceof Splat) || selected.numSelected <= 0) {
+        if (selectionSize !== 1 || !(selected instanceof Splat)) {
             return [];
         }
         return selected.visible ? [selected] : [];
+    };
+
+    // get the list of active splats that have selected gaussians
+    const selectedSplats = () => {
+        const splats = activeSplats();
+        if (splats.length === 0 || splats[0].numSelected <= 0) {
+            return [];
+        }
+        return splats;
     };
 
     let lastExportCursor = 0;
@@ -237,7 +246,7 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
     // camera.focus
 
     events.on('camera.focus', () => {
-        const splat = selectedSplats()[0];
+        const splat = activeSplats()[0];
         if (splat) {
 
             const bound = splat.numSelected > 0 ? splat.selectionBound : splat.localBound;
@@ -297,31 +306,33 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
 
     // returns true if the selected splat has selected gaussians
     events.function('selection.splats', () => {
-        const splat = events.invoke('selection');
-        const selectionSize = events.invoke('selection.size');
-        return selectionSize === 1 && splat instanceof Splat && splat.numSelected > 0;
+        return selectedSplats().length > 0;
+    });
+
+    events.function('selection.splatActive', () => {
+        return activeSplats().length > 0;
     });
 
     events.on('select.all', () => {
-        selectedSplats().forEach((splat) => {
+        activeSplats().forEach((splat) => {
             events.fire('edit.add', new SelectAllOp(splat));
         });
     });
 
     events.on('select.none', () => {
-        selectedSplats().forEach((splat) => {
+        activeSplats().forEach((splat) => {
             events.fire('edit.add', new SelectNoneOp(splat));
         });
     });
 
     events.on('select.invert', () => {
-        selectedSplats().forEach((splat) => {
+        activeSplats().forEach((splat) => {
             events.fire('edit.add', new SelectInvertOp(splat));
         });
     });
 
     events.on('select.pred', (op, pred: (i: number) => boolean) => {
-        selectedSplats().forEach((splat) => {
+        activeSplats().forEach((splat) => {
             events.fire('edit.add', new SelectOp(splat, op, pred));
         });
     });
@@ -335,7 +346,7 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
     };
 
     events.on('select.bySphere', (op: 'add'|'remove'|'set', sphere: number[]) => {
-        selectedSplats().forEach((splat) => {
+        activeSplats().forEach((splat) => {
             intersectCenters(splat, op, {
                 sphere: { x: sphere[0], y: sphere[1], z: sphere[2], radius: sphere[3] }
             });
@@ -343,7 +354,7 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
     });
 
     events.on('select.byBox', (op: 'add'|'remove'|'set', box: number[]) => {
-        selectedSplats().forEach((splat) => {
+        activeSplats().forEach((splat) => {
             intersectCenters(splat, op, {
                 box: { x: box[0], y: box[1], z: box[2], lenx: box[3], leny: box[4], lenz: box[5] }
             });
@@ -372,7 +383,7 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
             return;
         }
 
-        selectedSplats().forEach((splat) => {
+        activeSplats().forEach((splat) => {
             if (mode === 'centers') {
                 intersectCenters(splat, op, {
                     rect: { x1: minX, y1: minY, x2: maxX, y2: maxY }
@@ -413,7 +424,7 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
     events.on('select.byMask', (op: 'add'|'remove'|'set', canvas: HTMLCanvasElement, context: CanvasRenderingContext2D) => {
         const mode = events.invoke('camera.mode');
 
-        selectedSplats().forEach((splat) => {
+        activeSplats().forEach((splat) => {
             if (mode === 'centers') {
                 // create mask texture
                 if (!maskTexture || maskTexture.width !== canvas.width || maskTexture.height !== canvas.height) {
@@ -503,7 +514,7 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
             return;
         }
 
-        selectedSplats().forEach((splat) => {
+        activeSplats().forEach((splat) => {
             const splatData = splat.splatData;
 
             if (mode === 'centers') {
@@ -552,7 +563,7 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
     // -  alternative distance metrics such as HSV.
     // -  alternative UI for threshold, two handles for min/max?
     events.on('select.colorMatch', (op: 'add'|'remove'|'set', point: { x: number, y: number }, threshold = 0) => {
-        const splats = selectedSplats();
+        const splats = activeSplats();
         const targetSize = scene.targetSize;
         if (!splats.length || !targetSize || !point) {
             return;
@@ -612,7 +623,7 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
     });
 
     events.on('select.unhide', () => {
-        selectedSplats().forEach((splat) => {
+        activeSplats().forEach((splat) => {
             events.fire('edit.add', new UnhideAllOp(splat));
         });
     });
@@ -671,7 +682,7 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
     });
 
     events.on('scene.reset', () => {
-        selectedSplats().forEach((splat) => {
+        activeSplats().forEach((splat) => {
             editHistory.add(new ResetOp(splat));
         });
     });
