@@ -269,10 +269,10 @@ class SplatsTransformOp {
         });
         transformPalette.endUpdate();
 
-        splat.scene.renderSystem.updateTransform(splat);
+        splat.scene.renderSystem.updateTransform(splat, true);
         splat.scene.renderSystem.updateTransformIndices(splat, indices);
         splat.makeSelectionBoundDirty();
-        splat.updatePositions();
+        splat.updatePositionsPartial(splat.numSelected);
     }
 
     undo() {
@@ -295,10 +295,10 @@ class SplatsTransformOp {
 
         splat.transformPalette.free(paletteMap.size);
 
-        splat.scene.renderSystem.updateTransform(splat);
+        splat.scene.renderSystem.updateTransform(splat, true);
         splat.scene.renderSystem.updateTransformIndices(splat, indices);
         splat.makeSelectionBoundDirty();
-        splat.updatePositions();
+        splat.updatePositionsPartial(splat.numSelected);
     }
 
     destroy() {

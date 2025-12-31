@@ -517,6 +517,13 @@ class Scene {
         this.updateBoundPreviewFromDelta(this.boundPreviewDelta);
     }
 
+    updateBoundPreviewWithDelta(target: Element, delta: Mat4) {
+        if (!this.boundPreviewActive || this.boundPreviewTarget !== target) {
+            return;
+        }
+        this.updateBoundPreviewFromDelta(delta);
+    }
+
     endBoundPreview(target: Element) {
         if (!this.boundPreviewActive || this.boundPreviewTarget !== target) {
             return;

@@ -10,9 +10,14 @@ import { TransformHandler } from './transform-handler';
 
 const mat = new Mat4();
 const mat2 = new Mat4();
+const mat3 = new Mat4();
 const transform = new Transform();
 const blockedMask = State.locked | State.deleted | State.hidden;
 const selectedActive = (state: number) => (state & State.selected) !== 0 && (state & blockedMask) === 0;
+const centerUpdateIntervalMs = 100;
+const translationUpdateRatio = 0.01;
+const rotationUpdateThresholdDeg = 2;
+const scaleUpdateThreshold = 0.01;
 
 class SplatsTransformHandler implements TransformHandler {
     events: Events;
@@ -23,6 +28,10 @@ class SplatsTransformHandler implements TransformHandler {
 
     transform = new Mat4();
     paletteMap = new Map<number, number>();
+    selectedCount = 0;
+    selectionRadius = 0;
+    lastCenterUpdateTime = 0;
+    lastCenterUpdateTransform = new Transform();
 
     constructor(events: Events) {
         this.events = events;
@@ -110,8 +119,10 @@ class SplatsTransformHandler implements TransformHandler {
         const { paletteMap } = this;
         paletteMap.clear();
 
+        let selectedCount = 0;
         for (let i = 0; i < state.length; ++i) {
             if (selectedActive(state[i])) {
+                selectedCount++;
                 const oldIdx = indices[i];
                 let newIdx;
                 if (!paletteMap.has(oldIdx)) {
@@ -136,9 +147,16 @@ class SplatsTransformHandler implements TransformHandler {
         splat.scene.renderSystem.updateTransformIndices(splat, indices);
         splat.scene.renderSystem.updateTransform(splat, true);
 
+        this.selectedCount = selectedCount;
+        this.selectionRadius = selectedCount > 0 ? splat.selectionBound.halfExtents.length() : 0;
+        this.lastCenterUpdateTime = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+        this.lastCenterUpdateTransform.copy(transform);
+
         splat.selectionAlpha = 0;
         splat.scene.outline.enabled = false;
         splat.scene.underlay.enabled = false;
+
+        splat.scene.beginBoundPreview(splat);
     }
 
     update(transform: Transform) {
@@ -161,14 +179,49 @@ class SplatsTransformHandler implements TransformHandler {
 
         this.splat.scene.renderSystem.updateTransform(this.splat, true);
         this.splat.makeSelectionBoundDirty();
+
+        const world = this.splat.entity.getWorldTransform();
+        mat2.copy(world).invert();
+        mat3.mul2(world, this.transform);
+        mat3.mul2(mat3, mat2);
+        this.splat.scene.updateBoundPreviewWithDelta(this.splat, mat3);
+
+        const now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+        const lastTransform = this.lastCenterUpdateTransform;
+        const dx = transform.position.x - lastTransform.position.x;
+        const dy = transform.position.y - lastTransform.position.y;
+        const dz = transform.position.z - lastTransform.position.z;
+        const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        const translationThreshold = this.selectionRadius * translationUpdateRatio;
+        const movedEnough = translationThreshold > 0 ? distance >= translationThreshold : distance > 0;
+
+        let dot = Math.abs(transform.rotation.dot(lastTransform.rotation));
+        dot = Math.min(1, dot);
+        const rotationDelta = (2 * Math.acos(dot)) * (180 / Math.PI);
+        const rotatedEnough = rotationDelta >= rotationUpdateThresholdDeg;
+
+        const scale = transform.scale;
+        const lastScale = lastTransform.scale;
+        const scaleChanged =
+            Math.abs(scale.x - lastScale.x) / Math.max(Math.abs(lastScale.x), 1e-6) >= scaleUpdateThreshold ||
+            Math.abs(scale.y - lastScale.y) / Math.max(Math.abs(lastScale.y), 1e-6) >= scaleUpdateThreshold ||
+            Math.abs(scale.z - lastScale.z) / Math.max(Math.abs(lastScale.z), 1e-6) >= scaleUpdateThreshold;
+
+        if (now - this.lastCenterUpdateTime >= centerUpdateIntervalMs || movedEnough || rotatedEnough || scaleChanged) {
+            this.splat.updatePositionsPartial(this.selectedCount);
+            this.lastCenterUpdateTime = now;
+            this.lastCenterUpdateTransform.copy(transform);
+        }
     }
 
     end() {
         const { splat, transform, paletteMap } = this;
 
+        splat.scene.endBoundPreview(splat);
+
         // TODO: consider moving this to update() function above so splats are sorted correctly
         // for render during drag (which is slower).
-        splat.updatePositions();
+        splat.updatePositionsPartial(this.selectedCount);
         splat.selectionAlpha = 1;
         splat.scene.outline.enabled = true;
         splat.scene.underlay.enabled = true;
