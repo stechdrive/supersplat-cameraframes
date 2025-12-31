@@ -62,6 +62,10 @@ class SplatRenderSystem {
     boundCache = new Map<Splat, BoundCacheEntry>();
     shBands = 0;
     sorterPromiseHandle: Promise<void> | null = null;
+    private visibilityRebuildTimer: number | null = null;
+    private visibilityRebuildPending = false;
+    private pivotActive = false;
+    private visibilityRebuildDebounceMs = 400;
 
     constructor(scene: Scene) {
         this.scene = scene;
@@ -76,6 +80,17 @@ class SplatRenderSystem {
                 this.applyMaterialBands(bands);
             } else {
                 this.materialDirty = true;
+            }
+        });
+
+        this.scene.events.on('pivot.started', () => {
+            this.pivotActive = true;
+            this.clearVisibilityRebuildTimer();
+        });
+        this.scene.events.on('pivot.ended', () => {
+            this.pivotActive = false;
+            if (this.visibilityRebuildPending) {
+                this.startVisibilityRebuildTimer();
             }
         });
     }
@@ -127,6 +142,42 @@ class SplatRenderSystem {
         if (this._dirty) {
             this.rebuild();
             this._dirty = false;
+        }
+    }
+
+    scheduleRebuildForVisibility() {
+        this.visibilityRebuildPending = true;
+        if (this._frozen) {
+            this._dirty = true;
+            this.visibilityRebuildPending = false;
+            return;
+        }
+        if (this.pivotActive) {
+            return;
+        }
+        this.startVisibilityRebuildTimer();
+    }
+
+    private startVisibilityRebuildTimer() {
+        this.clearVisibilityRebuildTimer();
+        this.visibilityRebuildTimer = window.setTimeout(() => {
+            this.visibilityRebuildTimer = null;
+            if (!this.visibilityRebuildPending || this.pivotActive) {
+                return;
+            }
+            this.visibilityRebuildPending = false;
+            if (this._frozen) {
+                this._dirty = true;
+                return;
+            }
+            this.rebuild();
+        }, this.visibilityRebuildDebounceMs);
+    }
+
+    private clearVisibilityRebuildTimer() {
+        if (this.visibilityRebuildTimer !== null) {
+            window.clearTimeout(this.visibilityRebuildTimer);
+            this.visibilityRebuildTimer = null;
         }
     }
 

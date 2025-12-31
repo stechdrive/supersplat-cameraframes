@@ -421,20 +421,27 @@ class Splat extends Element {
     }
 
     set visible(value: boolean) {
-        if (value !== this.visible) {
-            this._visible = value;
-            if (this.scene?.renderSystem) {
-                if (value) {
-                    this.scene.renderSystem.add(this);
-                } else {
-                    this.scene.renderSystem.remove(this);
-                }
-                this.stateTexture = this.scene.renderSystem.stateTexture;
-                this.transformTexture = this.scene.renderSystem.transformTexture;
-            }
-            this.scene.events.fire('splat.visibility', this);
-            this.scene.forceRender = true;
+        const next = !!value;
+        if (next === this._visible) {
+            return;
         }
+
+        this._visible = next;
+
+        const state = this.splatData.getProp('state') as Uint8Array;
+        for (let i = 0; i < state.length; ++i) {
+            if (next) {
+                state[i] &= ~State.hidden;
+            } else {
+                state[i] |= State.hidden;
+            }
+        }
+
+        this.updateState(State.hidden);
+        this.scene.renderSystem.scheduleRebuildForVisibility();
+        this.scene.scheduleBoundRecalc();
+        this.scene.events.fire('splat.visibility', this);
+        this.scene.forceRender = true;
     }
 
     get visible() {
