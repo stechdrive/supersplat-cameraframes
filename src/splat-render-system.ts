@@ -326,11 +326,13 @@ class SplatRenderSystem {
         const world = splat.entity.getWorldTransform();
         const localPalette = splat.transformPalette;
         const mat = new Mat4();
+        this.transformPalette.beginUpdate();
         for (let i = 0; i < block.size; i++) {
             localPalette.getTransform(i, mat);
             mat.mul2(world, mat);
             this.transformPalette.setTransform(block.base + i, mat);
         }
+        this.transformPalette.endUpdate();
 
         this.scene.boundDirty = true;
         const cache = this.boundCache.get(splat);
@@ -617,6 +619,7 @@ class SplatRenderSystem {
 
         // 変換ブロック割当
         const mat = new Mat4();
+        this.transformPalette.beginUpdate();
         this.sources.forEach((splat) => {
             const indices = splat.splatData.getProp('transform') as Uint16Array;
             let maxLocal = 0;
@@ -634,6 +637,7 @@ class SplatRenderSystem {
                 this.transformPalette.setTransform(base + i, mat);
             }
         });
+        this.transformPalette.endUpdate();
 
         // 頂点属性統合
         const mergedProperties = baseProperties.map((prop) => {
