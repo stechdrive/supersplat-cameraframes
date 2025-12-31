@@ -1480,6 +1480,9 @@ class Camera extends Element {
 
         for (let i = 0; i < splats.length; ++i) {
             const splat = splats[i] as Splat;
+            if (!splat.visible) {
+                continue;
+            }
 
             this.pickPrep(splat, 'set');
             const pickId = this.pick(ix, iy);
