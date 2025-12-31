@@ -238,23 +238,24 @@ class SplatsTransformOp {
     splat: Splat;
     transform: Mat4;
     paletteMap: Map<number, number>;
+    indices: Uint32Array;
 
-    constructor(options: { splat: Splat, transform: Mat4, paletteMap: Map<number, number> }) {
+    constructor(options: { splat: Splat, transform: Mat4, paletteMap: Map<number, number>, indices: Uint32Array }) {
         this.splat = options.splat;
         this.transform = options.transform;
         this.paletteMap = options.paletteMap;
+        this.indices = options.indices;
     }
 
     do() {
         const { splat, transform, paletteMap } = this;
-        const state = splat.splatData.getProp('state') as Uint8Array;
         const indices = splat.splatData.getProp('transform') as Uint16Array;
+        const selectedIndices = this.indices;
 
         // update splat transform palette indices
-        for (let i = 0; i < state.length; ++i) {
-            if (selectedActive(state[i])) {
-                indices[i] = paletteMap.get(indices[i]);
-            }
+        for (let i = 0; i < selectedIndices.length; ++i) {
+            const idx = selectedIndices[i];
+            indices[idx] = paletteMap.get(indices[idx]);
         }
 
         splat.transformPalette.alloc(paletteMap.size);
@@ -272,13 +273,13 @@ class SplatsTransformOp {
         splat.scene.renderSystem.updateTransform(splat, true);
         splat.scene.renderSystem.updateTransformIndices(splat, indices);
         splat.makeSelectionBoundDirty();
-        splat.updatePositionsPartial(splat.numSelected);
+        splat.updatePositionsForIndices(this.indices);
     }
 
     undo() {
         const { splat, paletteMap } = this;
-        const state = splat.splatData.getProp('state') as Uint8Array;
         const indices = splat.splatData.getProp('transform') as Uint16Array;
+        const selectedIndices = this.indices;
 
         // invert the palette map
         const inverseMap = new Map<number, number>();
@@ -287,10 +288,9 @@ class SplatsTransformOp {
         });
 
         // restore the original transform indices
-        for (let i = 0; i < state.length; ++i) {
-            if (selectedActive(state[i])) {
-                indices[i] = inverseMap.get(indices[i]);
-            }
+        for (let i = 0; i < selectedIndices.length; ++i) {
+            const idx = selectedIndices[i];
+            indices[idx] = inverseMap.get(indices[idx]);
         }
 
         splat.transformPalette.free(paletteMap.size);
@@ -298,13 +298,14 @@ class SplatsTransformOp {
         splat.scene.renderSystem.updateTransform(splat, true);
         splat.scene.renderSystem.updateTransformIndices(splat, indices);
         splat.makeSelectionBoundDirty();
-        splat.updatePositionsPartial(splat.numSelected);
+        splat.updatePositionsForIndices(this.indices);
     }
 
     destroy() {
         this.splat = null;
         this.transform = null;
         this.paletteMap = null;
+        this.indices = null;
     }
 }
 

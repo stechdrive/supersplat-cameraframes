@@ -64,6 +64,7 @@ class SplatRenderSystem {
     sorterPromiseHandle: Promise<void> | null = null;
     private visibilityRebuildTimer: number | null = null;
     private visibilityRebuildPending = false;
+    private visibilityRebuildImmediate = false;
     private pivotActive = false;
     private visibilityRebuildDebounceMs = 400;
 
@@ -90,7 +91,11 @@ class SplatRenderSystem {
         this.scene.events.on('pivot.ended', () => {
             this.pivotActive = false;
             if (this.visibilityRebuildPending) {
-                this.startVisibilityRebuildTimer();
+                if (this.visibilityRebuildImmediate) {
+                    this.runVisibilityRebuild();
+                } else {
+                    this.startVisibilityRebuildTimer();
+                }
             }
         });
     }
@@ -145,14 +150,33 @@ class SplatRenderSystem {
         }
     }
 
-    scheduleRebuildForVisibility() {
+    isSplatActive(splat: Splat) {
+        return this.offsets.has(splat);
+    }
+
+    scheduleRebuildForVisibility(immediate = false) {
+        if (this.sources.every(splat => splat.visible)) {
+            this.visibilityRebuildPending = false;
+            this.visibilityRebuildImmediate = false;
+            this.clearVisibilityRebuildTimer();
+            return;
+        }
+
         this.visibilityRebuildPending = true;
+        if (immediate) {
+            this.visibilityRebuildImmediate = true;
+        }
         if (this._frozen) {
             this._dirty = true;
             this.visibilityRebuildPending = false;
+            this.visibilityRebuildImmediate = false;
             return;
         }
         if (this.pivotActive) {
+            return;
+        }
+        if (this.visibilityRebuildImmediate) {
+            this.runVisibilityRebuild();
             return;
         }
         this.startVisibilityRebuildTimer();
@@ -165,13 +189,22 @@ class SplatRenderSystem {
             if (!this.visibilityRebuildPending || this.pivotActive) {
                 return;
             }
-            this.visibilityRebuildPending = false;
-            if (this._frozen) {
-                this._dirty = true;
-                return;
-            }
-            this.rebuild();
+            this.runVisibilityRebuild();
         }, this.visibilityRebuildDebounceMs);
+    }
+
+    private runVisibilityRebuild() {
+        this.clearVisibilityRebuildTimer();
+        if (!this.visibilityRebuildPending || this.pivotActive) {
+            return;
+        }
+        this.visibilityRebuildPending = false;
+        this.visibilityRebuildImmediate = false;
+        if (this._frozen) {
+            this._dirty = true;
+            return;
+        }
+        this.rebuild();
     }
 
     private clearVisibilityRebuildTimer() {
@@ -274,17 +307,15 @@ class SplatRenderSystem {
     }
 
     updateState(splat: Splat) {
-        if (!this.stateTexture || !this.globalState) {
-            return;
-        }
-
         const state = splat.splatData.getProp('state') as Uint8Array;
-        const offset = this.offsets.get(splat) ?? 0;
-        this.globalState.set(state, offset);
+        const offset = this.offsets.get(splat);
+        if (this.stateTexture && this.globalState && offset !== undefined) {
+            this.globalState.set(state, offset);
 
-        const data = this.stateTexture.lock() as Uint8Array;
-        data.set(state, offset);
-        this.stateTexture.unlock();
+            const data = this.stateTexture.lock() as Uint8Array;
+            data.set(state, offset);
+            this.stateTexture.unlock();
+        }
 
         let numSelected = 0;
         let numLocked = 0;
@@ -619,13 +650,18 @@ class SplatRenderSystem {
     rebuild() {
         this.destroyMerged();
 
-        if (this.sources.length === 0) {
+        const activeSources = this.sources.filter(splat => splat.visible);
+        if (activeSources.length === 0) {
             console.log('SplatRenderSystem: No sources to rebuild');
             this.destroyMerged();
             this.stateTexture?.destroy();
             this.stateTexture = null;
             this.transformTexture?.destroy();
             this.transformTexture = null;
+            this.sources.forEach((splat) => {
+                splat.stateTexture = null;
+                splat.transformTexture = null;
+            });
             this.paramsTextures?.tex0.destroy();
             this.paramsTextures?.tex1.destroy();
             this.paramsTextures?.tex2.destroy();
@@ -646,9 +682,9 @@ class SplatRenderSystem {
         // プロパティ検証
         // プロパティ検証: 最も多くのプロパティを持つSplatを基準にする (SH Bandsが多いものをベースにするため)
         let maxProps = 0;
-        let baseSplat = this.sources[0];
+        let baseSplat = activeSources[0];
 
-        this.sources.forEach((s) => {
+        activeSources.forEach((s) => {
             const props = s.splatData.getElement('vertex').properties;
             if (props.length > maxProps) {
                 maxProps = props.length;
@@ -657,7 +693,7 @@ class SplatRenderSystem {
         });
 
         const baseProperties = baseSplat.splatData.getElement('vertex').properties;
-        const totalSplats = this.sources.reduce((sum, s) => sum + s.splatData.numSplats, 0);
+        const totalSplats = activeSources.reduce((sum, s) => sum + s.splatData.numSplats, 0);
         let shBands = 0;
 
         this.offsets.clear();
@@ -667,7 +703,7 @@ class SplatRenderSystem {
 
         // オフセット計算
         let runningOffset = 0;
-        this.sources.forEach((splat) => {
+        activeSources.forEach((splat) => {
             this.offsets.set(splat, runningOffset);
             this.counts.set(splat, splat.splatData.numSplats);
 
@@ -684,7 +720,7 @@ class SplatRenderSystem {
         // 変換ブロック割当
         const mat = new Mat4();
         this.transformPalette.beginUpdate();
-        this.sources.forEach((splat) => {
+        activeSources.forEach((splat) => {
             const indices = splat.splatData.getProp('transform') as Uint16Array;
             let maxLocal = 0;
             for (let i = 0; i < indices.length; i++) {
@@ -716,7 +752,7 @@ class SplatRenderSystem {
             };
         });
 
-        this.sources.forEach((splat) => {
+        activeSources.forEach((splat) => {
             const offset = this.offsets.get(splat) ?? 0;
             const count = this.counts.get(splat) ?? 0;
             const propSrc = splat.splatData.getElement('vertex').properties;
@@ -831,21 +867,29 @@ class SplatRenderSystem {
         }
 
         this.sources.forEach((splat) => {
-            splat.stateTexture = this.stateTexture;
-            splat.transformTexture = this.transformTexture;
+            if (splat.visible) {
+                splat.stateTexture = this.stateTexture;
+                splat.transformTexture = this.transformTexture;
+            } else {
+                splat.stateTexture = null;
+                splat.transformTexture = null;
+            }
         });
 
-        this.sources.forEach((splat) => {
-            const offset = this.offsets.get(splat) ?? 0;
-            const count = this.counts.get(splat) ?? 0;
+        activeSources.forEach((splat) => {
+            const offset = this.offsets.get(splat);
+            const count = this.counts.get(splat);
             const block = this.transformBases.get(splat);
+            if (offset === undefined || count === undefined || !block) {
+                return;
+            }
             const state = splat.splatData.getProp('state') as Uint8Array;
             const indices = splat.splatData.getProp('transform') as Uint16Array;
 
             // globalState updating is handled in updateState call below
             // but we need globalTransformIndices setup here or in updateTransform
             for (let i = 0; i < count; i++) {
-                this.globalTransformIndices[offset + i] = (block?.base ?? 0) + indices[i];
+                this.globalTransformIndices[offset + i] = block.base + indices[i];
             }
 
             for (let i = 0; i < count; i++) {
@@ -877,7 +921,7 @@ class SplatRenderSystem {
             // GSplatDataはLocal Space (0,0,0) のデータしか持たないため、
             // ShaderでTransformPaletteを使って動かす前の座標でソートされてしまうのを防ぐ
             const centers = new Float32Array(totalSplats * 3);
-            this.sources.forEach((splat) => {
+            activeSources.forEach((splat) => {
                 const offset = this.offsets.get(splat) ?? 0;
                 const count = this.counts.get(splat) ?? 0;
                 const positions = this.calcPositions(splat);
@@ -908,7 +952,7 @@ class SplatRenderSystem {
 
         // Ensure transforms (and thus world centers) are up to date
         // This prevents pivot picking issues where centers are initially 0 or unscaled
-        this.sources.forEach((splat) => {
+        activeSources.forEach((splat) => {
             this.updateTransform(splat);
         });
 

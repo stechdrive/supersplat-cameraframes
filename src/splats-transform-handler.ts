@@ -32,6 +32,7 @@ class SplatsTransformHandler implements TransformHandler {
     selectionRadius = 0;
     lastCenterUpdateTime = 0;
     lastCenterUpdateTransform = new Transform();
+    selectedIndices = new Uint32Array(0);
 
     constructor(events: Events) {
         this.events = events;
@@ -120,9 +121,11 @@ class SplatsTransformHandler implements TransformHandler {
         paletteMap.clear();
 
         let selectedCount = 0;
+        const selectedIndices: number[] = [];
         for (let i = 0; i < state.length; ++i) {
             if (selectedActive(state[i])) {
                 selectedCount++;
+                selectedIndices.push(i);
                 const oldIdx = indices[i];
                 let newIdx;
                 if (!paletteMap.has(oldIdx)) {
@@ -148,6 +151,7 @@ class SplatsTransformHandler implements TransformHandler {
         splat.scene.renderSystem.updateTransform(splat, true);
 
         this.selectedCount = selectedCount;
+        this.selectedIndices = new Uint32Array(selectedIndices);
         this.selectionRadius = selectedCount > 0 ? splat.selectionBound.halfExtents.length() : 0;
         this.lastCenterUpdateTime = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
         this.lastCenterUpdateTransform.copy(transform);
@@ -208,7 +212,7 @@ class SplatsTransformHandler implements TransformHandler {
             Math.abs(scale.z - lastScale.z) / Math.max(Math.abs(lastScale.z), 1e-6) >= scaleUpdateThreshold;
 
         if (now - this.lastCenterUpdateTime >= centerUpdateIntervalMs || movedEnough || rotatedEnough || scaleChanged) {
-            this.splat.updatePositionsPartial(this.selectedCount);
+            this.splat.updatePositionsForIndices(this.selectedIndices);
             this.lastCenterUpdateTime = now;
             this.lastCenterUpdateTransform.copy(transform);
         }
@@ -221,7 +225,7 @@ class SplatsTransformHandler implements TransformHandler {
 
         // TODO: consider moving this to update() function above so splats are sorted correctly
         // for render during drag (which is slower).
-        splat.updatePositionsPartial(this.selectedCount);
+        splat.updatePositionsForIndices(this.selectedIndices);
         splat.selectionAlpha = 1;
         splat.scene.outline.enabled = true;
         splat.scene.underlay.enabled = true;
@@ -230,7 +234,8 @@ class SplatsTransformHandler implements TransformHandler {
         const top = new SplatsTransformOp({
             splat,
             transform: transform.clone(),
-            paletteMap: new Map(paletteMap)
+            paletteMap: new Map(paletteMap),
+            indices: new Uint32Array(this.selectedIndices)
         });
 
         // create op for pivot placement

@@ -239,6 +239,68 @@ class Splat extends Element {
         this.scene.events.fire('splat.positionsChanged', this);
     }
 
+    updatePositionsForIndices(indices: Uint32Array) {
+        if (indices.length === 0) {
+            return;
+        }
+
+        const data = this.splatData;
+        if (indices.length > Math.min(20000, data.numSplats * 0.05)) {
+            this.updatePositions();
+            return;
+        }
+
+        const centersInfo = this.scene.renderSystem.getCenters(this);
+        if (!centersInfo) {
+            return;
+        }
+
+        const state = data.getProp('state') as Uint8Array;
+        const transformIndices = data.getProp('transform') as Uint16Array;
+        const localCenters = this.localCenters;
+        const { centers, offset } = centersInfo;
+        const baseOffset = offset / 3;
+        const localPalette = this.transformPalette;
+        const world = this.entity.getWorldTransform();
+        const localMat = new Mat4();
+        const worldMat = new Mat4();
+        const transforms = new Map<number, Float32Array>();
+        const skipMask = State.deleted | State.hidden;
+
+        for (let i = 0; i < indices.length; ++i) {
+            const idx = indices[i];
+            const s = state[idx];
+            if ((s & skipMask) !== 0) {
+                continue;
+            }
+            const transformIndex = transformIndices[idx];
+            let transform = transforms.get(transformIndex);
+            if (!transform) {
+                localPalette.getTransform(transformIndex, localMat);
+                worldMat.mul2(world, localMat);
+                const m = worldMat.data;
+                transform = new Float32Array([
+                    m[0], m[1], m[2],
+                    m[4], m[5], m[6],
+                    m[8], m[9], m[10],
+                    m[12], m[13], m[14]
+                ]);
+                transforms.set(transformIndex, transform);
+            }
+
+            const base = (baseOffset + idx) * 3;
+            const x = localCenters[idx * 3 + 0];
+            const y = localCenters[idx * 3 + 1];
+            const z = localCenters[idx * 3 + 2];
+            centers[base + 0] = x * transform[0] + y * transform[3] + z * transform[6] + transform[9];
+            centers[base + 1] = x * transform[1] + y * transform[4] + z * transform[7] + transform[10];
+            centers[base + 2] = x * transform[2] + y * transform[5] + z * transform[8] + transform[11];
+        }
+
+        this.scene.forceRender = true;
+        this.scene.events.fire('splat.positionsChanged', this);
+    }
+
     get worldTransform() {
         return this.entity.getWorldTransform();
     }
@@ -438,7 +500,11 @@ class Splat extends Element {
         }
 
         this.updateState(State.hidden);
-        this.scene.renderSystem.scheduleRebuildForVisibility();
+        const renderSystem = this.scene.renderSystem;
+        const needsImmediateRebuild = next && !renderSystem.isSplatActive(this);
+        if (!next || needsImmediateRebuild) {
+            renderSystem.scheduleRebuildForVisibility(needsImmediateRebuild);
+        }
         this.scene.scheduleBoundRecalc();
         this.scene.events.fire('splat.visibility', this);
         this.scene.forceRender = true;
