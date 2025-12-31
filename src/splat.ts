@@ -182,6 +182,63 @@ class Splat extends Element {
         this.scene.events.fire('splat.positionsChanged', this);
     }
 
+    updatePositionsPartial(selectedCount: number) {
+        const data = this.splatData;
+        if (selectedCount > Math.min(20000, data.numSplats * 0.05)) {
+            this.updatePositions();
+            return;
+        }
+
+        const centersInfo = this.scene.renderSystem.getCenters(this);
+        if (!centersInfo) {
+            return;
+        }
+
+        const state = data.getProp('state') as Uint8Array;
+        const indices = data.getProp('transform') as Uint16Array;
+        const localCenters = this.localCenters;
+        const { centers, offset } = centersInfo;
+        const baseOffset = offset / 3;
+        const localPalette = this.transformPalette;
+        const world = this.entity.getWorldTransform();
+        const localMat = new Mat4();
+        const worldMat = new Mat4();
+        const transforms = new Map<number, Float32Array>();
+        const skipMask = State.locked | State.deleted | State.hidden;
+
+        for (let i = 0; i < data.numSplats; ++i) {
+            const s = state[i];
+            if ((s & State.selected) === 0 || (s & skipMask) !== 0) {
+                continue;
+            }
+            const index = indices[i];
+            let transform = transforms.get(index);
+            if (!transform) {
+                localPalette.getTransform(index, localMat);
+                worldMat.mul2(world, localMat);
+                const m = worldMat.data;
+                transform = new Float32Array([
+                    m[0], m[1], m[2],
+                    m[4], m[5], m[6],
+                    m[8], m[9], m[10],
+                    m[12], m[13], m[14]
+                ]);
+                transforms.set(index, transform);
+            }
+
+            const base = (baseOffset + i) * 3;
+            const x = localCenters[i * 3 + 0];
+            const y = localCenters[i * 3 + 1];
+            const z = localCenters[i * 3 + 2];
+            centers[base + 0] = x * transform[0] + y * transform[3] + z * transform[6] + transform[9];
+            centers[base + 1] = x * transform[1] + y * transform[4] + z * transform[7] + transform[10];
+            centers[base + 2] = x * transform[2] + y * transform[5] + z * transform[8] + transform[11];
+        }
+
+        this.scene.forceRender = true;
+        this.scene.events.fire('splat.positionsChanged', this);
+    }
+
     get worldTransform() {
         return this.entity.getWorldTransform();
     }
