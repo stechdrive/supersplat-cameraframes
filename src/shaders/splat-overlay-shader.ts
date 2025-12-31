@@ -34,10 +34,10 @@ const vertexShader = /* glsl */ `
 
         uint globalIndex = splatOffset + vertex_id;
         ivec2 splatUV = calcSplatUV(globalIndex, globalParams.x);
-        uint splatState = uint(texelFetch(splatState, splatUV, 0).r * 255.0);
+        uint splatState = uint(texelFetch(splatState, splatUV, 0).r * 255.0) & 15u;
 
-        if ((splatState & 6u) != 0u) {
-            // deleted or locked (4 or 2)
+        if ((splatState & 12u) != 0u) {
+            // deleted or hidden (4 or 8)
             gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
             gl_PointSize = 0.0;
         } else {
