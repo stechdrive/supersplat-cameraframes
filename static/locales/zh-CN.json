@@ -93,6 +93,7 @@
     "panel.splat-data.totals.selected": "选择",
     "panel.splat-data.totals.locked": "锁定",
     "panel.splat-data.totals.deleted": "删除",
+    "panel.splat-data.totals.hidden": "隐藏",
     "panel.render.ok": "渲染",
     "panel.render.cancel": "取消",
     "panel.render.render-video": "渲染视频",

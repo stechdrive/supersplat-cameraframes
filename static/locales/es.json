@@ -92,6 +92,7 @@
     "panel.splat-data.totals.selected": "Seleccionados",
     "panel.splat-data.totals.locked": "Bloqueados",
     "panel.splat-data.totals.deleted": "Eliminados",
+    "panel.splat-data.totals.hidden": "Ocultos",
     "panel.render.ok": "Renderizar",
     "panel.render.cancel": "Cancelar",
     "panel.render.render-video": "Renderizar video",
