@@ -103,8 +103,9 @@ class Splat extends Element {
 
         // added per-splat state channel
         // bit 1: selected
-        // bit 2: deleted
-        // bit 3: locked
+        // bit 2: locked
+        // bit 3: deleted
+        // bit 4: hidden
         if (!this.splatData.getProp('state')) {
             this.splatData.getElement('vertex').properties.push({
                 type: 'uchar',
