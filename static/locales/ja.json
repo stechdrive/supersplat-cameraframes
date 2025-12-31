@@ -189,6 +189,7 @@
     "panel.splat-data.totals.selected": "選択中",
     "panel.splat-data.totals.locked": "ロック中",
     "panel.splat-data.totals.deleted": "削除",
+    "panel.splat-data.totals.hidden": "非表示",
     "panel.render.ok": "レンダリング",
     "panel.render.cancel": "キャンセル",
     "panel.render.render-video": "ビデオレンダリング",

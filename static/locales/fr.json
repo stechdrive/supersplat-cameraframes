@@ -93,6 +93,7 @@
     "panel.splat-data.totals.selected": "Selectionné",
     "panel.splat-data.totals.locked": "Verrouillé",
     "panel.splat-data.totals.deleted": "Supprimé",
+    "panel.splat-data.totals.hidden": "Masqué",
     "panel.render.ok": "Rendu",
     "panel.render.cancel": "Annuler",
     "panel.render.render-video": "Rendu vidéo",
