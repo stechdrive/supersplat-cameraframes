@@ -223,9 +223,9 @@ class SplatList extends Container {
         });
 
         events.on('selection.changed', (selection: Element, _prev: Element, list?: Element[]) => {
-            const selectionList = Array.isArray(list)
-                ? list
-                : (events.invoke('selection.list') as Element[] | undefined) ?? [];
+            const selectionList = Array.isArray(list) ?
+                list :
+                (events.invoke('selection.list') as Element[] | undefined) ?? [];
             const selectedSplats = new Set(selectionList.filter((item): item is Splat => item instanceof Splat));
             items.forEach((value, key) => {
                 value.selected = selectedSplats.has(key);

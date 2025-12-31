@@ -112,9 +112,9 @@ class MultiEntityTransformHandler implements TransformHandler {
 
         const origin = this.events.invoke('pivot.origin');
         const active = this.pickActiveTarget();
-        const coordSpace = this.events.functions.has('tool.coordSpace')
-            ? (this.events.invoke('tool.coordSpace') as 'local' | 'world')
-            : 'world';
+        const coordSpace = this.events.functions.has('tool.coordSpace') ?
+            (this.events.invoke('tool.coordSpace') as 'local' | 'world') :
+            'world';
         const rotation = quat.copy(coordSpace === 'local' && active ? active.entity.getRotation() : Quat.IDENTITY);
 
         if (origin === 'boundCenter') {

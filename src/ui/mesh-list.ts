@@ -217,9 +217,9 @@ class MeshList extends Container {
         });
 
         events.on('selection.changed', (selection: Element, _prev: Element, list?: Element[]) => {
-            const selectionList = Array.isArray(list)
-                ? list
-                : (events.invoke('selection.list') as Element[] | undefined) ?? [];
+            const selectionList = Array.isArray(list) ?
+                list :
+                (events.invoke('selection.list') as Element[] | undefined) ?? [];
             const selectedModels = new Set(selectionList.filter((item): item is Model => item instanceof Model));
             items.forEach((value, key) => {
                 value.selected = selectedModels.has(key);
