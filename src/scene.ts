@@ -102,6 +102,8 @@ class Scene {
     private pendingAmbientFresh = false;
     private pendingAmbientTimer: number | null = null;
     private lightingHistoryCoalesceMs = 400;
+    private boundRecalcTimer: number | null = null;
+    private boundRecalcDebounceMs = 200;
 
     constructor(
         events: Events,
@@ -441,6 +443,18 @@ class Scene {
         // postrender 後にダブル rAF で実行する。複数フレーム続けて実施し、初期計算の取りこぼしを防ぐ。
         this.pendingViewportRefresh = Math.max(this.pendingViewportRefresh, 3);
         this.forceRender = true; // 少なくとも1フレームは描画させて postrender を踏む
+    }
+
+    scheduleBoundRecalc() {
+        if (this.boundRecalcTimer !== null) {
+            window.clearTimeout(this.boundRecalcTimer);
+        }
+        this.boundDirty = false;
+        this.boundRecalcTimer = window.setTimeout(() => {
+            this.boundRecalcTimer = null;
+            this.boundDirty = true;
+            this.forceRender = true;
+        }, this.boundRecalcDebounceMs);
     }
 
     clear() {
