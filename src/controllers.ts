@@ -101,6 +101,17 @@ class PointerController {
         let touches: { id: number, x: number, y: number}[] = [];
         let midx: number, midy: number, midlen: number;
 
+        const releaseMouseInteraction = (event: PointerEvent) => {
+            pressedButton = -1;
+            isPivoting = false;
+            if (target.hasPointerCapture(event.pointerId)) {
+                target.releasePointerCapture(event.pointerId);
+            }
+            if (document.pointerLockElement === target && navMode() === 'fpv') {
+                document.exitPointerLock?.();
+            }
+        };
+
         const pointerdown = (event: PointerEvent) => {
             const modState = modifiers.read(event);
             if (event.pointerType === 'mouse') {
@@ -149,13 +160,8 @@ class PointerController {
         const pointerup = (event: PointerEvent) => {
             if (event.pointerType === 'mouse') {
                 // Only release if this is the button that was initially pressed
-                if (event.button === pressedButton) {
-                    pressedButton = -1;
-                    isPivoting = false;
-                    target.releasePointerCapture(event.pointerId);
-                    if (document.pointerLockElement === target && navMode() === 'fpv') {
-                        document.exitPointerLock?.();
-                    }
+                if (event.button === pressedButton || event.buttons === 0) {
+                    releaseMouseInteraction(event);
                 }
             } else {
                 touches = touches.filter(touch => touch.id !== event.pointerId);
@@ -178,8 +184,7 @@ class PointerController {
                 const buttonMask = [1, 4, 2][pressedButton];
                 if ((event.buttons & buttonMask) === 0) {
                     // Button is no longer pressed, clean up
-                    pressedButton = -1;
-                    isPivoting = false;
+                    releaseMouseInteraction(event);
                     return;
                 }
 
