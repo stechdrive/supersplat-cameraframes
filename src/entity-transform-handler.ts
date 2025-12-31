@@ -102,6 +102,8 @@ class EntityTransformHandler implements TransformHandler {
             oldt: transform.clone(),
             newt: transform.clone()
         });
+
+        this.target.scene.beginBoundPreview(this.target);
     }
 
     update(transform: Transform) {
@@ -113,17 +115,29 @@ class EntityTransformHandler implements TransformHandler {
         const r = quat;
         const s = mat.getScale();
 
-        this.target.move(t, r, s);
+        if (this.target instanceof Splat) {
+            this.target.move(t, r, s, true);
+        } else {
+            this.target.move(t, r, s);
+        }
         this.top.newt.set(t, r, s);
         this.pop.newt.copy(transform);
+        this.target.scene.updateBoundPreview(this.target);
     }
 
     end() {
+        this.target.scene.endBoundPreview(this.target);
+
         // if anything changed then register the op with undo/redo system
         const { oldt, newt } = this.top;
 
-        if (!oldt.equals(newt)) {
+        const changed = !oldt.equals(newt);
+        if (changed) {
             this.events.fire('edit.add', new MultiOp([this.top, this.pop]));
+        }
+
+        if (changed && this.target instanceof Splat) {
+            this.target.updatePositions();
         }
 
         this.top = null;

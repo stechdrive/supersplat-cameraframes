@@ -39,6 +39,8 @@ class Splat extends Element {
     splatData: GSplatData;
     numSplats = 0;
     numDeleted = 0;
+    numHidden = 0;
+    numVisible = 0;
     numLocked = 0;
     numSelected = 0;
     entity: Entity;
@@ -103,8 +105,9 @@ class Splat extends Element {
 
         // added per-splat state channel
         // bit 1: selected
-        // bit 2: deleted
-        // bit 3: locked
+        // bit 2: locked
+        // bit 3: deleted
+        // bit 4: hidden
         if (!this.splatData.getProp('state')) {
             this.splatData.getElement('vertex').properties.push({
                 type: 'uchar',
@@ -146,6 +149,8 @@ class Splat extends Element {
             this.numLocked = result.numLocked;
             this.numSelected = result.numSelected;
             this.numDeleted = result.numDeleted;
+            this.numHidden = result.numHidden;
+            this.numVisible = result.numVisible;
         }
 
         this.makeSelectionBoundDirty();
@@ -165,12 +170,131 @@ class Splat extends Element {
             const { centers, offset } = centersInfo;
             for (let i = 0; i < this.splatData.numSplats; ++i) {
                 const base = (offset / 3 + i) * 3;
-                if ((state[i] & State.deleted) === 0) {
+                if ((state[i] & (State.deleted | State.hidden)) === 0) {
                     centers[base + 0] = data[i * 4];
                     centers[base + 1] = data[i * 4 + 1];
                     centers[base + 2] = data[i * 4 + 2];
                 }
             }
+        }
+
+        this.scene.forceRender = true;
+        this.scene.events.fire('splat.positionsChanged', this);
+    }
+
+    updatePositionsPartial(selectedCount: number) {
+        const data = this.splatData;
+        if (selectedCount > Math.min(20000, data.numSplats * 0.05)) {
+            this.updatePositions();
+            return;
+        }
+
+        const centersInfo = this.scene.renderSystem.getCenters(this);
+        if (!centersInfo) {
+            return;
+        }
+
+        const state = data.getProp('state') as Uint8Array;
+        const indices = data.getProp('transform') as Uint16Array;
+        const localCenters = this.localCenters;
+        const { centers, offset } = centersInfo;
+        const baseOffset = offset / 3;
+        const localPalette = this.transformPalette;
+        const world = this.entity.getWorldTransform();
+        const localMat = new Mat4();
+        const worldMat = new Mat4();
+        const transforms = new Map<number, Float32Array>();
+        const skipMask = State.locked | State.deleted | State.hidden;
+
+        for (let i = 0; i < data.numSplats; ++i) {
+            const s = state[i];
+            if ((s & State.selected) === 0 || (s & skipMask) !== 0) {
+                continue;
+            }
+            const index = indices[i];
+            let transform = transforms.get(index);
+            if (!transform) {
+                localPalette.getTransform(index, localMat);
+                worldMat.mul2(world, localMat);
+                const m = worldMat.data;
+                transform = new Float32Array([
+                    m[0], m[1], m[2],
+                    m[4], m[5], m[6],
+                    m[8], m[9], m[10],
+                    m[12], m[13], m[14]
+                ]);
+                transforms.set(index, transform);
+            }
+
+            const base = (baseOffset + i) * 3;
+            const x = localCenters[i * 3 + 0];
+            const y = localCenters[i * 3 + 1];
+            const z = localCenters[i * 3 + 2];
+            centers[base + 0] = x * transform[0] + y * transform[3] + z * transform[6] + transform[9];
+            centers[base + 1] = x * transform[1] + y * transform[4] + z * transform[7] + transform[10];
+            centers[base + 2] = x * transform[2] + y * transform[5] + z * transform[8] + transform[11];
+        }
+
+        this.scene.forceRender = true;
+        this.scene.events.fire('splat.positionsChanged', this);
+    }
+
+    updatePositionsForIndices(indices: Uint32Array) {
+        if (indices.length === 0) {
+            return;
+        }
+
+        const data = this.splatData;
+        if (indices.length > Math.min(20000, data.numSplats * 0.05)) {
+            this.updatePositions();
+            return;
+        }
+
+        const centersInfo = this.scene.renderSystem.getCenters(this);
+        if (!centersInfo) {
+            return;
+        }
+
+        const state = data.getProp('state') as Uint8Array;
+        const transformIndices = data.getProp('transform') as Uint16Array;
+        const localCenters = this.localCenters;
+        const { centers, offset } = centersInfo;
+        const baseOffset = offset / 3;
+        const localPalette = this.transformPalette;
+        const world = this.entity.getWorldTransform();
+        const localMat = new Mat4();
+        const worldMat = new Mat4();
+        const transforms = new Map<number, Float32Array>();
+        const skipMask = State.deleted | State.hidden;
+
+        for (let i = 0; i < indices.length; ++i) {
+            const idx = indices[i];
+            const s = state[idx];
+            if ((s & skipMask) !== 0) {
+                continue;
+            }
+            const transformIndex = transformIndices[idx];
+            let transform = transforms.get(transformIndex);
+            if (!transform) {
+                localPalette.getTransform(transformIndex, localMat);
+                worldMat.mul2(world, localMat);
+                const m = worldMat.data;
+                transform = new Float32Array([
+                    m[0], m[1], m[2],
+                    m[4], m[5], m[6],
+                    m[8], m[9], m[10],
+                    m[12], m[13], m[14]
+                ]);
+                transforms.set(transformIndex, transform);
+            }
+
+            const base = (baseOffset + idx) * 3;
+            const x = localCenters[idx * 3 + 0];
+            const y = localCenters[idx * 3 + 1];
+            const z = localCenters[idx * 3 + 2];
+            centers[base + 0] = x * transform[0] + y * transform[3] + z * transform[6] + transform[9];
+            centers[base + 1] = x * transform[1] + y * transform[4] + z * transform[7] + transform[10];
+            centers[base + 2] = x * transform[2] + y * transform[5] + z * transform[8] + transform[11];
         }
 
         this.scene.forceRender = true;
@@ -279,7 +403,7 @@ class Splat extends Element {
         return this.worldBound.center;
     }
 
-    move(position?: Vec3, rotation?: Quat, scale?: Vec3) {
+    move(position?: Vec3, rotation?: Quat, scale?: Vec3, skipCenterUpdate = false) {
         const entity = this.entity;
         if (position) {
             entity.setLocalPosition(position);
@@ -292,7 +416,7 @@ class Splat extends Element {
         }
 
         this.makeSelectionBoundDirty();
-        this.scene.renderSystem.updateTransform(this);
+        this.scene.renderSystem.updateTransform(this, skipCenterUpdate);
         this.scene.events.fire('splat.moved', this);
     }
 
@@ -359,20 +483,31 @@ class Splat extends Element {
     }
 
     set visible(value: boolean) {
-        if (value !== this.visible) {
-            this._visible = value;
-            if (this.scene?.renderSystem) {
-                if (value) {
-                    this.scene.renderSystem.add(this);
-                } else {
-                    this.scene.renderSystem.remove(this);
-                }
-                this.stateTexture = this.scene.renderSystem.stateTexture;
-                this.transformTexture = this.scene.renderSystem.transformTexture;
-            }
-            this.scene.events.fire('splat.visibility', this);
-            this.scene.forceRender = true;
+        const next = !!value;
+        if (next === this._visible) {
+            return;
         }
+
+        this._visible = next;
+
+        const state = this.splatData.getProp('state') as Uint8Array;
+        for (let i = 0; i < state.length; ++i) {
+            if (next) {
+                state[i] &= ~State.hidden;
+            } else {
+                state[i] |= State.hidden;
+            }
+        }
+
+        this.updateState(State.hidden);
+        const renderSystem = this.scene.renderSystem;
+        const needsImmediateRebuild = next && !renderSystem.isSplatActive(this);
+        if (!next || needsImmediateRebuild) {
+            renderSystem.scheduleRebuildForVisibility(needsImmediateRebuild);
+        }
+        this.scene.scheduleBoundRecalc();
+        this.scene.events.fire('splat.visibility', this);
+        this.scene.forceRender = true;
     }
 
     get visible() {

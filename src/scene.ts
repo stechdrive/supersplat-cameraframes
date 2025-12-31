@@ -7,8 +7,10 @@ import {
     CameraComponent,
     Color,
     Entity,
+    Mat4,
     Layer,
-    GraphicsDevice
+    GraphicsDevice,
+    Vec3
 } from 'playcanvas';
 
 import { AssetLoader } from './asset-loader';
@@ -50,6 +52,28 @@ class Scene {
     elements: Element[] = [];
     boundStorage = new BoundingBox();
     boundDirty = true;
+    private boundPreviewActive = false;
+    private boundPreviewTarget: Element | null = null;
+    private boundPreviewBase = new BoundingBox();
+    private boundPreviewTargetBase = new BoundingBox();
+    private boundPreviewTargetCurrent = new BoundingBox();
+    private boundPreviewCurrent = new BoundingBox();
+    private boundPreviewWorld = new Mat4();
+    private boundPreviewWorldInv = new Mat4();
+    private boundPreviewDelta = new Mat4();
+    private boundPreviewCorners = [
+        new Vec3(),
+        new Vec3(),
+        new Vec3(),
+        new Vec3(),
+        new Vec3(),
+        new Vec3(),
+        new Vec3(),
+        new Vec3()
+    ];
+    private boundPreviewMin = new Vec3();
+    private boundPreviewMax = new Vec3();
+    private boundPreviewTmp = new Vec3();
     forceRender = false;
     pendingViewportRefresh = 0;
     viewportRefreshInFlight = false;
@@ -102,6 +126,8 @@ class Scene {
     private pendingAmbientFresh = false;
     private pendingAmbientTimer: number | null = null;
     private lightingHistoryCoalesceMs = 400;
+    private boundRecalcTimer: number | null = null;
+    private boundRecalcDebounceMs = 200;
 
     constructor(
         events: Events,
@@ -443,6 +469,127 @@ class Scene {
         this.forceRender = true; // 少なくとも1フレームは描画させて postrender を踏む
     }
 
+    scheduleBoundRecalc() {
+        if (this.boundRecalcTimer !== null) {
+            window.clearTimeout(this.boundRecalcTimer);
+        }
+        this.boundDirty = false;
+        this.boundRecalcTimer = window.setTimeout(() => {
+            this.boundRecalcTimer = null;
+            this.boundDirty = true;
+            this.forceRender = true;
+        }, this.boundRecalcDebounceMs);
+    }
+
+    beginBoundPreview(target: Element) {
+        const entity = this.getBoundPreviewEntity(target);
+        if (!entity) {
+            return;
+        }
+
+        const targetBound = target.worldBound;
+        if (!targetBound) {
+            return;
+        }
+        const baseBound = this.bound;
+
+        this.boundPreviewActive = true;
+        this.boundPreviewTarget = target;
+        this.boundPreviewBase.copy(baseBound);
+        this.boundPreviewTargetBase.copy(targetBound);
+        this.boundPreviewWorld.copy(entity.getWorldTransform());
+        this.boundPreviewWorldInv.copy(this.boundPreviewWorld).invert();
+        this.setBoundPreviewCorners(this.boundPreviewTargetBase);
+        this.updateBoundPreview(target);
+    }
+
+    updateBoundPreview(target: Element) {
+        if (!this.boundPreviewActive || this.boundPreviewTarget !== target) {
+            return;
+        }
+
+        const entity = this.getBoundPreviewEntity(target);
+        if (!entity) {
+            return;
+        }
+
+        this.boundPreviewDelta.mul2(entity.getWorldTransform(), this.boundPreviewWorldInv);
+        this.updateBoundPreviewFromDelta(this.boundPreviewDelta);
+    }
+
+    updateBoundPreviewWithDelta(target: Element, delta: Mat4) {
+        if (!this.boundPreviewActive || this.boundPreviewTarget !== target) {
+            return;
+        }
+        this.updateBoundPreviewFromDelta(delta);
+    }
+
+    endBoundPreview(target: Element) {
+        if (!this.boundPreviewActive || this.boundPreviewTarget !== target) {
+            return;
+        }
+
+        this.boundPreviewActive = false;
+        this.boundPreviewTarget = null;
+        this.boundStorage.copy(this.boundPreviewCurrent);
+        this.scheduleBoundRecalc();
+    }
+
+    private getBoundPreviewEntity(target: Element) {
+        if (target instanceof Splat || target instanceof Model || target instanceof LightRig) {
+            return target.entity;
+        }
+        return null;
+    }
+
+    private setBoundPreviewCorners(bound: BoundingBox) {
+        const center = bound.center;
+        const half = bound.halfExtents;
+        const minX = center.x - half.x;
+        const minY = center.y - half.y;
+        const minZ = center.z - half.z;
+        const maxX = center.x + half.x;
+        const maxY = center.y + half.y;
+        const maxZ = center.z + half.z;
+        const corners = this.boundPreviewCorners;
+        corners[0].set(minX, minY, minZ);
+        corners[1].set(maxX, minY, minZ);
+        corners[2].set(minX, maxY, minZ);
+        corners[3].set(maxX, maxY, minZ);
+        corners[4].set(minX, minY, maxZ);
+        corners[5].set(maxX, minY, maxZ);
+        corners[6].set(minX, maxY, maxZ);
+        corners[7].set(maxX, maxY, maxZ);
+    }
+
+    private updateBoundPreviewFromDelta(delta: Mat4) {
+        const min = this.boundPreviewMin;
+        const max = this.boundPreviewMax;
+        const tmp = this.boundPreviewTmp;
+        min.set(Infinity, Infinity, Infinity);
+        max.set(-Infinity, -Infinity, -Infinity);
+
+        this.boundPreviewCorners.forEach((corner) => {
+            delta.transformPoint(corner, tmp);
+            min.x = Math.min(min.x, tmp.x);
+            min.y = Math.min(min.y, tmp.y);
+            min.z = Math.min(min.z, tmp.z);
+            max.x = Math.max(max.x, tmp.x);
+            max.y = Math.max(max.y, tmp.y);
+            max.z = Math.max(max.z, tmp.z);
+        });
+
+        this.boundPreviewTargetCurrent.setMinMax(min, max);
+        this.boundPreviewCurrent.copy(this.boundPreviewBase);
+        this.boundPreviewCurrent.add(this.boundPreviewTargetCurrent);
+
+        const pad = Math.max(1e-3, this.boundPreviewCurrent.halfExtents.length() * 0.02);
+        this.boundPreviewCurrent.halfExtents.x += pad;
+        this.boundPreviewCurrent.halfExtents.y += pad;
+        this.boundPreviewCurrent.halfExtents.z += pad;
+        this.forceRender = true;
+    }
+
     clear() {
         const splats = this.getElementsByType(ElementType.splat);
         splats.forEach((splat) => {
@@ -531,6 +678,9 @@ class Scene {
 
     // get the scene bound
     get bound() {
+        if (this.boundPreviewActive) {
+            return this.boundPreviewCurrent;
+        }
         if (this.boundDirty) {
             let valid = false;
             this.forEachElement((e) => {

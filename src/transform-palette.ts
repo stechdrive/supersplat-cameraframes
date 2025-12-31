@@ -21,6 +21,8 @@ const width = 512 * 3;
 class TransformPalette {
     getTransform: (index: number, transform: Mat4) => void;
     setTransform: (index: number, transform: Mat4) => void;
+    beginUpdate: () => void;
+    endUpdate: () => void;
     alloc: (num?: number) => number;
     free: (num?: number) => void;
     texture: Texture;
@@ -28,6 +30,8 @@ class TransformPalette {
     constructor(device: GraphicsDevice, initialSize = 4096) {
         let texture: Texture;
         let data: Float32Array;
+        let batchDepth = 0;
+        let pendingUpload = false;
 
         // reallocate the storage texture and copy over old data
         const realloc = (width: number, height: number) => {
@@ -68,7 +72,28 @@ class TransformPalette {
                 data[index * 12 + i] = src[idx[i]];
             }
 
+            if (batchDepth > 0) {
+                pendingUpload = true;
+                return;
+            }
+
             texture.upload();
+        };
+
+        this.beginUpdate = () => {
+            batchDepth += 1;
+        };
+
+        this.endUpdate = () => {
+            if (batchDepth === 0) {
+                return;
+            }
+
+            batchDepth -= 1;
+            if (batchDepth === 0 && pendingUpload) {
+                pendingUpload = false;
+                texture.upload();
+            }
         };
 
         // index of the next available matrix. index 0 is identity.

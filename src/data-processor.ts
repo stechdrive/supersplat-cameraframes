@@ -283,6 +283,7 @@ class DataProcessor {
         const transformA = ctx.splat.scene.renderSystem.mergedResource.transformATexture;
         const splatTransform = ctx.transformTexture;
         const transformPalette = ctx.transformPalette;
+        const splatState = ctx.stateTexture ?? this.dummyTexture;
 
         // update view projection matrix
         const camera = ctx.splat.scene.camera.entity.camera;
@@ -295,6 +296,7 @@ class DataProcessor {
             transformA,
             splatTransform,
             transformPalette,
+            splatState,
             splatOffset: ctx.offset,
             splatCount: ctx.count,
             globalSplatParams: [transformA.width, transformA.width * transformA.height],

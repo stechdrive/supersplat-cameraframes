@@ -9,6 +9,7 @@ const fragmentShader = /* glsl */ `
     uniform highp usampler2D transformA;            // splat center x, y, z
     uniform highp usampler2D splatTransform;        // transform palette index
     uniform sampler2D transformPalette;             // palette of transforms
+    uniform sampler2D splatState;                   // per-splat state
     uniform uvec2 globalSplatParams;                // global texture width, total splats
     uniform uint splatOffset;                       // start index
     uniform uint splatCount;                        // number of splats to process
@@ -56,6 +57,11 @@ const fragmentShader = /* glsl */ `
                 int(globalIndex % globalSplatParams.x),
                 int(globalIndex / globalSplatParams.x)
             );
+
+            uint state = uint(texelFetch(splatState, splatUV, 0).r * 255.0) & 15u;
+            if ((state & 14u) != 0u) {
+                continue;
+            }
 
             // read splat center
             vec3 center = uintBitsToFloat(texelFetch(transformA, splatUV, 0).xyz);

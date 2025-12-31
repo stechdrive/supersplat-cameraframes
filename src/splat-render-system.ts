@@ -62,6 +62,13 @@ class SplatRenderSystem {
     boundCache = new Map<Splat, BoundCacheEntry>();
     shBands = 0;
     sorterPromiseHandle: Promise<void> | null = null;
+    private visibilityRebuildTimer: number | null = null;
+    private visibilityRebuildPending = false;
+    private visibilityRebuildImmediate = false;
+    private pivotActive = false;
+    private visibilityRebuildDebounceMs = 400;
+    private sorterCentersDirty = false;
+    private sorterMapping: Uint32Array | null = null;
 
     constructor(scene: Scene) {
         this.scene = scene;
@@ -77,6 +84,28 @@ class SplatRenderSystem {
             } else {
                 this.materialDirty = true;
             }
+        });
+
+        this.scene.events.on('pivot.started', () => {
+            this.pivotActive = true;
+            this.clearVisibilityRebuildTimer();
+        });
+        this.scene.events.on('pivot.ended', () => {
+            this.pivotActive = false;
+            if (this.visibilityRebuildPending) {
+                if (this.visibilityRebuildImmediate) {
+                    this.runVisibilityRebuild();
+                } else {
+                    this.startVisibilityRebuildTimer();
+                }
+            }
+        });
+
+        this.scene.events.on('splat.positionsChanged', (splat: Splat) => {
+            if (!this.isSplatActive(splat)) {
+                return;
+            }
+            this.markSorterCentersDirty();
         });
     }
 
@@ -128,6 +157,89 @@ class SplatRenderSystem {
             this.rebuild();
             this._dirty = false;
         }
+    }
+
+    isSplatActive(splat: Splat) {
+        return this.offsets.has(splat);
+    }
+
+    scheduleRebuildForVisibility(immediate = false) {
+        const allVisible = this.sources.every(splat => splat.visible);
+        const allActive = this.sources.every(splat => this.isSplatActive(splat));
+        if (allVisible && allActive && !immediate) {
+            this.visibilityRebuildPending = false;
+            this.visibilityRebuildImmediate = false;
+            this.clearVisibilityRebuildTimer();
+            return;
+        }
+
+        this.visibilityRebuildPending = true;
+        if (immediate) {
+            this.visibilityRebuildImmediate = true;
+        }
+        if (this._frozen) {
+            this._dirty = true;
+            this.visibilityRebuildPending = false;
+            this.visibilityRebuildImmediate = false;
+            return;
+        }
+        if (this.pivotActive) {
+            return;
+        }
+        if (this.visibilityRebuildImmediate) {
+            this.runVisibilityRebuild();
+            return;
+        }
+        this.startVisibilityRebuildTimer();
+    }
+
+    private startVisibilityRebuildTimer() {
+        this.clearVisibilityRebuildTimer();
+        this.visibilityRebuildTimer = window.setTimeout(() => {
+            this.visibilityRebuildTimer = null;
+            if (!this.visibilityRebuildPending || this.pivotActive) {
+                return;
+            }
+            this.runVisibilityRebuild();
+        }, this.visibilityRebuildDebounceMs);
+    }
+
+    private runVisibilityRebuild() {
+        this.clearVisibilityRebuildTimer();
+        if (!this.visibilityRebuildPending || this.pivotActive) {
+            return;
+        }
+        this.visibilityRebuildPending = false;
+        this.visibilityRebuildImmediate = false;
+        if (this._frozen) {
+            this._dirty = true;
+            return;
+        }
+        this.rebuild();
+    }
+
+    private clearVisibilityRebuildTimer() {
+        if (this.visibilityRebuildTimer !== null) {
+            window.clearTimeout(this.visibilityRebuildTimer);
+            this.visibilityRebuildTimer = null;
+        }
+    }
+
+    private markSorterCentersDirty() {
+        this.sorterCentersDirty = true;
+    }
+
+    private flushSorterCenters() {
+        if (!this.sorterCentersDirty) {
+            return;
+        }
+        const instance = this.mergedEntity.gsplat?.instance;
+        if (!instance?.sorter) {
+            return;
+        }
+
+        this.sorterCentersDirty = false;
+        instance.sorter.setMapping(this.sorterMapping);
     }
 
     mapPickId(id: number) {
@@ -223,31 +335,39 @@ class SplatRenderSystem {
     }
 
     updateState(splat: Splat) {
-        if (!this.stateTexture || !this.globalState) {
-            return;
-        }
-
         const state = splat.splatData.getProp('state') as Uint8Array;
-        const offset = this.offsets.get(splat) ?? 0;
-        this.globalState.set(state, offset);
+        const offset = this.offsets.get(splat);
+        if (this.stateTexture && this.globalState && offset !== undefined) {
+            this.globalState.set(state, offset);
 
-        const data = this.stateTexture.lock() as Uint8Array;
-        data.set(state, offset);
-        this.stateTexture.unlock();
+            const data = this.stateTexture.lock() as Uint8Array;
+            data.set(state, offset);
+            this.stateTexture.unlock();
+        }
 
         let numSelected = 0;
         let numLocked = 0;
         let numDeleted = 0;
+        let numHidden = 0;
         for (let i = 0; i < state.length; ++i) {
             const s = state[i];
-            if (s & State.deleted) {
+            const isDeleted = (s & State.deleted) !== 0;
+            if (isDeleted) {
                 numDeleted++;
-            } else if (s & State.locked) {
+                continue;
+            }
+            if (s & State.hidden) {
+                numHidden++;
+            }
+            if (s & State.locked) {
                 numLocked++;
-            } else if (s & State.selected) {
+            }
+            if ((s & State.selected) !== 0 && (s & (State.locked | State.hidden)) === 0) {
                 numSelected++;
             }
         }
+        const numSplats = state.length - numDeleted;
+        const numVisible = numSplats - numHidden;
 
         this.rebuildSorterMapping();
 
@@ -262,7 +382,9 @@ class SplatRenderSystem {
             numSelected,
             numLocked,
             numDeleted,
-            numSplats: state.length - numDeleted
+            numHidden,
+            numVisible,
+            numSplats
         };
     }
 
@@ -326,11 +448,13 @@ class SplatRenderSystem {
         const world = splat.entity.getWorldTransform();
         const localPalette = splat.transformPalette;
         const mat = new Mat4();
+        this.transformPalette.beginUpdate();
         for (let i = 0; i < block.size; i++) {
             localPalette.getTransform(i, mat);
             mat.mul2(world, mat);
             this.transformPalette.setTransform(block.base + i, mat);
         }
+        this.transformPalette.endUpdate();
 
         this.scene.boundDirty = true;
         const cache = this.boundCache.get(splat);
@@ -368,6 +492,7 @@ class SplatRenderSystem {
                 if (instance.sorter) {
                     (instance.sorter as any).centers = centers;
                 }
+                this.markSorterCentersDirty();
             }
         }
     }
@@ -413,14 +538,16 @@ class SplatRenderSystem {
     private rebuildSorterMapping() {
         const instance = this.mergedEntity.gsplat?.instance;
         if (!instance || !this.globalState) {
+            this.sorterMapping = null;
             return;
         }
 
         const state = this.globalState;
         const total = this.globalIdToSplat.length;
         let active = 0;
+        const skipMask = State.deleted | State.hidden;
         for (let i = 0; i < total; i++) {
-            if ((state[i] & State.deleted) === 0) {
+            if ((state[i] & skipMask) === 0) {
                 active++;
             }
         }
@@ -429,13 +556,18 @@ class SplatRenderSystem {
             mapping = new Uint32Array(active);
             let idx = 0;
             for (let i = 0; i < total; i++) {
-                if ((state[i] & State.deleted) === 0) {
+                if ((state[i] & skipMask) === 0) {
                     mapping[idx++] = i;
                 }
             }
         }
 
-        instance.sorter.setMapping(mapping);
+        this.sorterMapping = mapping ?? null;
+        if (!instance.sorter) {
+            return;
+        }
+        instance.sorter.setMapping(this.sorterMapping);
+        this.sorterCentersDirty = false;
     }
 
     private applyMaterialBands(bands: number) {
@@ -526,6 +658,8 @@ class SplatRenderSystem {
             this._needsTransformUpdate = false;
         }
 
+        this.flushSorterCenters();
+
         if (this.materialDirty) {
             this.applyMaterialBands(this.scene.events.invoke('view.bands'));
             this.materialDirty = false;
@@ -553,13 +687,18 @@ class SplatRenderSystem {
     rebuild() {
         this.destroyMerged();
 
-        if (this.sources.length === 0) {
+        const activeSources = this.sources.filter(splat => splat.visible);
+        if (activeSources.length === 0) {
             console.log('SplatRenderSystem: No sources to rebuild');
             this.destroyMerged();
             this.stateTexture?.destroy();
             this.stateTexture = null;
             this.transformTexture?.destroy();
             this.transformTexture = null;
+            this.sources.forEach((splat) => {
+                splat.stateTexture = null;
+                splat.transformTexture = null;
+            });
             this.paramsTextures?.tex0.destroy();
             this.paramsTextures?.tex1.destroy();
             this.paramsTextures?.tex2.destroy();
@@ -571,6 +710,8 @@ class SplatRenderSystem {
             this.globalState = null;
             this.globalTransformIndices = null;
             this.globalIdToSplat = [];
+            this.sorterMapping = null;
+            this.sorterCentersDirty = false;
             return;
         }
 
@@ -580,9 +721,9 @@ class SplatRenderSystem {
         // プロパティ検証
         // プロパティ検証: 最も多くのプロパティを持つSplatを基準にする (SH Bandsが多いものをベースにするため)
         let maxProps = 0;
-        let baseSplat = this.sources[0];
+        let baseSplat = activeSources[0];
 
-        this.sources.forEach((s) => {
+        activeSources.forEach((s) => {
             const props = s.splatData.getElement('vertex').properties;
             if (props.length > maxProps) {
                 maxProps = props.length;
@@ -591,7 +732,7 @@ class SplatRenderSystem {
         });
 
         const baseProperties = baseSplat.splatData.getElement('vertex').properties;
-        const totalSplats = this.sources.reduce((sum, s) => sum + s.splatData.numSplats, 0);
+        const totalSplats = activeSources.reduce((sum, s) => sum + s.splatData.numSplats, 0);
         let shBands = 0;
 
         this.offsets.clear();
@@ -601,7 +742,7 @@ class SplatRenderSystem {
 
         // オフセット計算
         let runningOffset = 0;
-        this.sources.forEach((splat) => {
+        activeSources.forEach((splat) => {
             this.offsets.set(splat, runningOffset);
             this.counts.set(splat, splat.splatData.numSplats);
 
@@ -617,7 +758,8 @@ class SplatRenderSystem {
 
         // 変換ブロック割当
         const mat = new Mat4();
-        this.sources.forEach((splat) => {
+        this.transformPalette.beginUpdate();
+        activeSources.forEach((splat) => {
             const indices = splat.splatData.getProp('transform') as Uint16Array;
             let maxLocal = 0;
             for (let i = 0; i < indices.length; i++) {
@@ -634,6 +776,7 @@ class SplatRenderSystem {
                 this.transformPalette.setTransform(base + i, mat);
             }
         });
+        this.transformPalette.endUpdate();
 
         // 頂点属性統合
         const mergedProperties = baseProperties.map((prop) => {
@@ -648,7 +791,7 @@ class SplatRenderSystem {
             };
         });
 
-        this.sources.forEach((splat) => {
+        activeSources.forEach((splat) => {
             const offset = this.offsets.get(splat) ?? 0;
             const count = this.counts.get(splat) ?? 0;
             const propSrc = splat.splatData.getElement('vertex').properties;
@@ -763,21 +906,29 @@ class SplatRenderSystem {
         }
 
         this.sources.forEach((splat) => {
-            splat.stateTexture = this.stateTexture;
-            splat.transformTexture = this.transformTexture;
+            if (splat.visible) {
+                splat.stateTexture = this.stateTexture;
+                splat.transformTexture = this.transformTexture;
+            } else {
+                splat.stateTexture = null;
+                splat.transformTexture = null;
+            }
         });
 
-        this.sources.forEach((splat) => {
-            const offset = this.offsets.get(splat) ?? 0;
-            const count = this.counts.get(splat) ?? 0;
+        activeSources.forEach((splat) => {
+            const offset = this.offsets.get(splat);
+            const count = this.counts.get(splat);
             const block = this.transformBases.get(splat);
+            if (offset === undefined || count === undefined || !block) {
+                return;
+            }
             const state = splat.splatData.getProp('state') as Uint8Array;
             const indices = splat.splatData.getProp('transform') as Uint16Array;
 
             // globalState updating is handled in updateState call below
             // but we need globalTransformIndices setup here or in updateTransform
             for (let i = 0; i < count; i++) {
-                this.globalTransformIndices[offset + i] = (block?.base ?? 0) + indices[i];
+                this.globalTransformIndices[offset + i] = block.base + indices[i];
             }
 
             for (let i = 0; i < count; i++) {
@@ -809,7 +960,7 @@ class SplatRenderSystem {
             // GSplatDataはLocal Space (0,0,0) のデータしか持たないため、
             // ShaderでTransformPaletteを使って動かす前の座標でソートされてしまうのを防ぐ
             const centers = new Float32Array(totalSplats * 3);
-            this.sources.forEach((splat) => {
+            activeSources.forEach((splat) => {
                 const offset = this.offsets.get(splat) ?? 0;
                 const count = this.counts.get(splat) ?? 0;
                 const positions = this.calcPositions(splat);
@@ -840,7 +991,7 @@ class SplatRenderSystem {
 
         // Ensure transforms (and thus world centers) are up to date
         // This prevents pivot picking issues where centers are initially 0 or unscaled
-        this.sources.forEach((splat) => {
+        activeSources.forEach((splat) => {
             this.updateTransform(splat);
         });
 

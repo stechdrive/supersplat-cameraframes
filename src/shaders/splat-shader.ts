@@ -55,7 +55,7 @@ void main(void) {
     float selectionAlpha = params2.y;
 
     // get per-gaussian edit state (Using Custom UV)
-    uint vertexState = uint(texelFetch(splatState, customUV, 0).r * 255.0 + 0.5) & 7u;
+    uint vertexState = uint(texelFetch(splatState, customUV, 0).r * 255.0 + 0.5) & 15u;
 
     #if OUTLINE_PASS
         if (vertexState != 1u) {
@@ -81,14 +81,14 @@ void main(void) {
                 return;
             }
         } else {
-            // set: skip deleted and locked splats
-            if ((vertexState & 6u) != 0u) {
+            // set: skip deleted, locked and hidden splats
+            if ((vertexState & 14u) != 0u) {
                 gl_Position = discardVec;
                 return;
             }
         }
     #else
-        if ((vertexState & 4u) != 0u) {
+        if ((vertexState & 12u) != 0u) {
             gl_Position = discardVec;
             return;
         }

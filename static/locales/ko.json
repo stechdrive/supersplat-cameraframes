@@ -93,6 +93,7 @@
     "panel.splat-data.totals.selected": "선택",
     "panel.splat-data.totals.locked": "잠금",
     "panel.splat-data.totals.deleted": "삭제된",
+    "panel.splat-data.totals.hidden": "숨김",
     "panel.render.ok": "렌더링",
     "panel.render.cancel": "취소",
     "panel.render.render-video": "비디오 렌더링",

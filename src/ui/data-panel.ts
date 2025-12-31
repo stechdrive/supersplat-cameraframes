@@ -23,6 +23,11 @@ const dataFuncs = {
     opacity: sigmoid
 };
 
+const blockedMask = State.locked | State.deleted | State.hidden;
+const selectable = (state: number) => (state & blockedMask) === 0;
+const selectedActive = (state: number) => (state & State.selected) !== 0 && selectable(state);
+const visibleActive = (state: number) => (state & (State.deleted | State.hidden)) === 0;
+
 // build a separator label
 const sepLabel = (labelText: string) => {
     const container = new Container({
@@ -158,6 +163,7 @@ class DataPanel extends Panel {
         const selectedValue = dataLabel(controls, localize('panel.splat-data.totals.selected'));
         const lockedValue = dataLabel(controls, localize('panel.splat-data.totals.locked'));
         const deletedValue = dataLabel(controls, localize('panel.splat-data.totals.deleted'));
+        const hiddenValue = dataLabel(controls, localize('panel.splat-data.totals.hidden'));
 
         controlsContainer.append(controls);
 
@@ -250,10 +256,11 @@ class DataPanel extends Panel {
 
             const state = splat.splatData.getProp('state') as Uint8Array;
             if (state) {
-                splatsValue.text = formatInteger(state.length - splat.numDeleted);
+                splatsValue.text = formatInteger(splat.numSplats);
                 selectedValue.text = formatInteger(splat.numSelected);
                 lockedValue.text = formatInteger(splat.numLocked);
                 deletedValue.text = formatInteger(splat.numDeleted);
+                hiddenValue.text = formatInteger(splat.numHidden);
 
                 // update histogram
                 const func = getValueFunc();
@@ -261,8 +268,8 @@ class DataPanel extends Panel {
                 // update histogram
                 histogram.update({
                     count: state.length,
-                    valueFunc: i => ((state[i] === 0 || state[i] === State.selected) ? func(i) : undefined),
-                    selectedFunc: i => state[i] === State.selected,
+                    valueFunc: i => (visibleActive(state[i]) ? func(i) : undefined),
+                    selectedFunc: i => selectedActive(state[i]),
                     logScale: logScaleValue.value
                 });
             }
@@ -354,12 +361,12 @@ class DataPanel extends Panel {
             svg.style.display = 'none';
 
             const state = splat.splatData.getProp('state') as Uint8Array;
-            const selection = state.some(s => s === State.selected);
+            const selection = state.some(s => selectedActive(s));
             const func = getValueFunc();
 
             // perform selection
             events.fire('select.pred', op, (i: number) => {
-                if (state[i] !== 0 && state[i] !== State.selected) {
+                if (!selectable(state[i])) {
                     return false;
                 }
 
