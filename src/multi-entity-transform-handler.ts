@@ -75,6 +75,12 @@ class MultiEntityTransformHandler implements TransformHandler {
             }
         });
 
+        events.on('tool.coordSpace', () => {
+            if (this.targets.length > 0 && !this.pop) {
+                this.placePivot();
+            }
+        });
+
         events.on('camera.focalPointPicked', (details: { position: Vec3 }) => {
             if (this.targets.length > 0 && ['move', 'rotate', 'scale'].includes(this.events.invoke('tool.active'))) {
                 const pivot = events.invoke('pivot') as Pivot;
@@ -106,7 +112,10 @@ class MultiEntityTransformHandler implements TransformHandler {
 
         const origin = this.events.invoke('pivot.origin');
         const active = this.pickActiveTarget();
-        const rotation = quat.copy(active ? active.entity.getRotation() : new Quat());
+        const coordSpace = this.events.functions.has('tool.coordSpace')
+            ? (this.events.invoke('tool.coordSpace') as 'local' | 'world')
+            : 'world';
+        const rotation = quat.copy(coordSpace === 'local' && active ? active.entity.getRotation() : Quat.IDENTITY);
 
         if (origin === 'boundCenter') {
             let hasBound = false;
