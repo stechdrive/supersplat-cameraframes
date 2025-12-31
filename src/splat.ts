@@ -166,7 +166,7 @@ class Splat extends Element {
             const { centers, offset } = centersInfo;
             for (let i = 0; i < this.splatData.numSplats; ++i) {
                 const base = (offset / 3 + i) * 3;
-                if ((state[i] & State.deleted) === 0) {
+                if ((state[i] & (State.deleted | State.hidden)) === 0) {
                     centers[base + 0] = data[i * 4];
                     centers[base + 1] = data[i * 4 + 1];
                     centers[base + 2] = data[i * 4 + 2];
