@@ -285,6 +285,10 @@ class MeasureTool {
         let clicked = false;
         let activePointerId: number | null = null;
         let pointerDownValid = false;
+        let pointerDownInfo: { x: number; y: number; clientX: number; clientY: number } | null = null;
+        let lastPointer: { x: number; y: number } | null = null;
+        let pointerMoveDistance = 0;
+        const clickMoveThreshold = 3;
 
         const isPointerLocked = () => {
             return document.pointerLockElement === canvasContainer.dom;
@@ -374,13 +378,31 @@ class MeasureTool {
             activePointerId = e.pointerId;
             clicked = true;
             pointerDownValid = true;
+            pointerDownInfo = pointer;
+            lastPointer = { x: pointer.x, y: pointer.y };
+            pointerMoveDistance = 0;
         };
 
         const pointermove = (e: PointerEvent) => {
             if (e.pointerId !== activePointerId) {
                 return;
             }
-            clicked = false;
+            let moved = 0;
+            if (isPointerLocked()) {
+                moved = Math.abs(e.movementX) + Math.abs(e.movementY);
+            } else {
+                const pointer = getPointerInfo(e);
+                if (pointer && lastPointer) {
+                    moved = Math.hypot(pointer.x - lastPointer.x, pointer.y - lastPointer.y);
+                    lastPointer = { x: pointer.x, y: pointer.y };
+                }
+            }
+            if (moved > 0) {
+                pointerMoveDistance += moved;
+            }
+            if (pointerMoveDistance > clickMoveThreshold) {
+                clicked = false;
+            }
         };
 
         const pointerup = (e: PointerEvent) => {
@@ -391,10 +413,14 @@ class MeasureTool {
             activePointerId = null;
             clicked = false;
             pointerDownValid = false;
+            const pointerDown = pointerDownInfo;
+            pointerDownInfo = null;
+            lastPointer = null;
+            pointerMoveDistance = 0;
             if (!shouldProcess || !splat) {
                 return;
             }
-            const pointer = getPointerInfo(e);
+            const pointer = isPointerLocked() ? getPointerInfo(e) : (pointerDown ?? getPointerInfo(e));
             if (!pointer) {
                 return;
             }
@@ -440,6 +466,9 @@ class MeasureTool {
             activePointerId = null;
             clicked = false;
             pointerDownValid = false;
+            pointerDownInfo = null;
+            lastPointer = null;
+            pointerMoveDistance = 0;
         };
 
         events.on('postrender', () => {
@@ -520,6 +549,9 @@ class MeasureTool {
             activePointerId = null;
             clicked = false;
             pointerDownValid = false;
+            pointerDownInfo = null;
+            lastPointer = null;
+            pointerMoveDistance = 0;
             canvasContainer.dom.removeEventListener('pointerdown', pointerdown, true);
             canvasContainer.dom.removeEventListener('pointermove', pointermove, true);
             canvasContainer.dom.removeEventListener('pointerup', pointerup, true);
