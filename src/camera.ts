@@ -1452,6 +1452,22 @@ class Camera extends Element {
         }
         const { entity, ortho } = this;
         const cameraPos = this.entity.getPosition();
+        if (this.customFrustum && !ortho) {
+            const device = this.scene?.graphicsDevice;
+            const rect = entity.camera.rect;
+            const cw = device?.clientRect?.width ?? 0;
+            const ch = device?.clientRect?.height ?? 0;
+            if (cw > 0 && ch > 0 && rect.z > 0 && rect.w > 0) {
+                const nx = (sx - rect.x * cw) / (rect.z * cw);
+                const ny = 1 - (sy - (1 - rect.y - rect.w) * ch) / (rect.w * ch);
+                const { left, right, bottom, top, near } = this.customFrustum;
+                vec.set(left + nx * (right - left), bottom + ny * (top - bottom), -near);
+                entity.getWorldTransform().transformPoint(vec, vecb);
+                vecb.sub(cameraPos).normalize();
+                ray.set(cameraPos, vecb);
+                return true;
+            }
+        }
 
         // create the pick ray in world space (screenToWorld expects CSS coords)
         if (ortho) {
