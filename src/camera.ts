@@ -1422,11 +1422,28 @@ class Camera extends Element {
         };
     }
 
+    private mapTargetToCssCoords(screenX: number, screenY: number) {
+        const size = this.getRenderTargetSize();
+        const canvas = this.scene?.canvas;
+        const w = canvas?.clientWidth ?? 0;
+        const h = canvas?.clientHeight ?? 0;
+        if (!size || !(size.width > 0 && size.height > 0) || !(w > 0 && h > 0)) {
+            return null;
+        }
+        if (!isFinite(screenX) || !isFinite(screenY)) {
+            return null;
+        }
+        return {
+            x: screenX / size.width * w,
+            y: screenY / size.height * h
+        };
+    }
+
     getRay(screenX: number, screenY: number, ray: Ray, options?: { space?: 'css' | 'target' }) {
         let sx = screenX;
         let sy = screenY;
-        if (options?.space !== 'target') {
-            const mapped = this.mapCssToTargetCoords(screenX, screenY);
+        if (options?.space === 'target') {
+            const mapped = this.mapTargetToCssCoords(screenX, screenY);
             if (!mapped) {
                 return false;
             }
@@ -1436,7 +1453,7 @@ class Camera extends Element {
         const { entity, ortho } = this;
         const cameraPos = this.entity.getPosition();
 
-        // create the pick ray in world space
+        // create the pick ray in world space (screenToWorld expects CSS coords)
         if (ortho) {
             entity.camera.screenToWorld(sx, sy, -1.0, vec);
             entity.camera.screenToWorld(sx, sy, 1.0, vecb);
@@ -1463,12 +1480,12 @@ class Camera extends Element {
             return null;
         }
         const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
-        const sx = clamp(mapped.x, 0, mapped.width - 1);
-        const sy = clamp(mapped.y, 0, mapped.height - 1);
-        const ix = Math.floor(sx);
-        const iy = Math.floor(sy);
+        const pickX = clamp(mapped.x, 0, mapped.width - 1);
+        const pickY = clamp(mapped.y, 0, mapped.height - 1);
+        const ix = Math.floor(pickX);
+        const iy = Math.floor(pickY);
 
-        if (!this.getRay(sx, sy, ray, { space: 'target' })) {
+        if (!this.getRay(screenX, screenY, ray)) {
             return null;
         }
 

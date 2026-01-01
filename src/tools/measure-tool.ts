@@ -254,10 +254,23 @@ class MeasureTool {
             customFrustum: scene.camera.getCustomFrustum()
         });
 
-        const getSplatInfo = () => splat ? {
-            measurePoints: splat.measurePoints.length,
-            measureSelection: splat.measureSelection
-        } : null;
+        const isPointerLocked = () => {
+            return document.pointerLockElement === canvasContainer.dom;
+        };
+
+        const getCameraFramesOverlay = () => {
+            return document.getElementById('camera-frames-overlay') as HTMLCanvasElement | null;
+        };
+
+        const getSplatInfo = () => {
+            if (!splat) {
+                return null;
+            }
+            return {
+                measurePoints: splat.measurePoints.length,
+                measureSelection: splat.measureSelection
+            };
+        };
 
         const getOverlayInfo = (event?: PointerEvent) => {
             const overlay = getCameraFramesOverlay();
@@ -494,21 +507,24 @@ class MeasureTool {
             return e.pointerType === 'mouse' ? e.button === 0 : e.isPrimary;
         };
 
+        type PointerInfo = {
+            cssX: number;
+            cssY: number;
+            targetX: number | null;
+            targetY: number | null;
+            cssToTargetScaleX: number | null;
+            cssToTargetScaleY: number | null;
+            clientX: number;
+            clientY: number;
+        };
+
         let clicked = false;
         let activePointerId: number | null = null;
         let pointerDownValid = false;
-        let pointerDownInfo: { x: number; y: number; canvasX: number; canvasY: number; clientX: number; clientY: number } | null = null;
+        let pointerDownInfo: PointerInfo | null = null;
         let lastPointer: { x: number; y: number } | null = null;
         let pointerMoveDistance = 0;
         const clickMoveThreshold = 3;
-
-        const isPointerLocked = () => {
-            return document.pointerLockElement === canvasContainer.dom;
-        };
-
-        const getCameraFramesOverlay = () => {
-            return document.getElementById('camera-frames-overlay') as HTMLCanvasElement | null;
-        };
 
         const getCanvasRect = () => {
             const rect = scene.canvas.getBoundingClientRect();
@@ -542,7 +558,7 @@ class MeasureTool {
             };
         };
 
-        const getPointerInfo = (event: PointerEvent, context: string, debug: boolean = false) => {
+        const getPointerInfo = (event: PointerEvent, context: string, debug: boolean = false): PointerInfo | null => {
             const rect = getCanvasRect();
             if (!rect) {
                 if (debug) {
@@ -558,51 +574,55 @@ class MeasureTool {
                 }
                 return null;
             }
-            const scaleX = w / rect.width;
-            const scaleY = h / rect.height;
+            const targetSize = scene.camera.targetSize ?? scene.targetSize;
+            const cssToTargetScaleX = targetSize && targetSize.width > 0 ? targetSize.width / rect.width : null;
+            const cssToTargetScaleY = targetSize && targetSize.height > 0 ? targetSize.height / rect.height : null;
+            const buildInfo = (cssX: number, cssY: number, clientX: number, clientY: number) => {
+                const targetX = cssToTargetScaleX !== null ? cssX * cssToTargetScaleX : null;
+                const targetY = cssToTargetScaleY !== null ? cssY * cssToTargetScaleY : null;
+                return {
+                    cssX,
+                    cssY,
+                    targetX,
+                    targetY,
+                    cssToTargetScaleX,
+                    cssToTargetScaleY,
+                    clientX,
+                    clientY
+                };
+            };
             if (isPointerLocked()) {
                 const center = getPointerLockCenter(rect);
-                const x = center.x;
-                const y = center.y;
-                const info = {
-                    x,
-                    y,
-                    canvasX: x * scaleX,
-                    canvasY: y * scaleY,
-                    clientX: rect.left + x,
-                    clientY: rect.top + y
-                };
+                const cssX = center.x;
+                const cssY = center.y;
+                const info = buildInfo(cssX, cssY, rect.left + cssX, rect.top + cssY);
                 if (debug) {
                     logPointerEvent('pointerInfo:pointerlock', event, {
                         context,
                         rect: { left: rect.left, top: rect.top, width: rect.width, height: rect.height },
-                        scaleX,
-                        scaleY,
                         info
                     });
                 }
                 return info;
             }
-            const x = event.clientX - rect.left;
-            const y = event.clientY - rect.top;
-            if (!Number.isFinite(x) || !Number.isFinite(y) || x < 0 || y < 0 || x > rect.width || y > rect.height) {
+            const cssX = event.clientX - rect.left;
+            const cssY = event.clientY - rect.top;
+            if (!Number.isFinite(cssX) || !Number.isFinite(cssY) || cssX < 0 || cssY < 0 || cssX > rect.width || cssY > rect.height) {
                 if (debug) {
                     logPointerEvent('pointerInfo:out-of-bounds', event, {
                         context,
                         rect: { left: rect.left, top: rect.top, width: rect.width, height: rect.height },
-                        x,
-                        y
+                        cssX,
+                        cssY
                     });
                 }
                 return null;
             }
-            const info = { x, y, canvasX: x * scaleX, canvasY: y * scaleY, clientX: event.clientX, clientY: event.clientY };
+            const info = buildInfo(cssX, cssY, event.clientX, event.clientY);
             if (debug) {
                 logPointerEvent('pointerInfo:ok', event, {
                     context,
                     rect: { left: rect.left, top: rect.top, width: rect.width, height: rect.height },
-                    scaleX,
-                    scaleY,
                     info
                 });
             }
@@ -665,7 +685,7 @@ class MeasureTool {
             clicked = true;
             pointerDownValid = true;
             pointerDownInfo = pointer;
-            lastPointer = { x: pointer.x, y: pointer.y };
+            lastPointer = { x: pointer.cssX, y: pointer.cssY };
             pointerMoveDistance = 0;
         };
 
@@ -679,8 +699,8 @@ class MeasureTool {
             } else {
                 const pointer = getPointerInfo(e, 'pointermove');
                 if (pointer && lastPointer) {
-                    moved = Math.hypot(pointer.x - lastPointer.x, pointer.y - lastPointer.y);
-                    lastPointer = { x: pointer.x, y: pointer.y };
+                    moved = Math.hypot(pointer.cssX - lastPointer.x, pointer.cssY - lastPointer.y);
+                    lastPointer = { x: pointer.cssX, y: pointer.cssY };
                 }
             }
             if (moved > 0) {
@@ -726,7 +746,7 @@ class MeasureTool {
             for (let i = 0; i < splat.measurePoints.length; i++) {
                 getPoint2d(i, p);
 
-                if (Math.abs(p.x - pointer.x) < 8 && Math.abs(p.y - pointer.y) < 8) {
+                if (Math.abs(p.x - pointer.cssX) < 8 && Math.abs(p.y - pointer.cssY) < 8) {
                     closestIdx = i;
                     break;
                 }
@@ -742,7 +762,7 @@ class MeasureTool {
             }
 
             if (splat.measurePoints.length < 2) {
-                const result = scene.camera.intersect(pointer.canvasX, pointer.canvasY);
+                const result = scene.camera.intersect(pointer.cssX, pointer.cssY);
                 logPointerEvent('pointerup:intersect', e, {
                     pointer,
                     result: result ? {
