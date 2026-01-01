@@ -1328,17 +1328,7 @@ class CameraFramesPanel extends Panel {
                 if (preset.selected) {
                     row.class.add('selected');
                 }
-                const status = new Container({ class: 'camera-preset-status' });
-                const enabled = !!preset.cameraFramesState?.enabled;
-                status.class[enabled ? 'add' : 'remove']('enabled');
-                const statusText = enabled ?
-                    localize('panel.camera-frames.camera-presets.status.enabled') :
-                    localize('panel.camera-frames.camera-presets.status.disabled');
-                status.dom.title = statusText;
-                status.dom.setAttribute('aria-label', statusText);
-
                 const nameLabel = new Label({ class: 'camera-preset-name', text: preset.name });
-                row.append(status);
                 row.append(nameLabel);
 
                 let pendingApplyId: number | null = null;

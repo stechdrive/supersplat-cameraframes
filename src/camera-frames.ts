@@ -2479,6 +2479,11 @@ export class CameraFramesController {
     }
 
     public applySnapshot(snapshot: CameraFramesState) {
+        const prevSelectedPresetId = this.selectedPresetId;
+        const nextSelectedPresetId = snapshot.cameraPresets?.find(preset => preset.selected)?.id ?? null;
+        const shouldApplyMainCameraView = !snapshot.enabled &&
+            !!nextSelectedPresetId &&
+            prevSelectedPresetId !== nextSelectedPresetId;
         applySnapshotSerialize({
             snapshot,
             sceneCameraFov: this.scene.camera.fov,
@@ -2523,6 +2528,27 @@ export class CameraFramesController {
             updateFovInfo: () => this.updateFovInfo()
         });
         this.syncPresetCounter();
+        if (shouldApplyMainCameraView) {
+            const mainPose = this.forceMainCameraPoseOrthoOff(this.clonePoseSnapshot(this.state.mainCameraPose));
+            if (mainPose) {
+                this.setUiTarget('main');
+                this.applyCameraPose(mainPose, { silent: true, allowOrtho: false });
+                const baseFov = this.state.renderBox?.projection?.baseFov ?? this.scene.camera?.fov ?? 60;
+                if (typeof baseFov === 'number' && isFinite(baseFov)) {
+                    this.viewportFovRuntime = baseFov;
+                    this.withCameraHistorySuppressed(() => {
+                        this.events.fire('camera.setFov', baseFov);
+                    });
+                }
+                this.viewportPoseRuntime = this.clonePoseSnapshot(mainPose);
+                this.viewportPoseRuntimeWorldDistance = (mainPose.navMode === 'orbit') ?
+                    this.getPoseWorldDistance(mainPose) :
+                    null;
+                this.updatePointerFromLast();
+                this.emitViewportLensChanged();
+                this.requestRender();
+            }
+        }
     }
 
     public replaceCameraPresets(presets: CameraPreset[], selectedId?: string | null) {

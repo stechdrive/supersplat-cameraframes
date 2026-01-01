@@ -406,20 +406,6 @@
     }
 }
 
-.camera-preset-status {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    border: 1px solid rgba($bcg-light, 0.8);
-    background-color: $text-darkest;
-    flex-shrink: 0;
-}
-
-.camera-preset-status.enabled {
-    background-color: $clr-hilight;
-    box-shadow: 0 0 4px rgba($clr-hilight, 0.5);
-}
-
 .camera-preset-name {
     flex: 1;
     overflow: hidden;
