@@ -4,6 +4,7 @@ import { Entity, Mat4, Quat, TranslateGizmo, Vec3 } from 'playcanvas';
 import { createGizmoCamera } from './gizmo-camera-adapter';
 import { EntityTransformOp } from '../edit-ops';
 import { Events } from '../events';
+import { hitTestGizmo } from '../gizmo-hit';
 import { Scene } from '../scene';
 import { Splat } from '../splat';
 import { Transform } from '../transform';
@@ -110,8 +111,8 @@ class MeasureTool {
         const getPoint2d = (index: number, result: Vec3) => {
             getPoint(index, result);
             scene.camera.worldToScreen(result, result);
-            result.x *= canvasContainer.dom.clientWidth;
-            result.y *= canvasContainer.dom.clientHeight;
+            result.x *= scene.canvas.clientWidth;
+            result.y *= scene.canvas.clientHeight;
         };
 
         const updateVisuals = () => {
@@ -282,53 +283,128 @@ class MeasureTool {
         };
 
         let clicked = false;
+        let activePointerId: number | null = null;
+        let pointerDownValid = false;
+
+        const getCameraFramesOverlay = () => {
+            return document.getElementById('camera-frames-overlay') as HTMLCanvasElement | null;
+        };
+
+        const getCanvasPointer = (event: PointerEvent) => {
+            const rect = scene.canvas.getBoundingClientRect();
+            if (rect.width <= 0 || rect.height <= 0) {
+                return null;
+            }
+            const x = event.clientX - rect.left;
+            const y = event.clientY - rect.top;
+            if (x < 0 || y < 0 || x > rect.width || y > rect.height) {
+                return null;
+            }
+            return { x, y };
+        };
+
+        const isCanvasPointerDown = (event: PointerEvent) => {
+            const overlay = getCameraFramesOverlay();
+            if (typeof event.composedPath === 'function') {
+                const path = event.composedPath();
+                if (overlay && path.includes(overlay)) {
+                    return false;
+                }
+                return path.includes(scene.canvas);
+            }
+            if (overlay && event.target === overlay) {
+                return false;
+            }
+            return event.target === scene.canvas;
+        };
 
         const pointerdown = (e: PointerEvent) => {
-            if (!clicked && isPrimary(e)) {
-                clicked = true;
+            if (activePointerId !== null) {
+                return;
             }
+            if (!isPrimary(e)) {
+                return;
+            }
+            clicked = false;
+            pointerDownValid = false;
+            if (!isCanvasPointerDown(e)) {
+                return;
+            }
+            if (hitTestGizmo(scene, e.clientX, e.clientY)) {
+                return;
+            }
+            if (!getCanvasPointer(e)) {
+                return;
+            }
+            activePointerId = e.pointerId;
+            clicked = true;
+            pointerDownValid = true;
         };
 
         const pointermove = (e: PointerEvent) => {
+            if (e.pointerId !== activePointerId) {
+                return;
+            }
             clicked = false;
         };
 
         const pointerup = (e: PointerEvent) => {
-            if (splat && clicked && isPrimary(e)) {
-                clicked = false;
+            if (e.pointerId !== activePointerId) {
+                return;
+            }
+            const shouldProcess = pointerDownValid && clicked && isPrimary(e);
+            activePointerId = null;
+            clicked = false;
+            pointerDownValid = false;
+            if (!shouldProcess || !splat) {
+                return;
+            }
+            const pointer = getCanvasPointer(e);
+            if (!pointer) {
+                return;
+            }
 
-                let closestIdx = -1;
+            let closestIdx = -1;
 
-                // check for intersection with existing point
-                for (let i = 0; i < splat.measurePoints.length; i++) {
-                    getPoint2d(i, p);
+            // check for intersection with existing point
+            for (let i = 0; i < splat.measurePoints.length; i++) {
+                getPoint2d(i, p);
 
-                    if (Math.abs(p.x - e.offsetX) < 8 && Math.abs(p.y - e.offsetY) < 8) {
-                        closestIdx = i;
-                        break;
-                    }
+                if (Math.abs(p.x - pointer.x) < 8 && Math.abs(p.y - pointer.y) < 8) {
+                    closestIdx = i;
+                    break;
                 }
+            }
 
-                if (closestIdx >= 0) {
-                    splat.measureSelection = closestIdx;
-                    updateVisuals();
-                    return;
-                }
-
-                if (splat.measurePoints.length < 2) {
-                    const result = scene.camera.intersect(e.offsetX, e.offsetY);
-                    if (result) {
-                        mat.invert(splat.worldTransform);
-                        mat.transformPoint(result.position, p);
-                        splat.measureSelection = splat.measurePoints.length;
-                        splat.measurePoints.push(p.clone());
-                        updateVisuals();
-                    }
-                }
-
+            if (closestIdx >= 0) {
+                splat.measureSelection = closestIdx;
+                updateVisuals();
                 e.preventDefault();
                 e.stopPropagation();
+                return;
             }
+
+            if (splat.measurePoints.length < 2) {
+                const result = scene.camera.intersect(pointer.x, pointer.y);
+                if (result) {
+                    mat.invert(splat.worldTransform);
+                    mat.transformPoint(result.position, p);
+                    splat.measureSelection = splat.measurePoints.length;
+                    splat.measurePoints.push(p.clone());
+                    updateVisuals();
+                    e.preventDefault();
+                    e.stopPropagation();
+                }
+            }
+        };
+
+        const pointercancel = (e: PointerEvent) => {
+            if (e.pointerId !== activePointerId) {
+                return;
+            }
+            activePointerId = null;
+            clicked = false;
+            pointerDownValid = false;
         };
 
         events.on('postrender', () => {
@@ -391,9 +467,10 @@ class MeasureTool {
         this.activate = () => {
             active = true;
             updateVisuals();
-            canvasContainer.dom.addEventListener('pointerdown', pointerdown);
-            canvasContainer.dom.addEventListener('pointermove', pointermove);
+            canvasContainer.dom.addEventListener('pointerdown', pointerdown, true);
+            canvasContainer.dom.addEventListener('pointermove', pointermove, true);
             canvasContainer.dom.addEventListener('pointerup', pointerup, true);
+            canvasContainer.dom.addEventListener('pointercancel', pointercancel, true);
             selectToolbar.hidden = false;
             parent.style.display = 'block';
             parent.classList.add('noevents');
@@ -405,9 +482,13 @@ class MeasureTool {
         this.deactivate = () => {
             active = false;
             updateVisuals();
-            canvasContainer.dom.removeEventListener('pointerdown', pointerdown);
-            canvasContainer.dom.removeEventListener('pointermove', pointermove);
-            canvasContainer.dom.removeEventListener('pointerup', pointerup);
+            activePointerId = null;
+            clicked = false;
+            pointerDownValid = false;
+            canvasContainer.dom.removeEventListener('pointerdown', pointerdown, true);
+            canvasContainer.dom.removeEventListener('pointermove', pointermove, true);
+            canvasContainer.dom.removeEventListener('pointerup', pointerup, true);
+            canvasContainer.dom.removeEventListener('pointercancel', pointercancel, true);
             selectToolbar.hidden = true;
             parent.style.display = 'none';
             parent.classList.remove('noevents');
