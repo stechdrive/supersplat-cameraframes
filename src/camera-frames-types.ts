@@ -42,7 +42,7 @@ export type ReferenceExportLayer = {
     bounds?: { left: number; top: number; right: number; bottom: number; };
 };
 
-export type CameraFramesState = {
+export type CameraFramesStateBase = {
     enabled: boolean;
     renderBox: RenderBoxState;
     frames: FrameState[];
@@ -53,6 +53,30 @@ export type CameraFramesState = {
     exportFormat?: ExportFormat;
     exportGridOverlay?: boolean;
     exportModelLayers?: boolean;
+};
+
+export type ProjectionJson =
+    | { type: 'perspective'; baseFov: number; }
+    | { type: 'ortho'; orthoHalfHeight: number; };
+
+export type Vec3Json = { x: number; y: number; z: number; };
+
+export type RotationJson = { yaw: number; pitch: number; roll: number; };
+
+export type CameraPreset = {
+    id: string;
+    name: string;
+    selected?: boolean;
+    mainCamera: {
+        transform: { position: Vec3Json; rotation: RotationJson; };
+        projection: ProjectionJson;
+        nearClip: number | null;
+    };
+    cameraFramesState: CameraFramesStateBase;
+};
+
+export type CameraFramesState = CameraFramesStateBase & {
+    cameraPresets: CameraPreset[];
 };
 
 export type Viewport = { vw: number; vh: number; };

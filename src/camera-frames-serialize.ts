@@ -2,7 +2,9 @@ import { DEFAULT_FRAME_BASE, DEFAULT_MASK, DEFAULT_RENDERBOX } from './camera-fr
 import { cloneFrame, normalizeMaskScope } from './camera-frames-math';
 import type {
     CameraFramesState,
+    CameraFramesStateBase,
     CameraPoseSnapshot,
+    CameraPreset,
     ExportFormat,
     FrameState,
     FrustumDebugCache,
@@ -29,6 +31,7 @@ type ScheduleNearClipGuard = () => void;
 type SetApplyingHistory = (value: boolean) => void;
 type SetHasEnteredViewportOnce = (value: boolean) => void;
 type SetSelectedId = (value: string | null) => void;
+type SetSelectedPresetId = (value: string | null) => void;
 type SetState = (state: CameraFramesState) => void;
 type SetViewportPoseRuntime = (value: CameraPoseSnapshot | null) => void;
 type SetViewportPoseRuntimeWorldDistance = (value: number | null) => void;
@@ -45,6 +48,7 @@ type SnapshotParams = {
 type SerializeParams = {
     snapshot: () => CameraFramesState;
     selectedId: string | null;
+    selectedPresetId: string | null;
     version: string;
 };
 
@@ -62,6 +66,7 @@ type ApplySnapshotParams = {
     setViewportPoseRuntimeWorldDistance: SetViewportPoseRuntimeWorldDistance;
     setHasEnteredViewportOnce: SetHasEnteredViewportOnce;
     setSelectedId: SetSelectedId;
+    setSelectedPresetId: SetSelectedPresetId;
     overlay: HTMLCanvasElement;
     frustumDebugCache: FrustumDebugCache;
     rebuildBaseFrustum: RebuildBaseFrustum;
@@ -91,6 +96,7 @@ type DeserializeParams = {
     computeSafeNearClip: ComputeSafeNearClip;
     setState: SetState;
     setSelectedId: SetSelectedId;
+    setSelectedPresetId: SetSelectedPresetId;
     setViewportPoseRuntime: SetViewportPoseRuntime;
     setViewportPoseRuntimeWorldDistance: SetViewportPoseRuntimeWorldDistance;
     setHasEnteredViewportOnce: SetHasEnteredViewportOnce;
@@ -107,18 +113,156 @@ type DeserializeParams = {
     updateFovInfo: UpdateFovInfo;
 };
 
-export const snapshot = ({ state, clonePoseSnapshot, normalizeFormat }: SnapshotParams): CameraFramesState => {
+const isObject = (value: unknown): value is Record<string, unknown> => (
+    typeof value === 'object' && value !== null && !Array.isArray(value)
+);
+
+const cloneCameraFramesStateBase = (
+    state: CameraFramesStateBase,
+    clonePoseSnapshot: ClonePoseSnapshot,
+    normalizeFormat: NormalizeFormat
+): CameraFramesStateBase => ({
+    enabled: state.enabled,
+    renderBox: JSON.parse(JSON.stringify(state.renderBox)),
+    frames: state.frames.map(cloneFrame),
+    mask: { ...state.mask },
+    mainCameraPose: clonePoseSnapshot(state.mainCameraPose),
+    nearClip: state.nearClip,
+    exportName: state.exportName,
+    exportFormat: normalizeFormat(state.exportFormat),
+    exportGridOverlay: !!state.exportGridOverlay,
+    exportModelLayers: !!state.exportModelLayers
+});
+
+const cloneCameraPreset = (
+    preset: CameraPreset,
+    clonePoseSnapshot: ClonePoseSnapshot,
+    normalizeFormat: NormalizeFormat
+): CameraPreset => {
+    const projection = preset.mainCamera.projection;
+    const clonedProjection = projection.type === 'ortho' ? {
+        type: 'ortho' as const,
+        orthoHalfHeight: projection.orthoHalfHeight
+    } : {
+        type: 'perspective' as const,
+        baseFov: projection.baseFov
+    };
     return {
-        enabled: state.enabled,
-        renderBox: JSON.parse(JSON.stringify(state.renderBox)),
-        frames: state.frames.map(cloneFrame),
-        mask: { ...state.mask },
-        mainCameraPose: clonePoseSnapshot(state.mainCameraPose),
-        nearClip: state.nearClip,
-        exportName: state.exportName,
-        exportFormat: normalizeFormat(state.exportFormat),
+        id: preset.id,
+        name: preset.name,
+        selected: preset.selected,
+        mainCamera: {
+            transform: {
+                position: { ...preset.mainCamera.transform.position },
+                rotation: { ...preset.mainCamera.transform.rotation }
+            },
+            projection: clonedProjection,
+            nearClip: preset.mainCamera.nearClip ?? null
+        },
+        cameraFramesState: cloneCameraFramesStateBase(preset.cameraFramesState, clonePoseSnapshot, normalizeFormat)
+    };
+};
+
+const normalizeCameraFramesStateBase = (
+    value: unknown,
+    normalizeFormat: NormalizeFormat,
+    clonePoseSnapshot: ClonePoseSnapshot
+): CameraFramesStateBase | null => {
+    if (!isObject(value)) {
+        return null;
+    }
+    const state = value as Record<string, unknown>;
+    const maskScope = normalizeMaskScope((state.mask as any)?.scope, DEFAULT_MASK.scope);
+    const renderBox = isObject(state.renderBox) ? JSON.parse(JSON.stringify(state.renderBox)) : DEFAULT_RENDERBOX();
+    return {
+        enabled: !!state.enabled,
+        renderBox,
+        frames: Array.isArray(state.frames) ? (state.frames as FrameState[]).map(cloneFrame) : [],
+        mask: {
+            ...DEFAULT_MASK,
+            ...(isObject(state.mask) ? state.mask : {}),
+            scope: maskScope
+        },
+        mainCameraPose: clonePoseSnapshot(state.mainCameraPose as CameraPoseSnapshot | null | undefined),
+        nearClip: (typeof state.nearClip === 'number' && isFinite(state.nearClip)) ? state.nearClip : null,
+        exportName: typeof state.exportName === 'string' ? state.exportName : 'cf-output',
+        exportFormat: normalizeFormat(state.exportFormat as ExportFormat | undefined),
         exportGridOverlay: !!state.exportGridOverlay,
         exportModelLayers: !!state.exportModelLayers
+    };
+};
+
+const normalizeCameraPreset = (
+    value: unknown,
+    normalizeFormat: NormalizeFormat,
+    clonePoseSnapshot: ClonePoseSnapshot,
+    fallbackBaseFov: number
+): CameraPreset | null => {
+    if (!isObject(value)) {
+        return null;
+    }
+    const id = typeof value.id === 'string' ? value.id : null;
+    const name = typeof value.name === 'string' ? value.name : null;
+    if (!id || !name) {
+        return null;
+    }
+    if (!isObject(value.mainCamera) || !isObject((value.mainCamera as any).transform)) {
+        return null;
+    }
+    const transform = (value.mainCamera as any).transform;
+    if (!isObject(transform.position) || !isObject(transform.rotation)) {
+        return null;
+    }
+    const position = transform.position as any;
+    const rotation = transform.rotation as any;
+    const projectionRaw = isObject((value.mainCamera as any).projection) ? (value.mainCamera as any).projection : null;
+    const projection = (projectionRaw && projectionRaw.type === 'ortho') ? {
+        type: 'ortho' as const,
+        orthoHalfHeight: (typeof projectionRaw.orthoHalfHeight === 'number' && isFinite(projectionRaw.orthoHalfHeight)) ?
+            projectionRaw.orthoHalfHeight :
+            1
+    } : {
+        type: 'perspective' as const,
+        baseFov: (projectionRaw && typeof projectionRaw.baseFov === 'number' && isFinite(projectionRaw.baseFov)) ?
+            projectionRaw.baseFov :
+            fallbackBaseFov
+    };
+    const mainCamera = {
+        transform: {
+            position: {
+                x: (typeof position.x === 'number' && isFinite(position.x)) ? position.x : 0,
+                y: (typeof position.y === 'number' && isFinite(position.y)) ? position.y : 0,
+                z: (typeof position.z === 'number' && isFinite(position.z)) ? position.z : 0
+            },
+            rotation: {
+                yaw: (typeof rotation.yaw === 'number' && isFinite(rotation.yaw)) ? rotation.yaw : 0,
+                pitch: (typeof rotation.pitch === 'number' && isFinite(rotation.pitch)) ? rotation.pitch : 0,
+                roll: (typeof rotation.roll === 'number' && isFinite(rotation.roll)) ? rotation.roll : 0
+            }
+        },
+        projection,
+        nearClip: (typeof (value.mainCamera as any).nearClip === 'number' && isFinite((value.mainCamera as any).nearClip)) ?
+            (value.mainCamera as any).nearClip :
+            null
+    };
+    const cameraFramesState = normalizeCameraFramesStateBase(value.cameraFramesState, normalizeFormat, clonePoseSnapshot);
+    if (!cameraFramesState) {
+        return null;
+    }
+    return {
+        id,
+        name,
+        selected: !!value.selected,
+        mainCamera,
+        cameraFramesState
+    };
+};
+
+export const snapshot = ({ state, clonePoseSnapshot, normalizeFormat }: SnapshotParams): CameraFramesState => {
+    const baseState = cloneCameraFramesStateBase(state, clonePoseSnapshot, normalizeFormat);
+    return {
+        ...baseState,
+        cameraPresets: state.cameraPresets.map(preset => cloneCameraPreset(preset, clonePoseSnapshot, normalizeFormat))
     };
 };
 
@@ -136,6 +280,7 @@ export const applySnapshot = ({
     setViewportPoseRuntimeWorldDistance,
     setHasEnteredViewportOnce,
     setSelectedId,
+    setSelectedPresetId,
     overlay,
     frustumDebugCache,
     rebuildBaseFrustum,
@@ -155,6 +300,9 @@ export const applySnapshot = ({
         const nextState = JSON.parse(JSON.stringify(target)) as CameraFramesState;
         setState(nextState);
         const state = nextState;
+        if (!Array.isArray(state.cameraPresets)) {
+            state.cameraPresets = [];
+        }
         normalizeMainRenderBoxProjection(sceneCameraFov);
         state.mask = {
             ...DEFAULT_MASK,
@@ -172,6 +320,7 @@ export const applySnapshot = ({
             setHasEnteredViewportOnce(true);
         }
         setSelectedId(state.frames.find(f => f.selected)?.id ?? null);
+        setSelectedPresetId(state.cameraPresets.find(preset => preset.selected)?.id ?? null);
         state.nearClip = computeSafeNearClip(state.nearClip);
         state.exportGridOverlay = !!state.exportGridOverlay;
         state.exportModelLayers = !!state.exportModelLayers;
@@ -200,11 +349,12 @@ export const applySnapshot = ({
     }
 };
 
-export const serialize = ({ snapshot, selectedId, version }: SerializeParams) => {
+export const serialize = ({ snapshot, selectedId, selectedPresetId, version }: SerializeParams) => {
     const snap = snapshot();
     return {
         ...snap,
         selectedId,
+        selectedPresetId,
         version
     };
 };
@@ -223,6 +373,7 @@ export const deserialize = ({
     computeSafeNearClip,
     setState,
     setSelectedId,
+    setSelectedPresetId,
     setViewportPoseRuntime,
     setViewportPoseRuntimeWorldDistance,
     setHasEnteredViewportOnce,
@@ -250,11 +401,13 @@ export const deserialize = ({
             exportName: 'cf-output',
             exportFormat: 'png',
             exportGridOverlay: false,
-            exportModelLayers: false
+            exportModelLayers: false,
+            cameraPresets: []
         };
         setState(nextState);
         normalizeMainRenderBoxProjection(scene.camera.fov);
         setSelectedId(null);
+        setSelectedPresetId(null);
         setViewportPoseRuntime(null);
         setViewportPoseRuntimeWorldDistance(null);
         setHasEnteredViewportOnce(false);
@@ -342,6 +495,13 @@ export const deserialize = ({
         };
     })();
     const mainCameraPose = clonePoseSnapshot(docState.mainCameraPose);
+    const fallbackBaseFov = (typeof scene.camera?.fov === 'number' && isFinite(scene.camera.fov)) ? scene.camera.fov : 60;
+    let cameraPresets: CameraPreset[] = [];
+    if (Array.isArray(docState.cameraPresets)) {
+        cameraPresets = docState.cameraPresets
+        .map((preset: unknown) => normalizeCameraPreset(preset, normalizeFormat, clonePoseSnapshot, fallbackBaseFov))
+        .filter((preset): preset is CameraPreset => !!preset);
+    }
 
     const nextState: CameraFramesState = {
         enabled: !!docState.enabled,
@@ -368,7 +528,8 @@ export const deserialize = ({
         exportFormat,
         exportGridOverlay,
         exportModelLayers,
-        mainCameraPose
+        mainCameraPose,
+        cameraPresets
     };
 
     setState(nextState);
@@ -390,6 +551,16 @@ export const deserialize = ({
     setSelectedId(selectedId);
     nextState.frames.forEach((f) => {
         f.selected = f.id === selectedId;
+    });
+    const rawSelectedPresetId = (docState && Object.prototype.hasOwnProperty.call(docState, 'selectedPresetId')) ?
+        docState.selectedPresetId :
+        null;
+    const resolvedSelectedPresetId = (typeof rawSelectedPresetId === 'string' && cameraPresets.some(p => p.id === rawSelectedPresetId)) ?
+        rawSelectedPresetId :
+        (cameraPresets[0]?.id ?? null);
+    setSelectedPresetId(resolvedSelectedPresetId);
+    nextState.cameraPresets.forEach((preset) => {
+        preset.selected = preset.id === resolvedSelectedPresetId;
     });
 
     computeViewportMapping(false);

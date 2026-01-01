@@ -21,7 +21,7 @@ import unlockSvg from './svg/select-unlock.svg';
 import shownSvg from './svg/shown.svg';
 import viewportSvg from './svg/viewport.svg';
 
-type CameraFramesState = {
+type CameraFramesStateBase = {
     enabled: boolean;
     renderBox: {
         baseSize: { w: number; h: number; };
@@ -71,6 +71,17 @@ type CameraFramesState = {
     exportFormat?: 'png' | 'psd';
     exportGridOverlay?: boolean;
     exportModelLayers?: boolean;
+};
+
+type CameraPreset = {
+    id: string;
+    name: string;
+    selected?: boolean;
+    cameraFramesState: CameraFramesStateBase;
+};
+
+type CameraFramesState = CameraFramesStateBase & {
+    cameraPresets: CameraPreset[];
 };
 
 type FovInfo = {
@@ -180,6 +191,7 @@ class CameraFramesPanel extends Panel {
         let appReady = false;
         let pendingState: CameraFramesState | null = null;
         let selectedFrameId: string = null;
+        let selectedPresetId: string | null = null;
         let lastFovInfo: FovInfo | null = null;
         let lastState: CameraFramesState | null = null;
         let framesEnabled = false;
@@ -200,6 +212,7 @@ class CameraFramesPanel extends Panel {
 
         let maskDetailsCollapsed = true;
         let exportDetailsCollapsed = true;
+        let cameraPresetsCollapsed = true;
         let framesSectionCollapsed = true;
         let referenceIncludeEnabled = false;
 
@@ -552,35 +565,84 @@ class CameraFramesPanel extends Panel {
         exportDetails.append(filenameRow);
         exportDetails.append(new Container({ class: 'export-details-extra' }));
 
-        const mainCameraFileLabel = new Label({ class: 'control-label', text: localize('panel.camera-frames.main-camera-file') });
-        const mainCameraExportBtn = new Button({ class: ['icon-button', 'main-camera-export-button'], text: '' });
-        mainCameraExportBtn.dom.appendChild(createSvg(exportSvg));
-        mainCameraExportBtn.dom.title = localize('panel.camera-frames.main-camera-file.export');
-        mainCameraExportBtn.dom.setAttribute('aria-label', localize('panel.camera-frames.main-camera-file.export'));
-        const mainCameraImportBtn = new Button({ class: ['icon-button', 'main-camera-import-button'], text: '' });
-        mainCameraImportBtn.dom.appendChild(createSvg(importSvg));
-        mainCameraImportBtn.dom.title = localize('panel.camera-frames.main-camera-file.import');
-        mainCameraImportBtn.dom.setAttribute('aria-label', localize('panel.camera-frames.main-camera-file.import'));
+        const cameraPresetsActions = new Container({ class: 'camera-presets-actions' });
+        const cameraPresetsExportBtn = new Button({ class: ['icon-button', 'camera-presets-export-button'], text: '' });
+        cameraPresetsExportBtn.dom.appendChild(createSvg(exportSvg));
+        cameraPresetsExportBtn.dom.title = localize('panel.camera-frames.camera-presets.export');
+        cameraPresetsExportBtn.dom.setAttribute('aria-label', localize('panel.camera-frames.camera-presets.export'));
+        cameraPresetsExportBtn.enabled = false;
+        const cameraPresetsImportBtn = new Button({ class: ['icon-button', 'camera-presets-import-button'], text: '' });
+        cameraPresetsImportBtn.dom.appendChild(createSvg(importSvg));
+        cameraPresetsImportBtn.dom.title = localize('panel.camera-frames.camera-presets.import');
+        cameraPresetsImportBtn.dom.setAttribute('aria-label', localize('panel.camera-frames.camera-presets.import'));
+        const cameraPresetsAddBtn = new Button({ class: ['icon-button', 'camera-presets-add-button'], text: '' });
+        cameraPresetsAddBtn.dom.appendChild(createSvg(newSvg));
+        cameraPresetsAddBtn.dom.title = localize('panel.camera-frames.camera-presets.add');
+        cameraPresetsAddBtn.dom.setAttribute('aria-label', localize('panel.camera-frames.camera-presets.add'));
+        const cameraPresetsDeleteBtn = new Button({ class: ['icon-button', 'danger-icon', 'camera-presets-delete-button'], text: '' });
+        cameraPresetsDeleteBtn.dom.appendChild(createSvg(deleteSvg));
+        cameraPresetsDeleteBtn.dom.title = localize('panel.camera-frames.camera-presets.delete');
+        cameraPresetsDeleteBtn.dom.setAttribute('aria-label', localize('panel.camera-frames.camera-presets.delete'));
+        cameraPresetsDeleteBtn.enabled = false;
 
-        mainCameraExportBtn.on('click', () => {
+        cameraPresetsExportBtn.on('click', () => {
             if (suppress) return;
-            events.invoke('cameraSave.exportMainCamera');
+            events.invoke('cameraSave.exportCameraPresets');
         });
-        mainCameraImportBtn.on('click', () => {
+        cameraPresetsImportBtn.on('click', () => {
             if (suppress) return;
-            events.invoke('cameraSave.importMainCamera');
+            events.invoke('cameraSave.importCameraPresets');
+        });
+        cameraPresetsAddBtn.on('click', () => {
+            if (suppress) return;
+            events.fire('cameraFrames.addCameraPreset');
+        });
+        cameraPresetsDeleteBtn.on('click', () => {
+            if (suppress) return;
+            events.fire('cameraFrames.deleteCameraPreset', selectedPresetId);
         });
 
-        const mainCameraFileControls = new Container({ class: 'main-camera-file-controls' });
-        mainCameraFileControls.dom.style.display = 'flex';
-        mainCameraFileControls.dom.style.alignItems = 'center';
-        mainCameraFileControls.dom.style.gap = '6px';
-        mainCameraFileControls.append(mainCameraExportBtn);
-        mainCameraFileControls.append(mainCameraImportBtn);
+        [cameraPresetsExportBtn, cameraPresetsImportBtn, cameraPresetsAddBtn, cameraPresetsDeleteBtn].forEach((button) => {
+            ['pointerdown', 'pointerup', 'click'].forEach((evt) => {
+                button.dom.addEventListener(evt, (e: Event) => e.stopPropagation());
+            });
+        });
 
-        const mainCameraFileRow = new Container({ class: ['control-parent', 'main-camera-file-row'] });
-        mainCameraFileRow.append(mainCameraFileLabel);
-        mainCameraFileRow.append(mainCameraFileControls);
+        cameraPresetsActions.dom.style.display = 'flex';
+        cameraPresetsActions.dom.style.alignItems = 'center';
+        cameraPresetsActions.dom.style.gap = '6px';
+        cameraPresetsActions.append(cameraPresetsExportBtn);
+        cameraPresetsActions.append(cameraPresetsImportBtn);
+        cameraPresetsActions.append(cameraPresetsAddBtn);
+        cameraPresetsActions.append(cameraPresetsDeleteBtn);
+
+        const cameraPresetsSectionHeader = new Container({ class: ['control-parent', 'collapsible-header', 'camera-presets-section-header'] });
+        const cameraPresetsSectionArrow = new Label({ class: 'collapsible-arrow', text: '▶' });
+        const cameraPresetsSectionLabel = new Label({ class: 'control-label', text: localize('panel.camera-frames.camera-presets.section') });
+        cameraPresetsSectionHeader.append(cameraPresetsSectionArrow);
+        cameraPresetsSectionHeader.append(cameraPresetsSectionLabel);
+        cameraPresetsSectionHeader.append(cameraPresetsActions);
+
+        const cameraPresetsList = new Container({ class: 'camera-presets-list' });
+        const cameraPresetsEmpty = new Label({ class: 'camera-presets-empty', text: localize('panel.camera-frames.camera-presets.empty') });
+
+        const cameraPresetsSectionBody = new Container({ class: ['collapsible-body', 'camera-presets-section-body'] });
+        cameraPresetsSectionBody.append(cameraPresetsList);
+        cameraPresetsSectionBody.append(cameraPresetsEmpty);
+        cameraPresetsSectionBody.dom.style.display = 'none';
+        cameraPresetsSectionBody.dom.style.flexDirection = 'column';
+        cameraPresetsSectionBody.dom.style.gap = '6px';
+        const updateCameraPresetsSectionVisibility = () => {
+            cameraPresetsSectionBody.dom.style.display = cameraPresetsCollapsed ? 'none' : 'flex';
+            cameraPresetsSectionArrow.text = cameraPresetsCollapsed ? '▶' : '▼';
+            cameraPresetsSectionHeader.class[cameraPresetsCollapsed ? 'remove' : 'add']('active');
+            cameraPresetsSectionHeader.dom.setAttribute('aria-expanded', (!cameraPresetsCollapsed).toString());
+        };
+        updateCameraPresetsSectionVisibility();
+        cameraPresetsSectionHeader.on('click', () => {
+            cameraPresetsCollapsed = !cameraPresetsCollapsed;
+            updateCameraPresetsSectionVisibility();
+        });
 
         const updateExportDetailsVisibility = () => {
             exportDetails.dom.style.display = exportDetailsCollapsed ? 'none' : 'flex';
@@ -1248,7 +1310,8 @@ class CameraFramesPanel extends Panel {
         this.content.append(maskDetails);
         this.content.append(exportRow);
         this.content.append(exportDetails);
-        this.content.append(mainCameraFileRow);
+        this.content.append(cameraPresetsSectionHeader);
+        this.content.append(cameraPresetsSectionBody);
         this.content.append(framesSectionHeader);
         this.content.append(framesSectionBody);
         this.content.append(layoutGroup);
@@ -1256,6 +1319,127 @@ class CameraFramesPanel extends Panel {
         this.content.append(camTransformBody);
 
         // list builder
+        const rebuildPresetList = (state: CameraFramesState) => {
+            cameraPresetsList.clear();
+            const presets = state.cameraPresets ?? [];
+            cameraPresetsEmpty.hidden = presets.length > 0;
+            presets.forEach((preset) => {
+                const row = new Container({ class: 'camera-preset-row' });
+                if (preset.selected) {
+                    row.class.add('selected');
+                }
+                const status = new Container({ class: 'camera-preset-status' });
+                const enabled = !!preset.cameraFramesState?.enabled;
+                status.class[enabled ? 'add' : 'remove']('enabled');
+                const statusText = enabled ?
+                    localize('panel.camera-frames.camera-presets.status.enabled') :
+                    localize('panel.camera-frames.camera-presets.status.disabled');
+                status.dom.title = statusText;
+                status.dom.setAttribute('aria-label', statusText);
+
+                const nameLabel = new Label({ class: 'camera-preset-name', text: preset.name });
+                row.append(status);
+                row.append(nameLabel);
+
+                let pendingApplyId: number | null = null;
+                let editing = false;
+
+                const scheduleApply = () => {
+                    if (preset.selected) {
+                        return;
+                    }
+                    if (pendingApplyId !== null) {
+                        window.clearTimeout(pendingApplyId);
+                    }
+                    pendingApplyId = window.setTimeout(() => {
+                        pendingApplyId = null;
+                        if (!editing) {
+                            events.fire('cameraFrames.applyCameraPreset', preset.id);
+                        }
+                    }, 300);
+                };
+
+                let onBlur: (() => void) | null = null;
+                let onKeyDown: ((event: KeyboardEvent) => void) | null = null;
+
+                const finishEdit = (commit: boolean, input: TextInput) => {
+                    if (!editing) {
+                        return;
+                    }
+                    editing = false;
+                    if (onBlur) {
+                        input.input.removeEventListener('blur', onBlur);
+                    }
+                    if (onKeyDown) {
+                        input.input.removeEventListener('keydown', onKeyDown);
+                    }
+                    row.remove(input);
+                    nameLabel.hidden = false;
+                    if (!commit) {
+                        return;
+                    }
+                    const nextName = input.value.trim();
+                    if (nextName && nextName !== preset.name) {
+                        events.fire('cameraFrames.renameCameraPreset', preset.id, nextName);
+                    }
+                };
+
+                const beginEdit = () => {
+                    if (editing) {
+                        return;
+                    }
+                    if (pendingApplyId !== null) {
+                        window.clearTimeout(pendingApplyId);
+                        pendingApplyId = null;
+                    }
+                    editing = true;
+                    nameLabel.hidden = true;
+                    const input = new TextInput({ class: 'camera-preset-name-input' });
+                    input.value = preset.name;
+                    row.appendAfter(input, nameLabel);
+                    ['pointerdown', 'click', 'dblclick'].forEach((evt) => {
+                        input.dom.addEventListener(evt, (event: Event) => event.stopPropagation());
+                    });
+                    onKeyDown = (event: KeyboardEvent) => {
+                        if (event.key === 'Enter') {
+                            event.preventDefault();
+                            finishEdit(true, input);
+                        } else if (event.key === 'Escape') {
+                            event.preventDefault();
+                            finishEdit(false, input);
+                        }
+                    };
+                    onBlur = () => {
+                        finishEdit(true, input);
+                    };
+                    if (onBlur) {
+                        input.input.addEventListener('blur', onBlur);
+                    }
+                    if (onKeyDown) {
+                        input.input.addEventListener('keydown', onKeyDown);
+                    }
+                    input.focus();
+                    if (input.input.select) {
+                        input.input.select();
+                    }
+                };
+
+                row.dom.addEventListener('click', (event: MouseEvent) => {
+                    if (editing) {
+                        return;
+                    }
+                    event.stopPropagation();
+                    scheduleApply();
+                });
+                nameLabel.dom.addEventListener('dblclick', (event: MouseEvent) => {
+                    event.stopPropagation();
+                    beginEdit();
+                });
+
+                cameraPresetsList.append(row);
+            });
+        };
+
         const rebuildList = (state: CameraFramesState) => {
             frameList.clear();
             const rbScale = state.renderBox.scale;
@@ -1353,6 +1537,11 @@ class CameraFramesPanel extends Panel {
             layoutSummary.class[hasOverflow ? 'add' : 'remove']('warning');
 
             updateAnchorUI(state.renderBox.anchor.ax, state.renderBox.anchor.ay);
+
+            rebuildPresetList(state);
+            selectedPresetId = state.cameraPresets.find(preset => preset.selected)?.id ?? null;
+            cameraPresetsDeleteBtn.enabled = !!selectedPresetId;
+            cameraPresetsExportBtn.enabled = state.cameraPresets.length > 0;
 
             rebuildList(state);
 
