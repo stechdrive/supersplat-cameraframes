@@ -286,21 +286,43 @@ class MeasureTool {
         let activePointerId: number | null = null;
         let pointerDownValid = false;
 
+        const isPointerLocked = () => {
+            return document.pointerLockElement === canvasContainer.dom;
+        };
+
         const getCameraFramesOverlay = () => {
             return document.getElementById('camera-frames-overlay') as HTMLCanvasElement | null;
         };
 
-        const getCanvasPointer = (event: PointerEvent) => {
+        const getCanvasRect = () => {
             const rect = scene.canvas.getBoundingClientRect();
             if (rect.width <= 0 || rect.height <= 0) {
                 return null;
             }
-            const x = event.clientX - rect.left;
-            const y = event.clientY - rect.top;
-            if (x < 0 || y < 0 || x > rect.width || y > rect.height) {
+            return rect;
+        };
+
+        const getPointerInfo = (event: PointerEvent) => {
+            const rect = getCanvasRect();
+            if (!rect) {
                 return null;
             }
-            return { x, y };
+            if (isPointerLocked()) {
+                const x = rect.width * 0.5;
+                const y = rect.height * 0.5;
+                return {
+                    x,
+                    y,
+                    clientX: rect.left + x,
+                    clientY: rect.top + y
+                };
+            }
+            const x = event.clientX - rect.left;
+            const y = event.clientY - rect.top;
+            if (!Number.isFinite(x) || !Number.isFinite(y) || x < 0 || y < 0 || x > rect.width || y > rect.height) {
+                return null;
+            }
+            return { x, y, clientX: event.clientX, clientY: event.clientY };
         };
 
         const isCanvasPointerDown = (event: PointerEvent) => {
@@ -310,12 +332,24 @@ class MeasureTool {
                 if (overlay && path.includes(overlay)) {
                     return false;
                 }
-                return path.includes(scene.canvas);
+                if (path.includes(scene.canvas)) {
+                    return true;
+                }
+                if (isPointerLocked() && path.includes(canvasContainer.dom)) {
+                    return true;
+                }
+                return path.includes(svg) || path.includes(parent);
             }
             if (overlay && event.target === overlay) {
                 return false;
             }
-            return event.target === scene.canvas;
+            if (event.target === scene.canvas) {
+                return true;
+            }
+            if (isPointerLocked() && event.target === canvasContainer.dom) {
+                return true;
+            }
+            return parent.contains(event.target as Node);
         };
 
         const pointerdown = (e: PointerEvent) => {
@@ -330,10 +364,11 @@ class MeasureTool {
             if (!isCanvasPointerDown(e)) {
                 return;
             }
-            if (hitTestGizmo(scene, e.clientX, e.clientY)) {
+            const pointer = getPointerInfo(e);
+            if (!pointer) {
                 return;
             }
-            if (!getCanvasPointer(e)) {
+            if (hitTestGizmo(scene, pointer.clientX, pointer.clientY)) {
                 return;
             }
             activePointerId = e.pointerId;
@@ -359,7 +394,7 @@ class MeasureTool {
             if (!shouldProcess || !splat) {
                 return;
             }
-            const pointer = getCanvasPointer(e);
+            const pointer = getPointerInfo(e);
             if (!pointer) {
                 return;
             }
