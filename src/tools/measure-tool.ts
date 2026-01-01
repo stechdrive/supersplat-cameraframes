@@ -111,8 +111,11 @@ class MeasureTool {
         const getPoint2d = (index: number, result: Vec3) => {
             getPoint(index, result);
             scene.camera.worldToScreen(result, result);
-            result.x *= scene.canvas.clientWidth;
-            result.y *= scene.canvas.clientHeight;
+            const rect = scene.canvas.getBoundingClientRect();
+            const w = rect.width > 0 ? rect.width : scene.canvas.clientWidth;
+            const h = rect.height > 0 ? rect.height : scene.canvas.clientHeight;
+            result.x *= w;
+            result.y *= h;
         };
 
         const updateVisuals = () => {
@@ -285,7 +288,7 @@ class MeasureTool {
         let clicked = false;
         let activePointerId: number | null = null;
         let pointerDownValid = false;
-        let pointerDownInfo: { x: number; y: number; clientX: number; clientY: number } | null = null;
+        let pointerDownInfo: { x: number; y: number; canvasX: number; canvasY: number; clientX: number; clientY: number } | null = null;
         let lastPointer: { x: number; y: number } | null = null;
         let pointerMoveDistance = 0;
         const clickMoveThreshold = 3;
@@ -306,17 +309,51 @@ class MeasureTool {
             return rect;
         };
 
+        const getPointerLockCenter = (rect: DOMRect) => {
+            const frustum = scene.camera.getCustomFrustum();
+            if (!frustum) {
+                return { x: rect.width * 0.5, y: rect.height * 0.5 };
+            }
+            const dx = frustum.right - frustum.left;
+            const dy = frustum.top - frustum.bottom;
+            let xNdc = 0;
+            let yNdc = 0;
+            if (typeof dx === 'number' && isFinite(dx) && Math.abs(dx) > 1e-6) {
+                xNdc = -(frustum.right + frustum.left) / dx;
+            }
+            if (typeof dy === 'number' && isFinite(dy) && Math.abs(dy) > 1e-6) {
+                yNdc = -(frustum.top + frustum.bottom) / dy;
+            }
+            if (!isFinite(xNdc)) xNdc = 0;
+            if (!isFinite(yNdc)) yNdc = 0;
+            const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
+            return {
+                x: clamp((xNdc * 0.5 + 0.5) * rect.width, 0, rect.width - 1),
+                y: clamp((0.5 - yNdc * 0.5) * rect.height, 0, rect.height - 1)
+            };
+        };
+
         const getPointerInfo = (event: PointerEvent) => {
             const rect = getCanvasRect();
             if (!rect) {
                 return null;
             }
+            const w = scene.canvas.clientWidth;
+            const h = scene.canvas.clientHeight;
+            if (!(w > 0 && h > 0)) {
+                return null;
+            }
+            const scaleX = w / rect.width;
+            const scaleY = h / rect.height;
             if (isPointerLocked()) {
-                const x = rect.width * 0.5;
-                const y = rect.height * 0.5;
+                const center = getPointerLockCenter(rect);
+                const x = center.x;
+                const y = center.y;
                 return {
                     x,
                     y,
+                    canvasX: x * scaleX,
+                    canvasY: y * scaleY,
                     clientX: rect.left + x,
                     clientY: rect.top + y
                 };
@@ -326,7 +363,7 @@ class MeasureTool {
             if (!Number.isFinite(x) || !Number.isFinite(y) || x < 0 || y < 0 || x > rect.width || y > rect.height) {
                 return null;
             }
-            return { x, y, clientX: event.clientX, clientY: event.clientY };
+            return { x, y, canvasX: x * scaleX, canvasY: y * scaleY, clientX: event.clientX, clientY: event.clientY };
         };
 
         const isCanvasPointerDown = (event: PointerEvent) => {
@@ -420,7 +457,7 @@ class MeasureTool {
             if (!shouldProcess || !splat) {
                 return;
             }
-            const pointer = isPointerLocked() ? getPointerInfo(e) : (pointerDown ?? getPointerInfo(e));
+            const pointer = isPointerLocked() ? getPointerInfo(e) : (getPointerInfo(e) ?? pointerDown);
             if (!pointer) {
                 return;
             }
@@ -446,7 +483,7 @@ class MeasureTool {
             }
 
             if (splat.measurePoints.length < 2) {
-                const result = scene.camera.intersect(pointer.x, pointer.y);
+                const result = scene.camera.intersect(pointer.canvasX, pointer.canvasY);
                 if (result) {
                     mat.invert(splat.worldTransform);
                     mat.transformPoint(result.position, p);
