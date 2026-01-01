@@ -734,9 +734,10 @@ class MeasureTool {
                 });
                 return;
             }
-            const pointer = isPointerLocked() ? getPointerInfo(e, 'pointerup', true) : (getPointerInfo(e, 'pointerup', true) ?? pointerDown);
+            const pointerUp = getPointerInfo(e, 'pointerup', true);
+            const pointer = (isPointerLocked() && pointerDown) ? pointerDown : (pointerUp ?? pointerDown);
             if (!pointer) {
-                logPointerEvent('pointerup:ignored', e, { reason: 'pointerInfoNull', pointerDown });
+                logPointerEvent('pointerup:ignored', e, { reason: 'pointerInfoNull', pointerDown, pointerUp });
                 return;
             }
 
