@@ -843,8 +843,10 @@ class CameraFramesPanel extends Panel {
                 mainTargetButton.dom.title = localize('panel.camera-frames.target.select');
                 viewportTargetButton.dom.title = localize('panel.camera-frames.target.select');
             }
-            mainCamBtn.class[framesEnabled ? 'add' : 'remove']('active');
-            viewportBtn.class[framesEnabled ? 'remove' : 'add']('active');
+            const mainModeActive = framesEnabled || uiTarget === 'main';
+            const viewportModeActive = !framesEnabled && uiTarget === 'viewport';
+            mainCamBtn.class[mainModeActive ? 'add' : 'remove']('active');
+            viewportBtn.class[viewportModeActive ? 'add' : 'remove']('active');
         };
 
         viewportTargetButton.on('click', () => {
@@ -1473,8 +1475,6 @@ class CameraFramesPanel extends Panel {
             suppress = true;
 
             // enableToggle.value = state.enabled;
-            mainCamBtn.class[state.enabled ? 'add' : 'remove']('active');
-            viewportBtn.class[!state.enabled ? 'add' : 'remove']('active');
             framesEnabled = state.enabled;
             updateNearClipUI();
             updateTargetUI();
