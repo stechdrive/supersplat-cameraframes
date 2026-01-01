@@ -1,6 +1,6 @@
 # CAMERA FRAMES Features Overview
 
-CAMERA FRAMES v2.11.0 lets you lay out multiple frames on an A4-like master sheet and keep the composition stable with anchored off-axis frustums so preview and export match. It unifies zoomable previews, frame editing, camera pose control, and PSD/PNG export.
+CAMERA FRAMES v2.12.0 lets you lay out multiple frames on an A4-like master sheet and keep the composition stable with anchored off-axis frustums so preview and export match. It unifies zoomable previews, frame editing, camera pose control, and PSD/PNG export.
 
 ## 1. What it offers
 - **Anchored render box scaling**: 3×3 anchors drive off-axis frustums so horizontal/vertical scale and viewZoom never drift the anchored composition.
@@ -13,7 +13,7 @@ CAMERA FRAMES v2.11.0 lets you lay out multiple frames on an A4-like master shee
 - Header provides **CAMERA FRAMES ON/OFF** (Main=ON, Viewport=OFF icons) and **Compact** toggle. Compact mode shows only the header.
 - ON locks uiTarget=viewport and shows the Main button as locked. OFF allows choosing Main only when a mainCameraPose exists.
 - Panel can be dragged and is clamped inside the window; pointer events on the panel do not fall through to the canvas.
-- Label shows `| CAMERA FRAMES v2.11.0`.
+- Label shows `| CAMERA FRAMES v2.12.0`.
 
 ## 3. Render Box (Layout)
 - Master sheet `1754 × 1240px` (A4 at 150dpi). `Width/Height (%)` are clamped to 100%+ up to 16000px equivalent. 3×3 anchor sets the pivot for future scaling.
@@ -36,7 +36,8 @@ CAMERA FRAMES v2.11.0 lets you lay out multiple frames on an A4-like master shee
 - Preview-only; excluded from PNG/PSD. Included in history and saves.
 
 ## 6. Export
-- Filename and format (PSD/PNG, default PSD). Blank names fall back to `camera-frames`. Export settings are not part of history.
+- Filename and format (PSD/PNG, default PSD). Blank names fall back to `cf-%cam`. Export settings are not part of history.
+- **Export target**: switch between current/all/selected cameras. Selected mode uses checkboxes in the camera preset list.
 - **Grid/Eye-level**: Single toggle outputs both overlays. Composited for PNG; separate layers for PSD.
 - **Model layers**: PSD-only; each visible model renders into its own layer with localized names (toggle is always shown).
 - Render button starts export; shows spinner and disables while busy.
