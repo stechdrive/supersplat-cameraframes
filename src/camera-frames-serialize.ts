@@ -6,6 +6,7 @@ import type {
     CameraPoseSnapshot,
     CameraPreset,
     ExportFormat,
+    ExportTarget,
     FrameState,
     FrustumDebugCache,
     Viewport,
@@ -116,6 +117,27 @@ type DeserializeParams = {
 const isObject = (value: unknown): value is Record<string, unknown> => (
     typeof value === 'object' && value !== null && !Array.isArray(value)
 );
+
+const normalizeExportTarget = (value: unknown): ExportTarget => (
+    value === 'all' || value === 'selected' ? value : 'current'
+);
+
+const normalizeExportPresetIds = (value: unknown, presets: CameraPreset[]): string[] => {
+    if (!Array.isArray(value)) {
+        return [];
+    }
+    const allowed = new Set(presets.map(preset => preset.id));
+    const next: string[] = [];
+    const seen = new Set<string>();
+    value.forEach((id) => {
+        if (typeof id !== 'string' || !allowed.has(id) || seen.has(id)) {
+            return;
+        }
+        seen.add(id);
+        next.push(id);
+    });
+    return next;
+};
 
 const cloneCameraFramesStateBase = (
     state: CameraFramesStateBase,
@@ -260,8 +282,12 @@ const normalizeCameraPreset = (
 
 export const snapshot = ({ state, clonePoseSnapshot, normalizeFormat }: SnapshotParams): CameraFramesState => {
     const baseState = cloneCameraFramesStateBase(state, clonePoseSnapshot, normalizeFormat);
+    const exportTarget = normalizeExportTarget(state.exportTarget);
+    const exportPresetIds = normalizeExportPresetIds(state.exportPresetIds, state.cameraPresets ?? []);
     return {
         ...baseState,
+        exportTarget,
+        exportPresetIds,
         cameraPresets: state.cameraPresets.map(preset => cloneCameraPreset(preset, clonePoseSnapshot, normalizeFormat))
     };
 };
@@ -324,6 +350,8 @@ export const applySnapshot = ({
         state.nearClip = computeSafeNearClip(state.nearClip);
         state.exportGridOverlay = !!state.exportGridOverlay;
         state.exportModelLayers = !!state.exportModelLayers;
+        state.exportTarget = normalizeExportTarget(state.exportTarget);
+        state.exportPresetIds = normalizeExportPresetIds(state.exportPresetIds, state.cameraPresets);
         overlay.style.pointerEvents = 'none';
         rebuildBaseFrustum();
         if (state.enabled) {
@@ -402,6 +430,8 @@ export const deserialize = ({
             exportFormat: 'png',
             exportGridOverlay: false,
             exportModelLayers: false,
+            exportTarget: 'current',
+            exportPresetIds: [],
             cameraPresets: []
         };
         setState(nextState);
@@ -429,6 +459,7 @@ export const deserialize = ({
     const exportFormat = normalizeFormat(docState.exportFormat ?? 'psd');
     const exportGridOverlay = !!docState.exportGridOverlay;
     const exportModelLayers = !!docState.exportModelLayers;
+    const exportTarget = normalizeExportTarget(docState.exportTarget);
     const maskScope = normalizeMaskScope(docState.mask?.scope, DEFAULT_MASK.scope);
     const frames = (docState.frames ?? []).map((f: FrameState) => ({
         id: f.id,
@@ -502,6 +533,7 @@ export const deserialize = ({
         .map(preset => normalizeCameraPreset(preset, normalizeFormat, clonePoseSnapshot, fallbackBaseFov))
         .filter((preset): preset is CameraPreset => !!preset);
     }
+    const exportPresetIds = normalizeExportPresetIds(docState.exportPresetIds, cameraPresets);
 
     const nextState: CameraFramesState = {
         enabled: !!docState.enabled,
@@ -528,6 +560,8 @@ export const deserialize = ({
         exportFormat,
         exportGridOverlay,
         exportModelLayers,
+        exportTarget,
+        exportPresetIds,
         mainCameraPose,
         cameraPresets
     };

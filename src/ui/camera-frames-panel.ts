@@ -80,8 +80,12 @@ type CameraPreset = {
     cameraFramesState: CameraFramesStateBase;
 };
 
+type ExportTarget = 'current' | 'all' | 'selected';
+
 type CameraFramesState = CameraFramesStateBase & {
     cameraPresets: CameraPreset[];
+    exportTarget?: ExportTarget;
+    exportPresetIds?: string[];
 };
 
 type FovInfo = {
@@ -199,6 +203,8 @@ class CameraFramesPanel extends Panel {
         let maskScope: 'all' | 'selected' = 'all';
         let gridOverlayEnabled = false;
         let modelLayerEnabled = false;
+        let exportTarget: ExportTarget = 'current';
+        let exportPresetIds: string[] = [];
         let navMode: 'orbit' | 'fpv' = 'orbit';
         let viewportLensEnabled = false;
         let uiTarget: 'viewport' | 'main' = 'viewport';
@@ -510,6 +516,20 @@ class CameraFramesPanel extends Panel {
         filenameRow.append(filenameLabel);
         filenameRow.append(filenameInput);
 
+        const exportTargetRow = new Container({ class: 'control-parent' });
+        const exportTargetLabel = new Label({ class: 'control-label', text: localize('panel.camera-frames.export.target') });
+        const exportTargetSelect = new SelectInput({
+            class: 'control-element',
+            defaultValue: 'current',
+            options: [
+                { v: 'current', t: localize('panel.camera-frames.export.target.current') },
+                { v: 'all', t: localize('panel.camera-frames.export.target.all') },
+                { v: 'selected', t: localize('panel.camera-frames.export.target.selected') }
+            ]
+        });
+        exportTargetRow.append(exportTargetLabel);
+        exportTargetRow.append(exportTargetSelect);
+
         const formatLabel = new Label({ class: 'control-label', text: localize('panel.camera-frames.export.format') });
         const formatSelect = new SelectInput({
             class: 'control-element',
@@ -568,6 +588,7 @@ class CameraFramesPanel extends Panel {
         exportDetails.dom.style.flexDirection = 'column';
         exportDetails.dom.style.gap = '6px';
         exportDetails.append(filenameRow);
+        exportDetails.append(exportTargetRow);
         exportDetails.append(new Container({ class: 'export-details-extra' }));
 
         const cameraPresetsActions = new Container({ class: 'camera-presets-actions' });
@@ -923,6 +944,12 @@ class CameraFramesPanel extends Panel {
             events.fire('cameraFrames.setExportName', value);
         });
 
+        exportTargetSelect.on('change', (value: string) => {
+            if (suppress) return;
+            const next = value === 'all' ? 'all' : (value === 'selected' ? 'selected' : 'current');
+            events.fire('cameraFrames.setExportTarget', next);
+        });
+
         formatSelect.on('change', (value: string) => {
             if (suppress) return;
             const format = value === 'psd' ? 'psd' : 'png';
@@ -950,7 +977,9 @@ class CameraFramesPanel extends Panel {
             try {
                 await events.invoke('cameraFrames.render', {
                     format: formatSelect.value as ('png' | 'psd'),
-                    filename: filenameInput.value
+                    filename: filenameInput.value,
+                    target: exportTarget,
+                    presetIds: exportPresetIds
                 });
             } finally {
                 setRenderBusy(false);
@@ -1330,10 +1359,40 @@ class CameraFramesPanel extends Panel {
             cameraPresetsList.clear();
             const presets = state.cameraPresets ?? [];
             cameraPresetsEmpty.hidden = presets.length > 0;
+            const showExportSelection = exportTarget === 'selected';
             presets.forEach((preset) => {
                 const row = new Container({ class: 'camera-preset-row' });
                 if (preset.selected) {
                     row.class.add('selected');
+                }
+                if (showExportSelection) {
+                    const exportToggle = new BooleanInput({
+                        class: ['camera-preset-export-toggle'],
+                        value: exportPresetIds.includes(preset.id)
+                    });
+                    const exportToggleLabel = localize('panel.camera-frames.export.target.select-tooltip');
+                    exportToggle.dom.title = exportToggleLabel;
+                    exportToggle.dom.setAttribute('aria-label', exportToggleLabel);
+                    exportToggle.on('change', (value: boolean) => {
+                        if (suppress) return;
+                        const next = new Set(exportPresetIds);
+                        if (value) {
+                            next.add(preset.id);
+                        } else {
+                            next.delete(preset.id);
+                        }
+                        const ordered = presets
+                        .filter(item => next.has(item.id))
+                        .map(item => item.id);
+                        exportPresetIds = ordered;
+                        events.fire('cameraFrames.setExportPresetIds', ordered);
+                    });
+                    [exportToggle].forEach((button) => {
+                        ['pointerdown', 'pointerup', 'click'].forEach((evt) => {
+                            button.dom.addEventListener(evt, (e: Event) => e.stopPropagation());
+                        });
+                    });
+                    row.append(exportToggle);
                 }
                 const nameLabel = new Label({ class: 'camera-preset-name', text: preset.name });
                 row.append(nameLabel);
@@ -1498,6 +1557,11 @@ class CameraFramesPanel extends Panel {
             modelLayerEnabled = !!state.exportModelLayers;
             modelLayerToggle.class[modelLayerEnabled ? 'add' : 'remove']('active');
             modelLayerToggle.dom.setAttribute('aria-pressed', modelLayerEnabled ? 'true' : 'false');
+            exportTarget = state.exportTarget === 'all' ? 'all' : (state.exportTarget === 'selected' ? 'selected' : 'current');
+            exportTargetSelect.value = exportTarget;
+            exportPresetIds = Array.isArray(state.exportPresetIds) ?
+                state.exportPresetIds.filter(id => state.cameraPresets.some(preset => preset.id === id)) :
+                [];
 
             const zoomPct = Math.round(state.renderBox.viewZoomPct ?? 100);
             canvasZoomInput.value = zoomPct;

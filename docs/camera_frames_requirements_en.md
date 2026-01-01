@@ -3,7 +3,7 @@
 ## 0. Version and References
 
 - Base code: `src/camera-frames.ts` / `src/ui/camera-frames-panel.ts` / `src/camera.ts` / `src/scene.ts` / `src/render.ts` (package version 2.16.4 / as of HEAD).
-- CAMERA FRAMES individual version: `cameraFramesVersion` = **v2.11.0** (from `package.json`, appended as `| CAMERA FRAMES v2.11.0` to `#app-label`).
+- CAMERA FRAMES individual version: `cameraFramesVersion` = **v2.12.0** (from `package.json`, appended as `| CAMERA FRAMES v2.12.0` to `#app-label`).
 - This document replaces v7 with the **implementation-aligned v8**. Updates:
   - Added `scope: 'all' | 'selected'` to masks, reflecting scope selection and opacity (%) in UI/history/persistence (default 80% / all).
   - Made target switching explicit with radio-style buttons. When CAMERA FRAMES is ON both Main/Viewport show locked; when OFF only main can be selected (if mainCameraPose is retained). Main debug frustum colors: selected = magenta / not selected = cyan.
@@ -107,6 +107,8 @@ type CameraFramesState = {
   exportFormat?: 'png' | 'psd';
   exportGridOverlay?: boolean;
   exportModelLayers?: boolean;
+  exportTarget?: 'current' | 'all' | 'selected';
+  exportPresetIds?: string[];
 };
 ```
 
@@ -141,6 +143,8 @@ type CameraFramesState = {
 - `exportFormat`: initial state is `psd`. When initializing from unsaved document (`docState=null`), set to `png` and overwrite through UI sync.
 - `exportGridOverlay`: false
 - `exportModelLayers`: false
+- `exportTarget`: `current` (export target defaults to current camera)
+- `exportPresetIds`: `[]` (selection list for export targets)
 - Constants: `HFOV_MIN=10`, `HFOV_MAX=120`, `W_35MM=36` (35mm equivalent width)
 - `cameraFramesVersion`: save and display `cameraFramesVersion` from `package.json` (include in docSerialize).
 
@@ -368,7 +372,7 @@ Independent of viewZoom and viewport size.
 
 ### 8.1 Document save
 - Save/restore via `docSerialize.cameraFrames` / `docDeserialize.cameraFrames`.
-- Fields to save: `enabled`, `renderBox` (baseSize/scalePct/scale/anchor/center/fitScale/viewZoom/lastViewport/projection), `frames`, `mask` (including scope), `nearClip`, `exportName`, `exportFormat`, `exportGridOverlay`, `exportModelLayers`, `selectedId`, `mainCameraPose`, `version` (cameraFramesVersion).
+- Fields to save: `enabled`, `renderBox` (baseSize/scalePct/scale/anchor/center/fitScale/viewZoom/lastViewport/projection), `frames`, `mask` (including scope), `nearClip`, `exportName`, `exportFormat`, `exportGridOverlay`, `exportModelLayers`, `exportTarget`, `exportPresetIds`, `selectedId`, `mainCameraPose`, `version` (cameraFramesVersion).
 - On load:
   - Support legacy `uiScale/viewScale/fovY`.
   - Clamp scale to 100% or higher and 16000px or below. Normalize viewZoom to 25-100.
@@ -386,7 +390,7 @@ Independent of viewZoom and viewport size.
   - nearClip
   - mainCameraPose (including uiTarget=main transform/nav/fov/near edits)
   - render-box pan (Shift+drag)
-- Export settings (exportName/exportFormat/exportGridOverlay/exportModelLayers) are not included in history.
+- Export settings (exportName/exportFormat/exportGridOverlay/exportModelLayers/exportTarget/exportPresetIds) are not included in history.
 - After applying history, resend `cameraFrames.stateChanged` to sync UI and recalc overlay cursor.
 
 ---

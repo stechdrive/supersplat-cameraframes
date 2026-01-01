@@ -406,6 +406,15 @@
     }
 }
 
+.camera-preset-export-toggle {
+    margin: 0;
+    flex: 0 0 auto;
+}
+
+.camera-preset-export-toggle.pcui-boolean-input {
+    margin: 0;
+}
+
 .camera-preset-name {
     flex: 1;
     overflow: hidden;
