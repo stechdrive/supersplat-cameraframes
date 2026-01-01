@@ -872,10 +872,11 @@ export class CameraFramesController {
                 return;
             }
             const pose = this.captureCameraPose();
+            const usingMainCamera = this.state.enabled || this.uiTarget === 'main';
             if (pose) {
-                if (this.state.enabled) {
+                if (usingMainCamera) {
                     const playing = !!this.events.invoke('timeline.playing');
-                    if (!playing) {
+                    if (!playing || !this.state.enabled) {
                         this.state.mainCameraPose = this.forceMainCameraPoseOrthoOff(pose);
                         this.frustumDebugCache.points = null;
                         this.frustumDebugCache.pose = null;
@@ -886,7 +887,7 @@ export class CameraFramesController {
                     this.emitViewportLensChanged();
                 }
             }
-            if (this.state.enabled && !this.applyingHistory) {
+            if (usingMainCamera && !this.applyingHistory) {
                 this.syncSelectedPresetMainCameraFromState();
             }
             if (!this.state.enabled) {
@@ -1217,7 +1218,10 @@ export class CameraFramesController {
         this.events.on('camera.fov', (value?: number) => {
             const currentFov = (typeof value === 'number' && isFinite(value)) ? value : this.events.invoke('camera.fov');
             if (!this.state.enabled) {
-                if (!this.suppressViewportFovCapture && typeof currentFov === 'number' && isFinite(currentFov)) {
+                if (this.uiTarget === 'viewport' &&
+                    !this.suppressViewportFovCapture &&
+                    typeof currentFov === 'number' &&
+                    isFinite(currentFov)) {
                     this.viewportFovRuntime = currentFov;
                 }
                 this.updateFovInfo();
@@ -1931,6 +1935,8 @@ export class CameraFramesController {
 
     private applyCameraPreset(id: string, options?: { skipHistory?: boolean; }) {
         const apply = () => {
+            const prevSelectedPresetId = this.selectedPresetId;
+            const prevUiTarget = this.uiTarget;
             this.syncSelectedPresetFromState();
             const preset = this.state.cameraPresets.find(item => item.id === id);
             if (!preset) {
@@ -1949,6 +1955,14 @@ export class CameraFramesController {
                 cameraPresets: this.state.cameraPresets
             };
             this.applySnapshot(nextState);
+            if (!this.state.enabled && prevSelectedPresetId !== preset.id) {
+                if (prevUiTarget === 'viewport') {
+                    this.captureViewportRuntimeFromCamera();
+                }
+                this.setUiTarget('main');
+                this.applyMainCameraView();
+                this.updatePointerFromLast();
+            }
             this.events.fire('cameraFrames.forceRefreshViewport');
         };
         if (options?.skipHistory) {
@@ -2549,15 +2563,9 @@ export class CameraFramesController {
     }
 
     public applySnapshot(snapshot: CameraFramesState) {
-        const prevSelectedPresetId = this.selectedPresetId;
-        const prevUiTarget = this.uiTarget;
         const prevViewportPose = this.clonePoseSnapshot(this.viewportPoseRuntime);
         const prevViewportWorldDistance = this.viewportPoseRuntimeWorldDistance;
         const prevViewportFov = this.viewportFovRuntime;
-        const nextSelectedPresetId = snapshot.cameraPresets?.find(preset => preset.selected)?.id ?? null;
-        const shouldApplyMainCameraView = !snapshot.enabled &&
-            !!nextSelectedPresetId &&
-            prevSelectedPresetId !== nextSelectedPresetId;
         applySnapshotSerialize({
             snapshot,
             sceneCameraFov: this.scene.camera.fov,
@@ -2606,14 +2614,6 @@ export class CameraFramesController {
         this.viewportPoseRuntimeWorldDistance = prevViewportPose ? prevViewportWorldDistance : null;
         if (typeof prevViewportFov === 'number' && isFinite(prevViewportFov)) {
             this.viewportFovRuntime = prevViewportFov;
-        }
-        if (shouldApplyMainCameraView) {
-            if (prevUiTarget === 'viewport') {
-                this.captureViewportRuntimeFromCamera();
-            }
-            this.setUiTarget('main');
-            this.applyMainCameraView();
-            this.updatePointerFromLast();
         }
     }
 
