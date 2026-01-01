@@ -270,7 +270,9 @@ class CameraFramesPanel extends Panel {
         viewportBtn.dom.addEventListener('click', () => {
             if (framesEnabled) {
                 events.fire('cameraFrames.setEnabled', false);
+                return;
             }
+            events.fire('cameraFrames.setUiTarget', 'viewport');
         });
 
         const referenceImageHeaderButton = new Button({
