@@ -117,6 +117,8 @@ type CameraFramesState = {
   exportFormat?: 'png' | 'psd';
   exportGridOverlay?: boolean;
   exportModelLayers?: boolean;
+  exportTarget?: 'current' | 'all' | 'selected';
+  exportPresetIds?: string[];
 };
 ```
 
@@ -152,6 +154,8 @@ type CameraFramesState = {
 - `exportFormat`: 既定は `psd`（UI の `defaultValue` / 既存ドキュメントで未指定時のフォールバック）。ただしドキュメント未保存からの初期化 (`docState=null`) では `png` を採用し、その後の状態・UI 表示はこれに追従する。
 - `exportGridOverlay`: false
 - `exportModelLayers`: false
+- `exportTarget`: `current`（書き出し対象の既定は現在のカメラ）
+- `exportPresetIds`: `[]`（書き出し対象カメラの選択リスト）
 - 定数: `HFOV_MIN=10`, `HFOV_MAX=120`, `W_35MM=36`（35mm 換算幅）
 - `cameraFramesVersion`: `package.json` の `cameraFramesVersion` を保存・表示（docSerialize に含める）。
 
@@ -392,7 +396,7 @@ viewZoom・ビューポートサイズ非依存。
 
 ### 8.1 ドキュメント保存
 - `docSerialize.cameraFrames` / `docDeserialize.cameraFrames` で保存・復元。
-- 保存フィールド: `enabled`, `renderBox`（baseSize/scalePct/scale/anchor/center/fitScale/viewZoom/lastViewport/projection）、`frames`、`mask`（scope 含む）、`nearClip`、`exportName`、`exportFormat`、`exportGridOverlay`、`exportModelLayers`、`selectedId`、`mainCameraPose`、`version`（cameraFramesVersion）。
+- 保存フィールド: `enabled`, `renderBox`（baseSize/scalePct/scale/anchor/center/fitScale/viewZoom/lastViewport/projection）、`frames`、`mask`（scope 含む）、`nearClip`、`exportName`、`exportFormat`、`exportGridOverlay`、`exportModelLayers`、`exportTarget`、`exportPresetIds`、`selectedId`、`mainCameraPose`、`version`（cameraFramesVersion）。
 - 参照画像の保存は別系統（`docSerialize.referenceImage` / `docDeserialize.referenceImage`）で行う。Export に影響する `includeInRender` / `visible` / `layer` / `opacity` は参照画像側の永続化対象。
 - 読み込み時:
   - legacy `uiScale/viewScale/fovY` に対応。
@@ -411,7 +415,7 @@ viewZoom・ビューポートサイズ非依存。
   - nearClip
   - mainCameraPose（uiTarget=main の transform/nav/fov/near 編集含む）
   - レンダーボックスパン（Shift+ドラッグ）
-- Export 設定（exportName/exportFormat/exportGridOverlay/exportModelLayers）は履歴対象外。
+- Export 設定（exportName/exportFormat/exportGridOverlay/exportModelLayers/exportTarget/exportPresetIds）は履歴対象外。
 - 履歴適用後は `cameraFrames.stateChanged` を再送して UI を同期し、オーバーレイカーソルを再計算。
 
 ---

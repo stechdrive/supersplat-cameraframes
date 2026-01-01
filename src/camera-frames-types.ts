@@ -77,6 +77,8 @@ export type CameraPreset = {
 
 export type CameraFramesState = CameraFramesStateBase & {
     cameraPresets: CameraPreset[];
+    exportTarget?: ExportTarget;
+    exportPresetIds?: string[];
 };
 
 export type Viewport = { vw: number; vh: number; };
@@ -91,6 +93,7 @@ export type FovInfo = {
 };
 
 export type ExportFormat = 'png' | 'psd';
+export type ExportTarget = 'current' | 'all' | 'selected';
 
 export type ViewportMapping = {
     fitScale: number;

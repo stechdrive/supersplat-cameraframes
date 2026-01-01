@@ -92,6 +92,7 @@ import type {
     CameraPreset,
     EffectiveFrustum,
     ExportFormat,
+    ExportTarget,
     FovInfo,
     FrameMaskState,
     FrameState,
@@ -133,6 +134,8 @@ export class CameraFramesController {
         exportFormat: 'psd',
         exportGridOverlay: false,
         exportModelLayers: false,
+        exportTarget: 'current',
+        exportPresetIds: [],
         cameraPresets: []
     };
     private selectedId: string = null;
@@ -1178,31 +1181,93 @@ export class CameraFramesController {
             this.emitStateChanged();
         });
 
+        this.events.on('cameraFrames.setExportTarget', (target: ExportTarget) => {
+            const next = this.normalizeExportTarget(target);
+            if (this.state.exportTarget === next) {
+                return;
+            }
+            this.state.exportTarget = next;
+            if (next === 'selected' && (!this.state.exportPresetIds || this.state.exportPresetIds.length === 0)) {
+                const selectedId = this.state.cameraPresets.find(preset => preset.selected)?.id;
+                if (selectedId) {
+                    this.state.exportPresetIds = [selectedId];
+                }
+            }
+            this.emitStateChanged();
+        });
+
+        this.events.on('cameraFrames.setExportPresetIds', (ids: string[]) => {
+            const next = this.normalizeExportPresetIds(ids);
+            this.state.exportPresetIds = next;
+            this.emitStateChanged();
+        });
+
         // overlay解除（UI操作時に安全側で無効化）
         this.events.on('cameraFrames.overlay.release', () => {
             this.overlay.style.pointerEvents = 'none';
         });
 
         // render output
-        this.events.function('cameraFrames.render', async (options?: { format?: ExportFormat; filename?: string }) => {
+        this.events.function('cameraFrames.render', async (options?: {
+            format?: ExportFormat;
+            filename?: string;
+            target?: ExportTarget;
+            presetIds?: string[];
+        }) => {
             if (!this.state.enabled) {
                 return;
             }
-            await renderImage({
-                events: this.events,
-                scene: this.scene,
-                getState: () => this.state,
-                applyCameraPose: (pose, opts) => this.applyCameraPose(pose, opts),
-                normalizeFormat: format => this.normalizeFormat(format),
-                resolveFilename: (name, format) => this.resolveFilename(name, format),
-                renderFrameOverlay: (width, height) => this.renderFrameOverlay(width, height),
-                renderFrameOverlaysByManagement: (width, height) => this.renderFrameOverlaysByManagement(width, height),
-                getCompressor: () => this.getCompressor(),
-                requestRender: () => this.requestRender(),
-                syncCameraFrustum: () => this.syncCameraFrustum(),
-                clearViewportNearOverride: () => this.clearViewportNearOverride(),
-                options
-            });
+            const renderOnce = async () => {
+                await renderImage({
+                    events: this.events,
+                    scene: this.scene,
+                    getState: () => this.state,
+                    applyCameraPose: (pose, opts) => this.applyCameraPose(pose, opts),
+                    normalizeFormat: format => this.normalizeFormat(format),
+                    resolveFilename: (name, format) => this.resolveFilename(name, format),
+                    renderFrameOverlay: (width, height) => this.renderFrameOverlay(width, height),
+                    renderFrameOverlaysByManagement: (width, height) => this.renderFrameOverlaysByManagement(width, height),
+                    getCompressor: () => this.getCompressor(),
+                    requestRender: () => this.requestRender(),
+                    syncCameraFrustum: () => this.syncCameraFrustum(),
+                    clearViewportNearOverride: () => this.clearViewportNearOverride(),
+                    options
+                });
+            };
+
+            const target = this.normalizeExportTarget(options?.target ?? this.state.exportTarget);
+            if (target === 'current') {
+                await renderOnce();
+                return;
+            }
+
+            const presetIds = target === 'all' ?
+                this.state.cameraPresets.map(preset => preset.id) :
+                this.normalizeExportPresetIds(options?.presetIds ?? this.state.exportPresetIds);
+
+            if (!presetIds.length) {
+                await this.events.invoke('showPopup', {
+                    type: 'error',
+                    header: localize('popup.error'),
+                    message: localize('panel.camera-frames.export.target.empty')
+                });
+                return;
+            }
+
+            const prevSnapshot = this.snapshot();
+            const prevUiTarget = this.uiTarget;
+            try {
+                for (const presetId of presetIds) {
+                    if (!this.state.cameraPresets.some(preset => preset.id === presetId)) {
+                        continue;
+                    }
+                    this.applyCameraPreset(presetId, { skipHistory: true });
+                    await renderOnce();
+                }
+            } finally {
+                this.applySnapshot(prevSnapshot);
+                this.events.fire('cameraFrames.setUiTarget', prevUiTarget);
+            }
         });
 
         // doc serialize / deserialize
@@ -1272,6 +1337,27 @@ export class CameraFramesController {
 
     private normalizeFormat(format?: ExportFormat): ExportFormat {
         return format === 'psd' ? 'psd' : 'png';
+    }
+
+    private normalizeExportTarget(target?: ExportTarget) {
+        return target === 'all' || target === 'selected' ? target : 'current';
+    }
+
+    private normalizeExportPresetIds(ids?: string[]) {
+        if (!Array.isArray(ids)) {
+            return [];
+        }
+        const allowed = new Set(this.state.cameraPresets.map(preset => preset.id));
+        const next: string[] = [];
+        const seen = new Set<string>();
+        ids.forEach((id) => {
+            if (typeof id !== 'string' || !allowed.has(id) || seen.has(id)) {
+                return;
+            }
+            seen.add(id);
+            next.push(id);
+        });
+        return next;
     }
 
     private resolveFilename(name: string | undefined, format: ExportFormat) {
@@ -1425,6 +1511,8 @@ export class CameraFramesController {
 
     private emitStateChanged() {
         this.ensureDefaultPreset();
+        this.state.exportTarget = this.normalizeExportTarget(this.state.exportTarget);
+        this.state.exportPresetIds = this.normalizeExportPresetIds(this.state.exportPresetIds);
         if (!this.applyingHistory) {
             this.syncSelectedPresetFromState();
         }
@@ -1972,8 +2060,12 @@ export class CameraFramesController {
             baseState.mainCameraPose = this.rebuildMainCameraPoseFromPreset(preset, baseState);
             baseState.nearClip = preset.mainCamera.nearClip ?? null;
             this.normalizeProjectionIntoState(baseState, preset.mainCamera.projection);
+            const exportTarget = this.normalizeExportTarget(this.state.exportTarget);
+            const exportPresetIds = this.normalizeExportPresetIds(this.state.exportPresetIds);
             const nextState: CameraFramesState = {
                 ...baseState,
+                exportTarget,
+                exportPresetIds,
                 cameraPresets: this.state.cameraPresets
             };
             this.applySnapshot(nextState);
@@ -2642,6 +2734,7 @@ export class CameraFramesController {
     public replaceCameraPresets(presets: CameraPreset[], selectedId?: string | null) {
         const nextPresets = presets.map(preset => JSON.parse(JSON.stringify(preset)) as CameraPreset);
         this.state.cameraPresets = nextPresets;
+        this.state.exportPresetIds = this.normalizeExportPresetIds(this.state.exportPresetIds);
         this.syncPresetCounter();
         const requestedId = selectedId ?? nextPresets.find(preset => preset.selected)?.id ?? null;
         const resolvedId = (typeof requestedId === 'string' && nextPresets.some(preset => preset.id === requestedId)) ?
