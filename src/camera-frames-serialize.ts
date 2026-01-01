@@ -185,7 +185,7 @@ const normalizeCameraFramesStateBase = (
         },
         mainCameraPose: clonePoseSnapshot(state.mainCameraPose as CameraPoseSnapshot | null | undefined),
         nearClip: (typeof state.nearClip === 'number' && isFinite(state.nearClip)) ? state.nearClip : null,
-        exportName: typeof state.exportName === 'string' ? state.exportName : 'cf-output',
+        exportName: typeof state.exportName === 'string' ? state.exportName : 'cf-%cam',
         exportFormat: normalizeFormat(state.exportFormat as ExportFormat | undefined),
         exportGridOverlay: !!state.exportGridOverlay,
         exportModelLayers: !!state.exportModelLayers
@@ -398,7 +398,7 @@ export const deserialize = ({
             mask: { ...DEFAULT_MASK },
             mainCameraPose: forceMainCameraPoseOrthoOff(clonePoseSnapshot(initialPose)),
             nearClip: null,
-            exportName: 'cf-output',
+            exportName: 'cf-%cam',
             exportFormat: 'png',
             exportGridOverlay: false,
             exportModelLayers: false,
@@ -425,7 +425,7 @@ export const deserialize = ({
     const _stateVersion = docState.version ?? 0; // reserved for future migrations
 
     const rb = docState.renderBox ?? DEFAULT_RENDERBOX();
-    const exportName = typeof docState.exportName === 'string' ? docState.exportName : 'cf-output';
+    const exportName = typeof docState.exportName === 'string' ? docState.exportName : 'cf-%cam';
     const exportFormat = normalizeFormat(docState.exportFormat ?? 'psd');
     const exportGridOverlay = !!docState.exportGridOverlay;
     const exportModelLayers = !!docState.exportModelLayers;

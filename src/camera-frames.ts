@@ -129,7 +129,7 @@ export class CameraFramesController {
         mask: { ...DEFAULT_MASK },
         mainCameraPose: null,
         nearClip: null,
-        exportName: 'cf-output',
+        exportName: 'cf-%cam',
         exportFormat: 'psd',
         exportGridOverlay: false,
         exportModelLayers: false,
@@ -1275,11 +1275,33 @@ export class CameraFramesController {
     }
 
     private resolveFilename(name: string | undefined, format: ExportFormat) {
-        const fallback = 'cf-output';
+        const fallback = 'cf-%cam';
         const trimmed = name?.trim();
         const base = trimmed && trimmed.length > 0 ? trimmed : fallback;
-        const hasExtension = /\.[^./\\]+$/.test(base);
-        return hasExtension ? base : `${base}.${format}`;
+        const resolved = this.applyExportNameAliases(base);
+        const normalized = resolved.trim() ? resolved : fallback;
+        const hasExtension = /\.[^./\\]+$/.test(normalized);
+        return hasExtension ? normalized : `${normalized}.${format}`;
+    }
+
+    private applyExportNameAliases(name: string) {
+        if (!name.includes('%cam')) {
+            return name;
+        }
+        const presetName = this.getSelectedPresetName();
+        return name.split('%cam').join(presetName);
+    }
+
+    private getSelectedPresetName() {
+        const selected = this.state.cameraPresets.find(preset => preset.selected)?.name?.trim();
+        if (selected) {
+            return selected;
+        }
+        const fallback = this.state.cameraPresets.find(preset => preset.name?.trim())?.name?.trim();
+        if (fallback) {
+            return fallback;
+        }
+        return localize('panel.camera-frames.camera-presets.default-name', { index: 1 });
     }
 
     private createPresetId() {

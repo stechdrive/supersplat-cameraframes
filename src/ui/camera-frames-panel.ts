@@ -502,8 +502,11 @@ class CameraFramesPanel extends Panel {
         const filenameLabel = new Label({ class: 'control-label', text: localize('panel.camera-frames.export.filename') });
         const filenameInput = new TextInput({
             class: ['control-element-expand', 'text-input'],
-            value: 'cf-output'
+            value: 'cf-%cam'
         });
+        const filenameTooltip = localize('panel.camera-frames.export.filename-tooltip');
+        filenameLabel.dom.title = filenameTooltip;
+        filenameInput.dom.title = filenameTooltip;
         filenameRow.append(filenameLabel);
         filenameRow.append(filenameInput);
 
@@ -1487,7 +1490,7 @@ class CameraFramesPanel extends Panel {
             widthScale.input.value = state.renderBox.scalePct.x;
             heightScale.input.value = state.renderBox.scalePct.y;
 
-            filenameInput.value = state.exportName ?? 'cf-output';
+            filenameInput.value = state.exportName ?? 'cf-%cam';
             formatSelect.value = state.exportFormat ?? 'png';
             gridOverlayEnabled = !!state.exportGridOverlay;
             gridToggle.class[gridOverlayEnabled ? 'add' : 'remove']('active');

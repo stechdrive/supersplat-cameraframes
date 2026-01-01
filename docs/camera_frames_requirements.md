@@ -148,7 +148,7 @@ type CameraFramesState = {
 - `mainCameraPose`: 現在のカメラ姿勢を初期スナップショットして保持（未取得なら有効化時に取得）。
 - `enabled`: デフォルトは false。ただし起動後の初回 `postrender` で `cameraFrames.setEnabled(true)` を発火し、自動的に有効化される（`src/main.ts`）。
 - `nearClip`: null（有効化時にカメラ値から安全値を算出して固定）
-- `exportName`: `'cf-output'`
+- `exportName`: `'cf-%cam'`（`%cam` は選択中のカメラデータのプリセット名に置換）
 - `exportFormat`: 既定は `psd`（UI の `defaultValue` / 既存ドキュメントで未指定時のフォールバック）。ただしドキュメント未保存からの初期化 (`docState=null`) では `png` を採用し、その後の状態・UI 表示はこれに追従する。
 - `exportGridOverlay`: false
 - `exportModelLayers`: false

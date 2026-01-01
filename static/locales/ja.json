@@ -107,6 +107,7 @@
     "panel.camera-frames.fov": "メインカメラ(mm)",
     "panel.camera-frames.canvas-zoom": "表示倍率",
     "panel.camera-frames.export.filename": "ファイル名",
+    "panel.camera-frames.export.filename-tooltip": "ファイル名に %cam を入れると、選択中のカメラデータのプリセット名が代入されます",
     "panel.camera-frames.export.format": "書き出し",
     "panel.camera-frames.export.grid": "グリッド/アイレベル",
     "panel.camera-frames.export.grid-tooltip": "グリッド/アイレベルを最終画像に含める",
