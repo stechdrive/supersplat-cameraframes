@@ -60,7 +60,7 @@ import {
     hitTestFrameBorder as hitTestFrameBorderGeometry,
     hitTestHandle as hitTestHandleGeometry
 } from './camera-frames-frame-geometry';
-import { clampFov, normalizeMaskScope } from './camera-frames-math';
+import { clampFov, cloneFrame, normalizeMaskScope } from './camera-frames-math';
 import {
     drawOverlay as drawOverlayOverlay,
     renderFrameOverlay as renderFrameOverlayOverlay,
@@ -510,7 +510,7 @@ export class CameraFramesController {
                 this.syncCameraFrustum();
             }
             this.requestRender();
-            this.events.fire('cameraFrames.stateChanged', this.snapshot());
+            this.emitStateChanged();
         };
         this.historyDebounced('cameraFrames.mainCameraPose', apply);
     }
@@ -827,6 +827,9 @@ export class CameraFramesController {
                     this.emitViewportLensChanged();
                 }
             }
+            if (this.state.enabled && !this.applyingHistory) {
+                this.syncSelectedPresetMainCameraFromState();
+            }
             if (!this.state.enabled) {
                 this.emitViewportLensChanged();
                 this.scheduleViewportNearOverride();
@@ -1033,7 +1036,7 @@ export class CameraFramesController {
                 // アンカー変更は「次の拡縮用の基準点」を差し替えるだけとし、
                 // 現在のフラスタム／表示を変えない（v4: 構図維持）
                 this.requestRender(); // UI/オーバーレイだけ更新
-                this.events.fire('cameraFrames.stateChanged', this.snapshot());
+                this.emitStateChanged();
             });
         });
 
@@ -1071,7 +1074,7 @@ export class CameraFramesController {
                     scope: nextScope
                 };
                 this.requestRender();
-                this.events.fire('cameraFrames.stateChanged', this.snapshot());
+                this.emitStateChanged();
             });
         });
 
@@ -1080,28 +1083,28 @@ export class CameraFramesController {
             const value = (name ?? '').toString();
             if (this.state.exportName === value) return;
             this.state.exportName = value;
-            this.events.fire('cameraFrames.stateChanged', this.snapshot());
+            this.emitStateChanged();
         });
 
         this.events.on('cameraFrames.setExportFormat', (format: ExportFormat) => {
             const next = this.normalizeFormat(format);
             if (this.state.exportFormat === next) return;
             this.state.exportFormat = next;
-            this.events.fire('cameraFrames.stateChanged', this.snapshot());
+            this.emitStateChanged();
         });
 
         this.events.on('cameraFrames.setExportGridOverlay', (value: boolean) => {
             const next = !!value;
             if (this.state.exportGridOverlay === next) return;
             this.state.exportGridOverlay = next;
-            this.events.fire('cameraFrames.stateChanged', this.snapshot());
+            this.emitStateChanged();
         });
 
         this.events.on('cameraFrames.setExportModelLayers', (value: boolean) => {
             const next = !!value;
             if (this.state.exportModelLayers === next) return;
             this.state.exportModelLayers = next;
-            this.events.fire('cameraFrames.stateChanged', this.snapshot());
+            this.emitStateChanged();
         });
 
         // overlay解除（UI操作時に安全側で無効化）
@@ -1187,7 +1190,7 @@ export class CameraFramesController {
                 return;
             }
             // 履歴適用直後の状態を通知してパネル数値を更新
-            this.events.fire('cameraFrames.stateChanged', this.snapshot());
+            this.emitStateChanged();
             this.updatePointerFromLast();
             this.updateFovInfo();
         });
@@ -1229,10 +1232,107 @@ export class CameraFramesController {
         return localize('panel.camera-frames.camera-presets.default-name', { index: this.presetCounter });
     }
 
-    private snapshotBaseState(): CameraFramesStateBase {
-        const snapshot = this.snapshot();
-        const { cameraPresets: _cameraPresets, ...baseState } = snapshot;
-        return baseState as CameraFramesStateBase;
+    private cloneCameraFramesStateBaseFromCurrent(): CameraFramesStateBase {
+        return {
+            enabled: this.state.enabled,
+            renderBox: JSON.parse(JSON.stringify(this.state.renderBox)),
+            frames: this.state.frames.map(cloneFrame),
+            mask: { ...this.state.mask },
+            mainCameraPose: this.clonePoseSnapshot(this.state.mainCameraPose),
+            nearClip: this.state.nearClip,
+            exportName: this.state.exportName,
+            exportFormat: this.normalizeFormat(this.state.exportFormat),
+            exportGridOverlay: !!this.state.exportGridOverlay,
+            exportModelLayers: !!this.state.exportModelLayers
+        };
+    }
+
+    private createCameraPreset(name?: string): CameraPreset {
+        this.ensureMainCameraPose();
+        const baseState = this.cloneCameraFramesStateBaseFromCurrent();
+        const mainTransform = this.getMainCameraTransform() ?? this.scene.camera.getTransform();
+        const rawBaseFov = this.scene.camera?.fov ?? baseState.renderBox?.projection?.baseFov ?? 60;
+        const baseFov = (typeof rawBaseFov === 'number' && isFinite(rawBaseFov)) ? rawBaseFov : 60;
+        return {
+            id: this.createPresetId(),
+            name: name ?? this.nextPresetName(),
+            selected: true,
+            mainCamera: {
+                transform: {
+                    position: { ...mainTransform.position },
+                    rotation: { ...mainTransform.rotation }
+                },
+                projection: {
+                    type: 'perspective',
+                    baseFov
+                },
+                nearClip: baseState.nearClip ?? null
+            },
+            cameraFramesState: baseState
+        };
+    }
+
+    private ensureDefaultPreset() {
+        if (Array.isArray(this.state.cameraPresets) && this.state.cameraPresets.length > 0) {
+            return;
+        }
+        this.presetCounter = 0;
+        const preset = this.createCameraPreset();
+        this.state.cameraPresets = [preset];
+        this.selectCameraPreset(preset.id);
+    }
+
+    private findSelectedPreset() {
+        if (!this.selectedPresetId) {
+            return null;
+        }
+        return this.state.cameraPresets.find(preset => preset.id === this.selectedPresetId) ?? null;
+    }
+
+    private syncSelectedPresetMainCameraFromState(preset?: CameraPreset) {
+        const target = preset ?? this.findSelectedPreset();
+        if (!target) {
+            return;
+        }
+        const mainPose = this.state.mainCameraPose;
+        if (!mainPose) {
+            return;
+        }
+        target.cameraFramesState.mainCameraPose = this.forceMainCameraPoseOrthoOff(this.clonePoseSnapshot(mainPose));
+        const mainTransform = this.poseToTransform(mainPose);
+        if (!mainTransform) {
+            return;
+        }
+        const rawBaseFov = this.state.renderBox?.projection?.baseFov ?? this.scene.camera?.fov ?? 60;
+        const baseFov = (typeof rawBaseFov === 'number' && isFinite(rawBaseFov)) ? rawBaseFov : 60;
+        target.mainCamera = {
+            transform: {
+                position: { ...mainTransform.position },
+                rotation: { ...mainTransform.rotation }
+            },
+            projection: {
+                type: 'perspective',
+                baseFov
+            },
+            nearClip: this.state.nearClip ?? null
+        };
+    }
+
+    private syncSelectedPresetFromState() {
+        const preset = this.findSelectedPreset();
+        if (!preset) {
+            return;
+        }
+        preset.cameraFramesState = this.cloneCameraFramesStateBaseFromCurrent();
+        this.syncSelectedPresetMainCameraFromState(preset);
+    }
+
+    private emitStateChanged() {
+        this.ensureDefaultPreset();
+        if (!this.applyingHistory) {
+            this.syncSelectedPresetFromState();
+        }
+        this.events.fire('cameraFrames.stateChanged', this.snapshot());
     }
 
     private selectCameraPreset(id: string | null) {
@@ -1472,7 +1572,7 @@ export class CameraFramesController {
                 this.applyViewportNearOverride();
             }
             this.events.fire('cameraFrames.enabled', this.state.enabled);
-            this.events.fire('cameraFrames.stateChanged', this.snapshot());
+            this.emitStateChanged();
             this.updateFovInfo();
             this.frustumDebugCache.points = null;
             this.frustumDebugCache.pose = null;
@@ -1501,8 +1601,7 @@ export class CameraFramesController {
             rebuildBaseFrustum: () => this.rebuildBaseFrustum(),
             syncCameraFrustum: () => this.syncCameraFrustum(),
             requestRender: () => this.requestRender(),
-            events: this.events,
-            snapshot: () => this.snapshot(),
+            fireStateChanged: () => this.emitStateChanged(),
             historyDebounced: (label, fn) => this.historyDebounced(label, fn),
             invalidateFrustumDebugCache: () => {
                 this.frustumDebugCache.points = null;
@@ -1707,7 +1806,7 @@ export class CameraFramesController {
             }
 
             this.requestRender();
-            this.events.fire('cameraFrames.stateChanged', this.snapshot());
+            this.emitStateChanged();
             this.updateFovInfo();
         });
     }
@@ -1723,39 +1822,19 @@ export class CameraFramesController {
             this.computeViewportMapping(false);
             this.syncCameraFrustum();
             this.requestRender();
-            this.events.fire('cameraFrames.stateChanged', this.snapshot());
+            this.emitStateChanged();
         });
     }
 
     private addCameraPreset() {
         this.historyRecord('cameraFrames.addCameraPreset', () => {
-            const baseState = this.snapshotBaseState();
-            const mainTransform = this.getMainCameraTransform() ?? this.scene.camera.getTransform();
-            const rawBaseFov = this.scene.camera?.fov ?? baseState.renderBox?.projection?.baseFov ?? 60;
-            const baseFov = (typeof rawBaseFov === 'number' && isFinite(rawBaseFov)) ? rawBaseFov : 60;
-            const preset: CameraPreset = {
-                id: this.createPresetId(),
-                name: this.nextPresetName(),
-                selected: true,
-                mainCamera: {
-                    transform: {
-                        position: { ...mainTransform.position },
-                        rotation: { ...mainTransform.rotation }
-                    },
-                    projection: {
-                        type: 'perspective',
-                        baseFov
-                    },
-                    nearClip: baseState.nearClip ?? null
-                },
-                cameraFramesState: baseState
-            };
+            const preset = this.createCameraPreset();
             this.state.cameraPresets.forEach((item) => {
                 item.selected = false;
             });
             this.state.cameraPresets.push(preset);
-            this.selectedPresetId = preset.id;
-            this.events.fire('cameraFrames.stateChanged', this.snapshot());
+            this.selectCameraPreset(preset.id);
+            this.emitStateChanged();
         });
     }
 
@@ -1772,7 +1851,7 @@ export class CameraFramesController {
             this.state.cameraPresets = nextPresets;
             if (this.state.cameraPresets.length === 0) {
                 this.selectCameraPreset(null);
-                this.events.fire('cameraFrames.stateChanged', this.snapshot());
+                this.emitStateChanged();
                 return;
             }
             const fallbackId = this.state.cameraPresets[this.state.cameraPresets.length - 1].id;
@@ -1782,6 +1861,7 @@ export class CameraFramesController {
 
     private applyCameraPreset(id: string, options?: { skipHistory?: boolean; }) {
         const apply = () => {
+            this.syncSelectedPresetFromState();
             const preset = this.state.cameraPresets.find(item => item.id === id);
             if (!preset) {
                 return;
@@ -1819,7 +1899,7 @@ export class CameraFramesController {
                 return;
             }
             preset.name = trimmed;
-            this.events.fire('cameraFrames.stateChanged', this.snapshot());
+            this.emitStateChanged();
         });
     }
 
@@ -1839,7 +1919,7 @@ export class CameraFramesController {
             this.rebuildBaseFrustum();
             this.syncCameraFrustum();
             this.requestRender();
-            this.events.fire('cameraFrames.stateChanged', this.snapshot());
+            this.emitStateChanged();
             this.updateFovInfo();
         });
     }
@@ -1871,7 +1951,7 @@ export class CameraFramesController {
                 this.selectFrame(id);
             }
             this.requestRender();
-            this.events.fire('cameraFrames.stateChanged', this.snapshot());
+            this.emitStateChanged();
             this.updatePointerFromLast();
         });
     }
@@ -1882,7 +1962,7 @@ export class CameraFramesController {
             this.state.frames = this.state.frames.filter(f => f.id !== this.selectedId);
             this.selectedId = this.state.frames.length ? this.state.frames[this.state.frames.length - 1].id : null;
             this.requestRender();
-            this.events.fire('cameraFrames.stateChanged', this.snapshot());
+            this.emitStateChanged();
             this.updatePointerFromLast();
             this.updateFovInfo();
         });
@@ -1895,7 +1975,7 @@ export class CameraFramesController {
                 f.selected = f.id === id;
             });
             this.requestRender();
-            this.events.fire('cameraFrames.stateChanged', this.snapshot());
+            this.emitStateChanged();
             this.updatePointerFromLast();
             this.updateFovInfo();
         });
@@ -1911,7 +1991,7 @@ export class CameraFramesController {
             frame.scalePct = clamped;
             frame.scaleK = frame.scalePct / 100;
             this.requestRender();
-            this.events.fire('cameraFrames.stateChanged', this.snapshot());
+            this.emitStateChanged();
             this.updatePointerFromLast();
             this.updateFovInfo();
         });
@@ -2303,7 +2383,7 @@ export class CameraFramesController {
             screenToLogical: (x, y) => this.screenToLogical(x, y),
             syncCameraFrustum: () => this.syncCameraFrustum(),
             requestRender: () => this.requestRender(),
-            fireStateChanged: () => this.events.fire('cameraFrames.stateChanged', this.snapshot())
+            fireStateChanged: () => this.emitStateChanged()
         });
     }
 
@@ -2326,7 +2406,7 @@ export class CameraFramesController {
 
     private onDoubleClick(e: MouseEvent) {
         const fireStateChanged = () => {
-            this.events.fire('cameraFrames.stateChanged', this.snapshot());
+            this.emitStateChanged();
         };
         onDoubleClickPointer({
             event: e,
@@ -2438,7 +2518,7 @@ export class CameraFramesController {
             scheduleNearClipGuard: () => this.scheduleNearClipGuard(),
             requestRender: () => this.requestRender(),
             events: this.events,
-            fireStateChanged: () => this.events.fire('cameraFrames.stateChanged', this.snapshot()),
+            fireStateChanged: () => this.emitStateChanged(),
             updatePointerFromLast: () => this.updatePointerFromLast(),
             updateFovInfo: () => this.updateFovInfo()
         });
@@ -2458,7 +2538,7 @@ export class CameraFramesController {
             return;
         }
         this.selectCameraPreset(null);
-        this.events.fire('cameraFrames.stateChanged', this.snapshot());
+        this.emitStateChanged();
     }
 
     private serialize() {
@@ -2509,7 +2589,7 @@ export class CameraFramesController {
             syncCameraFrustum: () => this.syncCameraFrustum(),
             scheduleNearClipGuard: () => this.scheduleNearClipGuard(),
             requestRender: () => this.requestRender(),
-            fireStateChanged: () => this.events.fire('cameraFrames.stateChanged', this.snapshot()),
+            fireStateChanged: () => this.emitStateChanged(),
             updatePointerFromLast: () => this.updatePointerFromLast(),
             updateFovInfo: () => this.updateFovInfo()
         });

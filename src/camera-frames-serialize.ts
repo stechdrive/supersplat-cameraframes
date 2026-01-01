@@ -499,7 +499,7 @@ export const deserialize = ({
     let cameraPresets: CameraPreset[] = [];
     if (Array.isArray(docState.cameraPresets)) {
         cameraPresets = (docState.cameraPresets as unknown[])
-        .map((preset) => normalizeCameraPreset(preset, normalizeFormat, clonePoseSnapshot, fallbackBaseFov))
+        .map(preset => normalizeCameraPreset(preset, normalizeFormat, clonePoseSnapshot, fallbackBaseFov))
         .filter((preset): preset is CameraPreset => !!preset);
     }
 
