@@ -184,6 +184,7 @@ export class CameraFramesController {
     private viewportPoseRuntimeWorldDistance: number | null = null;
     private hasEnteredViewportOnce = false;
     private applyingPose = false;
+    private suppressViewportFovCapture = false;
     private orthoGuardActive = false;
     private uiTarget: 'viewport' | 'main' = 'viewport';
     private mainCameraSelected = false;
@@ -460,6 +461,64 @@ export class CameraFramesController {
 
     private canSelectMainTarget() {
         return !this.state.enabled && !!this.state.mainCameraPose && !this.scene.camera.targetSize;
+    }
+
+    private captureViewportRuntimeFromCamera() {
+        const pose = this.captureCameraPose();
+        if (!pose) {
+            return;
+        }
+        this.viewportPoseRuntime = pose;
+        this.viewportPoseRuntimeWorldDistance = (pose.navMode === 'orbit') ? this.getPoseWorldDistance(pose) : null;
+        const currentFov = this.events.invoke('camera.fov');
+        if (typeof currentFov === 'number' && isFinite(currentFov)) {
+            this.viewportFovRuntime = currentFov;
+        }
+    }
+
+    private applyViewportRuntimeToCamera() {
+        if (!this.viewportPoseRuntime) {
+            this.captureViewportRuntimeFromCamera();
+        }
+        const viewportPose = this.clonePoseSnapshot(this.viewportPoseRuntime);
+        if (!viewportPose) {
+            return;
+        }
+        const worldDistance = this.viewportPoseRuntimeWorldDistance;
+        if (viewportPose.navMode === 'orbit' && typeof worldDistance === 'number' && isFinite(worldDistance) && worldDistance > 0) {
+            viewportPose.lockFraming = false;
+            viewportPose.distance = this.worldDistanceToNormalized(worldDistance, viewportPose);
+        }
+        this.applyCameraPose(viewportPose, { silent: true, allowOrtho: true });
+        const vpFov = (typeof this.viewportFovRuntime === 'number' && isFinite(this.viewportFovRuntime)) ?
+            this.viewportFovRuntime :
+            this.events.invoke('camera.fov');
+        if (typeof vpFov === 'number' && isFinite(vpFov)) {
+            this.withCameraHistorySuppressed(() => {
+                this.events.fire('camera.setFov', vpFov);
+            });
+        }
+        this.requestRender();
+    }
+
+    private applyMainCameraView() {
+        const mainPose = this.forceMainCameraPoseOrthoOff(this.clonePoseSnapshot(this.state.mainCameraPose));
+        if (!mainPose) {
+            return;
+        }
+        this.applyCameraPose(mainPose, { silent: true, allowOrtho: false });
+        const baseFov = this.state.renderBox?.projection?.baseFov ?? this.scene.camera?.fov ?? 60;
+        if (typeof baseFov === 'number' && isFinite(baseFov)) {
+            this.withCameraHistorySuppressed(() => {
+                this.suppressViewportFovCapture = true;
+                try {
+                    this.events.fire('camera.setFov', baseFov);
+                } finally {
+                    this.suppressViewportFovCapture = false;
+                }
+            });
+        }
+        this.requestRender();
     }
 
     private setUiTarget(target: 'viewport' | 'main') {
@@ -904,7 +963,18 @@ export class CameraFramesController {
             canSelectMain: this.canSelectMainTarget()
         }));
         this.events.on('cameraFrames.setUiTarget', (target: 'viewport' | 'main') => {
+            const prevTarget = this.uiTarget;
+            if (!this.state.enabled && target === 'main' && prevTarget === 'viewport') {
+                this.captureViewportRuntimeFromCamera();
+            }
             this.setUiTarget(target);
+            if (!this.state.enabled && prevTarget !== this.uiTarget) {
+                if (this.uiTarget === 'main') {
+                    this.applyMainCameraView();
+                } else {
+                    this.applyViewportRuntimeToCamera();
+                }
+            }
             this.updatePointerFromLast();
         });
         this.events.function('cameraFrames.mainTransform', () => this.getMainCameraTransform());
@@ -1147,7 +1217,7 @@ export class CameraFramesController {
         this.events.on('camera.fov', (value?: number) => {
             const currentFov = (typeof value === 'number' && isFinite(value)) ? value : this.events.invoke('camera.fov');
             if (!this.state.enabled) {
-                if (typeof currentFov === 'number' && isFinite(currentFov)) {
+                if (!this.suppressViewportFovCapture && typeof currentFov === 'number' && isFinite(currentFov)) {
                     this.viewportFovRuntime = currentFov;
                 }
                 this.updateFovInfo();
@@ -2480,6 +2550,10 @@ export class CameraFramesController {
 
     public applySnapshot(snapshot: CameraFramesState) {
         const prevSelectedPresetId = this.selectedPresetId;
+        const prevUiTarget = this.uiTarget;
+        const prevViewportPose = this.clonePoseSnapshot(this.viewportPoseRuntime);
+        const prevViewportWorldDistance = this.viewportPoseRuntimeWorldDistance;
+        const prevViewportFov = this.viewportFovRuntime;
         const nextSelectedPresetId = snapshot.cameraPresets?.find(preset => preset.selected)?.id ?? null;
         const shouldApplyMainCameraView = !snapshot.enabled &&
             !!nextSelectedPresetId &&
@@ -2528,26 +2602,18 @@ export class CameraFramesController {
             updateFovInfo: () => this.updateFovInfo()
         });
         this.syncPresetCounter();
+        this.viewportPoseRuntime = this.clonePoseSnapshot(prevViewportPose);
+        this.viewportPoseRuntimeWorldDistance = prevViewportPose ? prevViewportWorldDistance : null;
+        if (typeof prevViewportFov === 'number' && isFinite(prevViewportFov)) {
+            this.viewportFovRuntime = prevViewportFov;
+        }
         if (shouldApplyMainCameraView) {
-            const mainPose = this.forceMainCameraPoseOrthoOff(this.clonePoseSnapshot(this.state.mainCameraPose));
-            if (mainPose) {
-                this.setUiTarget('main');
-                this.applyCameraPose(mainPose, { silent: true, allowOrtho: false });
-                const baseFov = this.state.renderBox?.projection?.baseFov ?? this.scene.camera?.fov ?? 60;
-                if (typeof baseFov === 'number' && isFinite(baseFov)) {
-                    this.viewportFovRuntime = baseFov;
-                    this.withCameraHistorySuppressed(() => {
-                        this.events.fire('camera.setFov', baseFov);
-                    });
-                }
-                this.viewportPoseRuntime = this.clonePoseSnapshot(mainPose);
-                this.viewportPoseRuntimeWorldDistance = (mainPose.navMode === 'orbit') ?
-                    this.getPoseWorldDistance(mainPose) :
-                    null;
-                this.updatePointerFromLast();
-                this.emitViewportLensChanged();
-                this.requestRender();
+            if (prevUiTarget === 'viewport') {
+                this.captureViewportRuntimeFromCamera();
             }
+            this.setUiTarget('main');
+            this.applyMainCameraView();
+            this.updatePointerFromLast();
         }
     }
 
