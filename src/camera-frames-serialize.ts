@@ -498,8 +498,8 @@ export const deserialize = ({
     const fallbackBaseFov = (typeof scene.camera?.fov === 'number' && isFinite(scene.camera.fov)) ? scene.camera.fov : 60;
     let cameraPresets: CameraPreset[] = [];
     if (Array.isArray(docState.cameraPresets)) {
-        cameraPresets = docState.cameraPresets
-        .map((preset: unknown) => normalizeCameraPreset(preset, normalizeFormat, clonePoseSnapshot, fallbackBaseFov))
+        cameraPresets = (docState.cameraPresets as unknown[])
+        .map((preset) => normalizeCameraPreset(preset, normalizeFormat, clonePoseSnapshot, fallbackBaseFov))
         .filter((preset): preset is CameraPreset => !!preset);
     }
 
