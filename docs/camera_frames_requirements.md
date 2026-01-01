@@ -4,7 +4,7 @@
 
 - ベースコード: `src/camera-frames.ts` / `src/ui/camera-frames-panel.ts` / `src/camera.ts` / `src/scene.ts` / `src/render.ts`（package version 2.16.4 / HEAD 時点）。
 - 関連実装: `src/reference-image-controller.ts` / `src/reference-image-types.ts` / `src/render.ts`（参照画像のプレビュー/書き出し・includeReferenceImage フラグ・永続化）。
-- CAMERA FRAMES 個別バージョン: `cameraFramesVersion` = **v2.9.11**（`package.json` 由来、`#app-label` に `| CAMERA FRAMES v2.9.11` を追加表示）。
+- CAMERA FRAMES 個別バージョン: `cameraFramesVersion` = **v2.10.0**（`package.json` 由来、`#app-label` に `| CAMERA FRAMES v2.10.0` を追加表示）。
 - 本書は v8 を置き換える **実装準拠版 v9**。更新点:
   - マスクに `scope: 'all' | 'selected'` を追加し、スコープ選択と不透明度(%)入力を UI/履歴/永続化に反映（デフォルト 80% / all）。
   - ターゲット切替をラジオ風ボタンで明示。CAMERA FRAMES ON 時は Main/Viewport ともロック表示、OFF 時のみ main 選択可（mainCameraPose 保持時）。Main デバッグフラスタムの色は選択中=マゼンタ/非選択=シアン。
@@ -148,7 +148,7 @@ type CameraFramesState = {
 - `mainCameraPose`: 現在のカメラ姿勢を初期スナップショットして保持（未取得なら有効化時に取得）。
 - `enabled`: デフォルトは false。ただし起動後の初回 `postrender` で `cameraFrames.setEnabled(true)` を発火し、自動的に有効化される（`src/main.ts`）。
 - `nearClip`: null（有効化時にカメラ値から安全値を算出して固定）
-- `exportName`: `'cf-output'`
+- `exportName`: `'cf-%cam'`（`%cam` は選択中のカメラデータのプリセット名に置換）
 - `exportFormat`: 既定は `psd`（UI の `defaultValue` / 既存ドキュメントで未指定時のフォールバック）。ただしドキュメント未保存からの初期化 (`docState=null`) では `png` を採用し、その後の状態・UI 表示はこれに追従する。
 - `exportGridOverlay`: false
 - `exportModelLayers`: false

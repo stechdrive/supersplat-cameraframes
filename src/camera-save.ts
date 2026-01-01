@@ -1,21 +1,14 @@
 import type { CameraFramesController } from './camera-frames';
 import type { CameraFramesHistory } from './camera-frames-history';
-import type { CameraFramesState } from './camera-frames-types';
+import type { CameraFramesStateBase, CameraPreset, ProjectionJson, RotationJson, Vec3Json } from './camera-frames-types';
 import { cameraFramesVersion } from './camera-frames-version';
 import { Events } from './events';
 import type { Scene } from './scene';
 import { localize } from './ui/localization';
 
 const CAMERA_SAVE_TYPE = 'supersplat.camera-frames.main-camera';
-const CAMERA_SAVE_VERSION = 1;
-
-type Vec3Json = { x: number; y: number; z: number; };
-
-type RotationJson = { yaw: number; pitch: number; roll: number; };
-
-type ProjectionJson =
-    | { type: 'perspective'; baseFov: number; }
-    | { type: 'ortho'; orthoHalfHeight: number; };
+const CAMERA_SAVE_VERSION = 2;
+const CAMERA_SAVE_VERSION_V1 = 1;
 
 type MainCameraJson = {
     transform: {
@@ -40,14 +33,25 @@ type CameraPoseJson = {
 
 type CameraSaveFileV1 = {
     type: typeof CAMERA_SAVE_TYPE;
-    version: typeof CAMERA_SAVE_VERSION;
+    version: typeof CAMERA_SAVE_VERSION_V1;
     meta?: {
         app?: string;
         createdAt?: string;
         cameraFramesVersion?: string;
     };
     mainCamera: MainCameraJson;
-    cameraFramesState: CameraFramesState;
+    cameraFramesState: CameraFramesStateBase;
+};
+
+type CameraSaveFileV2 = {
+    type: typeof CAMERA_SAVE_TYPE;
+    version: typeof CAMERA_SAVE_VERSION;
+    meta?: {
+        app?: string;
+        createdAt?: string;
+        cameraFramesVersion?: string;
+    };
+    cameraPresets: CameraPreset[];
 };
 
 type FilePickerAcceptTypeCompat = {
@@ -99,7 +103,7 @@ const requireVec3 = (value: unknown, label: string): Vec3Json => {
     return { x, y, z };
 };
 
-const requireCameraFramesState = (value: unknown): CameraFramesState => {
+const requireCameraFramesStateBase = (value: unknown): CameraFramesStateBase => {
     const state = requireObject(value, 'cameraFramesState');
 
     if (typeof state.enabled !== 'boolean') {
@@ -115,19 +119,18 @@ const requireCameraFramesState = (value: unknown): CameraFramesState => {
         throw new Error(localize('cameraSave.invalidField', { field: 'cameraFramesState.mask' }));
     }
 
-    return state as unknown as CameraFramesState;
+    return state as unknown as CameraFramesStateBase;
 };
 
-const requireCameraSaveFileV1 = (value: unknown): CameraSaveFileV1 => {
-    const root = requireObject(value, 'root');
-    const type = requireString(root.type, 'type');
-    if (type !== CAMERA_SAVE_TYPE) {
-        throw new Error(localize('cameraSave.unsupportedType', { type }));
-    }
-    const version = requireFiniteNumber(root.version, 'version');
-    if (version !== CAMERA_SAVE_VERSION) {
-        throw new Error(localize('cameraSave.unsupportedVersion', { version }));
-    }
+const readMeta = (root: Record<string, unknown>) => (
+    isObject(root.meta) ? {
+        app: typeof root.meta.app === 'string' ? root.meta.app : undefined,
+        createdAt: typeof root.meta.createdAt === 'string' ? root.meta.createdAt : undefined,
+        cameraFramesVersion: typeof root.meta.cameraFramesVersion === 'string' ? root.meta.cameraFramesVersion : undefined
+    } : undefined
+);
+
+const requireCameraSaveFileV1 = (root: Record<string, unknown>): CameraSaveFileV1 => {
     const mainCameraObj = requireObject(root.mainCamera, 'mainCamera');
     const transformObj = requireObject(mainCameraObj.transform, 'mainCamera.transform');
     const position = requireVec3(transformObj.position, 'mainCamera.transform.position');
@@ -152,16 +155,12 @@ const requireCameraSaveFileV1 = (value: unknown): CameraSaveFileV1 => {
     };
 
     const nearClip = readNullableNumber(mainCameraObj.nearClip, 'mainCamera.nearClip');
-    const cameraFramesState = requireCameraFramesState(root.cameraFramesState);
+    const cameraFramesState = requireCameraFramesStateBase(root.cameraFramesState);
 
     return {
         type: CAMERA_SAVE_TYPE,
-        version: CAMERA_SAVE_VERSION,
-        meta: isObject(root.meta) ? {
-            app: typeof root.meta.app === 'string' ? root.meta.app : undefined,
-            createdAt: typeof root.meta.createdAt === 'string' ? root.meta.createdAt : undefined,
-            cameraFramesVersion: typeof root.meta.cameraFramesVersion === 'string' ? root.meta.cameraFramesVersion : undefined
-        } : undefined,
+        version: CAMERA_SAVE_VERSION_V1,
+        meta: readMeta(root),
         mainCamera: {
             transform: { position, rotation },
             projection,
@@ -169,6 +168,79 @@ const requireCameraSaveFileV1 = (value: unknown): CameraSaveFileV1 => {
         },
         cameraFramesState
     };
+};
+
+const requireCameraPreset = (value: unknown): CameraPreset => {
+    const preset = requireObject(value, 'cameraPreset');
+    const id = requireString(preset.id, 'cameraPreset.id');
+    const name = requireString(preset.name, 'cameraPreset.name');
+    const mainCameraObj = requireObject(preset.mainCamera, 'cameraPreset.mainCamera');
+    const transformObj = requireObject(mainCameraObj.transform, 'cameraPreset.mainCamera.transform');
+    const position = requireVec3(transformObj.position, 'cameraPreset.mainCamera.transform.position');
+    const rotationObj = requireObject(transformObj.rotation, 'cameraPreset.mainCamera.transform.rotation');
+    const rotation: RotationJson = {
+        yaw: requireFiniteNumber(rotationObj.yaw, 'cameraPreset.mainCamera.transform.rotation.yaw'),
+        pitch: requireFiniteNumber(rotationObj.pitch, 'cameraPreset.mainCamera.transform.rotation.pitch'),
+        roll: requireFiniteNumber(rotationObj.roll, 'cameraPreset.mainCamera.transform.rotation.roll')
+    };
+
+    const projectionObj = requireObject(mainCameraObj.projection, 'cameraPreset.mainCamera.projection');
+    const projectionType = requireString(projectionObj.type, 'cameraPreset.mainCamera.projection.type');
+    if (projectionType !== 'perspective' && projectionType !== 'ortho') {
+        throw new Error(localize('cameraSave.invalidField', { field: 'cameraPreset.mainCamera.projection.type' }));
+    }
+    const projection: ProjectionJson = projectionType === 'ortho' ? {
+        type: 'ortho',
+        orthoHalfHeight: requireFiniteNumber(projectionObj.orthoHalfHeight, 'cameraPreset.mainCamera.projection.orthoHalfHeight')
+    } : {
+        type: 'perspective',
+        baseFov: requireFiniteNumber(projectionObj.baseFov, 'cameraPreset.mainCamera.projection.baseFov')
+    };
+
+    const nearClip = readNullableNumber(mainCameraObj.nearClip, 'cameraPreset.mainCamera.nearClip');
+    const cameraFramesState = requireCameraFramesStateBase(preset.cameraFramesState);
+    const selected = typeof preset.selected === 'boolean' ? preset.selected : undefined;
+
+    return {
+        id,
+        name,
+        selected,
+        mainCamera: {
+            transform: { position, rotation },
+            projection,
+            nearClip
+        },
+        cameraFramesState
+    };
+};
+
+const requireCameraSaveFileV2 = (root: Record<string, unknown>): CameraSaveFileV2 => {
+    if (!Array.isArray(root.cameraPresets)) {
+        throw new Error(localize('cameraSave.invalidField', { field: 'cameraPresets' }));
+    }
+    const cameraPresets = root.cameraPresets.map(preset => requireCameraPreset(preset));
+    return {
+        type: CAMERA_SAVE_TYPE,
+        version: CAMERA_SAVE_VERSION,
+        meta: readMeta(root),
+        cameraPresets
+    };
+};
+
+const requireCameraSaveFile = (value: unknown): CameraSaveFileV1 | CameraSaveFileV2 => {
+    const root = requireObject(value, 'root');
+    const type = requireString(root.type, 'type');
+    if (type !== CAMERA_SAVE_TYPE) {
+        throw new Error(localize('cameraSave.unsupportedType', { type }));
+    }
+    const version = requireFiniteNumber(root.version, 'version');
+    if (version === CAMERA_SAVE_VERSION_V1) {
+        return requireCameraSaveFileV1(root);
+    }
+    if (version === CAMERA_SAVE_VERSION) {
+        return requireCameraSaveFileV2(root);
+    }
+    throw new Error(localize('cameraSave.unsupportedVersion', { version }));
 };
 
 const downloadTextFile = (filename: string, text: string, mime = 'application/json') => {
@@ -226,10 +298,20 @@ const formatTimestamp = (date: Date) => {
     return `${datePart}_${timePart}`;
 };
 
-const buildSuggestedFilename = (events: Events, now: Date) => {
-    const docName = (events.invoke('doc.name') as string | null) ?? null;
-    const prefix = docName ? `${removeExtension(docName)}_` : '';
-    return `${prefix}main-camera_${formatTimestamp(now)}.sscam`;
+const buildSuggestedFilename = (now: Date) => {
+    return `camera-presets_${formatTimestamp(now)}.sscam`;
+};
+
+const createPresetId = () => {
+    try {
+        const uuid = (globalThis.crypto as any)?.randomUUID?.();
+        if (typeof uuid === 'string' && uuid) {
+            return uuid;
+        }
+    } catch {
+        // ignore
+    }
+    return `preset_${Date.now().toString(16)}_${Math.random().toString(16).slice(2)}`;
 };
 
 const distanceBetween = (a: Vec3Json, b: Vec3Json) => {
@@ -306,8 +388,8 @@ const rebuildMainCameraPose = (file: CameraSaveFileV1, scene: Scene): CameraPose
     return pose;
 };
 
-const normalizeProjectionIntoState = (state: CameraFramesState, projection: ProjectionJson, fallbackBaseFov: number) => {
-    const next = JSON.parse(JSON.stringify(state)) as CameraFramesState;
+const normalizeProjectionIntoState = (state: CameraFramesStateBase, projection: ProjectionJson, fallbackBaseFov: number) => {
+    const next = JSON.parse(JSON.stringify(state)) as CameraFramesStateBase;
     const rawBaseFov = projection.type === 'perspective' ? projection.baseFov : fallbackBaseFov;
     const baseFov = (typeof rawBaseFov === 'number' && isFinite(rawBaseFov)) ? rawBaseFov : fallbackBaseFov;
     next.renderBox.projection = {
@@ -320,25 +402,26 @@ const normalizeProjectionIntoState = (state: CameraFramesState, projection: Proj
 const registerCameraSave = (events: Events, scene: Scene, cameraFramesController: CameraFramesController, cameraFramesHistory: CameraFramesHistory) => {
     const fileTypes: FilePickerAcceptTypeCompat[] = [
         {
-            description: 'Main Camera (.sscam)',
+            description: 'Camera Presets (.sscam)',
             accept: { 'application/json': ['.sscam'] }
         }
     ];
 
-    events.function('cameraSave.exportMainCamera', async () => {
+    const exportCameraPresets = async () => {
         const now = new Date();
-        const suggestedName = buildSuggestedFilename(events, now);
+        const suggestedName = buildSuggestedFilename(now);
 
         const state = cameraFramesController.snapshot();
-        const mainTransform = (state.mainCameraPose ? (events.invoke('cameraFrames.mainTransform') as any) : null) ?? scene.camera.getTransform();
-        const rawBaseFov = scene.camera?.fov ?? state.renderBox?.projection?.baseFov ?? 60;
-        const baseFov = (typeof rawBaseFov === 'number' && isFinite(rawBaseFov)) ? rawBaseFov : 60;
-        const projection = {
-            type: 'perspective' as const,
-            baseFov
-        };
+        if (!state.cameraPresets.length) {
+            await events.invoke('showPopup', {
+                type: 'error',
+                header: localize('popup.error'),
+                message: localize('cameraSave.emptyPresets')
+            });
+            return;
+        }
 
-        const file: CameraSaveFileV1 = {
+        const file: CameraSaveFileV2 = {
             type: CAMERA_SAVE_TYPE,
             version: CAMERA_SAVE_VERSION,
             meta: {
@@ -346,15 +429,7 @@ const registerCameraSave = (events: Events, scene: Scene, cameraFramesController
                 createdAt: now.toISOString(),
                 cameraFramesVersion
             },
-            mainCamera: {
-                transform: {
-                    position: mainTransform.position,
-                    rotation: mainTransform.rotation
-                },
-                projection,
-                nearClip: state.nearClip ?? null
-            },
-            cameraFramesState: state
+            cameraPresets: state.cameraPresets
         };
 
         const text = JSON.stringify(file, null, 2);
@@ -363,7 +438,7 @@ const registerCameraSave = (events: Events, scene: Scene, cameraFramesController
         try {
             if (window.showSaveFilePicker) {
                 const handle = await window.showSaveFilePicker({
-                    id: 'SuperSplatMainCameraExport',
+                    id: 'SuperSplatCameraPresetsExport',
                     types: fileTypes,
                     suggestedName
                 });
@@ -386,9 +461,9 @@ const registerCameraSave = (events: Events, scene: Scene, cameraFramesController
         } finally {
             events.fire('stopSpinner');
         }
-    });
+    };
 
-    events.function('cameraSave.importMainCamera', async () => {
+    const importCameraPresets = async () => {
         if (scene.camera.targetSize) {
             await events.invoke('showPopup', {
                 type: 'error',
@@ -403,7 +478,7 @@ const registerCameraSave = (events: Events, scene: Scene, cameraFramesController
             let file: File | null = null;
             if (window.showOpenFilePicker) {
                 const handles = await window.showOpenFilePicker({
-                    id: 'SuperSplatMainCameraImport',
+                    id: 'SuperSplatCameraPresetsImport',
                     multiple: false,
                     types: fileTypes
                 });
@@ -420,18 +495,32 @@ const registerCameraSave = (events: Events, scene: Scene, cameraFramesController
 
             const text = await file.text();
             const parsed = JSON.parse(text) as unknown;
-            const cameraFile = requireCameraSaveFileV1(parsed);
+            const cameraFile = requireCameraSaveFile(parsed);
 
-            const rebuiltPose = rebuildMainCameraPose(cameraFile, scene);
-            const fallbackFov = (typeof scene.camera?.fov === 'number' && isFinite(scene.camera.fov)) ? scene.camera.fov : 60;
-            const patchedState = normalizeProjectionIntoState(cameraFile.cameraFramesState, cameraFile.mainCamera.projection, fallbackFov);
-            patchedState.mainCameraPose = rebuiltPose as any;
-            patchedState.nearClip = cameraFile.mainCamera.nearClip;
-
-            cameraFramesHistory.record('cameraFrames.importMainCamera', () => {
-                cameraFramesController.applySnapshot(patchedState);
-            });
-            events.fire('cameraFrames.forceRefreshViewport');
+            if ('cameraPresets' in cameraFile) {
+                const selectedPresetId = cameraFile.cameraPresets.find(preset => preset.selected)?.id ?? null;
+                cameraFramesHistory.record('cameraFrames.importCameraPresets', () => {
+                    cameraFramesController.replaceCameraPresets(cameraFile.cameraPresets, selectedPresetId);
+                });
+            } else {
+                const rebuiltPose = rebuildMainCameraPose(cameraFile, scene);
+                const fallbackFov = (typeof scene.camera?.fov === 'number' && isFinite(scene.camera.fov)) ? scene.camera.fov : 60;
+                const patchedState = normalizeProjectionIntoState(cameraFile.cameraFramesState, cameraFile.mainCamera.projection, fallbackFov);
+                patchedState.mainCameraPose = rebuiltPose as any;
+                patchedState.nearClip = cameraFile.mainCamera.nearClip;
+                const nameSource = file?.name ? removeExtension(file.name).trim() : '';
+                const presetName = nameSource || localize('panel.camera-frames.camera-presets.default-name', { index: 1 });
+                const preset: CameraPreset = {
+                    id: createPresetId(),
+                    name: presetName,
+                    selected: true,
+                    mainCamera: cameraFile.mainCamera,
+                    cameraFramesState: patchedState
+                };
+                cameraFramesHistory.record('cameraFrames.importCameraPresets', () => {
+                    cameraFramesController.replaceCameraPresets([preset], preset.id);
+                });
+            }
         } catch (error) {
             if (error instanceof DOMException && error.name === 'AbortError') {
                 return;
@@ -445,7 +534,12 @@ const registerCameraSave = (events: Events, scene: Scene, cameraFramesController
         } finally {
             events.fire('stopSpinner');
         }
-    });
+    };
+
+    events.function('cameraSave.exportCameraPresets', exportCameraPresets);
+    events.function('cameraSave.exportMainCamera', exportCameraPresets);
+    events.function('cameraSave.importCameraPresets', importCameraPresets);
+    events.function('cameraSave.importMainCamera', importCameraPresets);
 };
 
 export { registerCameraSave };

@@ -149,7 +149,7 @@
         <p style="text-align: left; font-size: 1.1em; color: #5a5a5a;">
             CAMERA FRAMES は、A4相当の<span class="keyword">基準用紙</span>の上に複数の<span
                 class="keyword">撮影フレーム</span>をレイアウトし、構図（カメラの位置・向き・画角）を調整して、LO用紙テンプレとぴったり合う画像を書き出すためのツールです。Webブラウザで動作します。本マニュアルは
-            CAMERA FRAMES <span class="keyword">v2.9.11</span> に対応しています。
+            CAMERA FRAMES <span class="keyword">v2.10.0</span> に対応しています。
             <br>URL: <a href="https://stechdrive.github.io/supersplat-cameraframes/"
                 target="_blank">https://stechdrive.github.io/supersplat-cameraframes/</a>
         </p>
@@ -291,12 +291,16 @@
 	        </ul>
 
         <p style="text-align: left; font-size: 1.0em; color: #5a5a5a;">
-            <span class="control">カメラデータ保存</span> は、<span class="keyword">メインカメラの構図</span>と Camera Frames の設定（大判指定・赤枠フレーム・ニアクリップ等）を、軽量ファイル<span
-                class="control">.sscam</span>として書き出し/読み込みする機能です。複数のカメラ構図をファイルで管理して切り替える、別プロジェクトで同じワールド座標のカメラを再現する、といった用途で使えます。
+            <span class="control">カメラデータ</span> は、<span class="keyword">メインカメラの構図</span>と Camera Frames の設定（大判指定・撮影フレーム・ニアクリップ等）をプリセットとして管理する機能です。リストをクリックして切り替え、内容は<span
+                class="control">.ssproj</span>に保存されます。<span class="control">.sscam</span>はリスト全体を一括で書き出し/読み込みします。
         </p>
         <ul class="operation-list">
-            <li><span class="control">書き出し（.sscam）</span>: 行右側の<span class="control">エクスポートアイコン</span>で、現在のメインカメラ構図をファイルに保存します。</li>
-            <li><span class="control">読み込み（.sscam）</span>: 行右側の<span class="control">インポートアイコン</span>で、保存済みのカメラデータを読み込み、現在の設定を上書きします（必要ならUndoで戻せます）。</li>
+            <li><span class="control">追加</span>: ヘッダーの<span class="control">追加アイコン</span>で、現在の構図をリストに保存します。</li>
+            <li><span class="control">削除</span>: ヘッダーの<span class="control">削除アイコン</span>で、選択中プリセットを削除します。</li>
+            <li><span class="control">適用</span>: リスト項目をクリックすると即座に構図が切り替わります。</li>
+            <li><span class="control">名前編集</span>: 項目名をダブルクリックで編集します（Enter/フォーカス外で確定、Escでキャンセル）。</li>
+            <li><span class="control">書き出し（.sscam）</span>: ヘッダーの<span class="control">エクスポートアイコン</span>で、カメラリストをファイルに保存します。</li>
+            <li><span class="control">読み込み（.sscam）</span>: ヘッダーの<span class="control">インポートアイコン</span>で、カメラリストを読み込み、現在のリストを置き換えます（必要ならUndoで戻せます）。</li>
             <li><span class="keyword">注意</span>: <span class="control">.sscam</span>には、読み込んでいる<span class="keyword">ロケ地データ（.ply/.splat）や3Dモデル（.glb）</span>は保存されません。アセットの差し替え・移動/回転/スケールなどを行うと、同じカメラでも画が合わない場合があります。構図を固定したい場合は、アセット側を変えないか、編集後に再度<span
                     class="control">書き出し</span>してください（シーン全体の保存は<span class="keyword">.ssproj</span>を利用します）。</li>
         </ul>

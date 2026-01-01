@@ -159,8 +159,7 @@ type SetNearClipParams = {
     rebuildBaseFrustum: () => void;
     syncCameraFrustum: () => void;
     requestRender: () => void;
-    events: Events;
-    snapshot: () => unknown;
+    fireStateChanged: () => void;
     historyDebounced: (label: string, fn: () => void) => void;
     invalidateFrustumDebugCache: () => void;
 };
@@ -887,8 +886,7 @@ export const setNearClip = ({
     rebuildBaseFrustum,
     syncCameraFrustum,
     requestRender,
-    events,
-    snapshot,
+    fireStateChanged,
     historyDebounced,
     invalidateFrustumDebugCache
 }: SetNearClipParams) => {
@@ -907,7 +905,7 @@ export const setNearClip = ({
             invalidateFrustumDebugCache();
         }
         requestRender();
-        events.fire('cameraFrames.stateChanged', snapshot());
+        fireStateChanged();
     };
 
     if (suppressHistory) {
