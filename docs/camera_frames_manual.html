@@ -149,7 +149,7 @@
         <p style="text-align: left; font-size: 1.1em; color: #5a5a5a;">
             CAMERA FRAMES は、A4相当の<span class="keyword">基準用紙</span>の上に複数の<span
                 class="keyword">撮影フレーム</span>をレイアウトし、構図（カメラの位置・向き・画角）を調整して、LO用紙テンプレとぴったり合う画像を書き出すためのツールです。Webブラウザで動作します。本マニュアルは
-            CAMERA FRAMES <span class="keyword">v2.12.1</span> に対応しています。
+            CAMERA FRAMES <span class="keyword">v2.13.0</span> に対応しています。
             <br>URL: <a href="https://stechdrive.github.io/supersplat-cameraframes/"
                 target="_blank">https://stechdrive.github.io/supersplat-cameraframes/</a>
         </p>
@@ -300,6 +300,7 @@
             <li><span class="control">削除</span>: ヘッダーの<span class="control">削除アイコン</span>で、選択中プリセットを削除します。</li>
             <li><span class="control">適用</span>: リスト項目をクリックすると即座に構図が切り替わります。</li>
             <li><span class="control">名前編集</span>: 項目名をダブルクリックで編集します（Enter/フォーカス外で確定、Escでキャンセル）。</li>
+            <li><span class="control">下絵（Reference Image）</span>: 各カメラに紐づく下絵セットを行内のセレクトで切り替えます。カメラ追加時は共通の<span class="control">RefImg:blank</span>にリンクされ、下絵を読み込むと<span class="control">RefImg:&lt;カメラ名&gt;</span>の新規セットが作成されて自動で切り替わります。</li>
             <li><span class="control">書き出し（.sscam）</span>: ヘッダーの<span class="control">エクスポートアイコン</span>で、カメラリストをファイルに保存します。</li>
             <li><span class="control">読み込み（.sscam）</span>: ヘッダーの<span class="control">インポートアイコン</span>で、カメラリストを読み込み、現在のリストを置き換えます（必要ならUndoで戻せます）。</li>
             <li><span class="keyword">注意</span>: <span class="control">.sscam</span>には、読み込んでいる<span class="keyword">ロケ地データ（.ply/.splat）や3Dモデル（.glb）</span>は保存されません。アセットの差し替え・移動/回転/スケールなどを行うと、同じカメラでも画が合わない場合があります。構図を固定したい場合は、アセット側を変えないか、編集後に再度<span
@@ -334,10 +335,10 @@
             <li><span class="control">ニアクリップ</span>: カメラに近い邪魔なものを写さないための表示カット距離（m）です。</li>
         </ul>
 
-	        <h3>1-6. 下絵（参考画像）</h3>
-	        <p style="text-align: left; font-size: 1.0em; color: #5a5a5a;">
-	            下絵は、基準用紙に重ねて表示できるガイド画像です。LOテンプレやレイアウトのガイド画像を読み込み、カメラやフレームの位置合わせに使えます。複数登録でき、PSD を読み込むとレイヤーごとに下絵として展開されます。
-	        </p>
+        <h3>1-6. 下絵（参考画像）</h3>
+        <p style="text-align: left; font-size: 1.0em; color: #5a5a5a;">
+            下絵は、基準用紙に重ねて表示できるガイド画像です。LOテンプレやレイアウトのガイド画像を読み込み、カメラやフレームの位置合わせに使えます。カメラごとに下絵セットを切り替えられ、カメラデータのセレクトからリンク先を変更できます。複数登録でき、PSD を読み込むとレイヤーごとに下絵として展開されます。
+        </p>
 	        <ul class="operation-list">
 	            <li><span class="control">下絵パネルを開く</span>: カメラフレームパネルのヘッダーにある<span class="control">下絵アイコン</span>をクリックします（書き出し欄の下絵アイコンからも開けます）。
 	            </li>
