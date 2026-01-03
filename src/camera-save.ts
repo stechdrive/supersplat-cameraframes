@@ -11,7 +11,7 @@ const CAMERA_SAVE_TYPE = 'supersplat.camera-frames.main-camera';
 const CAMERA_SAVE_VERSION = 3;
 const CAMERA_SAVE_VERSION_V2 = 2;
 const CAMERA_SAVE_VERSION_V1 = 1;
-const DEFAULT_REFERENCE_IMAGE_PRESET_ID = 'refpreset-1';
+const DEFAULT_REFERENCE_IMAGE_PRESET_ID = 'refpreset-blank';
 
 type MainCameraJson = {
     transform: {

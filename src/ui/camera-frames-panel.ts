@@ -230,7 +230,7 @@ class CameraFramesPanel extends Panel {
 
         let referenceImageLoaded = false;
         let referenceImageVisible = false;
-        let referencePresetNames = new Map<string, string>();
+        let referencePresetOptions: Array<{ v: string; t: string }> = [];
 
         const collapseButton = new Button({
             class: ['panel-header-button', 'camera-frames-collapse'],
@@ -708,7 +708,7 @@ class CameraFramesPanel extends Panel {
 
         const applyReferencePresetsState = (state?: ReferenceImagesPresetsState | null) => {
             const presets = Array.isArray(state?.presets) ? state.presets : [];
-            referencePresetNames = new Map(presets.map(preset => [preset.id, preset.name]));
+            referencePresetOptions = presets.map(preset => ({ v: preset.id, t: preset.name }));
         };
 
         referenceIncludeToggle.on('click', () => {
@@ -1409,11 +1409,32 @@ class CameraFramesPanel extends Panel {
                 const labelStack = new Container({ class: 'camera-preset-labels' });
                 const nameLabel = new Label({ class: 'camera-preset-name', text: preset.name });
                 const referencePresetId = typeof preset.referenceImagePresetId === 'string' ? preset.referenceImagePresetId : '';
-                const referencePresetName = referencePresetId ? (referencePresetNames.get(referencePresetId) ?? '') : '';
-                const subLabelText = referencePresetName || localize('panel.camera-frames.camera-presets.reference-image.unset');
-                const subLabel = new Label({ class: 'camera-preset-sub', text: subLabelText });
+                const hasReferencePreset = referencePresetId &&
+                    referencePresetOptions.some(option => option.v === referencePresetId);
+                const referenceOptions = hasReferencePreset ?
+                    referencePresetOptions :
+                    [{ v: '', t: localize('panel.camera-frames.camera-presets.reference-image.unset') }, ...referencePresetOptions];
+                const referenceSelect = new SelectInput({
+                    class: ['camera-preset-reference-select'],
+                    defaultValue: hasReferencePreset ? referencePresetId : '',
+                    options: referenceOptions
+                });
+                referenceSelect.value = hasReferencePreset ? referencePresetId : '';
+                referenceSelect.enabled = referencePresetOptions.length > 0;
+                referenceSelect.on('change', (value: string) => {
+                    if (suppress) return;
+                    if (typeof value !== 'string' || !value) {
+                        return;
+                    }
+                    events.fire('cameraFrames.setPresetReferenceImage', preset.id, value);
+                });
+                [referenceSelect].forEach((control) => {
+                    ['pointerdown', 'pointerup', 'click', 'dblclick'].forEach((evt) => {
+                        control.dom.addEventListener(evt, (e: Event) => e.stopPropagation());
+                    });
+                });
                 labelStack.append(nameLabel);
-                labelStack.append(subLabel);
+                labelStack.append(referenceSelect);
                 row.append(labelStack);
 
                 let pendingApplyId: number | null = null;

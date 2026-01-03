@@ -139,7 +139,7 @@ const normalizeExportPresetIds = (value: unknown, presets: CameraPreset[]): stri
     return next;
 };
 
-const DEFAULT_REFERENCE_IMAGE_PRESET_ID = 'refpreset-1';
+const LEGACY_REFERENCE_IMAGE_PRESET_ID = 'refpreset-1';
 
 const cloneCameraFramesStateBase = (
     state: CameraFramesStateBase,
@@ -174,7 +174,7 @@ const cloneCameraPreset = (
     return {
         id: preset.id,
         name: preset.name,
-        referenceImagePresetId: preset.referenceImagePresetId ?? DEFAULT_REFERENCE_IMAGE_PRESET_ID,
+        referenceImagePresetId: preset.referenceImagePresetId ?? LEGACY_REFERENCE_IMAGE_PRESET_ID,
         selected: preset.selected,
         mainCamera: {
             transform: {
@@ -233,7 +233,7 @@ const normalizeCameraPreset = (
     }
     const referenceImagePresetId = (typeof (value as any).referenceImagePresetId === 'string' && (value as any).referenceImagePresetId) ?
         (value as any).referenceImagePresetId :
-        DEFAULT_REFERENCE_IMAGE_PRESET_ID;
+        LEGACY_REFERENCE_IMAGE_PRESET_ID;
     if (!isObject(value.mainCamera) || !isObject((value.mainCamera as any).transform)) {
         return null;
     }

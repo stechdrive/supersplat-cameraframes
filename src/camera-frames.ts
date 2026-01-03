@@ -117,7 +117,7 @@ import { localize } from './ui/localization';
 
 export type { CameraFramesState } from './camera-frames-types';
 
-const DEFAULT_REFERENCE_IMAGE_PRESET_ID = 'refpreset-1';
+const DEFAULT_REFERENCE_IMAGE_PRESET_ID = 'refpreset-blank';
 
 export class CameraFramesController {
     private events: Events;
@@ -1459,7 +1459,7 @@ export class CameraFramesController {
         const mainTransform = this.getMainCameraTransform() ?? this.scene.camera.getTransform();
         const rawBaseFov = this.scene.camera?.fov ?? baseState.renderBox?.projection?.baseFov ?? 60;
         const baseFov = (typeof rawBaseFov === 'number' && isFinite(rawBaseFov)) ? rawBaseFov : 60;
-        const referenceImagePresetId = this.findSelectedPreset()?.referenceImagePresetId ?? DEFAULT_REFERENCE_IMAGE_PRESET_ID;
+        const referenceImagePresetId = DEFAULT_REFERENCE_IMAGE_PRESET_ID;
         return {
             id: this.createPresetId(),
             name: name ?? this.nextPresetName(),

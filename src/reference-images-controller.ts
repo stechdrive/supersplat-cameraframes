@@ -71,14 +71,23 @@ type PendingAdd = {
     anchor: { ax: number; ay: number; };
 };
 
+type AddContext = {
+    presetId: string | null;
+    cameraPresetId: string | null;
+    cameraName: string;
+};
+
 type ReferenceImageItemBase = ReferenceImageItemState | ReferenceImageItemV2;
 
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
 
 const isFiniteNumber = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
 
-const DEFAULT_REFERENCE_IMAGE_PRESET_ID = 'refpreset-1';
-const DEFAULT_REFERENCE_IMAGE_PRESET_NAME = 'Preset 1';
+const DEFAULT_REFERENCE_IMAGE_PRESET_ID = 'refpreset-blank';
+const DEFAULT_REFERENCE_IMAGE_PRESET_NAME = 'RefImg:blank';
+const LEGACY_REFERENCE_IMAGE_PRESET_ID = 'refpreset-1';
+const LEGACY_REFERENCE_IMAGE_PRESET_NAME = 'Preset 1';
+const REFERENCE_IMAGE_PRESET_PREFIX = 'RefImg:';
 
 let fallbackIdCounter = 0;
 const createId = () => {
@@ -230,12 +239,25 @@ const createDefaultPreset = (id = DEFAULT_REFERENCE_IMAGE_PRESET_ID, name = DEFA
     items: []
 });
 
+const ensureBlankPreset = (presets: ReferenceImagePreset[]) => {
+    const blank = presets.find(preset => preset.id === DEFAULT_REFERENCE_IMAGE_PRESET_ID) ?? null;
+    if (blank) {
+        blank.name = DEFAULT_REFERENCE_IMAGE_PRESET_NAME;
+        return;
+    }
+    presets.push(createDefaultPreset());
+};
+
 const normalizePreset = (value: any): ReferenceImagePreset | null => {
     if (!value || typeof value !== 'object') {
         return null;
     }
     const id = typeof value.id === 'string' && value.id ? value.id : createPresetId();
-    const name = typeof value.name === 'string' && value.name.trim() ? value.name.trim() : DEFAULT_REFERENCE_IMAGE_PRESET_NAME;
+    const rawName = typeof value.name === 'string' && value.name.trim() ? value.name.trim() : '';
+    const fallbackName = id === DEFAULT_REFERENCE_IMAGE_PRESET_ID ?
+        DEFAULT_REFERENCE_IMAGE_PRESET_NAME :
+        LEGACY_REFERENCE_IMAGE_PRESET_NAME;
+    const name = rawName || fallbackName;
     const masterVisible = normalizeBool(value.masterVisible, true);
     const itemsRaw = Array.isArray(value.items) ? value.items : [];
     const items = itemsRaw.map(normalizeItemV2).filter(Boolean) as ReferenceImageItemV2[];
@@ -262,6 +284,7 @@ const normalizeFullState = (value: any): ReferenceImagesFullState => {
     if (presets.length === 0) {
         presets.push(createDefaultPreset());
     }
+    ensureBlankPreset(presets);
     const assetsRaw = Array.isArray(value?.assets) ? (value.assets as unknown[]) : [];
     const assets = assetsRaw.filter((asset): asset is ReferenceImageAsset => {
         const candidate = asset as ReferenceImageAsset | null;
@@ -270,7 +293,7 @@ const normalizeFullState = (value: any): ReferenceImagesFullState => {
             candidate.id &&
             candidate.source &&
             typeof candidate.source === 'object';
-    }).map((asset) => ({
+    }).map(asset => ({
         id: asset.id,
         source: asset.source
     }));
@@ -372,6 +395,7 @@ class ReferenceImagesController {
         if (!this.fullState.activePresetId || !this.fullState.presets.some(preset => preset.id === this.fullState.activePresetId)) {
             this.fullState.activePresetId = this.fullState.presets[0].id;
         }
+        ensureBlankPreset(this.fullState.presets);
         this.fullState.version = 2;
     }
 
@@ -593,6 +617,17 @@ class ReferenceImagesController {
         presets.forEach((entry) => {
             const id = typeof entry?.id === 'string' ? entry.id : '';
             if (!id) {
+                return;
+            }
+            if (id === DEFAULT_REFERENCE_IMAGE_PRESET_ID) {
+                const blank = this.fullState.presets.find(preset => preset.id === id) ?? null;
+                if (!blank) {
+                    this.fullState.presets.push(createDefaultPreset());
+                    changed = true;
+                } else if (blank.name !== DEFAULT_REFERENCE_IMAGE_PRESET_NAME) {
+                    blank.name = DEFAULT_REFERENCE_IMAGE_PRESET_NAME;
+                    changed = true;
+                }
                 return;
             }
             if (this.fullState.presets.some(preset => preset.id === id)) {
@@ -1046,6 +1081,9 @@ class ReferenceImagesController {
 
     private renamePreset(presetId: string, name: string) {
         this.historyRecord('referenceImages.renamePreset', () => {
+            if (presetId === DEFAULT_REFERENCE_IMAGE_PRESET_ID) {
+                return;
+            }
             const preset = this.fullState.presets.find(item => item.id === presetId);
             if (!preset) {
                 return;
@@ -1061,6 +1099,9 @@ class ReferenceImagesController {
 
     private removePreset(presetId: string) {
         if (!presetId) {
+            return;
+        }
+        if (presetId === DEFAULT_REFERENCE_IMAGE_PRESET_ID) {
             return;
         }
         this.historyRecord('referenceImages.removePreset', () => {
@@ -1278,13 +1319,75 @@ class ReferenceImagesController {
         return decoded;
     }
 
-    private applyPendingAdds(pending: PendingAdd[], recordHistory: boolean, label: string) {
+    private captureAddContext(): AddContext {
+        this.ensureDefaultPreset();
+        const presetId = this.fullState.activePresetId ?? null;
+        let cameraPresetId: string | null = null;
+        let cameraName = '';
+        if (this.events.functions.has('cameraFrames.presetsState')) {
+            const state = this.events.invoke('cameraFrames.presetsState') as {
+                selectedPresetId?: string | null;
+                presets?: Array<{ id: string; name: string; }>;
+            } | null;
+            cameraPresetId = (typeof state?.selectedPresetId === 'string' && state.selectedPresetId) ? state.selectedPresetId : null;
+            const preset = cameraPresetId && Array.isArray(state?.presets) ?
+                state.presets.find(entry => entry.id === cameraPresetId) :
+                null;
+            if (typeof preset?.name === 'string') {
+                cameraName = preset.name.trim();
+            }
+        }
+        return { presetId, cameraPresetId, cameraName };
+    }
+
+    private ensureWritablePresetForAdd(context?: AddContext) {
+        this.ensureDefaultPreset();
+        const targetPresetId = (typeof context?.presetId === 'string' && context.presetId) ? context.presetId : this.fullState.activePresetId;
+        let preset = this.fullState.presets.find(entry => entry.id === targetPresetId) ?? null;
+        if (!preset) {
+            preset = this.getActivePreset();
+        }
+
+        if (preset.id !== DEFAULT_REFERENCE_IMAGE_PRESET_ID) {
+            if (this.fullState.activePresetId !== preset.id) {
+                this.fullState.activePresetId = preset.id;
+                this.rebuildActiveState();
+                this.firePresetsStateChanged();
+                this.startActivePresetRuntimeRefresh(preset).catch((): void => undefined);
+            }
+            return preset;
+        }
+
+        const rawCameraName = (context?.cameraName ?? '').trim();
+        const baseName = rawCameraName || this.nextPresetName();
+        const presetName = baseName.startsWith(REFERENCE_IMAGE_PRESET_PREFIX) ?
+            baseName :
+            `${REFERENCE_IMAGE_PRESET_PREFIX}${baseName}`;
+        const nextPreset: ReferenceImagePreset = {
+            id: createPresetId(),
+            name: presetName,
+            masterVisible: true,
+            activeId: null,
+            items: []
+        };
+        this.fullState.presets.push(nextPreset);
+        this.fullState.activePresetId = nextPreset.id;
+        this.rebuildActiveState();
+        this.firePresetsStateChanged();
+        if (context?.cameraPresetId) {
+            this.events.fire('cameraFrames.setPresetReferenceImage', context.cameraPresetId, nextPreset.id);
+        }
+        this.startActivePresetRuntimeRefresh(nextPreset).catch((): void => undefined);
+        return nextPreset;
+    }
+
+    private applyPendingAdds(pending: PendingAdd[], recordHistory: boolean, label: string, context?: AddContext) {
         if (pending.length === 0) {
             return [];
         }
 
         const apply = () => {
-            const preset = this.getActivePreset();
+            const preset = this.ensureWritablePresetForAdd(context);
             const nextOrderByGroup = {
                 back: preset.items.filter(i => i.group === 'back').length,
                 front: preset.items.filter(i => i.group === 'front').length
@@ -1359,6 +1462,7 @@ class ReferenceImagesController {
     }
 
     private async addBlobsInternal(files: Array<{ blob: Blob; filename?: string }>, opts?: { group?: ReferenceImageItemGroup; }, recordHistory = true) {
+        const addContext = this.captureAddContext();
         const pending: PendingAdd[] = [];
         const fallbackGroup = normalizeGroup(opts?.group, 'front');
         for (const file of (files ?? [])) {
@@ -1385,7 +1489,7 @@ class ReferenceImagesController {
                 anchor: { ax: 0.5, ay: 0.5 }
             });
         }
-        return this.applyPendingAdds(pending, recordHistory, 'referenceImages.add');
+        return this.applyPendingAdds(pending, recordHistory, 'referenceImages.add', addContext);
     }
 
     private remove(id: string) {
@@ -1980,8 +2084,8 @@ class ReferenceImagesController {
                         source: assetInfo.source
                     };
                     const preset: ReferenceImagePreset = {
-                        id: DEFAULT_REFERENCE_IMAGE_PRESET_ID,
-                        name: DEFAULT_REFERENCE_IMAGE_PRESET_NAME,
+                        id: LEGACY_REFERENCE_IMAGE_PRESET_ID,
+                        name: LEGACY_REFERENCE_IMAGE_PRESET_NAME,
                         masterVisible: true,
                         activeId: id,
                         items: [{
@@ -2007,6 +2111,7 @@ class ReferenceImagesController {
                         }],
                         presets: [preset]
                     };
+                    ensureBlankPreset(this.fullState.presets);
                     this.presetCounter = 0;
                     this.syncPresetCounter();
                     this.state = {
@@ -2098,8 +2203,8 @@ class ReferenceImagesController {
         const activeId = typeof doc.activeId === 'string' ? doc.activeId : (loadedItems[0]?.id ?? null);
         const resolvedActiveId = activeId && loadedItems.some(i => i.id === activeId) ? activeId : (loadedItems[0]?.id ?? null);
         const preset: ReferenceImagePreset = {
-            id: DEFAULT_REFERENCE_IMAGE_PRESET_ID,
-            name: DEFAULT_REFERENCE_IMAGE_PRESET_NAME,
+            id: LEGACY_REFERENCE_IMAGE_PRESET_ID,
+            name: LEGACY_REFERENCE_IMAGE_PRESET_NAME,
             masterVisible: normalizeBool(doc.masterVisible, true),
             activeId: resolvedActiveId,
             items: presetItems
@@ -2111,6 +2216,7 @@ class ReferenceImagesController {
             assets,
             presets: [preset]
         };
+        ensureBlankPreset(this.fullState.presets);
         this.presetCounter = 0;
         this.syncPresetCounter();
         this.state = {
@@ -2131,6 +2237,7 @@ class ReferenceImagesController {
 
     private async importPsd(blob: Blob, filename?: string, opts?: { group?: ReferenceImageItemGroup; }) {
         const group = normalizeGroup(opts?.group, this.getActiveItem()?.group ?? 'front');
+        const addContext = this.captureAddContext();
         const arrayBuffer = await blob.arrayBuffer();
         const psd = readPsd(arrayBuffer, { skipCompositeImageData: true, skipThumbnail: true });
         const width = (psd as any)?.width ?? 0;
@@ -2205,7 +2312,7 @@ class ReferenceImagesController {
             });
         }
 
-        const ids = this.applyPendingAdds(pending, true, 'referenceImages.importPsd');
+        const ids = this.applyPendingAdds(pending, true, 'referenceImages.importPsd', addContext);
 
         if (skipped > 0) {
             console.warn(`PSD import skipped ${skipped} layer(s) without canvas/bounds`);
