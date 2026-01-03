@@ -592,8 +592,8 @@ class ReferenceImagesController {
         });
         this.events.on('referenceImages.renamePreset', (presetId: string, name: string) => this.renamePreset(presetId, name));
         this.events.on('referenceImages.removePreset', (presetId: string) => this.removePreset(presetId));
-        this.events.function('referenceImages.setActivePreset', async (presetId: string) => {
-            await this.setActivePreset(presetId);
+        this.events.function('referenceImages.setActivePreset', (presetId: string) => {
+            this.setActivePreset(presetId);
         });
         this.events.function('referenceImages.addBlob', async (blob: Blob, filename?: string, opts?: { group?: ReferenceImageItemGroup; }) => {
             return await this.addBlobsInternal([{ blob, filename }], { group: opts?.group }, true).then(ids => ids[0] ?? null);
@@ -944,7 +944,7 @@ class ReferenceImagesController {
         });
     }
 
-    private async setActivePreset(presetId: string | null) {
+    private setActivePreset(presetId: string | null) {
         this.ensureDefaultPreset();
         const nextId = (typeof presetId === 'string' && this.fullState.presets.some(preset => preset.id === presetId)) ?
             presetId :
