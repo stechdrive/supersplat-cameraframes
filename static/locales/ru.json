@@ -228,5 +228,6 @@
     "tooltip.timeline.remove-key": "Удалить ключ",
     "tooltip.timeline.frame-rate": "Частота кадров",
     "tooltip.timeline.total-frames": "Всего кадров",
-    "tooltip.timeline.smoothness": "Плавность"
+    "tooltip.timeline.smoothness": "Плавность",
+    "panel.camera-frames.camera-presets.reference-image.unset": "Не задано"
 }

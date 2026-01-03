@@ -368,10 +368,22 @@ class ReferenceImagePanel extends Container {
                     exportButton.dom.title = localize('panel.reference-image.export-toggle');
                     exportButton.dom.setAttribute('aria-label', localize('panel.reference-image.export-toggle'));
 
+                    const itemName = (typeof item.name === 'string') ? item.name.trim() : '';
+                    const sourceFilename = item.source?.filename ? item.source.filename.trim() : '';
+                    const primaryName = itemName || sourceFilename || localize('panel.reference-image.empty');
+                    const subLabelText = (itemName && sourceFilename && sourceFilename !== itemName) ? sourceFilename : '';
                     const name = new Label({
                         class: 'reference-image-item-name',
-                        text: item.name || item.source?.filename || localize('panel.reference-image.empty')
+                        text: primaryName
                     });
+                    const subLabel = new Label({
+                        class: 'reference-image-item-sub',
+                        text: subLabelText
+                    });
+                    subLabel.hidden = !subLabelText;
+                    const nameStack = new Container({ class: 'reference-image-item-text' });
+                    nameStack.append(name);
+                    nameStack.append(subLabel);
 
                     const removeButton = new Button({ class: ['icon-button', 'danger-icon', 'reference-image-item-delete'], text: '' });
                     removeButton.dom.appendChild(createSvg(deleteSvg));
@@ -456,7 +468,7 @@ class ReferenceImagePanel extends Container {
                     row.append(down);
                     row.append(visibilityButton);
                     row.append(exportButton);
-                    row.append(name);
+                    row.append(nameStack);
                     row.append(removeButton);
                     list.append(row);
                 });
@@ -1025,10 +1037,15 @@ class ReferenceImagePanel extends Container {
             }
 
             const infoParts = [];
-            if (active?.source?.filename) {
-                infoParts.push(active.source.filename);
-            } else if (active?.name) {
-                infoParts.push(active.name);
+            const activeName = active?.name?.trim() ?? '';
+            const activeFilename = active?.source?.filename?.trim() ?? '';
+            if (activeName) {
+                infoParts.push(activeName);
+                if (activeFilename && activeFilename !== activeName) {
+                    infoParts.push(activeFilename);
+                }
+            } else if (activeFilename) {
+                infoParts.push(activeFilename);
             }
             if (active?.source?.appliedSize) {
                 infoParts.push(`${formatInteger(active.source.appliedSize.w)}×${formatInteger(active.source.appliedSize.h)}${active.source.usedOriginal ? '' : ` (${localize('panel.reference-image.scaled')})`}`);

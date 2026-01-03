@@ -76,6 +76,7 @@ type CameraFramesStateBase = {
 type CameraPreset = {
     id: string;
     name: string;
+    referenceImagePresetId: string;
     selected?: boolean;
     cameraFramesState: CameraFramesStateBase;
 };
@@ -100,6 +101,11 @@ type FovInfo = {
 type ReferenceImagesState = {
     masterVisible?: boolean;
     items?: Array<{ includeInRender?: boolean }>;
+};
+
+type ReferenceImagesPresetsState = {
+    activePresetId: string | null;
+    presets: Array<{ id: string; name: string; }>;
 };
 
 const anchorKey = (ax: number, ay: number) => `${ax},${ay}`;
@@ -224,6 +230,7 @@ class CameraFramesPanel extends Panel {
 
         let referenceImageLoaded = false;
         let referenceImageVisible = false;
+        let referencePresetNames = new Map<string, string>();
 
         const collapseButton = new Button({
             class: ['panel-header-button', 'camera-frames-collapse'],
@@ -698,6 +705,11 @@ class CameraFramesPanel extends Panel {
             updateReferenceIncludeToggle();
         };
         events.on('referenceImages.stateChanged', (state: ReferenceImagesState) => applyReferenceIncludeState(state));
+
+        const applyReferencePresetsState = (state?: ReferenceImagesPresetsState | null) => {
+            const presets = Array.isArray(state?.presets) ? state.presets : [];
+            referencePresetNames = new Map(presets.map(preset => [preset.id, preset.name]));
+        };
 
         referenceIncludeToggle.on('click', () => {
             if (suppress) return;
@@ -1394,8 +1406,15 @@ class CameraFramesPanel extends Panel {
                     });
                     row.append(exportToggle);
                 }
+                const labelStack = new Container({ class: 'camera-preset-labels' });
                 const nameLabel = new Label({ class: 'camera-preset-name', text: preset.name });
-                row.append(nameLabel);
+                const referencePresetId = typeof preset.referenceImagePresetId === 'string' ? preset.referenceImagePresetId : '';
+                const referencePresetName = referencePresetId ? (referencePresetNames.get(referencePresetId) ?? '') : '';
+                const subLabelText = referencePresetName || localize('panel.camera-frames.camera-presets.reference-image.unset');
+                const subLabel = new Label({ class: 'camera-preset-sub', text: subLabelText });
+                labelStack.append(nameLabel);
+                labelStack.append(subLabel);
+                row.append(labelStack);
 
                 let pendingApplyId: number | null = null;
                 let editing = false;
@@ -1429,7 +1448,7 @@ class CameraFramesPanel extends Panel {
                     if (onKeyDown) {
                         input.input.removeEventListener('keydown', onKeyDown);
                     }
-                    row.remove(input);
+                    labelStack.remove(input);
                     nameLabel.hidden = false;
                     if (!commit) {
                         return;
@@ -1452,7 +1471,7 @@ class CameraFramesPanel extends Panel {
                     nameLabel.hidden = true;
                     const input = new TextInput({ class: 'camera-preset-name-input' });
                     input.value = preset.name;
-                    row.appendAfter(input, nameLabel);
+                    labelStack.appendAfter(input, nameLabel);
                     ['pointerdown', 'click', 'dblclick'].forEach((evt) => {
                         input.dom.addEventListener(evt, (event: Event) => event.stopPropagation());
                     });
@@ -1658,6 +1677,13 @@ class CameraFramesPanel extends Panel {
             updateFromState(state);
         });
 
+        events.on('referenceImages.presetsState', (state: ReferenceImagesPresetsState) => {
+            applyReferencePresetsState(state);
+            if (lastState) {
+                rebuildPresetList(lastState);
+            }
+        });
+
         events.on('cameraFrames.fovInfoChanged', (info: FovInfo) => {
             updateFovUI(info);
         });
@@ -1743,6 +1769,8 @@ class CameraFramesPanel extends Panel {
             const referenceState = (events.invoke('referenceImages.state') as ReferenceImagesState | null) ?? null;
             applyReferenceImageState(referenceState);
             applyReferenceIncludeState(referenceState);
+            const referencePresetsState = (events.invoke('referenceImages.presetsState') as ReferenceImagesPresetsState | null) ?? null;
+            applyReferencePresetsState(referencePresetsState);
 
             uiTarget = (events.invoke('cameraFrames.uiTarget') as ('viewport' | 'main')) ?? 'viewport';
 

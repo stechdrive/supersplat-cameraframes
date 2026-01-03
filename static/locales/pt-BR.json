@@ -228,5 +228,6 @@
     "tooltip.timeline.remove-key": "Remover Quadro",
     "tooltip.timeline.frame-rate": "Taxa de Quadros",
     "tooltip.timeline.total-frames": "Total de Quadros",
-    "tooltip.timeline.smoothness": "Suavidade"
+    "tooltip.timeline.smoothness": "Suavidade",
+    "panel.camera-frames.camera-presets.reference-image.unset": "Não definido"
 }
