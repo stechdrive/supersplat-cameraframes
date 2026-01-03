@@ -309,6 +309,7 @@ class ReferenceImagesController {
     private exportWorkByAssetId = new Map<string, ExportWorkEntry>();
     private exportWorkOrder: string[] = [];
     private presetCounter = 0;
+    private activePresetGeneration = 0;
 
     constructor(events: Events, scene: Scene) {
         this.events = events;
@@ -369,6 +370,107 @@ class ReferenceImagesController {
             this.fullState.activePresetId = this.fullState.presets[0].id;
         }
         this.fullState.version = 2;
+    }
+
+    private nextRuntimeGeneration() {
+        this.activePresetGeneration += 1;
+        return this.activePresetGeneration;
+    }
+
+    private isActivePresetItem(presetId: string, itemId: string) {
+        if (this.fullState.activePresetId !== presetId) {
+            return false;
+        }
+        const preset = this.getActivePreset();
+        if (preset.id !== presetId) {
+            return false;
+        }
+        return preset.items.some(item => item.id === itemId);
+    }
+
+    private pruneRuntimeToActivePreset(preset: ReferenceImagePreset) {
+        const activeIds = new Set(preset.items.map(item => item.id));
+        for (const [id, runtime] of this.runtimeById) {
+            if (activeIds.has(id)) {
+                continue;
+            }
+            const blob = runtime.blob ?? this.assets.getBlob(runtime.assetId);
+            this.assets.rememberPreview(runtime.assetId, blob, runtime.previewCanvas);
+            this.destroyRuntime(runtime);
+            this.runtimeById.delete(id);
+        }
+    }
+
+    private startActivePresetRuntimeRefresh(preset: ReferenceImagePreset) {
+        const token = this.nextRuntimeGeneration();
+        this.pruneRuntimeToActivePreset(preset);
+        return this.ensureRuntimeForActivePreset(preset, token);
+    }
+
+    private async ensureRuntimeForActivePreset(preset: ReferenceImagePreset, token: number) {
+        const presetId = preset.id;
+        const assetsById = this.buildAssetsById();
+        for (const item of preset.items) {
+            if (token !== this.activePresetGeneration) {
+                return;
+            }
+            if (!this.isActivePresetItem(presetId, item.id)) {
+                continue;
+            }
+            const source = assetsById.get(item.assetId)?.source ?? null;
+            if (!source) {
+                continue;
+            }
+            let runtime = this.runtimeById.get(item.id);
+            if (!runtime) {
+                runtime = { assetId: item.assetId, blob: null, previewCanvas: null, texture: null };
+                this.runtimeById.set(item.id, runtime);
+            }
+            if (runtime.assetId !== item.assetId) {
+                this.destroyRuntime(runtime);
+                runtime.assetId = item.assetId;
+                runtime.blob = null;
+                runtime.previewCanvas = null;
+            }
+            if (!runtime.blob || !runtime.previewCanvas || !runtime.texture) {
+                this.restoreRuntimeFromCache(item.assetId, runtime, item);
+            }
+            if (!runtime.previewCanvas || !runtime.texture) {
+                const blob = runtime.blob ?? this.assets.getBlob(item.assetId);
+                if (!blob) {
+                    continue;
+                }
+                try {
+                    const decoded = await this.decodeForAdd(blob, source.filename);
+                    if (token !== this.activePresetGeneration) {
+                        return;
+                    }
+                    if (!this.isActivePresetItem(presetId, item.id)) {
+                        continue;
+                    }
+                    let current = this.runtimeById.get(item.id);
+                    if (!current) {
+                        current = { assetId: item.assetId, blob: null, previewCanvas: null, texture: null };
+                        this.runtimeById.set(item.id, current);
+                    }
+                    if (current.assetId !== item.assetId) {
+                        this.destroyRuntime(current);
+                        current.assetId = item.assetId;
+                    }
+                    current.blob = blob;
+                    current.previewCanvas = decoded.canvas;
+                    current.texture = this.loader.createTexture(this.scene.app.graphicsDevice, decoded.canvas, this.previewPreferNearest(item));
+                    this.assets.rememberPreview(item.assetId, blob, decoded.canvas);
+                } catch (error) {
+                    console.error('referenceImages runtime decode failed', error);
+                }
+            }
+        }
+        if (token !== this.activePresetGeneration) {
+            return;
+        }
+        this.updateRenderer();
+        this.requestRender();
     }
 
     private buildAssetsById() {
@@ -530,61 +632,16 @@ class ReferenceImagesController {
     applySnapshotFull(snapshot: ReferenceImagesFullState) {
         this.applyingHistory = true;
         try {
-            const prevItems: ReferenceImageItemV2[] = [];
-            this.fullState.presets.forEach((preset) => {
-                prevItems.push(...preset.items);
-            });
-            const prevItemsById = new Map(prevItems.map(item => [item.id, item]));
             this.fullState = normalizeFullState(snapshot ?? this.fullState);
             this.ensureDefaultPreset();
             this.syncPresetCounter();
-
-            const nextItems: ReferenceImageItemV2[] = [];
-            this.fullState.presets.forEach((preset) => {
-                nextItems.push(...preset.items);
-            });
-            const nextIds = new Set(nextItems.map(item => item.id));
-
-            for (const [id, runtime] of this.runtimeById) {
-                if (nextIds.has(id)) {
-                    continue;
-                }
-                const prevItem = prevItemsById.get(id);
-                if (prevItem) {
-                    this.assets.rememberPreview(prevItem.assetId, runtime.blob, runtime.previewCanvas);
-                }
-                this.destroyRuntime(runtime);
-                this.runtimeById.delete(id);
-            }
 
             const assetUsage = this.collectAssetUsage();
             this.pruneUnusedAssets(assetUsage);
             this.assets.syncAssets(this.fullState.assets, assetUsage);
 
-            const assetsById = this.buildAssetsById();
-            nextItems.forEach((item) => {
-                const source = assetsById.get(item.assetId)?.source ?? null;
-                if (!source) {
-                    return;
-                }
-                let runtime = this.runtimeById.get(item.id);
-                if (!runtime) {
-                    runtime = { assetId: item.assetId, blob: null, previewCanvas: null, texture: null };
-                    this.runtimeById.set(item.id, runtime);
-                }
-                if (runtime.assetId !== item.assetId) {
-                    this.destroyRuntime(runtime);
-                    runtime.assetId = item.assetId;
-                    runtime.blob = null;
-                    runtime.previewCanvas = null;
-                }
-                if (!runtime.blob || !runtime.previewCanvas || !runtime.texture) {
-                    this.restoreRuntimeFromCache(item.assetId, runtime, item);
-                }
-                if (!runtime.texture && runtime.previewCanvas) {
-                    runtime.texture = this.loader.createTexture(this.scene.app.graphicsDevice, runtime.previewCanvas, this.previewPreferNearest(item));
-                }
-            });
+            const preset = this.getActivePreset();
+            void this.startActivePresetRuntimeRefresh(preset);
 
             this.rebuildActiveState();
             this.updateRenderer();
@@ -597,6 +654,7 @@ class ReferenceImagesController {
     }
 
     private reset() {
+        this.activePresetGeneration += 1;
         for (const runtime of this.runtimeById.values()) {
             this.destroyRuntime(runtime);
         }
@@ -634,7 +692,7 @@ class ReferenceImagesController {
         this.events.on('referenceImages.renamePreset', (presetId: string, name: string) => this.renamePreset(presetId, name));
         this.events.on('referenceImages.removePreset', (presetId: string) => this.removePreset(presetId));
         this.events.function('referenceImages.setActivePreset', (presetId: string) => {
-            this.setActivePreset(presetId);
+            return this.setActivePreset(presetId);
         });
         this.events.function('referenceImages.addBlob', async (blob: Blob, filename?: string, opts?: { group?: ReferenceImageItemGroup; }) => {
             return await this.addBlobsInternal([{ blob, filename }], { group: opts?.group }, true).then(ids => ids[0] ?? null);
@@ -849,33 +907,6 @@ class ReferenceImagesController {
         });
     }
 
-    private ensureRuntimeForPresetItems(preset: ReferenceImagePreset) {
-        const assetsById = this.buildAssetsById();
-        preset.items.forEach((item) => {
-            const source = assetsById.get(item.assetId)?.source ?? null;
-            if (!source) {
-                return;
-            }
-            let runtime = this.runtimeById.get(item.id);
-            if (!runtime) {
-                runtime = { assetId: item.assetId, blob: null, previewCanvas: null, texture: null };
-                this.runtimeById.set(item.id, runtime);
-            }
-            if (runtime.assetId !== item.assetId) {
-                this.destroyRuntime(runtime);
-                runtime.assetId = item.assetId;
-                runtime.blob = null;
-                runtime.previewCanvas = null;
-            }
-            if (!runtime.blob || !runtime.previewCanvas || !runtime.texture) {
-                this.restoreRuntimeFromCache(item.assetId, runtime, item);
-            }
-            if (!runtime.texture && runtime.previewCanvas) {
-                runtime.texture = this.loader.createTexture(this.scene.app.graphicsDevice, runtime.previewCanvas, this.previewPreferNearest(item));
-            }
-        });
-    }
-
     private createPreset(name?: string, options?: { empty?: boolean; }) {
         let createdId: string | null = null;
         this.historyRecord('referenceImages.createPreset', () => {
@@ -911,7 +942,7 @@ class ReferenceImagesController {
                 this.cloneRuntimeForPresetItems(sourcePreset, idMap);
             }
             this.rebuildActiveState();
-            this.ensureRuntimeForPresetItems(preset);
+            void this.startActivePresetRuntimeRefresh(preset);
             this.updateRenderer();
             this.requestRender();
             this.fireStateChanged();
@@ -948,7 +979,7 @@ class ReferenceImagesController {
             }
             this.cloneRuntimeForPresetItems(sourcePreset, cloned.idMap);
             this.rebuildActiveState();
-            this.ensureRuntimeForPresetItems(preset);
+            void this.startActivePresetRuntimeRefresh(preset);
             this.updateRenderer();
             this.requestRender();
             this.fireStateChanged();
@@ -1000,6 +1031,7 @@ class ReferenceImagesController {
                 this.fullState.activePresetId = this.fullState.presets[0].id;
             }
             this.rebuildActiveState();
+            void this.startActivePresetRuntimeRefresh(this.getActivePreset());
             this.updateRenderer();
             this.requestRender();
             this.fireStateChanged();
@@ -1007,7 +1039,7 @@ class ReferenceImagesController {
         });
     }
 
-    private setActivePreset(presetId: string | null) {
+    private async setActivePreset(presetId: string | null) {
         this.ensureDefaultPreset();
         const nextId = (typeof presetId === 'string' && this.fullState.presets.some(preset => preset.id === presetId)) ?
             presetId :
@@ -1018,11 +1050,12 @@ class ReferenceImagesController {
         this.fullState.activePresetId = nextId;
         const preset = this.getActivePreset();
         this.rebuildActiveState();
-        this.ensureRuntimeForPresetItems(preset);
+        const runtimeTask = this.startActivePresetRuntimeRefresh(preset);
         this.updateRenderer();
         this.requestRender();
         this.fireStateChanged();
         this.firePresetsStateChanged();
+        await runtimeTask;
     }
 
     private previewPreferNearest(item: ReferenceImageItemBase) {
@@ -1701,6 +1734,7 @@ class ReferenceImagesController {
 
     private async deserializeDoc(docState: any, blobs: Map<string, Blob>) {
         const resetRuntimeState = () => {
+            this.activePresetGeneration += 1;
             for (const runtime of this.runtimeById.values()) {
                 this.destroyRuntime(runtime);
             }
