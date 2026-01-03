@@ -3,6 +3,7 @@ import { Texture } from 'playcanvas';
 
 import { Events } from './events';
 import { DEFAULT_REFERENCE_IMAGE_FILENAME, normalizeReferenceImageFilename } from './reference-image-filename';
+import { ReferenceImageAssets } from './reference-image-assets';
 import { ReferenceImageLoader } from './reference-image-loader';
 import { ReferenceImageRenderer, type RenderParams } from './reference-image-renderer';
 import type { ReferenceImageSourceMeta, ReferenceImageState } from './reference-image-types';
@@ -30,6 +31,7 @@ type ViewportMapping = {
 };
 
 type ReferenceImageItemRuntime = {
+    assetId: string;
     blob: Blob | null;
     previewCanvas: HTMLCanvasElement | null;
     texture: Texture | null;
@@ -54,7 +56,10 @@ type ReferenceImagesUpdateManyPayload = {
 type PendingAdd = {
     id: string;
     decoded: Awaited<ReturnType<ReferenceImageLoader['decode']>>;
-    blob: Blob;
+    assetId: string;
+    assetSource: ReferenceImageSourceMeta;
+    assetBlob: Blob;
+    assetIsNew: boolean;
     group: ReferenceImageItemGroup;
     name: string;
     visible: boolean;
@@ -100,20 +105,6 @@ const createPresetId = () => {
     }
     presetIdCounter++;
     return `refpreset_${Date.now().toString(16)}_${presetIdCounter.toString(16)}_${Math.random().toString(16).slice(2)}`;
-};
-
-let assetIdCounter = 0;
-const createAssetId = () => {
-    try {
-        const uuid = (globalThis.crypto as any)?.randomUUID?.();
-        if (typeof uuid === 'string' && uuid) {
-            return `refasset_${uuid}`;
-        }
-    } catch {
-        // ignore
-    }
-    assetIdCounter++;
-    return `refasset_${Date.now().toString(16)}_${assetIdCounter.toString(16)}_${Math.random().toString(16).slice(2)}`;
 };
 
 const createCanvasBlob = (canvas: HTMLCanvasElement, type: string) => {
@@ -314,9 +305,8 @@ class ReferenceImagesController {
     };
     private state: ReferenceImagesState = { ...DEFAULT_REFERENCE_IMAGES_STATE, items: [] };
     private runtimeById = new Map<string, ReferenceImageItemRuntime>();
-    private sourceCache = new Map<string, { blob: Blob; previewCanvas: HTMLCanvasElement; }>();
-    private sourceCacheOrder: string[] = [];
-    private exportWorkBySourceKey = new Map<string, ExportWorkEntry>();
+    private assets = new ReferenceImageAssets();
+    private exportWorkByAssetId = new Map<string, ExportWorkEntry>();
     private exportWorkOrder: string[] = [];
     private presetCounter = 0;
 
@@ -390,6 +380,45 @@ class ReferenceImagesController {
             assetsById.set(asset.id, asset);
         });
         return assetsById;
+    }
+
+    private collectAssetUsage() {
+        const usage = new Map<string, number>();
+        this.fullState.presets.forEach((preset) => {
+            preset.items.forEach((item) => {
+                usage.set(item.assetId, (usage.get(item.assetId) ?? 0) + 1);
+            });
+        });
+        return usage;
+    }
+
+    private pruneUnusedAssets(usage: Map<string, number>) {
+        const removed = new Set<string>();
+        const nextAssets = this.fullState.assets.filter((asset) => {
+            if ((usage.get(asset.id) ?? 0) > 0) {
+                return true;
+            }
+            removed.add(asset.id);
+            return false;
+        });
+        if (removed.size > 0) {
+            this.fullState.assets = nextAssets;
+            removed.forEach(id => this.exportWorkByAssetId.delete(id));
+            this.exportWorkOrder = this.exportWorkOrder.filter(id => !removed.has(id));
+        } else if (nextAssets.length !== this.fullState.assets.length) {
+            this.fullState.assets = nextAssets;
+        }
+    }
+
+    private releaseAsset(assetId: string) {
+        if (!assetId) {
+            return;
+        }
+        if (this.assets.releaseRef(assetId)) {
+            this.fullState.assets = this.fullState.assets.filter(asset => asset.id !== assetId);
+            this.exportWorkByAssetId.delete(assetId);
+            this.exportWorkOrder = this.exportWorkOrder.filter(id => id !== assetId);
+        }
     }
 
     private getActivePreset() {
@@ -501,7 +530,6 @@ class ReferenceImagesController {
     applySnapshotFull(snapshot: ReferenceImagesFullState) {
         this.applyingHistory = true;
         try {
-            const prevAssetsById = this.buildAssetsById();
             const prevItems: ReferenceImageItemV2[] = [];
             this.fullState.presets.forEach((preset) => {
                 prevItems.push(...preset.items);
@@ -522,11 +550,16 @@ class ReferenceImagesController {
                     continue;
                 }
                 const prevItem = prevItemsById.get(id);
-                const prevSource = prevItem ? prevAssetsById.get(prevItem.assetId)?.source ?? null : null;
-                this.rememberSource(id, prevSource, runtime.blob, runtime.previewCanvas);
+                if (prevItem) {
+                    this.assets.rememberPreview(prevItem.assetId, runtime.blob, runtime.previewCanvas);
+                }
                 this.destroyRuntime(runtime);
                 this.runtimeById.delete(id);
             }
+
+            const assetUsage = this.collectAssetUsage();
+            this.pruneUnusedAssets(assetUsage);
+            this.assets.syncAssets(this.fullState.assets, assetUsage);
 
             const assetsById = this.buildAssetsById();
             nextItems.forEach((item) => {
@@ -534,10 +567,19 @@ class ReferenceImagesController {
                 if (!source) {
                     return;
                 }
-                const runtime = this.runtimeById.get(item.id) ?? { blob: null, previewCanvas: null, texture: null };
-                this.runtimeById.set(item.id, runtime);
+                let runtime = this.runtimeById.get(item.id);
+                if (!runtime) {
+                    runtime = { assetId: item.assetId, blob: null, previewCanvas: null, texture: null };
+                    this.runtimeById.set(item.id, runtime);
+                }
+                if (runtime.assetId !== item.assetId) {
+                    this.destroyRuntime(runtime);
+                    runtime.assetId = item.assetId;
+                    runtime.blob = null;
+                    runtime.previewCanvas = null;
+                }
                 if (!runtime.blob || !runtime.previewCanvas || !runtime.texture) {
-                    this.restoreRuntimeFromCache(item.id, source, runtime, item);
+                    this.restoreRuntimeFromCache(item.assetId, runtime, item);
                 }
                 if (!runtime.texture && runtime.previewCanvas) {
                     runtime.texture = this.loader.createTexture(this.scene.app.graphicsDevice, runtime.previewCanvas, this.previewPreferNearest(item));
@@ -559,9 +601,8 @@ class ReferenceImagesController {
             this.destroyRuntime(runtime);
         }
         this.runtimeById.clear();
-        this.sourceCache.clear();
-        this.sourceCacheOrder = [];
-        this.exportWorkBySourceKey.clear();
+        this.assets.clear();
+        this.exportWorkByAssetId.clear();
         this.exportWorkOrder = [];
         this.fullState = {
             version: 2,
@@ -693,6 +734,11 @@ class ReferenceImagesController {
         return this.state.items.find(i => i.id === activeId) ?? null;
     }
 
+    private getAssetIdForActiveItem(id: string) {
+        const preset = this.getActivePreset();
+        return preset.items.find(item => item.id === id)?.assetId ?? null;
+    }
+
     private legacyClear() {
         const activeId = this.state.activeId;
         if (!activeId) {
@@ -781,17 +827,16 @@ class ReferenceImagesController {
     }
 
     private cloneRuntimeForPresetItems(preset: ReferenceImagePreset, idMap: Map<string, string>) {
-        const assetsById = this.buildAssetsById();
         idMap.forEach((nextId, originalId) => {
             const runtime = this.runtimeById.get(originalId) ?? null;
-            const cached = this.sourceCache.get(originalId) ?? null;
-            const blob = runtime?.blob ?? cached?.blob ?? null;
-            const previewCanvas = runtime?.previewCanvas ?? cached?.previewCanvas ?? null;
-            if (!blob || !previewCanvas) {
-                return;
-            }
             const originalItem = preset.items.find(item => item.id === originalId);
             if (!originalItem) {
+                return;
+            }
+            const cached = this.assets.restorePreview(originalItem.assetId);
+            const blob = runtime?.blob ?? cached?.blob ?? this.assets.getBlob(originalItem.assetId) ?? null;
+            const previewCanvas = runtime?.previewCanvas ?? cached?.previewCanvas ?? null;
+            if (!blob || !previewCanvas) {
                 return;
             }
             const texture = this.loader.createTexture(
@@ -799,9 +844,8 @@ class ReferenceImagesController {
                 previewCanvas,
                 this.previewPreferNearest(originalItem)
             );
-            this.runtimeById.set(nextId, { blob, previewCanvas, texture });
-            const source = assetsById.get(originalItem.assetId)?.source ?? null;
-            this.rememberSource(nextId, source, blob, previewCanvas);
+            this.runtimeById.set(nextId, { assetId: originalItem.assetId, blob, previewCanvas, texture });
+            this.assets.rememberPreview(originalItem.assetId, blob, previewCanvas);
         });
     }
 
@@ -812,10 +856,19 @@ class ReferenceImagesController {
             if (!source) {
                 return;
             }
-            const runtime = this.runtimeById.get(item.id) ?? { blob: null, previewCanvas: null, texture: null };
-            this.runtimeById.set(item.id, runtime);
+            let runtime = this.runtimeById.get(item.id);
+            if (!runtime) {
+                runtime = { assetId: item.assetId, blob: null, previewCanvas: null, texture: null };
+                this.runtimeById.set(item.id, runtime);
+            }
+            if (runtime.assetId !== item.assetId) {
+                this.destroyRuntime(runtime);
+                runtime.assetId = item.assetId;
+                runtime.blob = null;
+                runtime.previewCanvas = null;
+            }
             if (!runtime.blob || !runtime.previewCanvas || !runtime.texture) {
-                this.restoreRuntimeFromCache(item.id, source, runtime, item);
+                this.restoreRuntimeFromCache(item.assetId, runtime, item);
             }
             if (!runtime.texture && runtime.previewCanvas) {
                 runtime.texture = this.loader.createTexture(this.scene.app.graphicsDevice, runtime.previewCanvas, this.previewPreferNearest(item));
@@ -848,6 +901,12 @@ class ReferenceImagesController {
             };
             this.fullState.presets.push(preset);
             this.fullState.activePresetId = presetId;
+            if (items.length > 0) {
+                const assetsById = this.buildAssetsById();
+                items.forEach((item) => {
+                    this.assets.addRef(item.assetId, assetsById.get(item.assetId)?.source);
+                });
+            }
             if (idMap) {
                 this.cloneRuntimeForPresetItems(sourcePreset, idMap);
             }
@@ -881,6 +940,12 @@ class ReferenceImagesController {
             };
             this.fullState.presets.push(preset);
             this.fullState.activePresetId = presetIdNext;
+            if (preset.items.length > 0) {
+                const assetsById = this.buildAssetsById();
+                preset.items.forEach((item) => {
+                    this.assets.addRef(item.assetId, assetsById.get(item.assetId)?.source);
+                });
+            }
             this.cloneRuntimeForPresetItems(sourcePreset, cloned.idMap);
             this.rebuildActiveState();
             this.ensureRuntimeForPresetItems(preset);
@@ -918,16 +983,14 @@ class ReferenceImagesController {
                 return;
             }
             const [removedPreset] = this.fullState.presets.splice(index, 1);
-            const assetsById = this.buildAssetsById();
             removedPreset.items.forEach((item) => {
                 const runtime = this.runtimeById.get(item.id);
-                if (!runtime) {
-                    return;
+                if (runtime) {
+                    this.assets.rememberPreview(item.assetId, runtime.blob, runtime.previewCanvas);
+                    this.destroyRuntime(runtime);
+                    this.runtimeById.delete(item.id);
                 }
-                const source = assetsById.get(item.assetId)?.source ?? null;
-                this.rememberSource(item.id, source, runtime.blob, runtime.previewCanvas);
-                this.destroyRuntime(runtime);
-                this.runtimeById.delete(item.id);
+                this.releaseAsset(item.assetId);
             });
             if (this.fullState.presets.length === 0) {
                 const fallbackPreset = createDefaultPreset();
@@ -966,39 +1029,22 @@ class ReferenceImagesController {
         return Math.abs(item.scalePct - 100) < 1e-3;
     }
 
-    private rememberSource(id: string, source: ReferenceImageSourceMeta | null, blob: Blob | null, previewCanvas: HTMLCanvasElement | null) {
-        if (!id || !blob || !previewCanvas || !source) {
-            return;
-        }
-        this.sourceCache.set(id, { blob, previewCanvas });
-        this.sourceCacheOrder = this.sourceCacheOrder.filter(k => k !== id);
-        this.sourceCacheOrder.push(id);
-        const MAX_CACHE = 8;
-        while (this.sourceCacheOrder.length > MAX_CACHE) {
-            const drop = this.sourceCacheOrder.shift();
-            if (drop) {
-                this.sourceCache.delete(drop);
-            }
-        }
-    }
-
     private restoreRuntimeFromCache(
-        id: string,
-        source: ReferenceImageSourceMeta | null,
+        assetId: string,
         runtime: ReferenceImageItemRuntime,
         item: ReferenceImageItemBase
     ) {
-        if (!source) {
-            return;
+        const cached = this.assets.restorePreview(assetId);
+        const blob = runtime.blob ?? cached?.blob ?? this.assets.getBlob(assetId) ?? null;
+        const previewCanvas = runtime.previewCanvas ?? cached?.previewCanvas ?? null;
+        if (blob) {
+            runtime.blob = blob;
         }
-        const cached = this.sourceCache.get(id);
-        if (!cached) {
-            return;
+        if (previewCanvas) {
+            runtime.previewCanvas = previewCanvas;
         }
-        runtime.blob = cached.blob;
-        runtime.previewCanvas = cached.previewCanvas;
-        if (!runtime.texture && cached.previewCanvas) {
-            runtime.texture = this.loader.createTexture(this.scene.app.graphicsDevice, cached.previewCanvas, this.previewPreferNearest(item));
+        if (!runtime.texture && runtime.previewCanvas) {
+            runtime.texture = this.loader.createTexture(this.scene.app.graphicsDevice, runtime.previewCanvas, this.previewPreferNearest(item));
         }
     }
 
@@ -1152,11 +1198,13 @@ class ReferenceImagesController {
 
             pending.forEach((entry) => {
                 const order = entry.group === 'back' ? nextOrderByGroup.back++ : nextOrderByGroup.front++;
-                const assetId = createAssetId();
-                this.fullState.assets.push({
-                    id: assetId,
-                    source: entry.decoded.source
-                });
+                if (entry.assetIsNew || !this.fullState.assets.some(asset => asset.id === entry.assetId)) {
+                    this.fullState.assets.push({
+                        id: entry.assetId,
+                        source: entry.assetSource
+                    });
+                }
+                this.assets.addRef(entry.assetId, entry.assetSource);
                 const fullItem: ReferenceImageItemV2 = {
                     id: entry.id,
                     name: entry.name,
@@ -1168,7 +1216,7 @@ class ReferenceImagesController {
                     scalePct: entry.scalePct,
                     offsetPx: { ...entry.offsetPx },
                     anchor: { ...entry.anchor },
-                    assetId
+                    assetId: entry.assetId
                 };
                 const item: ReferenceImageItemState = {
                     id: entry.id,
@@ -1181,15 +1229,16 @@ class ReferenceImagesController {
                     scalePct: entry.scalePct,
                     offsetPx: { ...entry.offsetPx },
                     anchor: { ...entry.anchor },
-                    source: entry.decoded.source
+                    source: entry.assetSource
                 };
                 const texture = this.loader.createTexture(this.scene.app.graphicsDevice, entry.decoded.canvas, this.previewPreferNearest(item));
                 this.runtimeById.set(entry.id, {
+                    assetId: entry.assetId,
                     texture,
-                    blob: entry.blob,
+                    blob: entry.assetBlob,
                     previewCanvas: entry.decoded.canvas
                 });
-                this.rememberSource(entry.id, item.source, entry.blob, entry.decoded.canvas);
+                this.assets.rememberPreview(entry.assetId, entry.assetBlob, entry.decoded.canvas);
                 preset.items.push(fullItem);
                 this.state.items.push(item);
                 preset.activeId = entry.id;
@@ -1224,10 +1273,14 @@ class ReferenceImagesController {
             }
             const id = createId();
             const decoded = await this.decodeForAdd(file.blob, file.filename);
+            const assetInfo = await this.assets.register(decoded);
             pending.push({
                 id,
                 decoded,
-                blob: file.blob,
+                assetId: assetInfo.assetId,
+                assetSource: assetInfo.source,
+                assetBlob: assetInfo.blob,
+                assetIsNew: assetInfo.isNew,
                 group: fallbackGroup,
                 name: decoded.source.filename ?? normalizeReferenceImageFilename(file.filename),
                 visible: true,
@@ -1250,12 +1303,13 @@ class ReferenceImagesController {
         if (index < 0) {
             return;
         }
+        const fullItem = preset.items[index];
+        const assetId = fullItem?.assetId ?? '';
         this.historyRecord('referenceImages.remove', () => {
             const removedStateIndex = this.state.items.findIndex(item => item.id === id);
-            const removedStateItem = removedStateIndex >= 0 ? this.state.items[removedStateIndex] : null;
             const runtime = this.runtimeById.get(id) ?? null;
             if (runtime) {
-                this.rememberSource(id, removedStateItem?.source ?? null, runtime.blob, runtime.previewCanvas);
+                this.assets.rememberPreview(assetId, runtime.blob, runtime.previewCanvas);
                 this.destroyRuntime(runtime);
                 this.runtimeById.delete(id);
             }
@@ -1269,6 +1323,7 @@ class ReferenceImagesController {
                 preset.activeId = preset.items[0]?.id ?? null;
                 this.state.activeId = preset.activeId;
             }
+            this.releaseAsset(assetId);
             this.updateRenderer();
             this.requestRender();
             this.fireStateChanged();
@@ -1277,13 +1332,14 @@ class ReferenceImagesController {
 
     private clearAllInternal() {
         const preset = this.getActivePreset();
-        this.state.items.forEach((item) => {
+        preset.items.forEach((item) => {
             const runtime = this.runtimeById.get(item.id);
             if (runtime) {
-                this.rememberSource(item.id, item.source, runtime.blob, runtime.previewCanvas);
+                this.assets.rememberPreview(item.assetId, runtime.blob, runtime.previewCanvas);
                 this.destroyRuntime(runtime);
                 this.runtimeById.delete(item.id);
             }
+            this.releaseAsset(item.assetId);
         });
         preset.items = [];
         preset.activeId = null;
@@ -1458,20 +1514,6 @@ class ReferenceImagesController {
         });
     }
 
-    private sourceKey(source: ReferenceImageSourceMeta | null) {
-        if (!source) {
-            return null;
-        }
-        const ratio = Number.isFinite(source.pixelRatio) ? source.pixelRatio : 1;
-        return [
-            source.filename ?? '',
-            source.mime ?? '',
-            `${source.originalSize?.w ?? 0}x${source.originalSize?.h ?? 0}`,
-            `${source.appliedSize?.w ?? 0}x${source.appliedSize?.h ?? 0}`,
-            ratio.toFixed(6)
-        ].join('|');
-    }
-
     private trimExportCanvas(options: { outW: number; outH: number; x0: number; y0: number; w: number; h: number; }) {
         const left = clamp(Math.floor(options.x0), 0, options.outW);
         const top = clamp(Math.floor(options.y0), 0, options.outH);
@@ -1483,12 +1525,11 @@ class ReferenceImagesController {
         return { left, top, right, bottom };
     }
 
-    private async getExportWorkCanvas(source: ReferenceImageSourceMeta, blob: Blob) {
-        const key = this.sourceKey(source);
-        if (!key) {
+    private async getExportWorkCanvas(assetId: string, source: ReferenceImageSourceMeta, blob: Blob) {
+        if (!assetId) {
             return null;
         }
-        const existing = this.exportWorkBySourceKey.get(key);
+        const existing = this.exportWorkByAssetId.get(assetId);
         if (existing?.canvas) {
             return existing.canvas;
         }
@@ -1498,14 +1539,14 @@ class ReferenceImagesController {
         const entry: ExportWorkEntry = { canvas: null, promise: null };
         const promise = this.loader.decode(blob, source.filename).then(decoded => decoded.canvas);
         entry.promise = promise;
-        this.exportWorkBySourceKey.set(key, entry);
-        this.exportWorkOrder = this.exportWorkOrder.filter(k => k !== key);
-        this.exportWorkOrder.push(key);
+        this.exportWorkByAssetId.set(assetId, entry);
+        this.exportWorkOrder = this.exportWorkOrder.filter(k => k !== assetId);
+        this.exportWorkOrder.push(assetId);
         const MAX_CACHE = 3;
         while (this.exportWorkOrder.length > MAX_CACHE) {
             const drop = this.exportWorkOrder.shift();
             if (drop) {
-                this.exportWorkBySourceKey.delete(drop);
+                this.exportWorkByAssetId.delete(drop);
             }
         }
         try {
@@ -1514,8 +1555,8 @@ class ReferenceImagesController {
             entry.promise = null;
             return canvas;
         } catch (error) {
-            this.exportWorkBySourceKey.delete(key);
-            this.exportWorkOrder = this.exportWorkOrder.filter(k => k !== key);
+            this.exportWorkByAssetId.delete(assetId);
+            this.exportWorkOrder = this.exportWorkOrder.filter(k => k !== assetId);
             throw error;
         } finally {
             if (entry.promise === promise) {
@@ -1530,12 +1571,13 @@ class ReferenceImagesController {
             return null;
         }
         const runtime = this.runtimeById.get(id);
-        const blob = runtime?.blob;
+        const assetId = this.getAssetIdForActiveItem(id) ?? runtime?.assetId ?? '';
+        const blob = runtime?.blob ?? (assetId ? this.assets.getBlob(assetId) : null);
         const source = item.source;
-        if (!blob || !source) {
+        if (!blob || !source || !assetId) {
             return null;
         }
-        const image = await this.getExportWorkCanvas(source, blob);
+        const image = await this.getExportWorkCanvas(assetId, source, blob);
         if (!image) {
             return null;
         }
@@ -1643,7 +1685,8 @@ class ReferenceImagesController {
         const assets: Array<{ path: string; blob: Blob }> = [];
         this.state.items.forEach((item) => {
             const runtime = this.runtimeById.get(item.id);
-            const blob = runtime?.blob;
+            const assetId = this.getAssetIdForActiveItem(item.id) ?? runtime?.assetId ?? '';
+            const blob = runtime?.blob ?? (assetId ? this.assets.getBlob(assetId) : null);
             if (!blob || !item.source?.filename) {
                 return;
             }
@@ -1662,9 +1705,8 @@ class ReferenceImagesController {
                 this.destroyRuntime(runtime);
             }
             this.runtimeById.clear();
-            this.sourceCache.clear();
-            this.sourceCacheOrder = [];
-            this.exportWorkBySourceKey.clear();
+            this.assets.clear();
+            this.exportWorkByAssetId.clear();
             this.exportWorkOrder = [];
         };
         const normalizeDoc = (docState && typeof docState === 'object' && Array.isArray((docState as any).items)) ? docState : null;
@@ -1676,7 +1718,8 @@ class ReferenceImagesController {
                     resetRuntimeState();
                     const decoded = await this.decodeForAdd(legacyBlob, docState?.source?.filename);
                     const id = createId();
-                    const assetId = createAssetId();
+                    const assetInfo = await this.assets.register(decoded);
+                    this.assets.addRef(assetInfo.assetId, assetInfo.source);
                     const item: ReferenceImageItemState = {
                         id,
                         name: decoded.source.filename ?? DEFAULT_REFERENCE_IMAGE_FILENAME,
@@ -1688,7 +1731,7 @@ class ReferenceImagesController {
                         scalePct: clamp(isFiniteNumber(docState?.scalePct) ? docState.scalePct : 100, 1, 400),
                         offsetPx: normalizeOffset(docState?.offsetPx, { x: 0, y: 0 }),
                         anchor: normalizeAnchor(docState?.anchor, { ax: 0.5, ay: 0.5 }),
-                        source: decoded.source
+                        source: assetInfo.source
                     };
                     const preset: ReferenceImagePreset = {
                         id: DEFAULT_REFERENCE_IMAGE_PRESET_ID,
@@ -1706,15 +1749,15 @@ class ReferenceImagesController {
                             scalePct: item.scalePct,
                             offsetPx: { ...item.offsetPx },
                             anchor: { ...item.anchor },
-                            assetId
+                            assetId: assetInfo.assetId
                         }]
                     };
                     this.fullState = {
                         version: 2,
                         activePresetId: preset.id,
                         assets: [{
-                            id: assetId,
-                            source: decoded.source
+                            id: assetInfo.assetId,
+                            source: assetInfo.source
                         }],
                         presets: [preset]
                     };
@@ -1726,8 +1769,8 @@ class ReferenceImagesController {
                         items: [item]
                     };
                     const texture = this.loader.createTexture(this.scene.app.graphicsDevice, decoded.canvas, this.previewPreferNearest(item));
-                    this.runtimeById.set(id, { texture, blob: legacyBlob, previewCanvas: decoded.canvas });
-                    this.rememberSource(id, item.source, legacyBlob, decoded.canvas);
+                    this.runtimeById.set(id, { assetId: assetInfo.assetId, texture, blob: assetInfo.blob, previewCanvas: decoded.canvas });
+                    this.assets.rememberPreview(assetInfo.assetId, assetInfo.blob, decoded.canvas);
                     this.updateRenderer();
                     this.requestRender();
                     this.fireStateChanged();
@@ -1756,8 +1799,10 @@ class ReferenceImagesController {
         const doc = normalizeDoc as ReferenceImagesDocState;
         const itemsRaw = Array.isArray(doc.items) ? doc.items : [];
 
+        resetRuntimeState();
         const loadedItems: ReferenceImageItemState[] = [];
-        const loadedRuntimes: Array<{ id: string; blob: Blob; canvas: HTMLCanvasElement; item: ReferenceImageItemState; }> = [];
+        const loadedRuntimes: Array<{ id: string; assetId: string; blob: Blob; canvas: HTMLCanvasElement; item: ReferenceImageItemState; }> = [];
+        const assetsMap = new Map<string, ReferenceImageAsset>();
 
         for (const raw of itemsRaw) {
             const normalized = normalizeItem(raw);
@@ -1772,20 +1817,23 @@ class ReferenceImagesController {
                 continue;
             }
             const decoded = await this.decodeForAdd(blob, safeFilename);
-            normalized.source = decoded.source;
+            const assetInfo = await this.assets.register(decoded);
+            this.assets.addRef(assetInfo.assetId, assetInfo.source);
+            normalized.source = assetInfo.source;
             loadedItems.push(normalized);
-            loadedRuntimes.push({ id: normalized.id, blob, canvas: decoded.canvas, item: normalized });
+            assetsMap.set(assetInfo.assetId, { id: assetInfo.assetId, source: assetInfo.source });
+            loadedRuntimes.push({ id: normalized.id, assetId: assetInfo.assetId, blob: assetInfo.blob, canvas: decoded.canvas, item: normalized });
         }
 
         normalizeOrders(loadedItems);
-        const assets: ReferenceImageAsset[] = [];
+        const assetIdByItemId = new Map(loadedRuntimes.map(entry => [entry.id, entry.assetId]));
+        const assets = Array.from(assetsMap.values());
         const presetItems: ReferenceImageItemV2[] = [];
         loadedItems.forEach((item) => {
-            const assetId = createAssetId();
-            assets.push({
-                id: assetId,
-                source: item.source
-            });
+            const assetId = assetIdByItemId.get(item.id);
+            if (!assetId) {
+                return;
+            }
             presetItems.push({
                 id: item.id,
                 name: item.name,
@@ -1811,7 +1859,6 @@ class ReferenceImagesController {
             items: presetItems
         };
 
-        resetRuntimeState();
         this.fullState = {
             version: 2,
             activePresetId: preset.id,
@@ -1827,8 +1874,8 @@ class ReferenceImagesController {
         };
         loadedRuntimes.forEach((entry) => {
             const texture = this.loader.createTexture(this.scene.app.graphicsDevice, entry.canvas, this.previewPreferNearest(entry.item));
-            this.runtimeById.set(entry.id, { texture, blob: entry.blob, previewCanvas: entry.canvas });
-            this.rememberSource(entry.id, entry.item.source, entry.blob, entry.canvas);
+            this.runtimeById.set(entry.id, { assetId: entry.assetId, texture, blob: entry.blob, previewCanvas: entry.canvas });
+            this.assets.rememberPreview(entry.assetId, entry.blob, entry.canvas);
         });
         this.updateRenderer();
         this.requestRender();
@@ -1893,10 +1940,14 @@ class ReferenceImagesController {
             const pngBlob = await createCanvasBlob(canvas, 'image/png');
             const normalizedFilename = normalizeReferenceImageFilename(`${(filename ?? 'psd').split(/[\\/]/).pop() ?? 'psd'}-${layerName}.png`);
             const decoded = await this.decodeForAdd(pngBlob, normalizedFilename);
+            const assetInfo = await this.assets.register(decoded);
             pending.push({
                 id: createId(),
                 decoded,
-                blob: pngBlob,
+                assetId: assetInfo.assetId,
+                assetSource: assetInfo.source,
+                assetBlob: assetInfo.blob,
+                assetIsNew: assetInfo.isNew,
                 group,
                 name: layerName,
                 visible,
