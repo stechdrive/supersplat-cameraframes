@@ -81,7 +81,15 @@ class BoxShape extends Element {
         this.material.setParameter('boxLen', [this._lenX * 0.5, this._lenY * 0.5, this._lenZ  * 0.5]);
 
         const device = this.scene.graphicsDevice;
-        device.scope.resolve('targetSize').setValue([device.width, device.height]);
+        const renderTarget = this.scene.camera.entity.camera.renderTarget;
+        let width = renderTarget?.width;
+        let height = renderTarget?.height;
+        if (!(width && height)) {
+            const targetSize = this.scene.camera.targetSize ?? this.scene.targetSize;
+            width = targetSize?.width ?? device.width;
+            height = targetSize?.height ?? device.height;
+        }
+        device.scope.resolve('targetSize').setValue([width, height]);
     }
 
     moved() {

@@ -77,7 +77,15 @@ class SphereShape extends Element {
         this.material.setParameter('sphere', [v.x, v.y, v.z, this.radius]);
 
         const device = this.scene.graphicsDevice;
-        device.scope.resolve('targetSize').setValue([device.width, device.height]);
+        const renderTarget = this.scene.camera.entity.camera.renderTarget;
+        let width = renderTarget?.width;
+        let height = renderTarget?.height;
+        if (!(width && height)) {
+            const targetSize = this.scene.camera.targetSize ?? this.scene.targetSize;
+            width = targetSize?.width ?? device.width;
+            height = targetSize?.height ?? device.height;
+        }
+        device.scope.resolve('targetSize').setValue([width, height]);
     }
 
     moved() {

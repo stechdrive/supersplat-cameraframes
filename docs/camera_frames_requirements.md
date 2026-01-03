@@ -4,7 +4,7 @@
 
 - ベースコード: `src/camera-frames.ts` / `src/ui/camera-frames-panel.ts` / `src/camera.ts` / `src/scene.ts` / `src/render.ts`（package version 2.16.4 / HEAD 時点）。
 - 関連実装: `src/reference-image-controller.ts` / `src/reference-image-types.ts` / `src/render.ts`（参照画像のプレビュー/書き出し・includeReferenceImage フラグ・永続化）。
-- CAMERA FRAMES 個別バージョン: `cameraFramesVersion` = **v2.12.0**（`package.json` 由来、`#app-label` に `| CAMERA FRAMES v2.12.0` を追加表示）。
+- CAMERA FRAMES 個別バージョン: `cameraFramesVersion` = **v2.12.1**（`package.json` 由来、`#app-label` に `| CAMERA FRAMES v2.12.1` を追加表示）。
 - 本書は v8 を置き換える **実装準拠版 v9**。更新点:
   - マスクに `scope: 'all' | 'selected'` を追加し、スコープ選択と不透明度(%)入力を UI/履歴/永続化に反映（デフォルト 80% / all）。
   - ターゲット切替をラジオ風ボタンで明示。CAMERA FRAMES ON 時は Main/Viewport ともロック表示、OFF 時のみ main 選択可（mainCameraPose 保持時）。Main デバッグフラスタムの色は選択中=マゼンタ/非選択=シアン。

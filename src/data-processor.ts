@@ -18,6 +18,7 @@ import {
     BlendState
 } from 'playcanvas';
 
+import { buildCameraMatrices, type CameraMatrices } from './camera-matrices';
 import { vertexShader as boundVS, fragmentShader as boundFS } from './shaders/bound-shader';
 import { vertexShader as intersectionVS, fragmentShader as intersectionFS } from './shaders/intersection-shader';
 import { vertexShader as positionVS, fragmentShader as positionFS } from './shaders/position-shader';
@@ -87,6 +88,10 @@ class DataProcessor {
     device: GraphicsDevice;
     dummyTexture: Texture;
     viewProjectionMat = new Mat4();
+    viewMat = new Mat4();
+    viewInvMat = new Mat4();
+    projMat = new Mat4();
+    cameraMatrices: CameraMatrices;
     splatParams = new Int32Array(3);
     copyShader: Shader;
 
@@ -101,6 +106,12 @@ class DataProcessor {
             height: 1,
             format: PIXELFORMAT_RGBA8
         });
+        this.cameraMatrices = {
+            projection: this.projMat,
+            viewInv: this.viewInvMat,
+            view: this.viewMat,
+            viewProjection: this.viewProjectionMat
+        };
 
         const createTexture = (name: string, width: number, height: number, format: number) => {
             return new Texture(device, {
@@ -285,12 +296,20 @@ class DataProcessor {
         const transformPalette = ctx.transformPalette;
         const splatState = ctx.stateTexture ?? this.dummyTexture;
 
-        // update view projection matrix
-        const camera = ctx.splat.scene.camera.entity.camera;
-        this.viewProjectionMat.mul2(camera.projectionMatrix, camera.viewMatrix);
-
         // allocate resources
         const resources = this.getIntersectResources(transformA.width, numSplats);
+
+        // update view projection matrix (respect calculateProjection/calculateTransform)
+        const camera = ctx.splat.scene.camera.entity.camera;
+        const hasCustomFrustum = !!ctx.splat.scene.camera.getCustomFrustum();
+        if (!buildCameraMatrices(camera, this.cameraMatrices)) {
+            if (!hasCustomFrustum) {
+                this.viewProjectionMat.mul2(camera.projectionMatrix, camera.viewMatrix);
+            } else {
+                resources.data.fill(0);
+                return resources.data;
+            }
+        }
 
         resolve(scope, {
             transformA,
