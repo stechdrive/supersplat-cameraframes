@@ -262,14 +262,15 @@ const normalizeFullState = (value: any): ReferenceImagesFullState => {
     if (presets.length === 0) {
         presets.push(createDefaultPreset());
     }
-    const assetsRaw = Array.isArray(value?.assets) ? value.assets : [];
-    const assets = assetsRaw.filter((asset): asset is ReferenceImageAsset => (
-        asset &&
-        typeof asset.id === 'string' &&
-        asset.id &&
-        asset.source &&
-        typeof asset.source === 'object'
-    )).map(asset => ({
+    const assetsRaw = Array.isArray(value?.assets) ? (value.assets as unknown[]) : [];
+    const assets = assetsRaw.filter((asset): asset is ReferenceImageAsset => {
+        const candidate = asset as ReferenceImageAsset | null;
+        return !!candidate &&
+            typeof candidate.id === 'string' &&
+            candidate.id &&
+            candidate.source &&
+            typeof candidate.source === 'object';
+    }).map((asset) => ({
         id: asset.id,
         source: asset.source
     }));
@@ -675,7 +676,7 @@ class ReferenceImagesController {
             this.assets.syncAssets(this.fullState.assets, assetUsage);
 
             const preset = this.getActivePreset();
-            this.startActivePresetRuntimeRefresh(preset).catch(() => undefined);
+            this.startActivePresetRuntimeRefresh(preset).catch((): void => undefined);
 
             this.rebuildActiveState();
             this.updateRenderer();
@@ -996,7 +997,7 @@ class ReferenceImagesController {
                 this.cloneRuntimeForPresetItems(sourcePreset, idMap);
             }
             this.rebuildActiveState();
-            this.startActivePresetRuntimeRefresh(preset).catch(() => undefined);
+            this.startActivePresetRuntimeRefresh(preset).catch((): void => undefined);
             this.updateRenderer();
             this.requestRender();
             this.fireStateChanged();
@@ -1033,7 +1034,7 @@ class ReferenceImagesController {
             }
             this.cloneRuntimeForPresetItems(sourcePreset, cloned.idMap);
             this.rebuildActiveState();
-            this.startActivePresetRuntimeRefresh(preset).catch(() => undefined);
+            this.startActivePresetRuntimeRefresh(preset).catch((): void => undefined);
             this.updateRenderer();
             this.requestRender();
             this.fireStateChanged();
@@ -1085,7 +1086,7 @@ class ReferenceImagesController {
                 this.fullState.activePresetId = this.fullState.presets[0].id;
             }
             this.rebuildActiveState();
-            this.startActivePresetRuntimeRefresh(this.getActivePreset()).catch(() => undefined);
+            this.startActivePresetRuntimeRefresh(this.getActivePreset()).catch((): void => undefined);
             this.updateRenderer();
             this.requestRender();
             this.fireStateChanged();
@@ -1945,7 +1946,7 @@ class ReferenceImagesController {
             const assetUsage = this.collectAssetUsage();
             this.assets.syncAssets(this.fullState.assets, assetUsage);
             const activePreset = this.getActivePreset();
-            this.startActivePresetRuntimeRefresh(activePreset).catch(() => undefined);
+            this.startActivePresetRuntimeRefresh(activePreset).catch((): void => undefined);
             this.rebuildActiveState();
             this.updateRenderer();
             this.requestRender();
