@@ -54,12 +54,16 @@ type ReferenceImagesPresetsState = {
     presets: Array<{ id: string; name: string; }>;
 };
 
-type ReferenceImagesDocState = {
+type ReferenceImagesDocStateV1 = {
     version: 1;
     masterVisible: boolean;
     activeId: string | null;
     items: ReferenceImageItemState[];
 };
+
+type ReferenceImagesDocStateV2 = ReferenceImagesFullState;
+
+type ReferenceImagesDocState = ReferenceImagesDocStateV1 | ReferenceImagesDocStateV2;
 
 type ReferenceImagesExportLayer = {
     group: ReferenceImageItemGroup;
@@ -82,6 +86,8 @@ export type {
     ReferenceImageAsset,
     ReferenceImagePreset,
     ReferenceImagesDocState,
+    ReferenceImagesDocStateV1,
+    ReferenceImagesDocStateV2,
     ReferenceImagesExportLayer,
     ReferenceImagesFullState,
     ReferenceImagesPresetsState,

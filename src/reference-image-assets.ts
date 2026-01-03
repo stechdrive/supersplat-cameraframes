@@ -244,6 +244,29 @@ class ReferenceImageAssets {
         return cached;
     }
 
+    restoreFromDoc(assetId: string, source: ReferenceImageSourceMeta, blob: Blob | null) {
+        if (!assetId || !source) {
+            return;
+        }
+        let entry = this.assets.get(assetId) ?? this.restoreDetached(assetId);
+        if (!entry) {
+            entry = {
+                id: assetId,
+                source,
+                blob: blob ?? null,
+                refCount: 0,
+                hash: null
+            };
+            this.assets.set(assetId, entry);
+        } else {
+            entry.source = source;
+            if (!entry.blob && blob) {
+                entry.blob = blob;
+            }
+        }
+        this.ensureHashMapping(entry);
+    }
+
     syncAssets(assets: ReferenceImageAsset[], usage: Map<string, number>) {
         const assetIds = new Set(assets.map(asset => asset.id));
         for (const [id, entry] of this.assets) {

@@ -10,6 +10,7 @@ import { Splat } from './splat';
 import { serializePly } from './splat-serialize';
 import { Transform } from './transform';
 import { localize } from './ui/localization';
+import { normalizeReferenceImageFilename } from './reference-image-filename';
 
 // NOTE: This fork extends the upstream ssproj format, but we keep the on-disk
 // `document.json.version` as 0 to maximize the chance that upstream can load it.
@@ -204,6 +205,22 @@ const registerDocEvents = (scene: Scene, events: Events) => {
             scene.docDeserializeLighting(document.lighting ?? null);
             const referenceDocState = document.referenceImages ?? document.referenceImage ?? null;
             const referenceBlobs = new Map<string, Blob>();
+            if (referenceDocState?.assets && Array.isArray(referenceDocState.assets)) {
+                for (const asset of referenceDocState.assets) {
+                    const assetId = asset?.id;
+                    const filename = asset?.source?.filename;
+                    if (typeof assetId !== 'string' || !assetId || typeof filename !== 'string' || !filename) {
+                        continue;
+                    }
+                    const safeName = normalizeReferenceImageFilename(filename);
+                    const refPath = `reference-images/assets/${assetId}/${safeName}`;
+                    try {
+                        referenceBlobs.set(refPath, await zip.blob(refPath));
+                    } catch (error) {
+                        console.warn(`reference image missing: ${refPath}`, error);
+                    }
+                }
+            }
             if (referenceDocState?.items && Array.isArray(referenceDocState.items)) {
                 for (const item of referenceDocState.items) {
                     const id = item?.id;

@@ -16,6 +16,7 @@ import {
     type ReferenceImageItemV2,
     type ReferenceImagePreset,
     type ReferenceImagesDocState,
+    type ReferenceImagesDocStateV1,
     type ReferenceImagesExportLayer,
     type ReferenceImagesFullState,
     type ReferenceImagesPresetsState,
@@ -1692,42 +1693,46 @@ class ReferenceImagesController {
         return layers;
     }
 
-    private serializeDoc(): ReferenceImagesDocState | null {
-        if (this.state.items.length === 0) {
-            return null;
-        }
-        const snapshot = this.snapshot();
-        snapshot.items.forEach((item) => {
-            if (item.source?.filename) {
-                item.source.filename = normalizeReferenceImageFilename(item.source.filename);
+    private serializeDoc(): ReferenceImagesDocState {
+        const snapshot = normalizeFullState(this.snapshotFull());
+        snapshot.assets = snapshot.assets.map(asset => ({
+            id: asset.id,
+            source: { ...asset.source }
+        }));
+        snapshot.assets.forEach((asset) => {
+            if (asset.source?.filename) {
+                asset.source.filename = normalizeReferenceImageFilename(asset.source.filename);
             }
-            if (item.source && 'objectUrl' in (item.source as any)) {
-                delete (item.source as any).objectUrl;
+            if (asset.source && 'objectUrl' in (asset.source as any)) {
+                delete (asset.source as any).objectUrl;
             }
         });
-        normalizeOrders(snapshot.items);
-        return {
-            version: 1,
-            masterVisible: !!snapshot.masterVisible,
-            activeId: snapshot.activeId,
-            items: snapshot.items
-        };
+        snapshot.assets.sort((a, b) => a.id.localeCompare(b.id));
+        return snapshot;
     }
 
     private docAssets() {
         const assets: Array<{ path: string; blob: Blob }> = [];
-        this.state.items.forEach((item) => {
-            const runtime = this.runtimeById.get(item.id);
-            const assetId = this.getAssetIdForActiveItem(item.id) ?? runtime?.assetId ?? '';
-            const blob = runtime?.blob ?? (assetId ? this.assets.getBlob(assetId) : null);
-            if (!blob || !item.source?.filename) {
+        const usage = this.collectAssetUsage();
+        const seen = new Set<string>();
+        this.fullState.assets.forEach((asset) => {
+            if (!asset?.id || !asset.source || seen.has(asset.id)) {
                 return;
             }
-            const safeName = normalizeReferenceImageFilename(item.source.filename);
+            if ((usage.get(asset.id) ?? 0) <= 0) {
+                return;
+            }
+            const blob = this.assets.getBlob(asset.id);
+            if (!blob) {
+                console.warn(`reference image asset missing blob: ${asset.id}`);
+                return;
+            }
+            const safeName = normalizeReferenceImageFilename(asset.source.filename ?? DEFAULT_REFERENCE_IMAGE_FILENAME);
             assets.push({
-                path: `reference-images/${item.id}/${safeName}`,
+                path: `reference-images/assets/${asset.id}/${safeName}`,
                 blob
             });
+            seen.add(asset.id);
         });
         return assets;
     }
@@ -1743,7 +1748,122 @@ class ReferenceImagesController {
             this.exportWorkByAssetId.clear();
             this.exportWorkOrder = [];
         };
-        const normalizeDoc = (docState && typeof docState === 'object' && Array.isArray((docState as any).items)) ? docState : null;
+        const docRoot = (docState && typeof docState === 'object') ? docState as Record<string, any> : null;
+        const hasV2Doc = !!docRoot && (
+            docRoot.version === 2 ||
+            Array.isArray(docRoot.presets) ||
+            Array.isArray(docRoot.assets)
+        );
+        if (hasV2Doc) {
+            resetRuntimeState();
+            const snapshot = normalizeFullState(docRoot);
+            const ensureUniqueItemIds = (presets: ReferenceImagePreset[]) => {
+                const seen = new Set<string>();
+                presets.forEach((preset) => {
+                    const remap = new Map<string, string>();
+                    preset.items.forEach((item) => {
+                        const currentId = item.id;
+                        if (!currentId) {
+                            let nextId = createId();
+                            while (seen.has(nextId)) {
+                                nextId = createId();
+                            }
+                            item.id = nextId;
+                            seen.add(item.id);
+                            return;
+                        }
+                        if (seen.has(currentId)) {
+                            let nextId = createId();
+                            while (seen.has(nextId)) {
+                                nextId = createId();
+                            }
+                            item.id = nextId;
+                            remap.set(currentId, nextId);
+                        }
+                        seen.add(item.id);
+                    });
+                    if (preset.activeId && remap.has(preset.activeId)) {
+                        preset.activeId = remap.get(preset.activeId) ?? preset.activeId;
+                    }
+                });
+            };
+            ensureUniqueItemIds(snapshot.presets);
+
+            const assetsById = new Map<string, ReferenceImageAsset>();
+            snapshot.assets.forEach((asset) => {
+                if (!asset?.id || !asset.source) {
+                    return;
+                }
+                assetsById.set(asset.id, asset);
+            });
+
+            const assetBlobs = new Map<string, Blob>();
+            const usage = new Map<string, number>();
+            snapshot.presets.forEach((preset) => {
+                const filtered: ReferenceImageItemV2[] = [];
+                preset.items.forEach((item) => {
+                    const asset = assetsById.get(item.assetId);
+                    if (!asset) {
+                        console.warn(`reference image asset missing: ${item.assetId}`);
+                        return;
+                    }
+                    const safeFilename = normalizeReferenceImageFilename(asset.source?.filename ?? DEFAULT_REFERENCE_IMAGE_FILENAME);
+                    const path = `reference-images/assets/${asset.id}/${safeFilename}`;
+                    const blob = blobs?.get(path) ?? null;
+                    if (!blob) {
+                        console.warn(`reference image missing: ${path}`);
+                        return;
+                    }
+                    filtered.push(item);
+                    usage.set(asset.id, (usage.get(asset.id) ?? 0) + 1);
+                    if (!assetBlobs.has(asset.id)) {
+                        assetBlobs.set(asset.id, blob);
+                    }
+                });
+                preset.items = filtered;
+                normalizeOrders(preset.items);
+                if (preset.activeId && !preset.items.some(item => item.id === preset.activeId)) {
+                    preset.activeId = preset.items[0]?.id ?? null;
+                }
+            });
+
+            const usedAssets: ReferenceImageAsset[] = [];
+            const usedAssetIds = new Set<string>();
+            snapshot.assets.forEach((asset) => {
+                if (!asset?.id || !asset.source || usedAssetIds.has(asset.id)) {
+                    return;
+                }
+                if ((usage.get(asset.id) ?? 0) <= 0) {
+                    return;
+                }
+                usedAssetIds.add(asset.id);
+                usedAssets.push({ id: asset.id, source: asset.source });
+                const blob = assetBlobs.get(asset.id) ?? null;
+                if (blob) {
+                    this.assets.restoreFromDoc(asset.id, asset.source, blob);
+                }
+            });
+
+            snapshot.assets = usedAssets;
+            if (!snapshot.activePresetId || !snapshot.presets.some(preset => preset.id === snapshot.activePresetId)) {
+                snapshot.activePresetId = snapshot.presets[0]?.id ?? null;
+            }
+            this.fullState = snapshot;
+            this.presetCounter = 0;
+            this.syncPresetCounter();
+            const assetUsage = this.collectAssetUsage();
+            this.assets.syncAssets(this.fullState.assets, assetUsage);
+            const activePreset = this.getActivePreset();
+            void this.startActivePresetRuntimeRefresh(activePreset);
+            this.rebuildActiveState();
+            this.updateRenderer();
+            this.requestRender();
+            this.fireStateChanged();
+            this.firePresetsStateChanged();
+            return;
+        }
+
+        const normalizeDoc = (docRoot && Array.isArray((docRoot as any).items)) ? docRoot : null;
         if (!normalizeDoc) {
             // migration from legacy referenceImage state if provided as docState
             if (docState?.source && blobs instanceof Map) {
@@ -1830,7 +1950,7 @@ class ReferenceImagesController {
             return;
         }
 
-        const doc = normalizeDoc as ReferenceImagesDocState;
+        const doc = normalizeDoc as ReferenceImagesDocStateV1;
         const itemsRaw = Array.isArray(doc.items) ? doc.items : [];
 
         resetRuntimeState();
