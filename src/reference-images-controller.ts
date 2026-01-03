@@ -7,7 +7,19 @@ import { ReferenceImageLoader } from './reference-image-loader';
 import { ReferenceImageRenderer, type RenderParams } from './reference-image-renderer';
 import type { ReferenceImageSourceMeta, ReferenceImageState } from './reference-image-types';
 import type { ReferenceImagesHistory } from './reference-images-history';
-import { DEFAULT_REFERENCE_IMAGES_STATE, type ReferenceImageItemGroup, type ReferenceImageItemState, type ReferenceImagesDocState, type ReferenceImagesExportLayer, type ReferenceImagesState } from './reference-images-types';
+import {
+    DEFAULT_REFERENCE_IMAGES_STATE,
+    type ReferenceImageAsset,
+    type ReferenceImageItemGroup,
+    type ReferenceImageItemState,
+    type ReferenceImageItemV2,
+    type ReferenceImagePreset,
+    type ReferenceImagesDocState,
+    type ReferenceImagesExportLayer,
+    type ReferenceImagesFullState,
+    type ReferenceImagesPresetsState,
+    type ReferenceImagesState
+} from './reference-images-types';
 import { Scene } from './scene';
 
 type ViewportMapping = {
@@ -53,9 +65,14 @@ type PendingAdd = {
     anchor: { ax: number; ay: number; };
 };
 
+type ReferenceImageItemBase = ReferenceImageItemState | ReferenceImageItemV2;
+
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
 
 const isFiniteNumber = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
+
+const DEFAULT_REFERENCE_IMAGE_PRESET_ID = 'refpreset-1';
+const DEFAULT_REFERENCE_IMAGE_PRESET_NAME = 'Preset 1';
 
 let fallbackIdCounter = 0;
 const createId = () => {
@@ -69,6 +86,34 @@ const createId = () => {
     }
     fallbackIdCounter++;
     return `refimg_${Date.now().toString(16)}_${fallbackIdCounter.toString(16)}_${Math.random().toString(16).slice(2)}`;
+};
+
+let presetIdCounter = 0;
+const createPresetId = () => {
+    try {
+        const uuid = (globalThis.crypto as any)?.randomUUID?.();
+        if (typeof uuid === 'string' && uuid) {
+            return `refpreset_${uuid}`;
+        }
+    } catch {
+        // ignore
+    }
+    presetIdCounter++;
+    return `refpreset_${Date.now().toString(16)}_${presetIdCounter.toString(16)}_${Math.random().toString(16).slice(2)}`;
+};
+
+let assetIdCounter = 0;
+const createAssetId = () => {
+    try {
+        const uuid = (globalThis.crypto as any)?.randomUUID?.();
+        if (typeof uuid === 'string' && uuid) {
+            return `refasset_${uuid}`;
+        }
+    } catch {
+        // ignore
+    }
+    assetIdCounter++;
+    return `refasset_${Date.now().toString(16)}_${assetIdCounter.toString(16)}_${Math.random().toString(16).slice(2)}`;
 };
 
 const createCanvasBlob = (canvas: HTMLCanvasElement, type: string) => {
@@ -138,7 +183,42 @@ const normalizeItem = (value: any): ReferenceImageItemState | null => {
     };
 };
 
-const normalizeOrders = (items: ReferenceImageItemState[]) => {
+const normalizeItemV2 = (value: any): ReferenceImageItemV2 | null => {
+    if (!value || typeof value !== 'object') {
+        return null;
+    }
+    const rawId = typeof value.id === 'string' && value.id ? value.id : createId();
+    const id = rawId.replace(/[\\/]/g, '_');
+    const assetId = typeof value.assetId === 'string' && value.assetId ? value.assetId : null;
+    if (!assetId) {
+        return null;
+    }
+    const name = typeof value.name === 'string' && value.name.trim() ? value.name.trim() : DEFAULT_REFERENCE_IMAGE_FILENAME;
+    const group = normalizeGroup(value.group, 'front');
+    const order = isFiniteNumber(value.order) ? Math.max(0, Math.floor(value.order)) : 0;
+    const visible = normalizeBool(value.visible, true);
+    const includeInRender = normalizeBool(value.includeInRender, false);
+    const opacity = clamp(isFiniteNumber(value.opacity) ? value.opacity : 0.7, 0, 1);
+    const scalePct = clamp(isFiniteNumber(value.scalePct) ? value.scalePct : 100, 1, 400);
+    const offsetPx = normalizeOffset(value.offsetPx, { x: 0, y: 0 });
+    const anchor = normalizeAnchor(value.anchor, { ax: 0.5, ay: 0.5 });
+
+    return {
+        id,
+        name,
+        group,
+        order,
+        visible,
+        includeInRender,
+        opacity,
+        scalePct,
+        offsetPx,
+        anchor,
+        assetId
+    };
+};
+
+const normalizeOrders = (items: ReferenceImageItemBase[]) => {
     const groups: ReferenceImageItemGroup[] = ['back', 'front'];
     groups.forEach((group) => {
         const groupItems = items
@@ -150,17 +230,72 @@ const normalizeOrders = (items: ReferenceImageItemState[]) => {
     });
 };
 
-const normalizeState = (value: any): ReferenceImagesState => {
-    const masterVisible = normalizeBool(value?.masterVisible, DEFAULT_REFERENCE_IMAGES_STATE.masterVisible);
-    const itemsRaw = Array.isArray(value?.items) ? value.items : [];
-    const items = itemsRaw.map(normalizeItem).filter(Boolean) as ReferenceImageItemState[];
-    normalizeOrders(items);
+const createDefaultPreset = (id = DEFAULT_REFERENCE_IMAGE_PRESET_ID, name = DEFAULT_REFERENCE_IMAGE_PRESET_NAME): ReferenceImagePreset => ({
+    id,
+    name,
+    masterVisible: true,
+    activeId: null,
+    items: []
+});
+
+const normalizePreset = (value: any): ReferenceImagePreset | null => {
+    if (!value || typeof value !== 'object') {
+        return null;
+    }
+    const id = typeof value.id === 'string' && value.id ? value.id : createPresetId();
+    const name = typeof value.name === 'string' && value.name.trim() ? value.name.trim() : DEFAULT_REFERENCE_IMAGE_PRESET_NAME;
+    const masterVisible = normalizeBool(value.masterVisible, true);
+    const itemsRaw = Array.isArray(value.items) ? value.items : [];
+    const items = itemsRaw.map(normalizeItemV2).filter(Boolean) as ReferenceImageItemV2[];
+    items.forEach((item) => {
+        item.id = item.id.replace(/[\\/]/g, '_');
+    });
     const ids = new Set(items.map(i => i.id));
-    const activeId = (typeof value?.activeId === 'string' && ids.has(value.activeId)) ? value.activeId : (items[0]?.id ?? null);
+    const activeId = (typeof value.activeId === 'string' && ids.has(value.activeId)) ? value.activeId : (items[0]?.id ?? null);
+    items.forEach((item) => {
+        item.order = isFiniteNumber(item.order) ? Math.max(0, Math.floor(item.order)) : 0;
+    });
     return {
+        id,
+        name,
         masterVisible,
         activeId,
         items
+    };
+};
+
+const normalizeFullState = (value: any): ReferenceImagesFullState => {
+    const presetsRaw = Array.isArray(value?.presets) ? value.presets : [];
+    const presets = presetsRaw.map(normalizePreset).filter(Boolean) as ReferenceImagePreset[];
+    if (presets.length === 0) {
+        presets.push(createDefaultPreset());
+    }
+    const assetsRaw = Array.isArray(value?.assets) ? value.assets : [];
+    const assets = assetsRaw.filter((asset): asset is ReferenceImageAsset => (
+        asset &&
+        typeof asset.id === 'string' &&
+        asset.id &&
+        asset.source &&
+        typeof asset.source === 'object'
+    )).map(asset => ({
+        id: asset.id,
+        source: asset.source
+    }));
+    presets.forEach((preset) => {
+        preset.items.forEach((item) => {
+            if (typeof item.order !== 'number' || !isFinite(item.order)) {
+                item.order = 0;
+            }
+        });
+        normalizeOrders(preset.items);
+    });
+    const requestedActivePresetId = (typeof value?.activePresetId === 'string' && value.activePresetId) ? value.activePresetId : presets[0].id;
+    const activePresetId = presets.some(preset => preset.id === requestedActivePresetId) ? requestedActivePresetId : presets[0].id;
+    return {
+        version: 2,
+        activePresetId,
+        assets,
+        presets
     };
 };
 
@@ -171,12 +306,19 @@ class ReferenceImagesController {
     private renderer: ReferenceImageRenderer;
     private history: ReferenceImagesHistory | null = null;
     private applyingHistory = false;
+    private fullState: ReferenceImagesFullState = {
+        version: 2,
+        activePresetId: DEFAULT_REFERENCE_IMAGE_PRESET_ID,
+        assets: [],
+        presets: [createDefaultPreset()]
+    };
     private state: ReferenceImagesState = { ...DEFAULT_REFERENCE_IMAGES_STATE, items: [] };
     private runtimeById = new Map<string, ReferenceImageItemRuntime>();
     private sourceCache = new Map<string, { blob: Blob; previewCanvas: HTMLCanvasElement; }>();
     private sourceCacheOrder: string[] = [];
     private exportWorkBySourceKey = new Map<string, ExportWorkEntry>();
     private exportWorkOrder: string[] = [];
+    private presetCounter = 0;
 
     constructor(events: Events, scene: Scene) {
         this.events = events;
@@ -187,6 +329,8 @@ class ReferenceImagesController {
         this.events.on('cameraFrames.stateChanged', () => this.requestRender());
         this.events.on('prerender', () => this.updateRenderer());
         this.events.on('scene.clear', () => this.reset());
+        this.syncPresetCounter();
+        this.rebuildActiveState();
     }
 
     private requestRender() {
@@ -215,10 +359,103 @@ class ReferenceImagesController {
         this.history.record(label, fn);
     }
 
+    private syncPresetCounter() {
+        if (this.fullState.presets.length > this.presetCounter) {
+            this.presetCounter = this.fullState.presets.length;
+        }
+    }
+
+    private nextPresetName() {
+        this.syncPresetCounter();
+        this.presetCounter += 1;
+        return `Preset ${this.presetCounter}`;
+    }
+
+    private ensureDefaultPreset() {
+        if (!Array.isArray(this.fullState.presets) || this.fullState.presets.length === 0) {
+            this.fullState.presets = [createDefaultPreset()];
+        }
+        if (!this.fullState.activePresetId || !this.fullState.presets.some(preset => preset.id === this.fullState.activePresetId)) {
+            this.fullState.activePresetId = this.fullState.presets[0].id;
+        }
+        this.fullState.version = 2;
+    }
+
+    private buildAssetsById() {
+        const assetsById = new Map<string, ReferenceImageAsset>();
+        this.fullState.assets.forEach((asset) => {
+            if (!asset?.id) {
+                return;
+            }
+            assetsById.set(asset.id, asset);
+        });
+        return assetsById;
+    }
+
+    private getActivePreset() {
+        this.ensureDefaultPreset();
+        return this.fullState.presets.find(preset => preset.id === this.fullState.activePresetId) ?? this.fullState.presets[0];
+    }
+
+    private buildActiveItemsFromPreset(preset: ReferenceImagePreset, assetsById: Map<string, ReferenceImageAsset>) {
+        const items: ReferenceImageItemState[] = [];
+        preset.items.forEach((item) => {
+            const source = assetsById.get(item.assetId)?.source ?? null;
+            if (!source) {
+                return;
+            }
+            items.push({
+                id: item.id,
+                name: item.name,
+                group: item.group,
+                order: item.order,
+                visible: item.visible,
+                includeInRender: item.includeInRender,
+                opacity: item.opacity,
+                scalePct: item.scalePct,
+                offsetPx: { ...item.offsetPx },
+                anchor: { ...item.anchor },
+                source
+            });
+        });
+        return items;
+    }
+
+    private rebuildActiveState() {
+        const preset = this.getActivePreset();
+        const assetsById = this.buildAssetsById();
+        const items = this.buildActiveItemsFromPreset(preset, assetsById);
+        let activeId = preset.activeId;
+        if (activeId && !items.some(item => item.id === activeId)) {
+            activeId = items[0]?.id ?? null;
+        }
+        preset.activeId = activeId;
+        this.state = {
+            masterVisible: preset.masterVisible,
+            activeId,
+            items
+        };
+    }
+
+    private snapshotPresetsState(): ReferenceImagesPresetsState {
+        return {
+            activePresetId: this.fullState.activePresetId ?? null,
+            presets: this.fullState.presets.map(preset => ({ id: preset.id, name: preset.name }))
+        };
+    }
+
+    private firePresetsStateChanged() {
+        this.events.fire('referenceImages.presetsState', this.snapshotPresetsState());
+    }
+
     private fireStateChanged() {
         const snapshot = this.snapshot();
         this.events.fire('referenceImages.stateChanged', snapshot);
         this.events.fire('referenceImage.stateChanged', this.snapshotSingle());
+    }
+
+    snapshotFull(): ReferenceImagesFullState {
+        return JSON.parse(JSON.stringify(this.fullState));
     }
 
     snapshot(): ReferenceImagesState {
@@ -261,56 +498,103 @@ class ReferenceImagesController {
         };
     }
 
-    applySnapshot(snapshot: ReferenceImagesState) {
+    applySnapshotFull(snapshot: ReferenceImagesFullState) {
         this.applyingHistory = true;
         try {
-            const prevState = this.state;
-            const prevItemsById = new Map(prevState.items.map(i => [i.id, i]));
-            this.state = normalizeState(snapshot ?? DEFAULT_REFERENCE_IMAGES_STATE);
+            const prevAssetsById = this.buildAssetsById();
+            const prevItems: ReferenceImageItemV2[] = [];
+            this.fullState.presets.forEach((preset) => {
+                prevItems.push(...preset.items);
+            });
+            const prevItemsById = new Map(prevItems.map(item => [item.id, item]));
+            this.fullState = normalizeFullState(snapshot ?? this.fullState);
+            this.ensureDefaultPreset();
+            this.syncPresetCounter();
 
-            const nextIds = new Set(this.state.items.map(i => i.id));
+            const nextItems: ReferenceImageItemV2[] = [];
+            this.fullState.presets.forEach((preset) => {
+                nextItems.push(...preset.items);
+            });
+            const nextIds = new Set(nextItems.map(item => item.id));
+
             for (const [id, runtime] of this.runtimeById) {
                 if (nextIds.has(id)) {
                     continue;
                 }
                 const prevItem = prevItemsById.get(id);
-                this.rememberSource(id, prevItem?.source ?? null, runtime.blob, runtime.previewCanvas);
+                const prevSource = prevItem ? prevAssetsById.get(prevItem.assetId)?.source ?? null : null;
+                this.rememberSource(id, prevSource, runtime.blob, runtime.previewCanvas);
                 this.destroyRuntime(runtime);
                 this.runtimeById.delete(id);
             }
 
-            for (const item of this.state.items) {
+            const assetsById = this.buildAssetsById();
+            nextItems.forEach((item) => {
+                const source = assetsById.get(item.assetId)?.source ?? null;
+                if (!source) {
+                    return;
+                }
                 const runtime = this.runtimeById.get(item.id) ?? { blob: null, previewCanvas: null, texture: null };
                 this.runtimeById.set(item.id, runtime);
                 if (!runtime.blob || !runtime.previewCanvas || !runtime.texture) {
-                    this.restoreRuntimeFromCache(item.id, item.source, runtime, item);
+                    this.restoreRuntimeFromCache(item.id, source, runtime, item);
                 }
                 if (!runtime.texture && runtime.previewCanvas) {
                     runtime.texture = this.loader.createTexture(this.scene.app.graphicsDevice, runtime.previewCanvas, this.previewPreferNearest(item));
                 }
-            }
+            });
 
+            this.rebuildActiveState();
             this.updateRenderer();
             this.requestRender();
             this.fireStateChanged();
+            this.firePresetsStateChanged();
         } finally {
             this.applyingHistory = false;
         }
     }
 
     private reset() {
-        this.clearAllInternal();
+        for (const runtime of this.runtimeById.values()) {
+            this.destroyRuntime(runtime);
+        }
+        this.runtimeById.clear();
         this.sourceCache.clear();
         this.sourceCacheOrder = [];
         this.exportWorkBySourceKey.clear();
         this.exportWorkOrder = [];
-        this.applySnapshot({ ...DEFAULT_REFERENCE_IMAGES_STATE, items: [] });
+        this.fullState = {
+            version: 2,
+            activePresetId: DEFAULT_REFERENCE_IMAGE_PRESET_ID,
+            assets: [],
+            presets: [createDefaultPreset()]
+        };
+        this.presetCounter = 0;
+        this.syncPresetCounter();
+        this.rebuildActiveState();
+        this.updateRenderer();
+        this.requestRender();
+        this.fireStateChanged();
+        this.firePresetsStateChanged();
     }
 
     private registerEvents() {
         this.events.function('referenceImages.state', () => this.snapshot());
+        this.events.function('referenceImages.fullState', () => this.snapshotFull());
+        this.events.function('referenceImages.presetsState', () => this.snapshotPresetsState());
         this.events.on('referenceImages.setMasterVisible', (visible: boolean) => this.setMasterVisible(visible));
         this.events.on('referenceImages.toggleMasterVisible', () => this.toggleMasterVisible());
+        this.events.function('referenceImages.createPreset', (name?: string, options?: { empty?: boolean; }) => {
+            return this.createPreset(name, options);
+        });
+        this.events.function('referenceImages.clonePreset', (presetId: string) => {
+            return this.clonePreset(presetId);
+        });
+        this.events.on('referenceImages.renamePreset', (presetId: string, name: string) => this.renamePreset(presetId, name));
+        this.events.on('referenceImages.removePreset', (presetId: string) => this.removePreset(presetId));
+        this.events.function('referenceImages.setActivePreset', async (presetId: string) => {
+            await this.setActivePreset(presetId);
+        });
         this.events.function('referenceImages.addBlob', async (blob: Blob, filename?: string, opts?: { group?: ReferenceImageItemGroup; }) => {
             return await this.addBlobsInternal([{ blob, filename }], { group: opts?.group }, true).then(ids => ids[0] ?? null);
         });
@@ -422,12 +706,19 @@ class ReferenceImagesController {
         if (!active) {
             return;
         }
+        const preset = this.getActivePreset();
+        const fullItem = preset.items.find(item => item.id === active.id);
+        if (!fullItem) {
+            return;
+        }
         const next = !!value;
         this.historyRecord('referenceImage.visible', () => {
-            if (next && !this.state.masterVisible) {
+            fullItem.visible = next;
+            active.visible = next;
+            if (next && !preset.masterVisible) {
+                preset.masterVisible = true;
                 this.state.masterVisible = true;
             }
-            active.visible = next;
             this.updateRenderer();
             this.requestRender();
             this.fireStateChanged();
@@ -456,10 +747,12 @@ class ReferenceImagesController {
 
     private setMasterVisible(value: boolean) {
         const next = !!value;
-        if (next === this.state.masterVisible) {
+        const preset = this.getActivePreset();
+        if (next === preset.masterVisible) {
             return;
         }
         this.historyRecord('referenceImages.masterVisible', () => {
+            preset.masterVisible = next;
             this.state.masterVisible = next;
             this.updateRenderer();
             this.requestRender();
@@ -471,7 +764,205 @@ class ReferenceImagesController {
         this.setMasterVisible(!this.state.masterVisible);
     }
 
-    private previewPreferNearest(item: ReferenceImageItemState) {
+    private clonePresetItems(preset: ReferenceImagePreset) {
+        const idMap = new Map<string, string>();
+        const items = preset.items.map((item) => {
+            const nextId = createId();
+            idMap.set(item.id, nextId);
+            return {
+                ...item,
+                id: nextId,
+                offsetPx: { ...item.offsetPx },
+                anchor: { ...item.anchor }
+            };
+        });
+        const activeId = preset.activeId ? (idMap.get(preset.activeId) ?? null) : null;
+        return { items, activeId, idMap };
+    }
+
+    private cloneRuntimeForPresetItems(preset: ReferenceImagePreset, idMap: Map<string, string>) {
+        const assetsById = this.buildAssetsById();
+        idMap.forEach((nextId, originalId) => {
+            const runtime = this.runtimeById.get(originalId) ?? null;
+            const cached = this.sourceCache.get(originalId) ?? null;
+            const blob = runtime?.blob ?? cached?.blob ?? null;
+            const previewCanvas = runtime?.previewCanvas ?? cached?.previewCanvas ?? null;
+            if (!blob || !previewCanvas) {
+                return;
+            }
+            const originalItem = preset.items.find(item => item.id === originalId);
+            if (!originalItem) {
+                return;
+            }
+            const texture = this.loader.createTexture(
+                this.scene.app.graphicsDevice,
+                previewCanvas,
+                this.previewPreferNearest(originalItem)
+            );
+            this.runtimeById.set(nextId, { blob, previewCanvas, texture });
+            const source = assetsById.get(originalItem.assetId)?.source ?? null;
+            this.rememberSource(nextId, source, blob, previewCanvas);
+        });
+    }
+
+    private ensureRuntimeForPresetItems(preset: ReferenceImagePreset) {
+        const assetsById = this.buildAssetsById();
+        preset.items.forEach((item) => {
+            const source = assetsById.get(item.assetId)?.source ?? null;
+            if (!source) {
+                return;
+            }
+            const runtime = this.runtimeById.get(item.id) ?? { blob: null, previewCanvas: null, texture: null };
+            this.runtimeById.set(item.id, runtime);
+            if (!runtime.blob || !runtime.previewCanvas || !runtime.texture) {
+                this.restoreRuntimeFromCache(item.id, source, runtime, item);
+            }
+            if (!runtime.texture && runtime.previewCanvas) {
+                runtime.texture = this.loader.createTexture(this.scene.app.graphicsDevice, runtime.previewCanvas, this.previewPreferNearest(item));
+            }
+        });
+    }
+
+    private createPreset(name?: string, options?: { empty?: boolean; }) {
+        let createdId: string | null = null;
+        this.historyRecord('referenceImages.createPreset', () => {
+            const sourcePreset = this.getActivePreset();
+            const presetName = typeof name === 'string' && name.trim() ? name.trim() : this.nextPresetName();
+            const copyItems = options?.empty !== true;
+            let items: ReferenceImageItemV2[] = [];
+            let activeId: string | null = null;
+            let idMap: Map<string, string> | null = null;
+            if (copyItems) {
+                const cloned = this.clonePresetItems(sourcePreset);
+                items = cloned.items;
+                activeId = cloned.activeId;
+                idMap = cloned.idMap;
+            }
+            const presetId = createPresetId();
+            const preset: ReferenceImagePreset = {
+                id: presetId,
+                name: presetName,
+                masterVisible: copyItems ? sourcePreset.masterVisible : true,
+                activeId,
+                items
+            };
+            this.fullState.presets.push(preset);
+            this.fullState.activePresetId = presetId;
+            if (idMap) {
+                this.cloneRuntimeForPresetItems(sourcePreset, idMap);
+            }
+            this.rebuildActiveState();
+            this.ensureRuntimeForPresetItems(preset);
+            this.updateRenderer();
+            this.requestRender();
+            this.fireStateChanged();
+            this.firePresetsStateChanged();
+            createdId = presetId;
+        });
+        return createdId;
+    }
+
+    private clonePreset(presetId: string) {
+        let createdId: string | null = null;
+        this.historyRecord('referenceImages.clonePreset', () => {
+            const sourcePreset = this.fullState.presets.find(preset => preset.id === presetId);
+            if (!sourcePreset) {
+                return;
+            }
+            const presetName = (sourcePreset.name ?? '').trim() || this.nextPresetName();
+            const cloned = this.clonePresetItems(sourcePreset);
+            const presetIdNext = createPresetId();
+            const preset: ReferenceImagePreset = {
+                id: presetIdNext,
+                name: presetName,
+                masterVisible: sourcePreset.masterVisible,
+                activeId: cloned.activeId,
+                items: cloned.items
+            };
+            this.fullState.presets.push(preset);
+            this.fullState.activePresetId = presetIdNext;
+            this.cloneRuntimeForPresetItems(sourcePreset, cloned.idMap);
+            this.rebuildActiveState();
+            this.ensureRuntimeForPresetItems(preset);
+            this.updateRenderer();
+            this.requestRender();
+            this.fireStateChanged();
+            this.firePresetsStateChanged();
+            createdId = presetIdNext;
+        });
+        return createdId;
+    }
+
+    private renamePreset(presetId: string, name: string) {
+        this.historyRecord('referenceImages.renamePreset', () => {
+            const preset = this.fullState.presets.find(item => item.id === presetId);
+            if (!preset) {
+                return;
+            }
+            const trimmed = (name ?? '').trim();
+            if (!trimmed || trimmed === preset.name) {
+                return;
+            }
+            preset.name = trimmed;
+            this.firePresetsStateChanged();
+        });
+    }
+
+    private removePreset(presetId: string) {
+        if (!presetId) {
+            return;
+        }
+        this.historyRecord('referenceImages.removePreset', () => {
+            const index = this.fullState.presets.findIndex(preset => preset.id === presetId);
+            if (index < 0) {
+                return;
+            }
+            const [removedPreset] = this.fullState.presets.splice(index, 1);
+            const assetsById = this.buildAssetsById();
+            removedPreset.items.forEach((item) => {
+                const runtime = this.runtimeById.get(item.id);
+                if (!runtime) {
+                    return;
+                }
+                const source = assetsById.get(item.assetId)?.source ?? null;
+                this.rememberSource(item.id, source, runtime.blob, runtime.previewCanvas);
+                this.destroyRuntime(runtime);
+                this.runtimeById.delete(item.id);
+            });
+            if (this.fullState.presets.length === 0) {
+                const fallbackPreset = createDefaultPreset();
+                this.fullState.presets = [fallbackPreset];
+                this.fullState.activePresetId = fallbackPreset.id;
+            } else if (this.fullState.activePresetId === presetId) {
+                this.fullState.activePresetId = this.fullState.presets[0].id;
+            }
+            this.rebuildActiveState();
+            this.updateRenderer();
+            this.requestRender();
+            this.fireStateChanged();
+            this.firePresetsStateChanged();
+        });
+    }
+
+    private async setActivePreset(presetId: string | null) {
+        this.ensureDefaultPreset();
+        const nextId = (typeof presetId === 'string' && this.fullState.presets.some(preset => preset.id === presetId)) ?
+            presetId :
+            null;
+        if (!nextId || nextId === this.fullState.activePresetId) {
+            return;
+        }
+        this.fullState.activePresetId = nextId;
+        const preset = this.getActivePreset();
+        this.rebuildActiveState();
+        this.ensureRuntimeForPresetItems(preset);
+        this.updateRenderer();
+        this.requestRender();
+        this.fireStateChanged();
+        this.firePresetsStateChanged();
+    }
+
+    private previewPreferNearest(item: ReferenceImageItemBase) {
         return Math.abs(item.scalePct - 100) < 1e-3;
     }
 
@@ -491,7 +982,15 @@ class ReferenceImagesController {
         }
     }
 
-    private restoreRuntimeFromCache(id: string, source: ReferenceImageSourceMeta, runtime: ReferenceImageItemRuntime, item: ReferenceImageItemState) {
+    private restoreRuntimeFromCache(
+        id: string,
+        source: ReferenceImageSourceMeta | null,
+        runtime: ReferenceImageItemRuntime,
+        item: ReferenceImageItemBase
+    ) {
+        if (!source) {
+            return;
+        }
         const cached = this.sourceCache.get(id);
         if (!cached) {
             return;
@@ -645,13 +1144,32 @@ class ReferenceImagesController {
         }
 
         const apply = () => {
+            const preset = this.getActivePreset();
             const nextOrderByGroup = {
-                back: this.state.items.filter(i => i.group === 'back').length,
-                front: this.state.items.filter(i => i.group === 'front').length
+                back: preset.items.filter(i => i.group === 'back').length,
+                front: preset.items.filter(i => i.group === 'front').length
             };
 
             pending.forEach((entry) => {
                 const order = entry.group === 'back' ? nextOrderByGroup.back++ : nextOrderByGroup.front++;
+                const assetId = createAssetId();
+                this.fullState.assets.push({
+                    id: assetId,
+                    source: entry.decoded.source
+                });
+                const fullItem: ReferenceImageItemV2 = {
+                    id: entry.id,
+                    name: entry.name,
+                    group: entry.group,
+                    order,
+                    visible: entry.visible,
+                    includeInRender: entry.includeInRender,
+                    opacity: entry.opacity,
+                    scalePct: entry.scalePct,
+                    offsetPx: { ...entry.offsetPx },
+                    anchor: { ...entry.anchor },
+                    assetId
+                };
                 const item: ReferenceImageItemState = {
                     id: entry.id,
                     name: entry.name,
@@ -661,8 +1179,8 @@ class ReferenceImagesController {
                     includeInRender: entry.includeInRender,
                     opacity: entry.opacity,
                     scalePct: entry.scalePct,
-                    offsetPx: entry.offsetPx,
-                    anchor: entry.anchor,
+                    offsetPx: { ...entry.offsetPx },
+                    anchor: { ...entry.anchor },
                     source: entry.decoded.source
                 };
                 const texture = this.loader.createTexture(this.scene.app.graphicsDevice, entry.decoded.canvas, this.previewPreferNearest(item));
@@ -672,11 +1190,15 @@ class ReferenceImagesController {
                     previewCanvas: entry.decoded.canvas
                 });
                 this.rememberSource(entry.id, item.source, entry.blob, entry.decoded.canvas);
+                preset.items.push(fullItem);
                 this.state.items.push(item);
+                preset.activeId = entry.id;
                 this.state.activeId = entry.id;
             });
+            normalizeOrders(preset.items);
             normalizeOrders(this.state.items);
-            if (!this.state.masterVisible) {
+            if (!preset.masterVisible) {
+                preset.masterVisible = true;
                 this.state.masterVisible = true;
             }
             this.updateRenderer();
@@ -723,22 +1245,29 @@ class ReferenceImagesController {
         if (typeof id !== 'string' || !id) {
             return;
         }
-        const index = this.state.items.findIndex(i => i.id === id);
+        const preset = this.getActivePreset();
+        const index = preset.items.findIndex(i => i.id === id);
         if (index < 0) {
             return;
         }
         this.historyRecord('referenceImages.remove', () => {
-            const removed = this.state.items[index];
+            const removedStateIndex = this.state.items.findIndex(item => item.id === id);
+            const removedStateItem = removedStateIndex >= 0 ? this.state.items[removedStateIndex] : null;
             const runtime = this.runtimeById.get(id) ?? null;
             if (runtime) {
-                this.rememberSource(id, removed.source, runtime.blob, runtime.previewCanvas);
+                this.rememberSource(id, removedStateItem?.source ?? null, runtime.blob, runtime.previewCanvas);
                 this.destroyRuntime(runtime);
                 this.runtimeById.delete(id);
             }
-            this.state.items.splice(index, 1);
+            preset.items.splice(index, 1);
+            if (removedStateIndex >= 0) {
+                this.state.items.splice(removedStateIndex, 1);
+            }
+            normalizeOrders(preset.items);
             normalizeOrders(this.state.items);
-            if (this.state.activeId === id) {
-                this.state.activeId = this.state.items[0]?.id ?? null;
+            if (preset.activeId === id) {
+                preset.activeId = preset.items[0]?.id ?? null;
+                this.state.activeId = preset.activeId;
             }
             this.updateRenderer();
             this.requestRender();
@@ -747,14 +1276,23 @@ class ReferenceImagesController {
     }
 
     private clearAllInternal() {
-        const prevItemsById = new Map(this.state.items.map(i => [i.id, i]));
-        for (const [id, runtime] of this.runtimeById) {
-            const item = prevItemsById.get(id);
-            this.rememberSource(id, item?.source ?? null, runtime.blob, runtime.previewCanvas);
-            this.destroyRuntime(runtime);
-        }
-        this.runtimeById.clear();
-        this.state = { ...DEFAULT_REFERENCE_IMAGES_STATE, masterVisible: this.state.masterVisible, items: [] };
+        const preset = this.getActivePreset();
+        this.state.items.forEach((item) => {
+            const runtime = this.runtimeById.get(item.id);
+            if (runtime) {
+                this.rememberSource(item.id, item.source, runtime.blob, runtime.previewCanvas);
+                this.destroyRuntime(runtime);
+                this.runtimeById.delete(item.id);
+            }
+        });
+        preset.items = [];
+        preset.activeId = null;
+        this.state = {
+            ...DEFAULT_REFERENCE_IMAGES_STATE,
+            masterVisible: preset.masterVisible,
+            activeId: null,
+            items: []
+        };
         this.renderer.clearParams();
         this.updateRenderer();
         this.requestRender();
@@ -775,23 +1313,22 @@ class ReferenceImagesController {
         if (next === this.state.activeId) {
             return;
         }
-        if (next && !this.state.items.some(i => i.id === next)) {
+        const preset = this.getActivePreset();
+        if (next && !preset.items.some(i => i.id === next)) {
             return;
         }
+        preset.activeId = next;
         this.state.activeId = next;
         this.fireStateChanged();
     }
 
-    private applyPatchToItem(item: ReferenceImageItemState, patch: ReferenceImageItemPatch) {
+    private applyPatchToItem(item: ReferenceImageItemBase, patch: ReferenceImageItemPatch, items: ReferenceImageItemBase[]) {
         let groupChanged = false;
         if (typeof patch.name === 'string' && patch.name.trim()) {
             item.name = patch.name.trim();
         }
         if (typeof (patch as any).visible === 'boolean') {
             item.visible = patch.visible as any;
-            if (item.visible && !this.state.masterVisible) {
-                this.state.masterVisible = true;
-            }
         }
         if (typeof (patch as any).includeInRender === 'boolean') {
             item.includeInRender = patch.includeInRender as any;
@@ -813,7 +1350,7 @@ class ReferenceImagesController {
             if (nextGroup !== item.group) {
                 groupChanged = true;
                 item.group = nextGroup;
-                item.order = this.state.items.filter(i => i.group === nextGroup && i.id !== item.id).length;
+                item.order = items.filter(i => i.group === nextGroup && i.id !== item.id).length;
             }
         }
         return groupChanged;
@@ -829,22 +1366,33 @@ class ReferenceImagesController {
         if (updates.length === 0) {
             return;
         }
+        const preset = this.getActivePreset();
         const itemsById = new Map(this.state.items.map(item => [item.id, item]));
+        const fullItemsById = new Map(preset.items.map(item => [item.id, item]));
         this.historyRecord('referenceImages.update', () => {
             let groupChanged = false;
             updates.forEach((update) => {
                 if (!update?.id || !update.patch) {
                     return;
                 }
-                const item = itemsById.get(update.id);
-                if (!item) {
+                const fullItem = fullItemsById.get(update.id);
+                if (!fullItem) {
                     return;
                 }
-                if (this.applyPatchToItem(item, update.patch)) {
+                if (this.applyPatchToItem(fullItem, update.patch, preset.items)) {
                     groupChanged = true;
+                }
+                const item = itemsById.get(update.id);
+                if (item && this.applyPatchToItem(item, update.patch, this.state.items)) {
+                    groupChanged = true;
+                }
+                if (Object.prototype.hasOwnProperty.call(update.patch, 'visible') && update.patch.visible === true) {
+                    preset.masterVisible = true;
+                    this.state.masterVisible = true;
                 }
             });
             if (groupChanged) {
+                normalizeOrders(preset.items);
                 normalizeOrders(this.state.items);
             }
             this.updateRenderer();
@@ -873,7 +1421,8 @@ class ReferenceImagesController {
         if (typeof id !== 'string' || !id) {
             return;
         }
-        const item = this.state.items.find(i => i.id === id);
+        const preset = this.getActivePreset();
+        const item = preset.items.find(i => i.id === id);
         if (!item) {
             return;
         }
@@ -881,20 +1430,28 @@ class ReferenceImagesController {
         const toIndex = isFiniteNumber(payload?.toIndex) ? Math.max(0, Math.floor(payload.toIndex)) : 0;
 
         this.historyRecord('referenceImages.reorder', () => {
-            item.group = toGroup;
-            const groupItems = this.state.items
-            .filter(i => i.group === toGroup && i.id !== id)
-            .sort((a, b) => a.order - b.order);
-            const clampedIndex = Math.max(0, Math.min(groupItems.length, toIndex));
-            groupItems.splice(clampedIndex, 0, item);
-            groupItems.forEach((i, idx) => {
-                i.order = idx;
-            });
-            const otherGroup: ReferenceImageItemGroup = toGroup === 'back' ? 'front' : 'back';
-            const otherItems = this.state.items.filter(i => i.group === otherGroup).sort((a, b) => a.order - b.order);
-            otherItems.forEach((i, idx) => {
-                i.order = idx;
-            });
+            const applyReorder = (items: ReferenceImageItemBase[]) => {
+                const target = items.find(i => i.id === id);
+                if (!target) {
+                    return;
+                }
+                target.group = toGroup;
+                const groupItems = items
+                .filter(i => i.group === toGroup && i.id !== id)
+                .sort((a, b) => a.order - b.order);
+                const clampedIndex = Math.max(0, Math.min(groupItems.length, toIndex));
+                groupItems.splice(clampedIndex, 0, target);
+                groupItems.forEach((i, idx) => {
+                    i.order = idx;
+                });
+                const otherGroup: ReferenceImageItemGroup = toGroup === 'back' ? 'front' : 'back';
+                const otherItems = items.filter(i => i.group === otherGroup).sort((a, b) => a.order - b.order);
+                otherItems.forEach((i, idx) => {
+                    i.order = idx;
+                });
+            };
+            applyReorder(preset.items);
+            applyReorder(this.state.items);
             this.updateRenderer();
             this.requestRender();
             this.fireStateChanged();
@@ -1100,14 +1657,26 @@ class ReferenceImagesController {
     }
 
     private async deserializeDoc(docState: any, blobs: Map<string, Blob>) {
+        const resetRuntimeState = () => {
+            for (const runtime of this.runtimeById.values()) {
+                this.destroyRuntime(runtime);
+            }
+            this.runtimeById.clear();
+            this.sourceCache.clear();
+            this.sourceCacheOrder = [];
+            this.exportWorkBySourceKey.clear();
+            this.exportWorkOrder = [];
+        };
         const normalizeDoc = (docState && typeof docState === 'object' && Array.isArray((docState as any).items)) ? docState : null;
         if (!normalizeDoc) {
             // migration from legacy referenceImage state if provided as docState
             if (docState?.source && blobs instanceof Map) {
                 const legacyBlob = blobs.get(`reference-image/${normalizeReferenceImageFilename(docState?.source?.filename)}`) ?? null;
                 if (legacyBlob) {
+                    resetRuntimeState();
                     const decoded = await this.decodeForAdd(legacyBlob, docState?.source?.filename);
                     const id = createId();
+                    const assetId = createAssetId();
                     const item: ReferenceImageItemState = {
                         id,
                         name: decoded.source.filename ?? DEFAULT_REFERENCE_IMAGE_FILENAME,
@@ -1121,7 +1690,36 @@ class ReferenceImagesController {
                         anchor: normalizeAnchor(docState?.anchor, { ax: 0.5, ay: 0.5 }),
                         source: decoded.source
                     };
-                    this.clearAllInternal();
+                    const preset: ReferenceImagePreset = {
+                        id: DEFAULT_REFERENCE_IMAGE_PRESET_ID,
+                        name: DEFAULT_REFERENCE_IMAGE_PRESET_NAME,
+                        masterVisible: true,
+                        activeId: id,
+                        items: [{
+                            id,
+                            name: item.name,
+                            group: item.group,
+                            order: item.order,
+                            visible: item.visible,
+                            includeInRender: item.includeInRender,
+                            opacity: item.opacity,
+                            scalePct: item.scalePct,
+                            offsetPx: { ...item.offsetPx },
+                            anchor: { ...item.anchor },
+                            assetId
+                        }]
+                    };
+                    this.fullState = {
+                        version: 2,
+                        activePresetId: preset.id,
+                        assets: [{
+                            id: assetId,
+                            source: decoded.source
+                        }],
+                        presets: [preset]
+                    };
+                    this.presetCounter = 0;
+                    this.syncPresetCounter();
                     this.state = {
                         masterVisible: true,
                         activeId: id,
@@ -1133,14 +1731,25 @@ class ReferenceImagesController {
                     this.updateRenderer();
                     this.requestRender();
                     this.fireStateChanged();
+                    this.firePresetsStateChanged();
                     return;
                 }
             }
 
-            this.clearAllInternal();
-            this.sourceCache.clear();
-            this.sourceCacheOrder = [];
-            this.applySnapshot({ ...DEFAULT_REFERENCE_IMAGES_STATE, items: [] });
+            resetRuntimeState();
+            this.fullState = {
+                version: 2,
+                activePresetId: DEFAULT_REFERENCE_IMAGE_PRESET_ID,
+                assets: [],
+                presets: [createDefaultPreset()]
+            };
+            this.presetCounter = 0;
+            this.syncPresetCounter();
+            this.rebuildActiveState();
+            this.updateRenderer();
+            this.requestRender();
+            this.fireStateChanged();
+            this.firePresetsStateChanged();
             return;
         }
 
@@ -1169,18 +1778,53 @@ class ReferenceImagesController {
         }
 
         normalizeOrders(loadedItems);
+        const assets: ReferenceImageAsset[] = [];
+        const presetItems: ReferenceImageItemV2[] = [];
+        loadedItems.forEach((item) => {
+            const assetId = createAssetId();
+            assets.push({
+                id: assetId,
+                source: item.source
+            });
+            presetItems.push({
+                id: item.id,
+                name: item.name,
+                group: item.group,
+                order: item.order,
+                visible: item.visible,
+                includeInRender: item.includeInRender,
+                opacity: item.opacity,
+                scalePct: item.scalePct,
+                offsetPx: { ...item.offsetPx },
+                anchor: { ...item.anchor },
+                assetId
+            });
+        });
 
-        const nextState: ReferenceImagesState = {
+        const activeId = typeof doc.activeId === 'string' ? doc.activeId : (loadedItems[0]?.id ?? null);
+        const resolvedActiveId = activeId && loadedItems.some(i => i.id === activeId) ? activeId : (loadedItems[0]?.id ?? null);
+        const preset: ReferenceImagePreset = {
+            id: DEFAULT_REFERENCE_IMAGE_PRESET_ID,
+            name: DEFAULT_REFERENCE_IMAGE_PRESET_NAME,
             masterVisible: normalizeBool(doc.masterVisible, true),
-            activeId: typeof doc.activeId === 'string' ? doc.activeId : (loadedItems[0]?.id ?? null),
+            activeId: resolvedActiveId,
+            items: presetItems
+        };
+
+        resetRuntimeState();
+        this.fullState = {
+            version: 2,
+            activePresetId: preset.id,
+            assets,
+            presets: [preset]
+        };
+        this.presetCounter = 0;
+        this.syncPresetCounter();
+        this.state = {
+            masterVisible: preset.masterVisible,
+            activeId: resolvedActiveId,
             items: loadedItems
         };
-        if (nextState.activeId && !loadedItems.some(i => i.id === nextState.activeId)) {
-            nextState.activeId = loadedItems[0]?.id ?? null;
-        }
-
-        this.clearAllInternal();
-        this.state = nextState;
         loadedRuntimes.forEach((entry) => {
             const texture = this.loader.createTexture(this.scene.app.graphicsDevice, entry.canvas, this.previewPreferNearest(entry.item));
             this.runtimeById.set(entry.id, { texture, blob: entry.blob, previewCanvas: entry.canvas });
@@ -1189,6 +1833,7 @@ class ReferenceImagesController {
         this.updateRenderer();
         this.requestRender();
         this.fireStateChanged();
+        this.firePresetsStateChanged();
     }
 
     private async importPsd(blob: Blob, filename?: string, opts?: { group?: ReferenceImageItemGroup; }) {
