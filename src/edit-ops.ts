@@ -426,6 +426,34 @@ class AmbientLightOp implements EditOp {
     }
 }
 
+class CameraPresetReferenceImageOp implements EditOp {
+    name = 'cameraFrames.setPresetReferenceImage';
+    presetId: string;
+    prevReferenceImagePresetId: string;
+    nextReferenceImagePresetId: string;
+    applyLink: (presetId: string, referenceImagePresetId: string) => void;
+
+    constructor(options: {
+        presetId: string;
+        prevReferenceImagePresetId: string;
+        nextReferenceImagePresetId: string;
+        apply: (presetId: string, referenceImagePresetId: string) => void;
+    }) {
+        this.presetId = options.presetId;
+        this.prevReferenceImagePresetId = options.prevReferenceImagePresetId;
+        this.nextReferenceImagePresetId = options.nextReferenceImagePresetId;
+        this.applyLink = options.apply;
+    }
+
+    do() {
+        this.applyLink(this.presetId, this.nextReferenceImagePresetId);
+    }
+
+    undo() {
+        this.applyLink(this.presetId, this.prevReferenceImagePresetId);
+    }
+}
+
 class MultiOp {
     name = 'multiOp';
     ops: EditOp[];
@@ -504,6 +532,7 @@ export {
     SetSplatColorAdjustmentOp,
     LightStateOp,
     AmbientLightOp,
+    CameraPresetReferenceImageOp,
     MultiOp,
     AddSplatOp,
     SplatRenameOp

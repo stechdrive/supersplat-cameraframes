@@ -580,6 +580,35 @@ class ReferenceImagesController {
         this.events.fire('referenceImages.presetsState', this.snapshotPresetsState());
     }
 
+    private ensurePresets(presets: Array<{ id: string; name?: string }>) {
+        if (!Array.isArray(presets) || presets.length === 0) {
+            return;
+        }
+        this.ensureDefaultPreset();
+        let changed = false;
+        presets.forEach((entry) => {
+            const id = typeof entry?.id === 'string' ? entry.id : '';
+            if (!id) {
+                return;
+            }
+            if (this.fullState.presets.some(preset => preset.id === id)) {
+                return;
+            }
+            const presetName = (typeof entry?.name === 'string' && entry.name.trim()) ? entry.name.trim() : this.nextPresetName();
+            this.fullState.presets.push({
+                id,
+                name: presetName,
+                masterVisible: true,
+                activeId: null,
+                items: []
+            });
+            changed = true;
+        });
+        if (changed) {
+            this.firePresetsStateChanged();
+        }
+    }
+
     private fireStateChanged() {
         const snapshot = this.snapshot();
         this.events.fire('referenceImages.stateChanged', snapshot);
@@ -682,6 +711,9 @@ class ReferenceImagesController {
         this.events.function('referenceImages.state', () => this.snapshot());
         this.events.function('referenceImages.fullState', () => this.snapshotFull());
         this.events.function('referenceImages.presetsState', () => this.snapshotPresetsState());
+        this.events.function('referenceImages.ensurePresets', (presets: Array<{ id: string; name?: string }>) => {
+            this.ensurePresets(presets);
+        });
         this.events.on('referenceImages.setMasterVisible', (visible: boolean) => this.setMasterVisible(visible));
         this.events.on('referenceImages.toggleMasterVisible', () => this.toggleMasterVisible());
         this.events.function('referenceImages.createPreset', (name?: string, options?: { empty?: boolean; }) => {

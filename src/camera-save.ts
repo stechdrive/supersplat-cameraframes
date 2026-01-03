@@ -3,11 +3,13 @@ import type { CameraFramesHistory } from './camera-frames-history';
 import type { CameraFramesStateBase, CameraPreset, ProjectionJson, RotationJson, Vec3Json } from './camera-frames-types';
 import { cameraFramesVersion } from './camera-frames-version';
 import { Events } from './events';
+import type { ReferenceImagesPresetsState } from './reference-images-types';
 import type { Scene } from './scene';
 import { localize } from './ui/localization';
 
 const CAMERA_SAVE_TYPE = 'supersplat.camera-frames.main-camera';
-const CAMERA_SAVE_VERSION = 2;
+const CAMERA_SAVE_VERSION = 3;
+const CAMERA_SAVE_VERSION_V2 = 2;
 const CAMERA_SAVE_VERSION_V1 = 1;
 const DEFAULT_REFERENCE_IMAGE_PRESET_ID = 'refpreset-1';
 
@@ -44,7 +46,23 @@ type CameraSaveFileV1 = {
     cameraFramesState: CameraFramesStateBase;
 };
 
+type ReferenceImagePresetEntry = {
+    id: string;
+    name: string;
+};
+
 type CameraSaveFileV2 = {
+    type: typeof CAMERA_SAVE_TYPE;
+    version: typeof CAMERA_SAVE_VERSION_V2;
+    meta?: {
+        app?: string;
+        createdAt?: string;
+        cameraFramesVersion?: string;
+    };
+    cameraPresets: CameraPreset[];
+};
+
+type CameraSaveFileV3 = {
     type: typeof CAMERA_SAVE_TYPE;
     version: typeof CAMERA_SAVE_VERSION;
     meta?: {
@@ -53,6 +71,7 @@ type CameraSaveFileV2 = {
         cameraFramesVersion?: string;
     };
     cameraPresets: CameraPreset[];
+    referenceImagePresets: ReferenceImagePresetEntry[];
 };
 
 type FilePickerAcceptTypeCompat = {
@@ -171,13 +190,16 @@ const requireCameraSaveFileV1 = (root: Record<string, unknown>): CameraSaveFileV
     };
 };
 
-const requireCameraPreset = (value: unknown): CameraPreset => {
+const requireCameraPreset = (value: unknown, fallbackReferenceImagePresetId = DEFAULT_REFERENCE_IMAGE_PRESET_ID): CameraPreset => {
     const preset = requireObject(value, 'cameraPreset');
     const id = requireString(preset.id, 'cameraPreset.id');
     const name = requireString(preset.name, 'cameraPreset.name');
+    const fallbackId = (typeof fallbackReferenceImagePresetId === 'string' && fallbackReferenceImagePresetId) ?
+        fallbackReferenceImagePresetId :
+        DEFAULT_REFERENCE_IMAGE_PRESET_ID;
     const referenceImagePresetId = (typeof preset.referenceImagePresetId === 'string' && preset.referenceImagePresetId) ?
         preset.referenceImagePresetId :
-        DEFAULT_REFERENCE_IMAGE_PRESET_ID;
+        fallbackId;
     const mainCameraObj = requireObject(preset.mainCamera, 'cameraPreset.mainCamera');
     const transformObj = requireObject(mainCameraObj.transform, 'cameraPreset.mainCamera.transform');
     const position = requireVec3(transformObj.position, 'cameraPreset.mainCamera.transform.position');
@@ -219,31 +241,72 @@ const requireCameraPreset = (value: unknown): CameraPreset => {
     };
 };
 
-const requireCameraSaveFileV2 = (root: Record<string, unknown>): CameraSaveFileV2 => {
+const requireReferenceImagePreset = (value: unknown): ReferenceImagePresetEntry => {
+    const preset = requireObject(value, 'referenceImagePreset');
+    const id = requireString(preset.id, 'referenceImagePreset.id');
+    const name = requireString(preset.name, 'referenceImagePreset.name');
+    return { id, name };
+};
+
+const readReferenceImagePresets = (root: Record<string, unknown>): ReferenceImagePresetEntry[] => {
+    if (!Object.prototype.hasOwnProperty.call(root, 'referenceImagePresets')) {
+        return [];
+    }
+    if (!Array.isArray(root.referenceImagePresets)) {
+        throw new Error(localize('cameraSave.invalidField', { field: 'referenceImagePresets' }));
+    }
+    return (root.referenceImagePresets as unknown[]).map(preset => requireReferenceImagePreset(preset));
+};
+
+const requireCameraSaveFileV2 = (root: Record<string, unknown>, fallbackReferenceImagePresetId: string): CameraSaveFileV2 => {
     if (!Array.isArray(root.cameraPresets)) {
         throw new Error(localize('cameraSave.invalidField', { field: 'cameraPresets' }));
     }
-    const cameraPresets = root.cameraPresets.map(preset => requireCameraPreset(preset));
+    const cameraPresets = root.cameraPresets.map(preset => requireCameraPreset(preset, fallbackReferenceImagePresetId));
     return {
         type: CAMERA_SAVE_TYPE,
-        version: CAMERA_SAVE_VERSION,
+        version: CAMERA_SAVE_VERSION_V2,
         meta: readMeta(root),
         cameraPresets
     };
 };
 
-const requireCameraSaveFile = (value: unknown): CameraSaveFileV1 | CameraSaveFileV2 => {
+const requireCameraSaveFileV3 = (root: Record<string, unknown>, fallbackReferenceImagePresetId: string): CameraSaveFileV3 => {
+    if (!Array.isArray(root.cameraPresets)) {
+        throw new Error(localize('cameraSave.invalidField', { field: 'cameraPresets' }));
+    }
+    const cameraPresets = root.cameraPresets.map(preset => requireCameraPreset(preset, fallbackReferenceImagePresetId));
+    const referenceImagePresets = readReferenceImagePresets(root);
+    return {
+        type: CAMERA_SAVE_TYPE,
+        version: CAMERA_SAVE_VERSION,
+        meta: readMeta(root),
+        cameraPresets,
+        referenceImagePresets
+    };
+};
+
+const requireCameraSaveFile = (
+    value: unknown,
+    options?: { fallbackReferenceImagePresetId?: string; }
+): CameraSaveFileV1 | CameraSaveFileV2 | CameraSaveFileV3 => {
     const root = requireObject(value, 'root');
     const type = requireString(root.type, 'type');
     if (type !== CAMERA_SAVE_TYPE) {
         throw new Error(localize('cameraSave.unsupportedType', { type }));
     }
     const version = requireFiniteNumber(root.version, 'version');
+    const fallbackReferenceImagePresetId = (typeof options?.fallbackReferenceImagePresetId === 'string' && options.fallbackReferenceImagePresetId) ?
+        options.fallbackReferenceImagePresetId :
+        DEFAULT_REFERENCE_IMAGE_PRESET_ID;
     if (version === CAMERA_SAVE_VERSION_V1) {
         return requireCameraSaveFileV1(root);
     }
+    if (version === CAMERA_SAVE_VERSION_V2) {
+        return requireCameraSaveFileV2(root, fallbackReferenceImagePresetId);
+    }
     if (version === CAMERA_SAVE_VERSION) {
-        return requireCameraSaveFileV2(root);
+        return requireCameraSaveFileV3(root, fallbackReferenceImagePresetId);
     }
     throw new Error(localize('cameraSave.unsupportedVersion', { version }));
 };
@@ -412,6 +475,49 @@ const registerCameraSave = (events: Events, scene: Scene, cameraFramesController
         }
     ];
 
+    const resolveReferenceImagesPresetsState = () => {
+        const presetsState = events.invoke('referenceImages.presetsState') as ReferenceImagesPresetsState | null;
+        if (!presetsState || !Array.isArray(presetsState.presets)) {
+            return null;
+        }
+        return presetsState;
+    };
+
+    const resolveFallbackReferenceImagePresetId = () => {
+        const presetsState = resolveReferenceImagesPresetsState();
+        if (presetsState && typeof presetsState.activePresetId === 'string' && presetsState.activePresetId) {
+            return presetsState.activePresetId;
+        }
+        return DEFAULT_REFERENCE_IMAGE_PRESET_ID;
+    };
+
+    const ensureReferenceImagePresets = (
+        cameraPresets: CameraPreset[],
+        referenceImagePresets: ReferenceImagePresetEntry[]
+    ) => {
+        if (!events.functions.has('referenceImages.ensurePresets')) {
+            return;
+        }
+        const entries: Array<{ id: string; name?: string }> = [];
+        const seen = new Set<string>();
+        const addEntry = (id: string, name?: string) => {
+            if (!id || seen.has(id)) {
+                return;
+            }
+            seen.add(id);
+            entries.push({ id, name });
+        };
+        referenceImagePresets.forEach((preset) => {
+            addEntry(preset.id, preset.name);
+        });
+        cameraPresets.forEach((preset) => {
+            addEntry(preset.referenceImagePresetId);
+        });
+        if (entries.length > 0) {
+            events.invoke('referenceImages.ensurePresets', entries);
+        }
+    };
+
     const exportCameraPresets = async () => {
         const now = new Date();
         const suggestedName = buildSuggestedFilename(now);
@@ -426,7 +532,12 @@ const registerCameraSave = (events: Events, scene: Scene, cameraFramesController
             return;
         }
 
-        const file: CameraSaveFileV2 = {
+        const referenceImagesPresetsState = resolveReferenceImagesPresetsState();
+        const referenceImagePresets = Array.isArray(referenceImagesPresetsState?.presets) ?
+            referenceImagesPresetsState.presets.map(preset => ({ id: preset.id, name: preset.name })) :
+            [];
+
+        const file: CameraSaveFileV3 = {
             type: CAMERA_SAVE_TYPE,
             version: CAMERA_SAVE_VERSION,
             meta: {
@@ -434,7 +545,8 @@ const registerCameraSave = (events: Events, scene: Scene, cameraFramesController
                 createdAt: now.toISOString(),
                 cameraFramesVersion
             },
-            cameraPresets: state.cameraPresets
+            cameraPresets: state.cameraPresets,
+            referenceImagePresets
         };
 
         const text = JSON.stringify(file, null, 2);
@@ -500,13 +612,19 @@ const registerCameraSave = (events: Events, scene: Scene, cameraFramesController
 
             const text = await file.text();
             const parsed = JSON.parse(text) as unknown;
-            const cameraFile = requireCameraSaveFile(parsed);
+            const fallbackReferenceImagePresetId = resolveFallbackReferenceImagePresetId();
+            const cameraFile = requireCameraSaveFile(parsed, { fallbackReferenceImagePresetId });
+
+            let cameraPresets: CameraPreset[] = [];
+            let selectedPresetId: string | null = null;
+            let referenceImagePresets: ReferenceImagePresetEntry[] = [];
 
             if ('cameraPresets' in cameraFile) {
-                const selectedPresetId = cameraFile.cameraPresets.find(preset => preset.selected)?.id ?? null;
-                cameraFramesHistory.record('cameraFrames.importCameraPresets', () => {
-                    cameraFramesController.replaceCameraPresets(cameraFile.cameraPresets, selectedPresetId);
-                });
+                cameraPresets = cameraFile.cameraPresets;
+                selectedPresetId = cameraPresets.find(preset => preset.selected)?.id ?? null;
+                if ('referenceImagePresets' in cameraFile) {
+                    referenceImagePresets = cameraFile.referenceImagePresets;
+                }
             } else {
                 const rebuiltPose = rebuildMainCameraPose(cameraFile, scene);
                 const fallbackFov = (typeof scene.camera?.fov === 'number' && isFinite(scene.camera.fov)) ? scene.camera.fov : 60;
@@ -518,15 +636,19 @@ const registerCameraSave = (events: Events, scene: Scene, cameraFramesController
                 const preset: CameraPreset = {
                     id: createPresetId(),
                     name: presetName,
-                    referenceImagePresetId: DEFAULT_REFERENCE_IMAGE_PRESET_ID,
+                    referenceImagePresetId: fallbackReferenceImagePresetId,
                     selected: true,
                     mainCamera: cameraFile.mainCamera,
                     cameraFramesState: patchedState
                 };
-                cameraFramesHistory.record('cameraFrames.importCameraPresets', () => {
-                    cameraFramesController.replaceCameraPresets([preset], preset.id);
-                });
+                cameraPresets = [preset];
+                selectedPresetId = preset.id;
             }
+
+            ensureReferenceImagePresets(cameraPresets, referenceImagePresets);
+            cameraFramesHistory.record('cameraFrames.importCameraPresets', () => {
+                cameraFramesController.replaceCameraPresets(cameraPresets, selectedPresetId);
+            });
         } catch (error) {
             if (error instanceof DOMException && error.name === 'AbortError') {
                 return;
