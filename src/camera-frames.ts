@@ -1580,7 +1580,7 @@ export class CameraFramesController {
             return;
         }
         if (referenceImagePresetId && this.events.functions.has('referenceImages.setActivePreset')) {
-            void this.events.invoke('referenceImages.setActivePreset', referenceImagePresetId);
+            this.events.invoke('referenceImages.setActivePreset', referenceImagePresetId).catch(() => undefined);
         }
     }
 

@@ -2,8 +2,8 @@ import { readPsd, type Layer } from 'ag-psd';
 import { Texture } from 'playcanvas';
 
 import { Events } from './events';
-import { DEFAULT_REFERENCE_IMAGE_FILENAME, normalizeReferenceImageFilename } from './reference-image-filename';
 import { ReferenceImageAssets } from './reference-image-assets';
+import { DEFAULT_REFERENCE_IMAGE_FILENAME, normalizeReferenceImageFilename } from './reference-image-filename';
 import { ReferenceImageLoader } from './reference-image-loader';
 import { ReferenceImageRenderer, type RenderParams } from './reference-image-renderer';
 import type { ReferenceImageSourceMeta, ReferenceImageState } from './reference-image-types';
@@ -647,9 +647,10 @@ class ReferenceImagesController {
         const offsetYInt = Math.abs(active.offsetPx.y - Math.round(active.offsetPx.y)) < 1e-3;
         const scaleDefault = Math.abs(active.scalePct - 100) < 1e-3;
         const pixelPerfectEligible = scaleDefault && offsetXInt && offsetYInt;
+        const masterVisible = this.state.masterVisible;
         return {
-            enabled: true,
-            visible: this.state.masterVisible && active.visible,
+            enabled: masterVisible,
+            visible: masterVisible && active.visible,
             layer: active.group,
             opacity: active.opacity,
             scalePct: active.scalePct,
@@ -674,7 +675,7 @@ class ReferenceImagesController {
             this.assets.syncAssets(this.fullState.assets, assetUsage);
 
             const preset = this.getActivePreset();
-            void this.startActivePresetRuntimeRefresh(preset);
+            this.startActivePresetRuntimeRefresh(preset).catch(() => undefined);
 
             this.rebuildActiveState();
             this.updateRenderer();
@@ -762,6 +763,7 @@ class ReferenceImagesController {
 
         // legacy wrappers (single active item)
         this.events.function('referenceImage.state', () => this.snapshotSingle());
+        this.events.on('referenceImage.setEnabled', (value: boolean) => this.legacySetEnabled(value));
         this.events.on('referenceImage.setVisible', (value: boolean) => this.legacySetVisible(value));
         this.events.on('referenceImage.setLayer', (layer: ReferenceImageItemGroup) => this.legacyUpdate({ group: layer }));
         this.events.on('referenceImage.setOpacity', (opacity: number) => this.legacyUpdate({ opacity }));
@@ -815,9 +817,9 @@ class ReferenceImagesController {
                 filename: active.source?.filename
             };
         });
-        this.events.function('docSerialize.referenceImage', () => null);
-        this.events.function('docDeserialize.referenceImage', async () => {
-            // handled by docDeserialize.referenceImages
+        this.events.function('docSerialize.referenceImage', () => this.serializeLegacyDoc());
+        this.events.function('docDeserialize.referenceImage', async (docState: any, blob?: Blob | null) => {
+            await this.deserializeLegacyDoc(docState, blob ?? null);
         });
     }
 
@@ -840,6 +842,21 @@ class ReferenceImagesController {
             return;
         }
         this.remove(activeId);
+    }
+
+    private legacySetEnabled(value: boolean) {
+        const next = !!value;
+        const preset = this.getActivePreset();
+        if (next === preset.masterVisible) {
+            return;
+        }
+        this.historyRecord('referenceImage.enabled', () => {
+            preset.masterVisible = next;
+            this.state.masterVisible = next;
+            this.updateRenderer();
+            this.requestRender();
+            this.fireStateChanged();
+        });
     }
 
     private legacySetVisible(value: boolean) {
@@ -979,7 +996,7 @@ class ReferenceImagesController {
                 this.cloneRuntimeForPresetItems(sourcePreset, idMap);
             }
             this.rebuildActiveState();
-            void this.startActivePresetRuntimeRefresh(preset);
+            this.startActivePresetRuntimeRefresh(preset).catch(() => undefined);
             this.updateRenderer();
             this.requestRender();
             this.fireStateChanged();
@@ -1016,7 +1033,7 @@ class ReferenceImagesController {
             }
             this.cloneRuntimeForPresetItems(sourcePreset, cloned.idMap);
             this.rebuildActiveState();
-            void this.startActivePresetRuntimeRefresh(preset);
+            this.startActivePresetRuntimeRefresh(preset).catch(() => undefined);
             this.updateRenderer();
             this.requestRender();
             this.fireStateChanged();
@@ -1068,7 +1085,7 @@ class ReferenceImagesController {
                 this.fullState.activePresetId = this.fullState.presets[0].id;
             }
             this.rebuildActiveState();
-            void this.startActivePresetRuntimeRefresh(this.getActivePreset());
+            this.startActivePresetRuntimeRefresh(this.getActivePreset()).catch(() => undefined);
             this.updateRenderer();
             this.requestRender();
             this.fireStateChanged();
@@ -1735,6 +1752,29 @@ class ReferenceImagesController {
         return layers;
     }
 
+    private serializeLegacyDoc(): ReferenceImageState | null {
+        const active = this.getActiveItem();
+        if (!active) {
+            return null;
+        }
+        const runtime = this.runtimeById.get(active.id);
+        if (!runtime?.blob) {
+            return null;
+        }
+        const snapshot = this.snapshotSingle();
+        if (!snapshot.source) {
+            return null;
+        }
+        snapshot.source = { ...snapshot.source };
+        if (snapshot.source.filename) {
+            snapshot.source.filename = normalizeReferenceImageFilename(snapshot.source.filename);
+        }
+        if ('objectUrl' in snapshot.source) {
+            delete (snapshot.source as any).objectUrl;
+        }
+        return snapshot;
+    }
+
     private serializeDoc(): ReferenceImagesDocState {
         const snapshot = normalizeFullState(this.snapshotFull());
         snapshot.assets = snapshot.assets.map(asset => ({
@@ -1777,6 +1817,15 @@ class ReferenceImagesController {
             seen.add(asset.id);
         });
         return assets;
+    }
+
+    private async deserializeLegacyDoc(docState: any, blob: Blob | null) {
+        const blobs = new Map<string, Blob>();
+        if (blob instanceof Blob) {
+            const safeName = normalizeReferenceImageFilename(docState?.source?.filename ?? DEFAULT_REFERENCE_IMAGE_FILENAME);
+            blobs.set(`reference-image/${safeName}`, blob);
+        }
+        await this.deserializeDoc(docState, blobs);
     }
 
     private async deserializeDoc(docState: any, blobs: Map<string, Blob>) {
@@ -1896,7 +1945,7 @@ class ReferenceImagesController {
             const assetUsage = this.collectAssetUsage();
             this.assets.syncAssets(this.fullState.assets, assetUsage);
             const activePreset = this.getActivePreset();
-            void this.startActivePresetRuntimeRefresh(activePreset);
+            this.startActivePresetRuntimeRefresh(activePreset).catch(() => undefined);
             this.rebuildActiveState();
             this.updateRenderer();
             this.requestRender();

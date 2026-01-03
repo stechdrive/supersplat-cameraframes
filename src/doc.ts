@@ -2,6 +2,7 @@ import { ElementType } from './element';
 import { Events } from './events';
 import { Model } from './model';
 import { recentFiles } from './recent-files';
+import { normalizeReferenceImageFilename } from './reference-image-filename';
 import { Scene } from './scene';
 import { DownloadWriter, FileStreamWriter } from './serialize/writer';
 import { ZipReader } from './serialize/zip-reader';
@@ -10,7 +11,6 @@ import { Splat } from './splat';
 import { serializePly } from './splat-serialize';
 import { Transform } from './transform';
 import { localize } from './ui/localization';
-import { normalizeReferenceImageFilename } from './reference-image-filename';
 
 // NOTE: This fork extends the upstream ssproj format, but we keep the on-disk
 // `document.json.version` as 0 to maximize the chance that upstream can load it.
