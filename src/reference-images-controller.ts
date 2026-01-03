@@ -674,7 +674,7 @@ class ReferenceImagesController {
                 scaleK: 1,
                 offsetPx: { x: 0, y: 0 },
                 anchor: { ax: 0.5, ay: 0.5 },
-                includeInRender: false,
+                includeInRender: true,
                 source: null,
                 pixelPerfectEligible: false
             };

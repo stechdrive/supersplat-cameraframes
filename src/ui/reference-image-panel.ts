@@ -3,6 +3,7 @@ import { Button, Container, Label, NumericInput, SelectInput } from '@playcanvas
 import { Events } from '../events';
 import { formatInteger, localize } from './localization';
 import arrowSvg from './svg/arrow.svg';
+import closeSvg from './svg/close.svg';
 import deleteSvg from './svg/delete.svg';
 import exportSvg from './svg/export.svg';
 import hiddenSvg from './svg/hidden.svg';
@@ -89,8 +90,17 @@ class ReferenceImagePanel extends Container {
         const panelIcon = new Container({ class: 'panel-header-icon' });
         panelIcon.dom.appendChild(createSvg(referenceImageSvg));
         const panelTitle = new Label({ class: 'panel-header-label', text: localize('panel.reference-image.title') });
+        const closeButton = new Container({ class: ['panel-header-button', 'reference-image-close'] });
+        closeButton.dom.appendChild(createSvg(closeSvg));
+        closeButton.dom.title = localize('panel.reference-image.close');
+        closeButton.dom.setAttribute('aria-label', closeButton.dom.title);
+        ['pointerdown', 'pointerup', 'click'].forEach((evt) => {
+            closeButton.dom.addEventListener(evt, (e: Event) => e.stopPropagation());
+        });
+        closeButton.on('click', () => events.fire('referenceImagePanel.setVisible', false));
         panelHeader.append(panelIcon);
         panelHeader.append(panelTitle);
+        panelHeader.append(closeButton);
 
         // パネルをドラッグで移動できるようにする
         let dragOffset: { x: number; y: number } | null = null;
