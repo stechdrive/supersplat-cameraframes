@@ -195,6 +195,7 @@ export class CameraFramesController {
     private orthoGuardActive = false;
     private uiTarget: 'viewport' | 'main' = 'viewport';
     private mainCameraSelected = false;
+    private suppressReferencePresetSync = false;
     private lastReferenceSyncPresetId: string | null = null;
     private lastReferenceSyncReferencePresetId: string | null = null;
     private lastPresetsStateKey: string | null = null;
@@ -1270,17 +1271,26 @@ export class CameraFramesController {
 
             const prevSnapshot = this.snapshot();
             const prevUiTarget = this.uiTarget;
+            const prevSuppressReferenceSync = this.suppressReferencePresetSync;
+            // 書き出し中は下絵プリセットを明示同期し、stateChanged由来の切替と競合させない
+            this.suppressReferencePresetSync = true;
             try {
                 for (const presetId of presetIds) {
                     if (!this.state.cameraPresets.some(preset => preset.id === presetId)) {
                         continue;
                     }
                     this.applyCameraPreset(presetId, { skipHistory: true });
+                    await this.syncReferenceImagesPreset(presetId);
                     await renderOnce();
                 }
             } finally {
-                this.applySnapshot(prevSnapshot);
-                this.events.fire('cameraFrames.setUiTarget', prevUiTarget);
+                try {
+                    this.applySnapshot(prevSnapshot);
+                    await this.syncReferenceImagesPreset(this.selectedPresetId);
+                    this.events.fire('cameraFrames.setUiTarget', prevUiTarget);
+                } finally {
+                    this.suppressReferencePresetSync = prevSuppressReferenceSync;
+                }
             }
         });
 
@@ -1566,9 +1576,27 @@ export class CameraFramesController {
         }
         this.lastReferenceSyncPresetId = selectedPresetId;
         this.lastReferenceSyncReferencePresetId = referenceImagePresetId;
+        if (this.suppressReferencePresetSync) {
+            return;
+        }
         if (referenceImagePresetId && this.events.functions.has('referenceImages.setActivePreset')) {
             void this.events.invoke('referenceImages.setActivePreset', referenceImagePresetId);
         }
+    }
+
+    private async syncReferenceImagesPreset(presetId: string | null) {
+        if (!presetId || !this.events.functions.has('referenceImages.setActivePreset')) {
+            return;
+        }
+        const preset = this.state.cameraPresets.find(item => item.id === presetId);
+        if (!preset) {
+            return;
+        }
+        const referenceImagePresetId = preset.referenceImagePresetId ?? DEFAULT_REFERENCE_IMAGE_PRESET_ID;
+        if (!referenceImagePresetId) {
+            return;
+        }
+        await this.events.invoke('referenceImages.setActivePreset', referenceImagePresetId);
     }
 
     private emitStateChanged() {

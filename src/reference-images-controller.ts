@@ -311,6 +311,7 @@ class ReferenceImagesController {
     private exportWorkOrder: string[] = [];
     private presetCounter = 0;
     private activePresetGeneration = 0;
+    private activePresetTask: Promise<void> | null = null;
 
     constructor(events: Events, scene: Scene) {
         this.events = events;
@@ -405,7 +406,9 @@ class ReferenceImagesController {
     private startActivePresetRuntimeRefresh(preset: ReferenceImagePreset) {
         const token = this.nextRuntimeGeneration();
         this.pruneRuntimeToActivePreset(preset);
-        return this.ensureRuntimeForActivePreset(preset, token);
+        const task = this.ensureRuntimeForActivePreset(preset, token);
+        this.activePresetTask = task;
+        return task;
     }
 
     private async ensureRuntimeForActivePreset(preset: ReferenceImagePreset, token: number) {
@@ -685,6 +688,7 @@ class ReferenceImagesController {
 
     private reset() {
         this.activePresetGeneration += 1;
+        this.activePresetTask = null;
         for (const runtime of this.runtimeById.values()) {
             this.destroyRuntime(runtime);
         }
@@ -1077,7 +1081,13 @@ class ReferenceImagesController {
         const nextId = (typeof presetId === 'string' && this.fullState.presets.some(preset => preset.id === presetId)) ?
             presetId :
             null;
-        if (!nextId || nextId === this.fullState.activePresetId) {
+        if (!nextId) {
+            return;
+        }
+        if (nextId === this.fullState.activePresetId) {
+            if (this.activePresetTask) {
+                await this.activePresetTask;
+            }
             return;
         }
         this.fullState.activePresetId = nextId;
