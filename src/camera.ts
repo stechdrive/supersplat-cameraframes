@@ -405,7 +405,7 @@ class Camera extends Element {
 
     // transform the world space coordinate to normalized screen coordinate
     worldToScreen(world: Vec3, screen: Vec3) {
-        const { camera } = this.entity.camera;
+        const camera = this.entity.camera;
         if (!buildCameraMatrices(camera, cameraMatricesScratch)) {
             cameraMatricesScratch.viewProjection.mul2(camera.projectionMatrix, camera.viewMatrix);
         }
