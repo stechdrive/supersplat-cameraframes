@@ -17,10 +17,10 @@ import {
     Mat4
 } from 'playcanvas';
 
+import { buildCameraMatrices, type CameraMatrices } from './camera-matrices';
 import { Element, ElementType } from './element';
 import { Serializer } from './serializer';
 import { vertexShader, fragmentShader } from './shaders/infinite-grid-shader';
-import { buildCameraMatrices, type CameraMatrices } from './camera-matrices';
 
 const resolve = (scope: ScopeSpace, values: any) => {
     for (const key in values) {

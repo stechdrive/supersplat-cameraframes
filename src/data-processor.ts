@@ -18,10 +18,10 @@ import {
     BlendState
 } from 'playcanvas';
 
+import { buildCameraMatrices, type CameraMatrices } from './camera-matrices';
 import { vertexShader as boundVS, fragmentShader as boundFS } from './shaders/bound-shader';
 import { vertexShader as intersectionVS, fragmentShader as intersectionFS } from './shaders/intersection-shader';
 import { vertexShader as positionVS, fragmentShader as positionFS } from './shaders/position-shader';
-import { buildCameraMatrices, type CameraMatrices } from './camera-matrices';
 import type { Splat } from './splat';
 
 type MaskOptions = {

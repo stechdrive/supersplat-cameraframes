@@ -15,10 +15,10 @@ import {
     ShaderUtils
 } from 'playcanvas';
 
+import { buildCameraMatrices, type CameraMatrices } from './camera-matrices';
 import { Element, ElementType } from './element';
 import { Serializer } from './serializer';
 import { vertexShader, fragmentShader } from './shaders/eye-level-shader';
-import { buildCameraMatrices, type CameraMatrices } from './camera-matrices';
 
 const resolve = (scope: ScopeSpace, values: Record<string, any>) => {
     for (const key in values) {

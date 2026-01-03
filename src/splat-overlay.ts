@@ -16,8 +16,8 @@ import {
     Mat4
 } from 'playcanvas';
 
-import { ElementType, Element } from './element';
 import { buildCameraMatrices, type CameraMatrices } from './camera-matrices';
+import { ElementType, Element } from './element';
 import { vertexShader, fragmentShader } from './shaders/splat-overlay-shader';
 import { Splat } from './splat';
 
