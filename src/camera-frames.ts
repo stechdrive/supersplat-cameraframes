@@ -136,7 +136,8 @@ export class CameraFramesController {
         exportModelLayers: false,
         exportTarget: 'current',
         exportPresetIds: [],
-        cameraPresets: []
+        cameraPresets: [],
+        selectedPresetId: null
     };
     private selectedId: string = null;
     private selectedPresetId: string | null = null;
@@ -1435,9 +1436,11 @@ export class CameraFramesController {
         const mainTransform = this.getMainCameraTransform() ?? this.scene.camera.getTransform();
         const rawBaseFov = this.scene.camera?.fov ?? baseState.renderBox?.projection?.baseFov ?? 60;
         const baseFov = (typeof rawBaseFov === 'number' && isFinite(rawBaseFov)) ? rawBaseFov : 60;
+        const referenceImagePresetId = this.findSelectedPreset()?.referenceImagePresetId ?? 'refpreset-1';
         return {
             id: this.createPresetId(),
             name: name ?? this.nextPresetName(),
+            referenceImagePresetId,
             selected: true,
             mainCamera: {
                 transform: {
@@ -1521,6 +1524,7 @@ export class CameraFramesController {
 
     private selectCameraPreset(id: string | null) {
         this.selectedPresetId = id;
+        this.state.selectedPresetId = id;
         this.state.cameraPresets.forEach((preset) => {
             preset.selected = preset.id === id;
         });
@@ -2708,6 +2712,7 @@ export class CameraFramesController {
             },
             setSelectedPresetId: (value) => {
                 this.selectedPresetId = value;
+                this.state.selectedPresetId = value;
             },
             overlay: this.overlay,
             frustumDebugCache: this.frustumDebugCache,
@@ -2778,6 +2783,7 @@ export class CameraFramesController {
             },
             setSelectedPresetId: (value) => {
                 this.selectedPresetId = value;
+                this.state.selectedPresetId = value;
             },
             setViewportPoseRuntime: (value) => {
                 this.viewportPoseRuntime = value;

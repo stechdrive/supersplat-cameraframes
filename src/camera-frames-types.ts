@@ -66,6 +66,7 @@ export type RotationJson = { yaw: number; pitch: number; roll: number; };
 export type CameraPreset = {
     id: string;
     name: string;
+    referenceImagePresetId: string;
     selected?: boolean;
     mainCamera: {
         transform: { position: Vec3Json; rotation: RotationJson; };
@@ -79,6 +80,7 @@ export type CameraFramesState = CameraFramesStateBase & {
     cameraPresets: CameraPreset[];
     exportTarget?: ExportTarget;
     exportPresetIds?: string[];
+    selectedPresetId?: string | null;
 };
 
 export type Viewport = { vw: number; vh: number; };

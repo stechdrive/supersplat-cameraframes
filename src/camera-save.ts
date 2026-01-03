@@ -9,6 +9,7 @@ import { localize } from './ui/localization';
 const CAMERA_SAVE_TYPE = 'supersplat.camera-frames.main-camera';
 const CAMERA_SAVE_VERSION = 2;
 const CAMERA_SAVE_VERSION_V1 = 1;
+const DEFAULT_REFERENCE_IMAGE_PRESET_ID = 'refpreset-1';
 
 type MainCameraJson = {
     transform: {
@@ -174,6 +175,9 @@ const requireCameraPreset = (value: unknown): CameraPreset => {
     const preset = requireObject(value, 'cameraPreset');
     const id = requireString(preset.id, 'cameraPreset.id');
     const name = requireString(preset.name, 'cameraPreset.name');
+    const referenceImagePresetId = (typeof preset.referenceImagePresetId === 'string' && preset.referenceImagePresetId) ?
+        preset.referenceImagePresetId :
+        DEFAULT_REFERENCE_IMAGE_PRESET_ID;
     const mainCameraObj = requireObject(preset.mainCamera, 'cameraPreset.mainCamera');
     const transformObj = requireObject(mainCameraObj.transform, 'cameraPreset.mainCamera.transform');
     const position = requireVec3(transformObj.position, 'cameraPreset.mainCamera.transform.position');
@@ -204,6 +208,7 @@ const requireCameraPreset = (value: unknown): CameraPreset => {
     return {
         id,
         name,
+        referenceImagePresetId,
         selected,
         mainCamera: {
             transform: { position, rotation },
@@ -513,6 +518,7 @@ const registerCameraSave = (events: Events, scene: Scene, cameraFramesController
                 const preset: CameraPreset = {
                     id: createPresetId(),
                     name: presetName,
+                    referenceImagePresetId: DEFAULT_REFERENCE_IMAGE_PRESET_ID,
                     selected: true,
                     mainCamera: cameraFile.mainCamera,
                     cameraFramesState: patchedState
