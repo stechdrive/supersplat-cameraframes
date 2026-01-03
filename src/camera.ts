@@ -29,6 +29,7 @@ import {
     BLEND_NONE
 } from 'playcanvas';
 
+import { buildCameraMatrices, type CameraMatrices } from './camera-matrices';
 import { MIN_NEAR_CLIP } from './clip-constants';
 import { PointerController } from './controllers';
 import { Element, ElementType } from './element';
@@ -55,9 +56,21 @@ const ray = new Ray();
 const vec = new Vec3();
 const vecb = new Vec3();
 const va = new Vec3();
+const cameraMatricesScratch: CameraMatrices = {
+    projection: new Mat4(),
+    viewInv: new Mat4(),
+    view: new Mat4(),
+    viewProjection: new Mat4()
+};
+const cameraInvViewProj = new Mat4();
+const cameraClip = new Vec4();
+const cameraWorld4 = new Vec4();
+const cameraFarBL = new Vec3();
+const cameraFarBR = new Vec3();
+const cameraFarTL = new Vec3();
+const cameraPos = new Vec3();
 const orbitOffset = new Vec3();
 const orbitForward = new Vec3();
-const m = new Mat4();
 const v4 = new Vec4();
 const rollAxis = new Vec3();
 const quatYawPitch = new Quat();
@@ -69,6 +82,16 @@ const quatOrbitPitch = new Quat();
 // modulo dealing with negative numbers
 const mod = (n: number, m: number) => ((n % m) + m) % m;
 const MAX_ORTHO_DEPTH_RATIO = 8192;
+const unprojectNdc = (out: Vec3, invViewProj: Mat4, x: number, y: number, z: number) => {
+    cameraClip.set(x, y, z, 1);
+    invViewProj.transformVec4(cameraClip, cameraWorld4);
+    if (!isFinite(cameraWorld4.w) || Math.abs(cameraWorld4.w) <= 1e-6) {
+        return false;
+    }
+    const iw = 1 / cameraWorld4.w;
+    out.set(cameraWorld4.x * iw, cameraWorld4.y * iw, cameraWorld4.z * iw);
+    return true;
+};
 
 type CameraCustomFrustum = { left: number, right: number, bottom: number, top: number, near: number, far: number };
 
@@ -383,10 +406,12 @@ class Camera extends Element {
     // transform the world space coordinate to normalized screen coordinate
     worldToScreen(world: Vec3, screen: Vec3) {
         const { camera } = this.entity.camera;
-        m.mul2(camera.projectionMatrix, camera.viewMatrix);
+        if (!buildCameraMatrices(camera, cameraMatricesScratch)) {
+            cameraMatricesScratch.viewProjection.mul2(camera.projectionMatrix, camera.viewMatrix);
+        }
 
         v4.set(world.x, world.y, world.z, 1);
-        m.transformVec4(v4, v4);
+        cameraMatricesScratch.viewProjection.transformVec4(v4, v4);
 
         screen.x = v4.x / v4.w * 0.5 + 0.5;
         screen.y = 1.0 - (v4.y / v4.w * 0.5 + 0.5);
@@ -473,35 +498,111 @@ class Camera extends Element {
             const device = this.scene.graphicsDevice;
             const entity = this.entity;
             const camera = entity.camera;
+            const { scope } = device;
 
             const set = (name: string, vec: Vec3) => {
-                device.scope.resolve(name).setValue([vec.x, vec.y, vec.z]);
+                scope.resolve(name).setValue([vec.x, vec.y, vec.z]);
+            };
+            const setRayValid = (value: number) => {
+                scope.resolve('ray_valid').setValue(value);
             };
 
-            // get frustum corners in world space
-            const points = camera.camera.getFrustumCorners(-100);
-            const worldTransform = entity.getWorldTransform();
-            for (let i = 0; i < points.length; i++) {
-                worldTransform.transformPoint(points[i], points[i]);
-            }
+            setRayValid(0);
 
-            // near
-            if (camera.projection === PROJECTION_PERSPECTIVE) {
-                // perspective
-                set('near_origin', worldTransform.getTranslation());
-                set('near_x', Vec3.ZERO);
-                set('near_y', Vec3.ZERO);
-            } else {
-                // orthographic
+            const customFrustumActive = this.customFrustum !== null;
+            const isOrtho = camera.projection === PROJECTION_ORTHOGRAPHIC;
+
+            if (isOrtho && !customFrustumActive) {
+                // legacy ortho path for stable UX (avoid near-plane pop)
+                const points = camera.camera.getFrustumCorners(-100);
+                const worldTransform = entity.getWorldTransform();
+                for (let i = 0; i < points.length; i++) {
+                    worldTransform.transformPoint(points[i], points[i]);
+                }
+
                 set('near_origin', points[3]);
                 set('near_x', va.sub2(points[0], points[3]));
                 set('near_y', va.sub2(points[2], points[3]));
+
+                set('far_origin', points[7]);
+                set('far_x', va.sub2(points[4], points[7]));
+                set('far_y', va.sub2(points[6], points[7]));
+
+                setRayValid(1);
+                return;
             }
 
-            // far
-            set('far_origin', points[7]);
-            set('far_x', va.sub2(points[4], points[7]));
-            set('far_y', va.sub2(points[6], points[7]));
+            const matricesOk = buildCameraMatrices(camera, cameraMatricesScratch);
+            if (matricesOk) {
+                cameraInvViewProj.copy(cameraMatricesScratch.viewProjection);
+            }
+            if (!matricesOk || !cameraInvViewProj.invert()) {
+                if (!customFrustumActive) {
+                    // fallback to legacy when no custom frustum is active
+                    const points = camera.camera.getFrustumCorners(-100);
+                    const worldTransform = entity.getWorldTransform();
+                    for (let i = 0; i < points.length; i++) {
+                        worldTransform.transformPoint(points[i], points[i]);
+                    }
+
+                    if (camera.projection === PROJECTION_PERSPECTIVE) {
+                        worldTransform.getTranslation(cameraPos);
+                        set('near_origin', cameraPos);
+                        set('near_x', Vec3.ZERO);
+                        set('near_y', Vec3.ZERO);
+                    } else {
+                        set('near_origin', points[3]);
+                        set('near_x', va.sub2(points[0], points[3]));
+                        set('near_y', va.sub2(points[2], points[3]));
+                    }
+
+                    set('far_origin', points[7]);
+                    set('far_x', va.sub2(points[4], points[7]));
+                    set('far_y', va.sub2(points[6], points[7]));
+                    setRayValid(1);
+                }
+                return;
+            }
+
+            const okFar = unprojectNdc(cameraFarBL, cameraInvViewProj, -1, -1, 1) &&
+                unprojectNdc(cameraFarBR, cameraInvViewProj, 1, -1, 1) &&
+                unprojectNdc(cameraFarTL, cameraInvViewProj, -1, 1, 1);
+            if (!okFar) {
+                if (!customFrustumActive) {
+                    const points = camera.camera.getFrustumCorners(-100);
+                    const worldTransform = entity.getWorldTransform();
+                    for (let i = 0; i < points.length; i++) {
+                        worldTransform.transformPoint(points[i], points[i]);
+                    }
+
+                    if (camera.projection === PROJECTION_PERSPECTIVE) {
+                        worldTransform.getTranslation(cameraPos);
+                        set('near_origin', cameraPos);
+                        set('near_x', Vec3.ZERO);
+                        set('near_y', Vec3.ZERO);
+                    } else {
+                        set('near_origin', points[3]);
+                        set('near_x', va.sub2(points[0], points[3]));
+                        set('near_y', va.sub2(points[2], points[3]));
+                    }
+
+                    set('far_origin', points[7]);
+                    set('far_x', va.sub2(points[4], points[7]));
+                    set('far_y', va.sub2(points[6], points[7]));
+                    setRayValid(1);
+                }
+                return;
+            }
+
+            cameraMatricesScratch.viewInv.getTranslation(cameraPos);
+            set('near_origin', cameraPos);
+            set('near_x', Vec3.ZERO);
+            set('near_y', Vec3.ZERO);
+
+            set('far_origin', cameraFarBL);
+            set('far_x', va.sub2(cameraFarBR, cameraFarBL));
+            set('far_y', va.sub2(cameraFarTL, cameraFarBL));
+            setRayValid(1);
         };
 
         // temp control of camera start

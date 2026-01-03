@@ -12,16 +12,24 @@ import {
     WebglGraphicsDevice,
     BlendState,
     DepthState,
-    CULLFACE_NONE
+    CULLFACE_NONE,
+    Mat4
 } from 'playcanvas';
 
 import { ElementType, Element } from './element';
+import { buildCameraMatrices, type CameraMatrices } from './camera-matrices';
 import { vertexShader, fragmentShader } from './shaders/splat-overlay-shader';
 import { Splat } from './splat';
 
 class SplatOverlay extends Element {
     meshInstance: MeshInstance;
     splat: Splat;
+    cameraMatrices: CameraMatrices = {
+        projection: new Mat4(),
+        viewInv: new Mat4(),
+        view: new Mat4(),
+        viewProjection: new Mat4()
+    };
 
     constructor() {
         super(ElementType.debug);
@@ -167,9 +175,13 @@ class SplatOverlay extends Element {
 
         // 修正: シェーダ側の自動ユニフォーム依存を廃止し、明示的にメインカメラの行列を渡す。
         // これにより、postrender 時に他のカメラ（ピッカー等）の行列が残っている可能性やタイミングのズレを排除する。
-        const cameraEntity = this.scene.camera.entity;
-        material.setParameter('view_matrix', cameraEntity.camera.viewMatrix.data);
-        material.setParameter('projection_matrix', cameraEntity.camera.projectionMatrix.data);
+        const cameraComponent = this.scene.camera.entity.camera;
+        if (!buildCameraMatrices(cameraComponent, this.cameraMatrices)) {
+            this.cameraMatrices.view.copy(cameraComponent.viewMatrix);
+            this.cameraMatrices.projection.copy(cameraComponent.projectionMatrix);
+        }
+        material.setParameter('view_matrix', this.cameraMatrices.view.data);
+        material.setParameter('projection_matrix', this.cameraMatrices.projection.data);
 
         this.scene.app.drawMeshInstance(this.meshInstance);
 

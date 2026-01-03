@@ -18,6 +18,7 @@ import {
 import { Element, ElementType } from './element';
 import { Serializer } from './serializer';
 import { vertexShader, fragmentShader } from './shaders/eye-level-shader';
+import { buildCameraMatrices, type CameraMatrices } from './camera-matrices';
 
 const resolve = (scope: ScopeSpace, values: Record<string, any>) => {
     for (const key in values) {
@@ -58,6 +59,12 @@ class EyeLevel extends Element {
 
         const viewProjectionMatrix = new Mat4();
         const viewProjectionInverse = new Mat4();
+        const cameraMatrices: CameraMatrices = {
+            projection: new Mat4(),
+            viewInv: new Mat4(),
+            view: new Mat4(),
+            viewProjection: viewProjectionMatrix
+        };
 
         this.scene.camera.entity.camera.on('preRenderLayer', (layer: Layer, transparent: boolean) => {
             const { scene } = this;
@@ -73,12 +80,9 @@ class EyeLevel extends Element {
                 // Eye-level overlay fills the screen in orthographic projection.
                 return;
             }
-            const projection = camera.projectionMatrix;
-            const view = camera.viewMatrix;
-            if (!projection || !view) {
-                return;
+            if (!buildCameraMatrices(camera, cameraMatrices)) {
+                viewProjectionMatrix.mul2(camera.projectionMatrix, camera.viewMatrix);
             }
-            viewProjectionMatrix.mul2(projection, view);
 
             device.setBlendState(blendState);
             device.setCullMode(CULLFACE_NONE);

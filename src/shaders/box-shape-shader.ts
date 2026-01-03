@@ -64,6 +64,7 @@ const fragmentShader = /* glsl */ `
     uniform vec3 far_y;
 
     uniform vec2 targetSize;
+    uniform float ray_valid;
 
     bool writeDepth(float alpha) {
         ivec2 uv = ivec2(gl_FragCoord.xy);
@@ -78,6 +79,9 @@ const fragmentShader = /* glsl */ `
     }
 
     void main() {
+        if (ray_valid < 0.5) {
+            discard;
+        }
         vec2 clip = gl_FragCoord.xy / targetSize;
         vec3 worldNear = near_origin + near_x * clip.x + near_y * clip.y;
         vec3 worldFar = far_origin + far_x * clip.x + far_y * clip.y;
