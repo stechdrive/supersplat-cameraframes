@@ -1,5 +1,24 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-  <circle cx="12" cy="12" r="3" />
+<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <mask id="eye-cutout">
+      <rect width="24" height="24" fill="white"/>
+      <g transform="translate(18, 18) scale(1.35)">
+        <path d="M-4 0 C-2 -2.5 2 -2.5 4 0 C2 2.5 -2 2.5 -4 0 Z" fill="black" stroke="black" stroke-width="3" stroke-linejoin="round"/>
+      </g>
+    </mask>
+  </defs>
 
-  <polyline points="4 8 4 4 8 4" /> <polyline points="20 8 20 4 16 4" /> <polyline points="4 16 4 20 8 20" /> <polyline points="20 16 20 20 16 20" /> </svg>
+  <g stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+    
+    <g mask="url(#eye-cutout)">
+      <path d="M4 7H7.5L9 5H13L14.5 7H18C19.1046 7 20 7.89543 20 9V15C20 16.1046 19.1046 17 18 17H4C2.89543 17 2 16.1046 2 15V9C2 7.89543 2.89543 7 4 7Z"/>
+      <circle cx="11" cy="12" r="3"/>
+    </g>
+    
+    <g transform="translate(18, 18) scale(1.35)" stroke-width="1.11">
+      <path d="M-4 0C-2 -2.5 2 -2.5 4 0" />
+      <path d="M-4 0C-2 2.5 2 2.5 4 0" />
+      <circle cx="0" cy="0" r="1.5"/>
+    </g>
+  </g>
+</svg>
