@@ -193,6 +193,7 @@ export class CameraFramesController {
     private applyingPose = false;
     private suppressViewportFovCapture = false;
     private orthoGuardActive = false;
+    private mainEditMode = false;
     private uiTarget: 'viewport' | 'main' = 'viewport';
     private mainCameraSelected = false;
     private suppressReferencePresetSync = false;
@@ -532,18 +533,28 @@ export class CameraFramesController {
         this.requestRender();
     }
 
+    private updateMainCameraSelected() {
+        const nextSelected = this.state.enabled || this.mainEditMode;
+        const changed = this.mainCameraSelected !== nextSelected;
+        this.mainCameraSelected = nextSelected;
+        return changed;
+    }
+
+    private setMainEditMode(value: boolean) {
+        this.mainEditMode = !!value;
+        this.updateMainCameraSelected();
+        this.requestRender();
+    }
+
     private setUiTarget(target: 'viewport' | 'main') {
         const canSelectMain = this.canSelectMainTarget();
         const resolved = (target === 'main' && canSelectMain) ? 'main' : 'viewport';
         const changed = this.uiTarget !== resolved;
-        const nextSelected = resolved === 'main';
-        const selectionChanged = this.mainCameraSelected !== nextSelected;
         this.uiTarget = resolved;
-        this.mainCameraSelected = nextSelected;
         if (changed) {
             this.events.fire('cameraFrames.uiTargetChanged', this.uiTarget);
         }
-        if (selectionChanged) {
+        if (this.updateMainCameraSelected()) {
             this.requestRender();
         }
         if (resolved === 'main') {
@@ -969,6 +980,7 @@ export class CameraFramesController {
         this.events.on('cameraFrames.toggleEnabled', () => this.setEnabled(!this.state.enabled));
         this.events.function('cameraFrames.viewportLens', () => this.getViewportLensState());
         this.events.on('cameraFrames.setViewportLens', (mm: number) => this.setViewportLensMm(mm));
+        this.events.on('cameraFrames.setMainEditMode', (value: boolean) => this.setMainEditMode(value));
         this.events.function('cameraFrames.uiTarget', () => this.uiTarget);
         this.events.function('cameraFrames.uiTargetAvailability', () => ({
             uiTarget: this.uiTarget,
@@ -1850,6 +1862,7 @@ export class CameraFramesController {
                 this.applyViewportNearOverride();
             }
             this.events.fire('cameraFrames.enabled', this.state.enabled);
+            this.updateMainCameraSelected();
             this.emitStateChanged();
             this.updateFovInfo();
             this.frustumDebugCache.points = null;
@@ -1871,6 +1884,7 @@ export class CameraFramesController {
             suppressHistory,
             getStateEnabled: () => this.state.enabled,
             getUiTarget: () => this.uiTarget,
+            getMainEditMode: () => this.mainEditMode,
             getNearClip: () => this.state.nearClip,
             setNearClipState: (next) => {
                 this.state.nearClip = next;

@@ -153,6 +153,7 @@ type SetNearClipParams = {
     suppressHistory: boolean;
     getStateEnabled: () => boolean;
     getUiTarget: () => 'viewport' | 'main';
+    getMainEditMode: () => boolean;
     getNearClip: () => number | null;
     setNearClipState: (value: number | null) => void;
     applyNearClipOverride: () => void;
@@ -893,6 +894,7 @@ export const setNearClip = ({
     const apply = () => {
         const stateEnabled = getStateEnabled();
         const uiTarget = getUiTarget();
+        const mainEditMode = getMainEditMode();
         const sanitized = computeSafeNearClip(value);
         if (getNearClip() === sanitized) return;
         setNearClipState(sanitized);
@@ -900,7 +902,7 @@ export const setNearClip = ({
             applyNearClipOverride();
             rebuildBaseFrustum();
             syncCameraFrustum();
-        } else if (uiTarget === 'main') {
+        } else if (uiTarget === 'main' || mainEditMode) {
             rebuildBaseFrustum();
             invalidateFrustumDebugCache();
         }
