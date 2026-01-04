@@ -852,11 +852,11 @@ class CameraFramesPanel extends Panel {
         updateMainPropsPanelVisibility = () => {
             const enabled = canShowMainPropsPanel();
             const visible = enabled && mainPropsPanelOpen;
-            events.fire('mainCameraPropsPanel.setVisible', visible);
             if (mainPropsPanelVisible !== visible) {
                 mainPropsPanelVisible = visible;
                 events.fire('cameraFrames.setMainEditMode', mainPropsPanelVisible);
             }
+            events.fire('mainCameraPropsPanel.setVisible', visible);
         };
 
         events.on('cameraFramesPanel.visible', (visible: boolean) => {

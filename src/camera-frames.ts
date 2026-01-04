@@ -459,8 +459,13 @@ export class CameraFramesController {
         return poseToTransformCamera(this.scene, pose);
     }
 
-    private getMainCameraTransform() {
-        return this.poseToTransform(this.ensureMainCameraPose());
+    private getMainCameraTransform(allowInit = false) {
+        const pose = allowInit ? this.ensureMainCameraPose() : this.clonePoseSnapshot(this.state.mainCameraPose);
+        if (!pose) {
+            return null;
+        }
+        this.forceMainCameraPoseOrthoOff(pose);
+        return this.poseToTransform(pose);
     }
 
     private ensureMainCameraPose(): CameraPoseSnapshot | null {
@@ -979,7 +984,7 @@ export class CameraFramesController {
             this.setUiTarget(target);
             this.updatePointerFromLast();
         });
-        this.events.function('cameraFrames.mainTransform', () => this.getMainCameraTransform());
+        this.events.function('cameraFrames.mainTransform', () => this.getMainCameraTransform(this.state.enabled || this.mainEditMode));
         this.events.function('cameraFrames.orthoToggleAllowed', () => this.orthoToggleAllowed());
         this.events.function('cameraFrames.orthoBlocked', () => this.orthoBlocked());
         this.events.function('cameraFrames.allowViewCube', () => this.allowViewCube());

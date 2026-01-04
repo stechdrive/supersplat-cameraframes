@@ -521,6 +521,14 @@ class MainCameraPropsPanel extends Container {
 
         events.on('mainCameraPropsPanel.setVisible', (visible: boolean) => {
             this.hidden = !visible;
+            if (!visible || !appReady) {
+                return;
+            }
+            const state = lastState ?? {
+                enabled: framesEnabled,
+                nearClip: events.invoke('camera.near')
+            };
+            updateFromState(state, true);
         });
 
         events.function('mainCameraPropsPanel.visible', () => {
