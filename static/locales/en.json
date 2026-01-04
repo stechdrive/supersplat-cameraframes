@@ -91,6 +91,7 @@
     "panel.camera-frames.help.iframe-title": "Camera Frames Manual",
     "panel.camera-frames.toggle": "Enable Camera Frames",
     "panel.camera-frames.mode.main": "Main Camera",
+    "panel.camera-frames.mode.toggle": "Toggle Main/Edit Camera",
     "panel.camera-frames.main-props.toggle": "Main Camera Controls",
     "panel.camera-frames.main-props.title": "Main Camera Controls",
     "panel.camera-frames.main-props.close": "Close Main Camera Controls",

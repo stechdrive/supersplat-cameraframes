@@ -3,7 +3,7 @@ import { Button, Container, Label, NumericInput, SliderInput } from '@playcanvas
 import { DEFAULT_NEAR_CLIP, MIN_NEAR_CLIP } from '../clip-constants';
 import { Events } from '../events';
 import { localize } from './localization';
-import mainCamSvg from './svg/camera-panel.svg';
+import cameraPropertySvg from './svg/camera-property.svg';
 import closeSvg from './svg/close.svg';
 import lockSvg from './svg/select-lock.svg';
 import unlockSvg from './svg/select-unlock.svg';
@@ -58,7 +58,7 @@ class MainCameraPropsPanel extends Container {
 
         const panelHeader = new Container({ class: 'panel-header' });
         const panelIcon = new Container({ class: 'panel-header-icon' });
-        panelIcon.dom.appendChild(createSvg(mainCamSvg));
+        panelIcon.dom.appendChild(createSvg(cameraPropertySvg));
         const panelTitle = new Label({ class: 'panel-header-label', text: localize('panel.camera-frames.main-props.title') });
         const closeButton = new Container({ class: ['panel-header-button', 'main-camera-props-close'] });
         closeButton.dom.appendChild(createSvg(closeSvg));

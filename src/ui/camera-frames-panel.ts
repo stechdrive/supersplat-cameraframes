@@ -270,7 +270,8 @@ class CameraFramesPanel extends Panel {
 
         const mainCamBtn = new Container({ class: ['toggle-icon-btn', 'main-mode-toggle'] });
         mainCamBtn.dom.appendChild(createSvg(mainCamSvg));
-        mainCamBtn.dom.title = localize('panel.camera-frames.mode.main');
+        mainCamBtn.dom.title = localize('panel.camera-frames.mode.toggle');
+        mainCamBtn.dom.setAttribute('aria-label', localize('panel.camera-frames.mode.toggle'));
 
         const mainPropsBtn = new Container({ class: ['toggle-icon-btn', 'main-props-toggle'] });
         mainPropsBtn.dom.appendChild(createSvg(cameraPropertySvg));

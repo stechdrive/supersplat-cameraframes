@@ -91,6 +91,7 @@
     "panel.camera-frames.help.iframe-title": "CAMERA FRAMES 操作マニュアル",
     "panel.camera-frames.toggle": "カメラフレームを有効化",
     "panel.camera-frames.mode.main": "メインカメラ表示",
+    "panel.camera-frames.mode.toggle": "メイン/編集カメラ切り替え",
     "panel.camera-frames.main-props.toggle": "メインカメラ操作",
     "panel.camera-frames.main-props.title": "メインカメラ操作",
     "panel.camera-frames.main-props.close": "メインカメラ操作を閉じる",
