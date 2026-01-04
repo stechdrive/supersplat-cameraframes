@@ -383,12 +383,18 @@
     right: calc(480px + var(--camera-frames-help-offset-right, 0px));
     width: 320px;
     z-index: 5;
-    overflow: visible;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    overflow: hidden;
+    box-sizing: border-box;
 
     .panel-header {
         cursor: move;
         user-select: none;
         touch-action: none;
+        width: 100%;
+        box-sizing: border-box;
     }
 
     &.dragging {
@@ -404,6 +410,8 @@
         flex-direction: column;
         gap: 6px;
         padding: 8px;
+        width: 100%;
+        box-sizing: border-box;
     }
 }
 

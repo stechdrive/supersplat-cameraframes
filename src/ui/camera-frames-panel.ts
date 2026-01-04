@@ -4,6 +4,7 @@ import { DEFAULT_NEAR_CLIP, MIN_NEAR_CLIP } from '../clip-constants';
 import { Events } from '../events';
 import { formatInteger, localize } from './localization';
 import mainCamSvg from './svg/camera-panel.svg';
+import cameraPropertySvg from './svg/camera-property.svg';
 import cameraResetSvg from './svg/camera-reset.svg';
 import collapseSvg from './svg/collapse.svg';
 import deleteSvg from './svg/delete.svg';
@@ -19,7 +20,6 @@ import referenceImageSvg from './svg/reference-image.svg';
 import lockSvg from './svg/select-lock.svg';
 import unlockSvg from './svg/select-unlock.svg';
 import shownSvg from './svg/shown.svg';
-import viewportSvg from './svg/viewport.svg';
 
 type CameraFramesStateBase = {
     enabled: boolean;
@@ -267,7 +267,7 @@ class CameraFramesPanel extends Panel {
         mainCamBtn.dom.title = localize('panel.camera-frames.mode.main');
 
         const mainPropsBtn = new Container({ class: ['toggle-icon-btn', 'main-props-toggle'] });
-        mainPropsBtn.dom.appendChild(createSvg(viewportSvg));
+        mainPropsBtn.dom.appendChild(createSvg(cameraPropertySvg));
         mainPropsBtn.dom.title = localize('panel.camera-frames.main-props.toggle');
         mainPropsBtn.dom.setAttribute('aria-label', localize('panel.camera-frames.main-props.toggle'));
 
