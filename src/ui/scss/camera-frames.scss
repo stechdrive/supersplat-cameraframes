@@ -455,15 +455,16 @@
     border-left: 2px solid rgba($bcg-light, 0.6);
     background-color: rgba($bcg-dark, 0.35);
     border-radius: 4px;
-    max-height: clamp(140px, 35vh, 300px);
-    overflow-y: auto;
-    scrollbar-gutter: stable;
 }
 
 .camera-presets-list {
     display: flex;
     flex-direction: column;
     gap: 4px;
+    max-height: clamp(140px, 35vh, 300px);
+    overflow-y: auto;
+    scrollbar-gutter: stable;
+    min-height: 0;
 }
 
 .camera-preset-row {
@@ -475,6 +476,8 @@
     background-color: rgba($bcg-dark, 0.2);
     cursor: pointer;
     box-sizing: border-box;
+    flex: 0 0 auto;
+    min-height: 44px;
 
     &:hover {
         background-color: rgba($bcg-dark, 0.5);
