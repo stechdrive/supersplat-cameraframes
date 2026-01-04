@@ -296,12 +296,12 @@
 	            <li><span class="control">モデルレイヤー</span>: PSD時のみ有効。GLBモデルをモデル単位でレイヤー出力します（シーンが重い場合は時間がかかります）。</li>
 	            <li><span class="control">下絵（出力）</span>: 出力対象の下絵があるとアイコンが有効/点灯します。クリックで下絵パネルを開き、各下絵の<span class="control">出力</span>を切り替えます（PSDはレイヤー、PNGは合成）。</li>
 	            <li><span class="control">書き出し詳細</span>: <span class="control">ファイル名</span>を編集できます。</li>
-                <li><span class="control">書き出し対象</span>: 現在のカメラ/全カメラ/選択カメラを切り替えます。選択カメラ時はカメラデータ一覧にチェックが表示され、対象を選べます。</li>
+                <li><span class="control">書き出し対象</span>: 現在のカメラ/全カメラ/選択カメラを切り替えます。選択カメラ時はカメラリスト内にチェックが表示され、対象を選べます。</li>
 	            <li><span class="control">レンダリング</span>: 現在の構図でファイルに画像を出力します。</li>
 	        </ul>
 
         <p style="text-align: left; font-size: 1.0em; color: #5a5a5a;">
-            <span class="control">カメラデータ</span> は、<span class="keyword">メインカメラの構図</span>と Camera Frames の設定（大判指定・撮影フレーム・ニアクリップ等）をプリセットとして管理する機能です。リストをクリックして切り替え、内容は<span
+            <span class="control">カメラリスト</span> は、<span class="keyword">メインカメラの構図</span>と Camera Frames の設定（大判指定・撮影フレーム・ニアクリップ等）をプリセットとして管理する機能です。リストをクリックして切り替え、内容は<span
                 class="control">.ssproj</span>に保存されます。<span class="control">.sscam</span>はリスト全体を一括で書き出し/読み込みします。
         </p>
         <ul class="operation-list">
@@ -309,7 +309,7 @@
             <li><span class="control">削除</span>: ヘッダーの<span class="control">削除アイコン</span>で、選択中プリセットを削除します。</li>
             <li><span class="control">適用</span>: リスト項目をクリックすると即座に構図が切り替わります。</li>
             <li><span class="control">名前編集</span>: 項目名をダブルクリックで編集します（Enter/フォーカス外で確定、Escでキャンセル）。</li>
-            <li><span class="control">下絵（Reference Image）</span>: 各カメラに紐づく下絵セットを行内のセレクトで切り替えます。カメラ追加時は共通の<span class="control">RefImg:blank</span>にリンクされ、下絵を読み込むと<span class="control">RefImg:&lt;カメラ名&gt;</span>の新規セットが作成されて自動で切り替わります。</li>
+            <li><span class="control">下絵（Reference Image）</span>: 各カメラに紐づく下絵セットを行内のセレクトで切り替えます。カメラ追加時は共通の<span class="control">(blank)</span>にリンクされ、下絵を初めて読み込むと<span class="control">読み込んだ最初のファイル名</span>で新規セットが作成されて自動で切り替わります。</li>
             <li><span class="control">書き出し（.sscam）</span>: ヘッダーの<span class="control">エクスポートアイコン</span>で、カメラリストをファイルに保存します。</li>
             <li><span class="control">読み込み（.sscam）</span>: ヘッダーの<span class="control">インポートアイコン</span>で、カメラリストを読み込み、現在のリストを置き換えます（必要ならUndoで戻せます）。</li>
             <li><span class="keyword">注意</span>: <span class="control">.sscam</span>には、読み込んでいる<span class="keyword">ロケ地データ（.ply/.splat）や3Dモデル（.glb）</span>は保存されません。アセットの差し替え・移動/回転/スケールなどを行うと、同じカメラでも画が合わない場合があります。構図を固定したい場合は、アセット側を変えないか、編集後に再度<span
@@ -345,13 +345,14 @@
 
         <h3>1-6. 下絵（参考画像）</h3>
         <p style="text-align: left; font-size: 1.0em; color: #5a5a5a;">
-            下絵は、基準用紙に重ねて表示できるガイド画像です。LOテンプレやレイアウトのガイド画像を読み込み、カメラやフレームの位置合わせに使えます。カメラごとに下絵セットを切り替えられ、カメラデータのセレクトからリンク先を変更できます。複数登録でき、PSD を読み込むとレイヤーごとに下絵として展開されます。
+            下絵は、基準用紙に重ねて表示できるガイド画像です。LOテンプレやレイアウトのガイド画像を読み込み、カメラやフレームの位置合わせに使えます。カメラごとに下絵セットを切り替えられ、カメラリストのセレクトからリンク先を変更できます。複数登録でき、PSD を読み込むとレイヤーごとに下絵として展開されます。
         </p>
 	        <ul class="operation-list">
 	            <li><span class="control">下絵パネルを開く</span>: カメラフレームパネルのヘッダーにある<span class="control">下絵アイコン</span>をクリックします（書き出し欄の下絵アイコンからも開けます）。
 	            </li>
 	            <li><span class="control">読み込み（複数可）</span>: 下絵パネルの<span class="control">＋</span>から画像を選択して読み込みます（<span class="control">.png / .jpg / .webp / .psd</span>）。ブラウザへのドラッグ&ドロップでも読み込みできます。</li>
 	            <li><span class="control">PSD読み込み</span>: PSD はレイヤーごとに下絵として追加されます（レイヤー名/不透明度/表示状態を反映。隠しレイヤーは非表示で取り込み）。</li>
+	            <li><span class="control">登録名</span>: 下絵パネル上部の入力欄で、現在の下絵セット名を編集できます（<span class="control">(blank)</span> は編集不可）。</li>
 	            <li><span class="control">表示</span>: 各行の<span class="control">目アイコン</span>で表示/非表示を切り替えます。ヘッダーの<span class="control">目アイコン</span>で下絵（全体）も一括表示/非表示できます。</li>
 	            <li><span class="control">前面/背面</span>: 下絵パネル内は<span class="control">前面</span>（3Dの上に重ねる）/ <span class="control">背面</span>（3Dの後ろに敷く）の2リストに分かれます。</li>
 	            <li><span class="control">並び順（優先順位）</span>: リストの<span class="keyword">上側が優先（手前）</span>です。矢印ボタンで順序を変えられます。</li>

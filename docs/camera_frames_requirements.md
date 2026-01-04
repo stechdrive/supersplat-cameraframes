@@ -94,6 +94,8 @@
 - 参照画像は `ReferenceImageState`（`enabled` / `visible` / `layer: 'back'|'front'` / `opacity` / `includeInRender` など）として別モジュールで管理され、CAMERA FRAMES は **書き出し時のみ**これを参照する。
 - ベース描画（`render.offscreen`）には参照画像を混ぜず、`referenceImage.renderExportLayer(width,height,{applyOpacity})` で **別キャンバス**として生成して合成する（`render.offscreen({ includeReferenceImage:false })` 固定）。
 - 取り込み条件: `enabled && visible && includeInRender` を満たす場合のみ。条件を満たさない／参照画像未ロードの場合は出力に含めない。
+- 参照画像はプリセット単位で管理する。デフォルトは `(blank)` の空プリセット。
+- 下絵を初めて読み込むタイミングでアクティブプリセットが `(blank)` の場合、読み込んだ最初のファイル名をプリセット名として新規作成し自動で切り替える（以後は自動更新しない）。
 - PNG: `applyOpacity=true` で不透明度をピクセルに焼き込み、`layer='back'` は `destination-over`、`layer='front'` は `source-over` で合成する。
 - PSD: `applyOpacity=false`（キャンバスは不透明度 1.0）とし、PSD レイヤー側の `opacity` として保持する。`layer='back'` は underlay（Render の下）、`layer='front'` は overlay（モデル/フレームの間）へ。レイヤー名は `'Reference'`。
 
@@ -147,7 +149,7 @@ type CameraFramesState = {
 - `mainCameraPose`: 現在のカメラ姿勢を初期スナップショットして保持（未取得なら有効化時に取得）。
 - `enabled`: デフォルトは false。ただし起動後の初回 `postrender` で `cameraFrames.setEnabled(true)` を発火し、自動的に有効化される（`src/main.ts`）。
 - `nearClip`: null（有効化時にカメラ値から安全値を算出して固定）
-- `exportName`: `'cf-%cam'`（`%cam` は選択中のカメラデータのプリセット名に置換）
+- `exportName`: `'cf-%cam'`（`%cam` は選択中のカメラリストのプリセット名に置換）
 - `exportFormat`: 既定は `psd`（UI の `defaultValue` / 既存ドキュメントで未指定時のフォールバック）。ただしドキュメント未保存からの初期化 (`docState=null`) では `png` を採用し、その後の状態・UI 表示はこれに追従する。
 - `exportGridOverlay`: false
 - `exportModelLayers`: false
@@ -241,6 +243,7 @@ top1    = bottom1 + height1;
 - ヘッダーに参照画像ボタンを追加:
   - 参照画像パネルの表示切替（`referenceImagePanel.toggleVisible`）
   - 参照画像の表示/非表示（`referenceImage.setVisible`）。参照画像が未ロードの場合は無効化され、ロード済みの場合のみ active 状態とアイコン（shown/hidden）を切り替える。
+- 参照画像パネルには `登録名` 入力を配置し、アクティブな下絵セット名を編集できる（`(blank)` は編集不可）。
 
 ### 5.2 レイアウト（レンダーボックス）
 - 折りたたみ可能ヘッダー（初期は畳み）。アンカー 3×3 ボタン、幅%・高さ%（最小100/最大1000 UI、実際は 16000px クランプ）、表示倍率(viewZoom 25?100)、出力解像度表示。

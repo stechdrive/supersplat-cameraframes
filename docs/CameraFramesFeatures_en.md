@@ -8,6 +8,7 @@ CAMERA FRAMES v2.15.0 lets you lay out multiple frames on an A4-like master shee
 - **Multi-frame management**: Add/move/rotate/scale/change anchors for up to 20 frames; mask and draw order are preserved.
 - **Dual camera handling**: When CAMERA FRAMES is on, the main composition is held. When off, use the editor camera to explore, and open the separate Main Camera Properties panel to edit the main camera as needed.
 - **Export options**: PNG/PSD, grid+eye-level combined toggle, PSD model layers, 150dpi pHYs, unpremultiply, and per-frame layers.
+- **Reference image presets**: Auto-create a preset named after the first imported file and allow renaming in the panel (`(blank)` is read-only).
 
 ## 2. Panel and toggles
 - Header provides **CAMERA FRAMES ON/OFF** (Main=ON, Viewport=OFF icons), **Main Camera Properties** (separate panel) button, and **Compact** toggle. Compact mode shows only the header.

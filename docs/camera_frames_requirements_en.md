@@ -89,6 +89,10 @@
 - Lens (mm) slider is available only in edit view. It shows the current camera FOV converted to 35mm and applies via `camera.setFov`.
 - The conversion range uses crop factor based on the renderBox baseline width (equivalent to HFOV 10-120°).
 
+### 2.10 Reference Image Presets
+- Reference images are organized by presets. The default empty preset is `(blank)`.
+- When the active preset is `(blank)` and reference images are imported for the first time, create a new preset named after the first imported filename and switch to it (do not auto-update the name on later imports).
+
 ---
 
 ## 3. Data Model and Defaults
@@ -229,6 +233,7 @@ top1    = bottom1 + height1;
 - Prevent panel pointer events from propagating to canvas (stopPropagation). `pointerenter` clears overlay hit testing.
 - Compact mode shows header only. ON/OFF toggled by the header Main/Viewport buttons (Main=ON, Viewport=OFF).
 - The Main Camera Properties panel can be opened only while CAMERA FRAMES is OFF and shows a locked state when ON.
+- The Reference Image panel includes a `Preset Name` input to rename the active preset (`(blank)` is read-only).
 
 ### 5.2 Layout (Render Box)
 - Collapsible header (default collapsed). Anchor 3×3 buttons, width% / height% (min 100 / max 1000 in UI, actually clamped to 16000px), viewZoom 25-100, output resolution display.
