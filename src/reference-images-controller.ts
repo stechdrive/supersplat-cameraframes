@@ -1481,7 +1481,7 @@ class ReferenceImagesController {
                 group: fallbackGroup,
                 name: decoded.source.filename ?? normalizeReferenceImageFilename(file.filename),
                 visible: true,
-                includeInRender: false,
+                includeInRender: true,
                 opacity: 0.7,
                 scalePct: 100,
                 offsetPx: { x: 0, y: 0 },
