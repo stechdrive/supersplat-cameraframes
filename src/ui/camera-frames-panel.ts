@@ -277,22 +277,6 @@ class CameraFramesPanel extends Panel {
         headerToggle.append(mainCamBtn);
         headerToggle.append(mainPropsBtn);
 
-        mainCamBtn.dom.addEventListener('click', () => {
-            const next = !framesEnabled;
-            events.fire('cameraFrames.setEnabled', next);
-            if (next) {
-                events.fire('camera.setNavMode', 'fpv');
-            }
-        });
-
-        mainPropsBtn.dom.addEventListener('click', () => {
-            resolveTargetAvailability();
-            if (framesEnabled || !canSelectMain) {
-                return;
-            }
-            setMainPropsPanelOpen(!mainPropsPanelOpen);
-        });
-
         const referenceImageHeaderButton = new Button({
             class: ['panel-header-button', 'camera-frames-reference-image'],
             text: ''
@@ -859,16 +843,6 @@ class CameraFramesPanel extends Panel {
             canSelectMain = !framesEnabled && !!current?.mainCameraPose;
         };
 
-        const setMainPropsPanelOpen = (value: boolean) => {
-            const next = !!value;
-            if (mainPropsPanelOpen === next) {
-                return;
-            }
-            mainPropsPanelOpen = next;
-            updateMainPropsPanelVisibility();
-            updateMainPropsButton();
-        };
-
         const updateMainPropsButton = () => {
             const enabled = !framesEnabled && canSelectMain;
             mainPropsBtn.class[enabled ? 'remove' : 'add']('locked');
@@ -887,6 +861,32 @@ class CameraFramesPanel extends Panel {
                 events.fire('cameraFrames.setMainEditMode', mainPropsPanelVisible);
             }
         };
+
+        const setMainPropsPanelOpen = (value: boolean) => {
+            const next = !!value;
+            if (mainPropsPanelOpen === next) {
+                return;
+            }
+            mainPropsPanelOpen = next;
+            updateMainPropsPanelVisibility();
+            updateMainPropsButton();
+        };
+
+        mainCamBtn.dom.addEventListener('click', () => {
+            const next = !framesEnabled;
+            events.fire('cameraFrames.setEnabled', next);
+            if (next) {
+                events.fire('camera.setNavMode', 'fpv');
+            }
+        });
+
+        mainPropsBtn.dom.addEventListener('click', () => {
+            resolveTargetAvailability();
+            if (framesEnabled || !canSelectMain) {
+                return;
+            }
+            setMainPropsPanelOpen(!mainPropsPanelOpen);
+        });
 
         const updateTargetUI = (state?: CameraFramesState | null) => {
             resolveTargetAvailability(state);
@@ -931,10 +931,6 @@ class CameraFramesPanel extends Panel {
         widthScale.input.on('change', syncRenderBoxScale);
         heightScale.input.on('change', syncRenderBoxScale);
         fovSlider.on('change', (value: number) => {
-            if (suppress) return;
-            events.fire('cameraFrames.setEqFovMm', value);
-        });
-        mainPropsFovSlider.on('change', (value: number) => {
             if (suppress) return;
             events.fire('cameraFrames.setEqFovMm', value);
         });
@@ -1041,6 +1037,10 @@ class CameraFramesPanel extends Panel {
         mainPropsFovRow.append(mainPropsFovLabel);
         mainPropsFovRow.append(mainPropsFovControl);
         mainPropsBody.append(mainPropsFovRow);
+        mainPropsFovSlider.on('change', (value: number) => {
+            if (suppress) return;
+            events.fire('cameraFrames.setEqFovMm', value);
+        });
 
         const mainPropsPosGrid = new Container({ class: 'control-parent' });
         const mainPosX = new NumericInput({ class: 'control-element', precision: 3, step: 0.01, value: 0, style: 'width: 70px' });
