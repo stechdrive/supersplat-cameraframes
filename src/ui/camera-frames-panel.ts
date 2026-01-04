@@ -216,11 +216,14 @@ class CameraFramesPanel extends Panel {
         let canSelectMain = false;
         let mainPropsPanelOpen = false;
         let mainPropsPanelVisible = false;
+        let updateMainPropsButton = () => {};
+        let updateMainPropsPanelVisibility = () => {};
         let altSlow = false;
         let lastPose = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0 };
         let transformEditing = false;
         let transformEditingDepth = 0;
         let compact = false;
+        let cameraFramesPanelVisible = true;
 
         let maskDetailsCollapsed = true;
         let exportDetailsCollapsed = true;
@@ -249,6 +252,8 @@ class CameraFramesPanel extends Panel {
             this.class[compact ? 'add' : 'remove']('compact');
             this.content.hidden = compact;
             this.dom.setAttribute('aria-expanded', (!compact).toString());
+            updateMainPropsButton();
+            updateMainPropsPanelVisibility();
         };
 
         const toggleCompact = () => {
@@ -825,21 +830,26 @@ class CameraFramesPanel extends Panel {
 
         const resolveTargetAvailability = (state?: CameraFramesState | null) => {
             const current = state ?? lastState;
-            canSelectMain = !framesEnabled && !!current?.mainCameraPose;
+            const fallback = !framesEnabled && !!current?.mainCameraPose;
+            const availability = events.invoke('cameraFrames.canSelectMain') as boolean;
+            canSelectMain = typeof availability === 'boolean' ? availability : fallback;
         };
 
-        const updateMainPropsButton = () => {
-            const enabled = !framesEnabled && canSelectMain;
+        const canShowMainPropsPanel = () => {
+            return canSelectMain && cameraFramesPanelVisible && !compact && !rendering;
+        };
+
+        updateMainPropsButton = () => {
+            const enabled = canShowMainPropsPanel();
             mainPropsBtn.class[enabled ? 'remove' : 'add']('locked');
-            const active = mainPropsPanelOpen && enabled;
+            const active = mainPropsPanelVisible;
             mainPropsBtn.class[active ? 'add' : 'remove']('active');
             mainPropsBtn.dom.setAttribute('aria-pressed', active ? 'true' : 'false');
             mainPropsBtn.dom.setAttribute('aria-disabled', enabled ? 'false' : 'true');
         };
 
-        let cameraFramesPanelVisible = true;
-        const updateMainPropsPanelVisibility = () => {
-            const enabled = !framesEnabled && canSelectMain && cameraFramesPanelVisible;
+        updateMainPropsPanelVisibility = () => {
+            const enabled = canShowMainPropsPanel();
             const visible = enabled && mainPropsPanelOpen;
             events.fire('mainCameraPropsPanel.setVisible', visible);
             if (mainPropsPanelVisible !== visible) {
@@ -870,7 +880,7 @@ class CameraFramesPanel extends Panel {
 
         mainPropsBtn.dom.addEventListener('click', () => {
             resolveTargetAvailability();
-            if (framesEnabled || !canSelectMain) {
+            if (!canShowMainPropsPanel()) {
                 return;
             }
             setMainPropsPanelOpen(!mainPropsPanelOpen);
@@ -964,6 +974,8 @@ class CameraFramesPanel extends Panel {
             rendering = busy;
             renderButton.enabled = !busy;
             renderSpinner.hidden = !busy;
+            updateMainPropsButton();
+            updateMainPropsPanelVisibility();
         };
 
         addButton.on('click', () => events.fire('cameraFrames.addFrame'));

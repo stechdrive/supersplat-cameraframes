@@ -974,6 +974,7 @@ export class CameraFramesController {
             uiTarget: this.getUiTarget(),
             canSelectMain: this.canSelectMainTarget()
         }));
+        this.events.function('cameraFrames.canSelectMain', () => this.canSelectMainTarget());
         this.events.on('cameraFrames.setUiTarget', (target: 'viewport' | 'main') => {
             this.setUiTarget(target);
             this.updatePointerFromLast();
