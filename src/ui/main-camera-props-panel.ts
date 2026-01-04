@@ -158,6 +158,8 @@ class MainCameraPropsPanel extends Container {
         mainPropsPosGrid.dom.style.gridTemplateColumns = '28px 1fr 28px 1fr 28px 1fr';
         mainPropsPosGrid.dom.style.columnGap = '4px';
         mainPropsPosGrid.dom.style.alignItems = 'center';
+        mainPropsPosGrid.dom.style.paddingRight = '4px';
+        mainPropsPosGrid.dom.style.boxSizing = 'border-box';
         mainPropsPosGrid.append(new Label({ class: 'control-label', text: 'X' }));
         mainPropsPosGrid.append(mainPosX);
         mainPropsPosGrid.append(new Label({ class: 'control-label', text: 'Y' }));
@@ -174,7 +176,7 @@ class MainCameraPropsPanel extends Container {
         mainRollLock.dom.title = localize('panel.camera-frames.transform.roll-lock');
         mainPropsRotGrid.dom.style.display = 'grid';
         mainPropsRotGrid.dom.style.gridTemplateColumns = '24px 70px 24px 70px 24px 70px 26px';
-        mainPropsRotGrid.dom.style.columnGap = '2px';
+        mainPropsRotGrid.dom.style.columnGap = '4px';
         mainPropsRotGrid.dom.style.alignItems = 'center';
         mainPropsRotGrid.append(new Label({ class: 'control-label', text: localize('panel.camera-frames.transform.yaw') }));
         mainPropsRotGrid.append(mainYawInput);
