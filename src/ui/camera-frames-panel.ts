@@ -2,6 +2,7 @@ import { BooleanInput, Button, Container, Label, NumericInput, Panel, SelectInpu
 
 import { DEFAULT_NEAR_CLIP, MIN_NEAR_CLIP } from '../clip-constants';
 import { Events } from '../events';
+import { subscribeAltKey } from './alt-key-tracker';
 import { formatInteger, localize } from './localization';
 import mainCamSvg from './svg/camera-panel.svg';
 import cameraPropertySvg from './svg/camera-property.svg';
@@ -898,6 +899,7 @@ class CameraFramesPanel extends Panel {
             updateMainPropsButton();
             updateMainPropsPanelVisibility();
             updateCamTransformLabel();
+            updateRenderButton();
         };
 
         // helpers
@@ -977,9 +979,19 @@ class CameraFramesPanel extends Panel {
             events.fire('cameraFrames.setExportModelLayers', !modelLayerEnabled);
         });
 
+        const updateRenderButton = () => {
+            const enabled = framesEnabled && !rendering;
+            renderButton.enabled = enabled;
+            renderButton.dom.setAttribute('aria-disabled', enabled ? 'false' : 'true');
+            const label = framesEnabled ?
+                localize('panel.camera-frames.export.render.main') :
+                localize('panel.camera-frames.export.render.edit-disabled');
+            renderButton.dom.title = label;
+            renderButton.dom.setAttribute('aria-label', label);
+        };
         const setRenderBusy = (busy: boolean) => {
             rendering = busy;
-            renderButton.enabled = !busy;
+            updateRenderButton();
             renderSpinner.hidden = !busy;
             updateMainPropsButton();
             updateMainPropsPanelVisibility();
@@ -988,6 +1000,7 @@ class CameraFramesPanel extends Panel {
         addButton.on('click', () => events.fire('cameraFrames.addFrame'));
         renderButton.on('click', async () => {
             if (rendering) return;
+            if (!framesEnabled) return;
             setRenderBusy(true);
             try {
                 await events.invoke('cameraFrames.render', {
@@ -1295,18 +1308,10 @@ class CameraFramesPanel extends Panel {
         };
         updateNearStep();
 
-        // track Alt for slow mode
-        window.addEventListener('keydown', (e) => {
-            if (e.key === 'Alt') {
-                altSlow = true;
-                updateNearStep();
-            }
-        });
-        window.addEventListener('keyup', (e) => {
-            if (e.key === 'Alt') {
-                altSlow = false;
-                updateNearStep();
-            }
+        // track Alt for slow mode (shared global listener)
+        subscribeAltKey((pressed) => {
+            altSlow = pressed;
+            updateNearStep();
         });
 
         // live binding: numeric changes immediately update camera
@@ -1599,6 +1604,7 @@ class CameraFramesPanel extends Panel {
             updateNearClipUI();
             updateTargetUI(state);
             updateLensVisibility();
+            updateRenderButton();
             if (framesEnabled && state.mainCameraPose?.navMode) {
                 setNavModeState(state.mainCameraPose.navMode);
             } else if (!framesEnabled) {
@@ -1793,6 +1799,7 @@ class CameraFramesPanel extends Panel {
             applyReferencePresetsState(referencePresetsState);
             const enabled = events.invoke('cameraFrames.enabled') as boolean;
             framesEnabled = !!enabled;
+            updateRenderButton();
 
             const initialFovInfo = events.invoke('cameraFrames.fovInfo') as FovInfo;
             if (initialFovInfo) {

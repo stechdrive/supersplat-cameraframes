@@ -2,6 +2,7 @@ import { Button, Container, Label, NumericInput, SliderInput } from '@playcanvas
 
 import { DEFAULT_NEAR_CLIP, MIN_NEAR_CLIP } from '../clip-constants';
 import { Events } from '../events';
+import { subscribeAltKey } from './alt-key-tracker';
 import { localize } from './localization';
 import cameraPropertySvg from './svg/camera-property.svg';
 import closeSvg from './svg/close.svg';
@@ -359,17 +360,9 @@ class MainCameraPropsPanel extends Container {
         };
         updateNearStep();
 
-        window.addEventListener('keydown', (e) => {
-            if (e.key === 'Alt') {
-                altSlow = true;
-                updateNearStep();
-            }
-        });
-        window.addEventListener('keyup', (e) => {
-            if (e.key === 'Alt') {
-                altSlow = false;
-                updateNearStep();
-            }
+        subscribeAltKey((pressed) => {
+            altSlow = pressed;
+            updateNearStep();
         });
 
         const applyMainPropsPositionChange = () => {

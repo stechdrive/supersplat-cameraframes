@@ -1251,7 +1251,6 @@ export class CameraFramesController {
                     options
                 });
             };
-
             const target = this.normalizeExportTarget(options?.target ?? this.state.exportTarget);
             if (target === 'current') {
                 // Ensure splat sorter updates for the active camera before exporting.

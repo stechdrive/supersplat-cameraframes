@@ -121,6 +121,8 @@
     "panel.camera-frames.export.reference-image-tooltip": "下絵の出力設定を開く",
     "panel.camera-frames.export.model-layer": "モデル: {{name}}",
     "panel.camera-frames.export.render": "レンダリング",
+    "panel.camera-frames.export.render.main": "レンダリング(メインカメラ時有効)",
+    "panel.camera-frames.export.render.edit-disabled": "レンダリング(編集カメラ時無効)",
     "panel.camera-frames.export.details": "書き出し詳細",
     "panel.camera-frames.camera-presets.section": "カメラリスト",
     "panel.camera-frames.camera-presets.add": "カメラ追加",

@@ -121,6 +121,8 @@
     "panel.camera-frames.export.reference-image-tooltip": "Open reference image output settings",
     "panel.camera-frames.export.model-layer": "Model: {{name}}",
     "panel.camera-frames.export.render": "Render",
+    "panel.camera-frames.export.render.main": "Render (Main Camera enabled)",
+    "panel.camera-frames.export.render.edit-disabled": "Render (Edit Camera disabled)",
     "panel.camera-frames.export.details": "Export details",
     "panel.camera-frames.camera-presets.section": "Camera List",
     "panel.camera-frames.camera-presets.add": "Add Preset",
