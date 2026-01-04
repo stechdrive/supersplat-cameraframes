@@ -1,14 +1,13 @@
-# supersplat CAMERA FRAMES / Render Box Requirements v8 (aligned with current implementation)
+# supersplat CAMERA FRAMES / Render Box Requirements v9 (aligned with current implementation)
 
 ## 0. Version and References
 
-- Base code: `src/camera-frames.ts` / `src/ui/camera-frames-panel.ts` / `src/camera.ts` / `src/scene.ts` / `src/render.ts` (package version 2.16.4 / as of HEAD).
-- CAMERA FRAMES individual version: `cameraFramesVersion` = **v2.13.0** (from `package.json`, appended as `| CAMERA FRAMES v2.13.0` to `#app-label`).
-- This document replaces v7 with the **implementation-aligned v8**. Updates:
-  - Added `scope: 'all' | 'selected'` to masks, reflecting scope selection and opacity (%) in UI/history/persistence (default 80% / all).
-  - Made target switching explicit with radio-style buttons. When CAMERA FRAMES is ON both Main/Viewport show locked; when OFF only main can be selected (if mainCameraPose is retained). Main debug frustum colors: selected = magenta / not selected = cyan.
-  - Before/after export, `syncExportFrustum` temporarily sets targetSize then restores it, returning to the preview frustum. Grid/eye level share a single toggle, and model layers render one by one per visible model (PSD only).
-  - Formalized the panel header ON/OFF toggle (Main/Viewport icons) and compact mode. During timeline playback, auto-updating mainCameraPose is suppressed.
+- Base code: `src/camera-frames.ts` / `src/ui/camera-frames-panel.ts` / `src/camera.ts` / `src/scene.ts` / `src/render.ts` (package version 2.16.5 / as of HEAD).
+- CAMERA FRAMES individual version: `cameraFramesVersion` = **v2.14.0** (from `package.json`, appended as `| CAMERA FRAMES v2.14.0` to `#app-label`).
+- This document replaces v8 with the **implementation-aligned v9**. Updates:
+  - Reworked the header to **CAMERA FRAMES ON/OFF + Main Camera Properties (subpanel)** and removed uiTarget switching UI.
+  - Unified lens UI by view mode; edit-view main edits are now in the subpanel.
+  - Added `mainEditMode` so main frustum highlight and near-clip updates persist while the subpanel is open even when CF is OFF.
 
 ---
 
@@ -34,8 +33,8 @@
    - Also requirements for details in the current implementation such as adding pHYs to 150dpi PNG, PSD layer split, grid/eye-level optional output, near clip safety.
 
 6. **Camera editing aid when CAMERA FRAMES is OFF**
-   - Hold Main Camera Pose and allow pose/FOV(mm)/navMode/near edits from the UI even when CAMERA FRAMES is disabled.
-   - For the viewport target provide a normal camera lens (mm) slider, and for the main target keep the composition baseline FOV(mm).
+   - Keep Main Camera Pose and allow pose/FOV(mm)/navMode/near edits via the **Main Camera Properties (subpanel)** while CAMERA FRAMES is disabled.
+   - In edit view show the normal camera lens (mm) slider; in main view show the composition baseline FOV(mm).
 
 ---
 
@@ -81,14 +80,14 @@
 - Repeated resizing/scaling/zooming keeps the anchor-based screen coordinates and composition unchanged.
 - Recompute from `baseFrustum + current parameters` each time without delta updates or accumulated error.
 
-### 2.8 UI Target and Main Camera Pose
-- **uiTarget** = `'viewport' | 'main'`. Main can be selected only when CAMERA FRAMES is disabled (if `mainCameraPose` is retained and not exporting). When enabled, uiTarget is forced to viewport.
-- `mainCameraPose` is the baseline pose for CAMERA FRAMES. Keep it even when disabled, and allow editing on the main target. The viewport target directly edits the normal camera.
-- When the main target is selected, draw the main frustum in the debug layer (selected color: magenta, not selected: cyan). Drawing only; not hittable.
+### 2.8 View Modes and Main Camera Pose
+- **framesEnabled** true = main view (CAMERA FRAMES ON), false = edit view.
+- `mainCameraPose` is the baseline pose for CAMERA FRAMES. Keep it even when disabled, and allow editing via the **Main Camera Properties (subpanel)**.
+- While the subpanel is open, treat it as **mainEditMode** and highlight the main frustum (draw-only, not hittable).
 
-### 2.9 Viewport Lens (for CAMERA FRAMES OFF)
-- Lens (mm) slider available only when CAMERA FRAMES is disabled and uiTarget=viewport. Shows the current camera FOV converted to 35mm and applies via `camera.setFov`.
-- The conversion range uses crop factor based on renderBox baseline width (equivalent to HFOV 10-120°).
+### 2.9 Viewport Lens (edit view)
+- Lens (mm) slider is available only in edit view. It shows the current camera FOV converted to 35mm and applies via `camera.setFov`.
+- The conversion range uses crop factor based on the renderBox baseline width (equivalent to HFOV 10-120°).
 
 ---
 
@@ -215,7 +214,7 @@ top1    = bottom1 + height1;
   hfovFrameDeg = 2 * atan(tan(hfovRad/2) / crop);
   ```
 - UI slider range is dynamically determined by converting `HFOV_MIN/HFOV_MAX` to mm. Use `DEFAULT_FRAME_BASE` (16:9) aspect for calculation. Update `baseFov` and recompute only when changed.
-- When CAMERA FRAMES is disabled and uiTarget=viewport, the viewport lens (mm) uses the same conversion to display/edit the current camera FOV (main target edits baseFov instead).
+- In edit view, the viewport lens (mm) uses the same conversion to display/edit the current camera FOV (main view edits baseFov instead).
 
 ### 4.7 Safe near clip
 - `computeSafeNearClip`: requires `near > 0` and `near < far`, capped by `far*0.1` / `boundRadius*0.5`. If invalid, use `DEFAULT_NEAR_CLIP=0.01`.
@@ -226,15 +225,16 @@ top1    = bottom1 + height1;
 ## 5. UI Specs (Panel & Overlay)
 
 ### 5.1 Panel common
-- PCUI-based. Header includes **CAMERA FRAMES ON/OFF toggle (Main/Viewport icons)** and **compact mode toggle** (fold all contents). Header draggable; clamped to the window. Adjust position on resize.
+- PCUI-based. Header includes **CAMERA FRAMES ON/OFF toggle (Main/Viewport icons)**, **Main Camera Properties (subpanel)** button, and **compact mode toggle** (fold all contents). Header draggable; clamped to the window. Adjust position on resize.
 - Prevent panel pointer events from propagating to canvas (stopPropagation). `pointerenter` clears overlay hit testing.
 - Compact mode shows header only. ON/OFF toggled by the header Main/Viewport buttons (Main=ON, Viewport=OFF).
+- The main camera properties subpanel can be opened only while CAMERA FRAMES is OFF and shows a locked state when ON.
 
 ### 5.2 Layout (Render Box)
 - Collapsible header (default collapsed). Anchor 3×3 buttons, width% / height% (min 100 / max 1000 in UI, actually clamped to 16000px), viewZoom 25-100, output resolution display.
 - Output resolution display includes logical size (outW/outH), scale (kx/ky), and viewport overflow warning.
-- FOV(mm) slider shows eqMm. Enabled only when framesActive (CAMERA FRAMES ON or uiTarget=main). Place **Target button (Main)** to the right; enabled only when main is selected (locked and not selectable when CAMERA FRAMES is ON).
-- Viewport lens(mm) slider is enabled only when **CAMERA FRAMES is OFF and uiTarget=viewport**. Place **Target button (Viewport)** to the right; locked display when CF is ON.
+- FOV(mm) slider shows eqMm. Enabled only in main view. Use the subpanel to edit main FOV while in edit view.
+- Viewport lens(mm) slider is enabled only in edit view.
 
 ### 5.3 Frame management
 - Add (+), delete (trash) buttons, list shows A/B/C… Text shows effective pixel size (including render-box scale) and %.
@@ -246,9 +246,9 @@ top1    = bottom1 + height1;
 - Preview only. Included in history and persistence.
 
 ### 5.5 FOV / Zoom / Lens
-- FOV(mm) slider uses eqMm. Enabled only when framesActive.
+- FOV(mm) slider uses eqMm. Enabled only in main view.
 - Canvas Zoom input is 25-100%. Update viewZoom immediately on input.
-- Viewport lens(mm) slider is for the normal camera when CAMERA FRAMES is OFF. Enabled only when uiTarget=viewport and framesEnabled=false. Range covers HFOV 10-120° considering render-box crop.
+- Viewport lens(mm) slider is for the normal camera in edit view. Range covers HFOV 10-120° considering render-box crop.
 
 ### 5.6 Export
 - Filename text (extension auto-added, use `camera-frames` when blank). Format selection (PSD/PNG). Two toggles:
@@ -260,15 +260,15 @@ top1    = bottom1 + height1;
 - Collapsible section (default collapsed). Orbit/FPV toggle icons, position XYZ, rotation yaw/pitch/roll (with roll lock), local move sliders (right/up/forward, revert to 0 after use), near clip input.
 - Alt for slow edit (nearClip step=0.1, precision=3; pose/position changes at 0.1x).
 - While a numeric input is focused, pause transform auto-sync; resume on blur.
-- With uiTarget=main edit mainCameraPose; with uiTarget=viewport edit the normal camera. When CAMERA FRAMES is ON, uiTarget is locked to viewport (target button shows lock).
-- nearClip input is shown/enabled only when framesActive.
+- In main view, edits apply to mainCameraPose; in edit view, edits apply to the normal camera. Use the subpanel to edit mainCameraPose while in edit view.
+- nearClip input is shown/enabled only in main view (in edit view it appears in the subpanel).
 
 ### 5.8 Overlay drawing
 - Insert `#camera-frames-overlay` right after the canvas. Scale by devicePixelRatio. Default pointerEvents=none.
 - Render box: white dashed 1px. Frame: red 2px, with white dotted 1px overlay when selected. Handles: white fill + red edge 10px; rotation handle is 30px above the frame.
 - Mask: Fill outside bounding boxes of target frames with black at specified opacity.
 - For 90° step rotations, pixel-snap export outlines to draw sharply.
-- Even when CAMERA FRAMES is OFF, draw the main frustum in the debug layer when the main target is selected (selected=magenta, not selected=cyan). Non-interactive.
+- When CAMERA FRAMES is ON or mainEditMode (subpanel open), draw the main frustum in the debug layer with selection colors (selected=magenta, not selected=cyan). Non-interactive.
 
 ---
 
@@ -276,14 +276,14 @@ top1    = bottom1 + height1;
 
 ### 6.1 Enable / Disable
 - Enable:
-  - Keep current viewport pose/FOV, set `camera.setLockFraming(true)` and `camera.setLockFovAxis('horizontal')`. Force uiTarget to viewport.
+  - Keep current viewport pose/FOV, set `camera.setLockFraming(true)` and `camera.setLockFovAxis('horizontal')`. Switch to main view and lock composition.
   - If `mainCameraPose` is empty, capture current camera as baseline and apply it. Inherit baseFov from the camera and sync to UI.
   - Correct current near to a safe value and override. Through `initDefaultsIfNeeded`, fill center to viewport center, compute fitScale, and add one frame if none exist.
   - Rebuild baseFrustum → sync frustum → redraw overlay → schedule near guard and update viewport lens state.
 - Disable:
   - Save current pose to mainCameraPose, release near override and customFrustum, release lockFovAxis.
   - If viewportPoseRuntime/viewportFovRuntime exist, restore them to the normal camera.
-  - Keep the state but stop follow logic. Selecting the main target becomes possible again.
+  - Keep the state but stop follow logic. The subpanel becomes available in edit view.
 
 ### 6.2 Viewport resize / force refresh
 - Detect via `ResizeObserver` and `camera.resize` / `cameraFrames.forceRefreshViewport`. Update overlay size and scale in CSS px, run `computeViewportMapping(true)` to do AutoFit and center correction. Keep anchor screen position.
@@ -320,18 +320,18 @@ top1    = bottom1 + height1;
 - On `lostpointercapture`, commit drag history. Dragging/selecting the frustum itself is disabled.
 
 ### 6.10 Near clip
-- When set from UI, record to history with debounce (apply near override immediately when framesActive). Input shown only when framesActive.
+- When set from UI, record to history with debounce (apply near override immediately in main view). Input shown only in main view or in the subpanel.
 - Use `computeSafeNearClip` to ensure 0.01 or above, within `far*0.1` and `boundRadius*0.5`, and less than `far`. Schedule a guard to recheck a few frames later.
 
 ### 6.11 FOV(mm) / Viewport Lens(mm)
-- When framesActive and FOV slider changes, update `baseFov`, rebuild baseFrustum. Display value is unaffected by renderBox scale or viewZoom.
-- When CAMERA FRAMES is OFF and uiTarget=viewport, the viewport lens slider edits the normal camera FOV in mm (does not change baseFov). Range covers HFOV 10-120° considering render-box crop.
+- When the FOV slider changes in main view or the subpanel, update `baseFov` and rebuild baseFrustum. Display value is unaffected by renderBox scale or viewZoom.
+- In edit view, the viewport lens slider edits the normal camera FOV in mm (does not change baseFov). Range covers HFOV 10-120° considering render-box crop.
 - eqMm calculation uses `DEFAULT_FRAME_BASE` aspect. Use viewportFovRuntime to restore FOV when toggling CF ON/OFF.
 
 ### 6.12 Main Camera Pose management
 - Camera operations while CAMERA FRAMES is enabled reflect into mainCameraPose (suppress updates during timeline playback). When disabled, camera operations are stored in viewportPoseRuntime and viewport lens display is updated.
-- With uiTarget=main, edits to Transform/FOV/near/navMode apply only to mainCameraPose and are used when CAMERA FRAMES is enabled. While CAMERA FRAMES is OFF, draw the main frustum in debug.
-- Main target selectable only when `!enabled` and `mainCameraPose` exists and not exporting. If not allowed, switch uiTarget back to viewport.
+- In main view, edits to Transform/FOV/near/navMode apply only to mainCameraPose and are used when CAMERA FRAMES is enabled. In edit view, the subpanel can still edit mainCameraPose and highlights the main frustum.
+- The subpanel is available only when `!enabled` and `mainCameraPose` exists and not exporting.
 
 ---
 
@@ -388,7 +388,7 @@ Independent of viewZoom and viewport size.
   - frames: add/delete/select/pos/scalePct/rotationDeg/anchor/order, anchor & rotation reset
   - mask: enabled/opacity/scope
   - nearClip
-  - mainCameraPose (including uiTarget=main transform/nav/fov/near edits)
+  - mainCameraPose (including main view/subpanel transform/nav/fov/near edits)
   - render-box pan (Shift+drag)
 - Export settings (exportName/exportFormat/exportGridOverlay/exportModelLayers/exportTarget/exportPresetIds) are not included in history.
 - After applying history, resend `cameraFrames.stateChanged` to sync UI and recalc overlay cursor.
@@ -401,11 +401,11 @@ Independent of viewZoom and viewport size.
 - Handles state management, viewport mapping, frustum calculation, overlay drawing, pointer interactions, and export pipeline.
 - Passes extrapolated frustum to `camera.setCustomFrustum`; when CAMERA FRAMES is enabled, do not use `camera.rect/scissorRect`.
 - Applies near override, attaches cameraFramesVersion display, hooks History, switches mainCameraPose/viewportPose, restores viewport lens.
-- When CAMERA FRAMES is OFF, draws the main frustum in debugLayer (selection reflected by uiTarget). Suppress mainPose auto-update during timeline playback.
+- When CAMERA FRAMES is ON or mainEditMode (subpanel open), draws the main frustum in debugLayer with selection colors. Suppress mainPose auto-update during timeline playback.
 
 ### 9.2 UI Panel (`src/ui/camera-frames-panel.ts`)
 - Builds PCUI panel, validates inputs and fires events, handles panel move/collapse, render button and spinner control.
-- Updates ranges for FOV(mm) / Viewport lens(mm), shows output resolution and viewport overflow warnings, manages grid/model layer toggles, handles uiTarget switching and transform input target switching (show lock when CF ON).
+- Updates ranges for FOV(mm) / Viewport lens(mm), shows output resolution and viewport overflow warnings, manages grid/model layer toggles, handles view mode switching and subpanel visibility, and routes transform inputs to the active camera.
 
 ### 9.3 Camera / Scene (`src/camera.ts`, `src/scene.ts`)
 - Apply values passed via `camera.setCustomFrustum` to the projection matrix. When CAMERA FRAMES is enabled, lock aspect/horizontal FOV, and reset Rect/Scissor to 0,0,1,1 every frame.
@@ -432,7 +432,7 @@ Independent of viewZoom and viewport size.
 10. **Grid/eye-level output**: When enabled at export, PNG composites overlays, PSD adds dedicated layers with no premultiply mismatch.
 11. **Model layer output (PSD)**: With multiple visible models, PSD export adds per-model layers without mixing World/grid/gizmo.
 12. **Undo/Redo**: One step per drag start/end, continuous input combined every 250ms. Render box/viewZoom/FOV/nearClip/frame edits/mask/mainCameraPose are tracked; export settings are not.
-13. **CAMERA FRAMES OFF lens/pose**: With uiTarget=viewport, moving viewport lens(mm) changes normal camera FOV. With uiTarget=main, editing pose/FOV/near draws main frustum for debug and applies when enabled (target button only usable when OFF).
+13. **CAMERA FRAMES OFF lens/pose**: In edit view, moving viewport lens(mm) changes normal camera FOV. Editing pose/FOV/near in the subpanel draws the main frustum for debug and applies when enabled.
 
 ---
 

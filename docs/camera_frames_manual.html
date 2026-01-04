@@ -149,7 +149,7 @@
         <p style="text-align: left; font-size: 1.1em; color: #5a5a5a;">
             CAMERA FRAMES は、A4相当の<span class="keyword">基準用紙</span>の上に複数の<span
                 class="keyword">撮影フレーム</span>をレイアウトし、構図（カメラの位置・向き・画角）を調整して、LO用紙テンプレとぴったり合う画像を書き出すためのツールです。Webブラウザで動作します。本マニュアルは
-            CAMERA FRAMES <span class="keyword">v2.13.0</span> に対応しています。
+            CAMERA FRAMES <span class="keyword">v2.14.0</span> に対応しています。
             <br>URL: <a href="https://stechdrive.github.io/supersplat-cameraframes/"
                 target="_blank">https://stechdrive.github.io/supersplat-cameraframes/</a>
         </p>
@@ -168,8 +168,7 @@
                     class="keyword">3Dモデル</span>（.glb）を読み込みます。</li>
             <li><span class="control">大判指定</span>で基準用紙のサイズ（幅/高さ）と基準点を決めます。</li>
             <li><span class="control">フレーム一覧</span>で撮影フレームを追加し、ビューポート上で位置・回転・拡縮を調整します。</li>
-            <li><span class="control">メインカメラ表示</span>で構図を仕上げ、必要に応じて<span class="control">編集カメラ表示</span>から別視点で確認できます。
-            </li>
+            <li><span class="control">メインカメラ表示（ON）</span>で構図を仕上げ、<span class="control">編集カメラ表示（OFF）</span>で別視点を確認します。編集視点でメインを調整したい場合は<span class="control">メインカメラプロパティ</span>を開きます。</li>
             <li><span class="control">書き出し</span>で PSD/PNG を<span class="control">レンダリング</span>して書き出します。</li>
         </ul>
 
@@ -229,13 +228,23 @@
                 <th>ポイント</th>
             </tr>
             <tr>
-                <td><span class="control">メインカメラ表示</span> / <span class="control">編集カメラ表示</span></td>
-                <td>表示モードの切替</td>
+                <td><span class="control">メインカメラ表示（ON/OFF）</span></td>
+                <td>表示モードの切替（ON=メイン／OFF=編集）</td>
                 <td>
                     <ul>
-                        <li><span class="control">メインカメラ表示</span>は CAMERA FRAMES を有効にして構図を決めるモードです。</li>
-                        <li><span class="control">編集カメラ表示</span>は自由に移動して確認するためのモードです（必要に応じてメインカメラも編集できます）。</li>
+                        <li><span class="control">メインカメラ表示（ON）</span>は CAMERA FRAMES を有効にして構図を決めるモードです。</li>
+                        <li><span class="control">編集カメラ表示（OFF）</span>は自由に移動して確認するためのモードです。</li>
                         <li><span class="keyword">書き出しはメインカメラ表示の構図で行われます。</span></li>
+                    </ul>
+                </td>
+            </tr>
+            <tr>
+                <td><span class="control">メインカメラプロパティ</span></td>
+                <td>メインカメラ編集用サブパネル</td>
+                <td>
+                    <ul>
+                        <li><span class="control">編集カメラ表示中</span>にメインカメラのレンズ/位置/回転/ニアクリップを調整できます。</li>
+                        <li><span class="control">メインカメラ表示中</span>はロックされて開けません。</li>
                     </ul>
                 </td>
             </tr>
@@ -324,15 +333,14 @@
         <h3>1-5. カメラ座標操作（カメラの移動・回転・画角）</h3>
         <ul class="operation-list">
             <li><span class="control">FPV/オービット</span>: マウスでのカメラ操作方式を切り替えます（詳細は「2. マウス・ビューポート操作」参照）。</li>
-            <li><span class="control">メインカメラ(mm)</span>: メインカメラの画角（35mm判換算）を調整します。<span
+            <li><span class="control">メインカメラ(mm)</span>: メインカメラ表示時のみ。メインカメラの画角（35mm判換算）を調整し、<span
                     class="keyword">書き出しの構図に影響します。</span></li>
-            <li><span class="control">編集カメラ(mm)</span>: 編集カメラ表示中の画角（35mm判換算）を調整します。</li>
-            <li><span class="control">操作対象</span>: 編集カメラ表示中は、<span class="control">メインカメラ</span>と<span
-                    class="control">編集カメラ</span>のどちらを編集するか選べます（レンズ行の横にある小さなボタンで切替）。</li>
+            <li><span class="control">編集カメラ(mm)</span>: 編集カメラ表示時のみ。編集視点の画角（35mm判換算）を調整します。</li>
+            <li><span class="control">メインカメラプロパティ</span>: 編集カメラ表示中に、メインカメラのレンズ/位置/回転/ロール固定/ローカル移動/ニアクリップを調整します。</li>
             <li><span class="control">X, Y, Z</span> / <span class="control">Yaw, Pitch, Roll</span>:
-                位置と回転を精密に調整します。<span class="control">ロール固定</span>も可能です。</li>
+                表示中のカメラ（メイン表示=メイン／編集表示=編集）の位置と回転を精密に調整します。<span class="control">ロール固定</span>も可能です。</li>
             <li><span class="control">左右・上下・前後</span>: スライダーでローカル方向へ移動します（<span class="control">Altキー</span>で微調整）。</li>
-            <li><span class="control">ニアクリップ</span>: カメラに近い邪魔なものを写さないための表示カット距離（m）です。</li>
+            <li><span class="control">ニアクリップ</span>: カメラに近い邪魔なものを写さないための表示カット距離（m）です。編集カメラ表示中はメインカメラプロパティ側で調整します。</li>
         </ul>
 
         <h3>1-6. 下絵（参考画像）</h3>
