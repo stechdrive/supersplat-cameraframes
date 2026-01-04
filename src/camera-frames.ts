@@ -148,6 +148,8 @@ export class CameraFramesController {
     private compressor: PngCompressor | null = null;
     private resizeObserver: ResizeObserver;
     private lastPointer: { x: number; y: number } | null = null;
+    // Auto-captured poses (e.g. frustum preview) should not override explicit nav mode on enable.
+    private mainCameraPoseAuto = false;
     private dragState: {
         frameId: string | null;
         startPos: { x: number; y: number; };
@@ -473,6 +475,7 @@ export class CameraFramesController {
             const fallback = this.captureCameraPose();
             if (fallback) {
                 this.state.mainCameraPose = this.forceMainCameraPoseOrthoOff(fallback);
+                this.mainCameraPoseAuto = true;
             }
         }
         this.forceMainCameraPoseOrthoOff(this.state.mainCameraPose);
@@ -577,6 +580,7 @@ export class CameraFramesController {
             mutator(next);
             this.forceMainCameraPoseOrthoOff(next);
             this.state.mainCameraPose = next;
+            this.mainCameraPoseAuto = false;
             this.syncSelectedPresetMainCameraFromState();
             this.frustumDebugCache.points = null;
             this.frustumDebugCache.pose = null;
@@ -849,6 +853,7 @@ export class CameraFramesController {
             mainCameraPose: this.state.mainCameraPose,
             setMainCameraPose: (pose) => {
                 this.state.mainCameraPose = pose;
+                this.mainCameraPoseAuto = true;
             },
             scene: this.scene,
             ensureUiTargetAvailability: () => this.ensureUiTargetAvailability(),
@@ -894,6 +899,7 @@ export class CameraFramesController {
                     const playing = !!this.events.invoke('timeline.playing');
                     if (!playing || !this.state.enabled) {
                         this.state.mainCameraPose = this.forceMainCameraPoseOrthoOff(pose);
+                        this.mainCameraPoseAuto = false;
                         this.frustumDebugCache.points = null;
                         this.frustumDebugCache.pose = null;
                     }
@@ -954,6 +960,7 @@ export class CameraFramesController {
         });
         this.events.on('scene.clear', () => {
             this.state.mainCameraPose = null;
+            this.mainCameraPoseAuto = false;
             this.viewportPoseRuntime = null;
             this.viewportPoseRuntimeWorldDistance = null;
             this.hasEnteredViewportOnce = !this.state.enabled;
@@ -1721,6 +1728,7 @@ export class CameraFramesController {
 
             if (value) {
                 // OFF -> ON
+                const hadMainPose = !!this.state.mainCameraPose;
                 this.viewportPoseRuntime = this.clonePoseSnapshot(currentPose);
                 this.viewportPoseRuntimeWorldDistance = (this.viewportPoseRuntime?.navMode === 'orbit') ? this.getPoseWorldDistance(this.viewportPoseRuntime) : null;
                 if (this.viewportFovRuntime === null || this.viewportFovRuntime === undefined) {
@@ -1729,8 +1737,18 @@ export class CameraFramesController {
                         this.viewportFovRuntime = currentFov;
                     }
                 }
-                if (!this.state.mainCameraPose) {
+                const shouldPreferCurrentPose = !!currentPose &&
+                    this.mainCameraPoseAuto &&
+                    this.state.mainCameraPose &&
+                    currentPose.navMode !== this.state.mainCameraPose.navMode;
+                // If the main pose was auto-captured (e.g. for frustum preview), prefer the current pose
+                // so we don't unexpectedly force Orbit at startup.
+                if (shouldPreferCurrentPose) {
                     this.state.mainCameraPose = this.forceMainCameraPoseOrthoOff(this.clonePoseSnapshot(currentPose));
+                    this.mainCameraPoseAuto = false;
+                } else if (!this.state.mainCameraPose) {
+                    this.state.mainCameraPose = this.forceMainCameraPoseOrthoOff(this.clonePoseSnapshot(currentPose));
+                    this.mainCameraPoseAuto = false;
                 }
                 this.forceMainCameraPoseOrthoOff(this.state.mainCameraPose);
                 this.frustumDragState = null;
@@ -1772,6 +1790,7 @@ export class CameraFramesController {
                 // ON -> OFF
                 if (currentPose) {
                     this.state.mainCameraPose = this.forceMainCameraPoseOrthoOff(this.clonePoseSnapshot(currentPose));
+                    this.mainCameraPoseAuto = false;
                 }
                 this.state.enabled = false;
                 // 復元のため、viewport pose 適用前にフレーミングロックを解除しておく（orbit の揺れ抑止）
@@ -1800,6 +1819,7 @@ export class CameraFramesController {
                 }
                 if (!this.state.mainCameraPose) {
                     this.state.mainCameraPose = this.forceMainCameraPoseOrthoOff(this.clonePoseSnapshot(currentPose));
+                    this.mainCameraPoseAuto = false;
                 }
                 // ビューポート用ポーズがあれば戻す
                 const isFirstViewportEntry = !this.hasEnteredViewportOnce;
@@ -2839,6 +2859,7 @@ export class CameraFramesController {
             updatePointerFromLast: () => this.updatePointerFromLast(),
             updateFovInfo: () => this.updateFovInfo()
         });
+        this.mainCameraPoseAuto = false;
         this.updateMainCameraSelected();
         const nextUiTarget = this.getUiTarget();
         if (prevUiTarget !== nextUiTarget) {
@@ -2923,6 +2944,7 @@ export class CameraFramesController {
             updatePointerFromLast: () => this.updatePointerFromLast(),
             updateFovInfo: () => this.updateFovInfo()
         });
+        this.mainCameraPoseAuto = false;
         this.updateMainCameraSelected();
         const nextUiTarget = this.getUiTarget();
         if (prevUiTarget !== nextUiTarget) {
