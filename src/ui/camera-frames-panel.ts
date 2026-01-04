@@ -271,7 +271,8 @@ class CameraFramesPanel extends Panel {
 
         const mainPropsBtn = new Container({ class: ['toggle-icon-btn', 'main-props-toggle'] });
         mainPropsBtn.dom.appendChild(createSvg(viewportSvg));
-        mainPropsBtn.dom.title = localize('panel.camera-frames.mode.viewport');
+        mainPropsBtn.dom.title = localize('panel.camera-frames.main-props.toggle');
+        mainPropsBtn.dom.setAttribute('aria-label', localize('panel.camera-frames.main-props.toggle'));
 
         headerToggle.append(mainCamBtn);
         headerToggle.append(mainPropsBtn);
@@ -502,7 +503,7 @@ class CameraFramesPanel extends Panel {
         mainPropsPanel.dom.style.display = 'none';
         mainPropsPanel.dom.style.flexDirection = 'column';
         mainPropsPanel.dom.style.gap = '6px';
-        const mainPropsTitle = new Label({ class: 'main-props-title', text: localize('panel.camera-frames.mode.main') });
+        const mainPropsTitle = new Label({ class: 'main-props-title', text: localize('panel.camera-frames.main-props.title') });
         const mainPropsBody = new Container({ class: 'main-props-body' });
         mainPropsBody.dom.style.display = 'flex';
         mainPropsBody.dom.style.flexDirection = 'column';
