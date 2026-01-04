@@ -572,6 +572,7 @@ export class CameraFramesController {
             mutator(next);
             this.forceMainCameraPoseOrthoOff(next);
             this.state.mainCameraPose = next;
+            this.syncSelectedPresetMainCameraFromState();
             this.frustumDebugCache.points = null;
             this.frustumDebugCache.pose = null;
             if (this.state.enabled) {
