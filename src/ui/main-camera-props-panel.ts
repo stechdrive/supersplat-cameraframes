@@ -51,6 +51,8 @@ class MainCameraPropsPanel extends Container {
         let mainPropsPose = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0 };
         let mainPropsTransformEditing = false;
         let mainPropsTransformEditingDepth = 0;
+        let forceSyncOnState = false;
+        let lastState: CameraFramesState | null = null;
         let mainPropsRollLocked = false;
         let altSlow = false;
 
@@ -442,8 +444,12 @@ class MainCameraPropsPanel extends Container {
             };
         };
 
-        const updateFromState = (state?: CameraFramesState | null) => {
+        const updateFromState = (state?: CameraFramesState | null, force = false) => {
             if (!state) return;
+            if (force) {
+                mainPropsTransformEditingDepth = 0;
+                mainPropsTransformEditing = false;
+            }
             suppress = true;
             framesEnabled = !!state.enabled;
             const nearValue = (typeof state.nearClip === 'number' && isFinite(state.nearClip)) ?
@@ -454,7 +460,7 @@ class MainCameraPropsPanel extends Container {
             }
             suppress = false;
             updateMainPropsFovUI();
-            if (!mainPropsTransformEditing) {
+            if (!mainPropsTransformEditing || force) {
                 const mainTransform = (events.invoke('cameraFrames.mainTransform') as any);
                 if (mainTransform) {
                     applyMainPropsTransformToInputs(mainTransform);
@@ -467,10 +473,26 @@ class MainCameraPropsPanel extends Container {
 
         events.on('cameraFrames.stateChanged', (state: CameraFramesState) => {
             pendingState = state;
+            lastState = state;
             if (!appReady) {
                 return;
             }
-            updateFromState(state);
+            updateFromState(state, forceSyncOnState);
+            forceSyncOnState = false;
+        });
+
+        events.on('edit.apply', (op: any) => {
+            if (!op?.name || typeof op.name !== 'string') {
+                return;
+            }
+            if (!op.name.startsWith('cameraFrames')) {
+                return;
+            }
+            forceSyncOnState = true;
+            if (appReady && lastState) {
+                updateFromState(lastState, true);
+                forceSyncOnState = false;
+            }
         });
 
         events.on('cameraFrames.fovInfoChanged', (info: FovInfo) => {
