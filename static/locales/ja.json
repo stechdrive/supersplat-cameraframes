@@ -122,7 +122,7 @@
     "panel.camera-frames.export.model-layer": "モデル: {{name}}",
     "panel.camera-frames.export.render": "レンダリング",
     "panel.camera-frames.export.details": "書き出し詳細",
-    "panel.camera-frames.camera-presets.section": "カメラデータ",
+    "panel.camera-frames.camera-presets.section": "カメラリスト",
     "panel.camera-frames.camera-presets.add": "カメラ追加",
     "panel.camera-frames.camera-presets.delete": "カメラ削除",
     "panel.camera-frames.camera-presets.export": "カメラを書き出し",

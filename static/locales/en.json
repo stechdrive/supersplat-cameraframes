@@ -122,7 +122,7 @@
     "panel.camera-frames.export.model-layer": "Model: {{name}}",
     "panel.camera-frames.export.render": "Render",
     "panel.camera-frames.export.details": "Export details",
-    "panel.camera-frames.camera-presets.section": "Camera Data",
+    "panel.camera-frames.camera-presets.section": "Camera List",
     "panel.camera-frames.camera-presets.add": "Add Preset",
     "panel.camera-frames.camera-presets.delete": "Delete Preset",
     "panel.camera-frames.camera-presets.export": "Export Presets",
