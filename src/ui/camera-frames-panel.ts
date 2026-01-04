@@ -268,7 +268,7 @@ class CameraFramesPanel extends Panel {
             headerToggle.dom.addEventListener(evt, (e: Event) => e.stopPropagation());
         });
 
-        const mainCamBtn = new Container({ class: 'toggle-icon-btn' });
+        const mainCamBtn = new Container({ class: ['toggle-icon-btn', 'main-mode-toggle'] });
         mainCamBtn.dom.appendChild(createSvg(mainCamSvg));
         mainCamBtn.dom.title = localize('panel.camera-frames.mode.main');
 
