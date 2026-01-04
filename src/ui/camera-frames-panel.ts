@@ -886,6 +886,10 @@ class CameraFramesPanel extends Panel {
             setMainPropsPanelOpen(!mainPropsPanelOpen);
         });
 
+        events.on('mainCameraPropsPanel.requestClose', () => {
+            setMainPropsPanelOpen(false);
+        });
+
         const updateTargetUI = (state?: CameraFramesState | null) => {
             resolveTargetAvailability(state);
             mainCamBtn.class[framesEnabled ? 'add' : 'remove']('active');

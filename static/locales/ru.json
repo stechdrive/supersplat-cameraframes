@@ -229,5 +229,6 @@
     "tooltip.timeline.frame-rate": "Частота кадров",
     "tooltip.timeline.total-frames": "Всего кадров",
     "tooltip.timeline.smoothness": "Плавность",
-    "panel.camera-frames.camera-presets.reference-image.unset": "Не задано"
+    "panel.camera-frames.camera-presets.reference-image.unset": "Не задано",
+    "panel.camera-frames.main-props.close": "Закрыть свойства основной камеры"
 }

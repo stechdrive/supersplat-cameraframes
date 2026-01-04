@@ -229,5 +229,6 @@
     "tooltip.timeline.frame-rate": "Taxa de Quadros",
     "tooltip.timeline.total-frames": "Total de Quadros",
     "tooltip.timeline.smoothness": "Suavidade",
-    "panel.camera-frames.camera-presets.reference-image.unset": "Não definido"
+    "panel.camera-frames.camera-presets.reference-image.unset": "Não definido",
+    "panel.camera-frames.main-props.close": "Fechar propriedades da câmera principal"
 }

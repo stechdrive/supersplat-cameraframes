@@ -229,5 +229,6 @@
     "tooltip.timeline.frame-rate": "Bildrate",
     "tooltip.timeline.total-frames": "Gesamtanzahl der Frames",
     "tooltip.timeline.smoothness": "Weichheit",
-    "panel.camera-frames.camera-presets.reference-image.unset": "Nicht festgelegt"
+    "panel.camera-frames.camera-presets.reference-image.unset": "Nicht festgelegt",
+    "panel.camera-frames.main-props.close": "Hauptkamera-Eigenschaften schließen"
 }

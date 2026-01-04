@@ -229,5 +229,6 @@
     "tooltip.timeline.frame-rate": "프레임 속도",
     "tooltip.timeline.total-frames": "총 프레임 수",
     "tooltip.timeline.smoothness": "부드러움",
-    "panel.camera-frames.camera-presets.reference-image.unset": "미설정"
+    "panel.camera-frames.camera-presets.reference-image.unset": "미설정",
+    "panel.camera-frames.main-props.close": "메인 카메라 속성 닫기"
 }

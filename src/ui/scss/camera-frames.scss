@@ -381,7 +381,7 @@
     top: 50%;
     transform: translate(0, -50%);
     right: calc(480px + var(--camera-frames-help-offset-right, 0px));
-    width: 320px;
+    width: 360px;
     z-index: 5;
     flex-direction: column;
     align-items: stretch;
@@ -394,6 +394,19 @@
         touch-action: none;
         width: 100%;
         box-sizing: border-box;
+        padding: 6px;
+        gap: 6px;
+        align-items: center;
+    }
+
+    .panel-header-icon {
+        display: flex;
+        align-items: center;
+    }
+
+    .panel-header-icon svg {
+        width: 32.5px;
+        height: 32.5px;
     }
 
     &.dragging {

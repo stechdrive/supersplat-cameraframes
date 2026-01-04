@@ -4,6 +4,7 @@ import { DEFAULT_NEAR_CLIP, MIN_NEAR_CLIP } from '../clip-constants';
 import { Events } from '../events';
 import { localize } from './localization';
 import mainCamSvg from './svg/camera-panel.svg';
+import closeSvg from './svg/close.svg';
 import lockSvg from './svg/select-lock.svg';
 import unlockSvg from './svg/select-unlock.svg';
 
@@ -57,8 +58,19 @@ class MainCameraPropsPanel extends Container {
         const panelIcon = new Container({ class: 'panel-header-icon' });
         panelIcon.dom.appendChild(createSvg(mainCamSvg));
         const panelTitle = new Label({ class: 'panel-header-label', text: localize('panel.camera-frames.main-props.title') });
+        const closeButton = new Container({ class: ['panel-header-button', 'main-camera-props-close'] });
+        closeButton.dom.appendChild(createSvg(closeSvg));
+        closeButton.dom.title = localize('panel.camera-frames.main-props.close');
+        closeButton.dom.setAttribute('aria-label', localize('panel.camera-frames.main-props.close'));
+        ['pointerdown', 'pointerup', 'click'].forEach((evt) => {
+            closeButton.dom.addEventListener(evt, (e: Event) => e.stopPropagation());
+        });
+        closeButton.on('click', () => {
+            events.fire('mainCameraPropsPanel.requestClose');
+        });
         panelHeader.append(panelIcon);
         panelHeader.append(panelTitle);
+        panelHeader.append(closeButton);
 
         // パネルをドラッグで移動できるようにする
         let dragOffset: { x: number; y: number } | null = null;
@@ -139,11 +151,11 @@ class MainCameraPropsPanel extends Container {
         body.append(mainPropsFovRow);
 
         const mainPropsPosGrid = new Container({ class: 'control-parent' });
-        const mainPosX = new NumericInput({ class: 'control-element', precision: 3, step: 0.01, value: 0, style: 'width: 100%' });
-        const mainPosY = new NumericInput({ class: 'control-element', precision: 3, step: 0.01, value: 0, style: 'width: 100%' });
-        const mainPosZ = new NumericInput({ class: 'control-element', precision: 3, step: 0.01, value: 0, style: 'width: 100%' });
+        const mainPosX = new NumericInput({ class: 'control-element', precision: 3, step: 0.01, value: 0, style: 'width: 70px' });
+        const mainPosY = new NumericInput({ class: 'control-element', precision: 3, step: 0.01, value: 0, style: 'width: 70px' });
+        const mainPosZ = new NumericInput({ class: 'control-element', precision: 3, step: 0.01, value: 0, style: 'width: 70px' });
         mainPropsPosGrid.dom.style.display = 'grid';
-        mainPropsPosGrid.dom.style.gridTemplateColumns = 'auto minmax(0, 1fr) auto minmax(0, 1fr) auto minmax(0, 1fr)';
+        mainPropsPosGrid.dom.style.gridTemplateColumns = '28px 1fr 28px 1fr 28px 1fr';
         mainPropsPosGrid.dom.style.columnGap = '4px';
         mainPropsPosGrid.dom.style.alignItems = 'center';
         mainPropsPosGrid.append(new Label({ class: 'control-label', text: 'X' }));
@@ -155,14 +167,14 @@ class MainCameraPropsPanel extends Container {
         body.append(mainPropsPosGrid);
 
         const mainPropsRotGrid = new Container({ class: 'control-parent' });
-        const mainYawInput = new NumericInput({ class: 'control-element', precision: 2, step: 1, value: 0, style: 'width: 100%' });
-        const mainPitchInput = new NumericInput({ class: 'control-element', precision: 2, step: 1, value: 0, style: 'width: 100%' });
-        const mainRollInput = new NumericInput({ class: 'control-element', precision: 2, step: 1, value: 0, style: 'width: 100%' });
+        const mainYawInput = new NumericInput({ class: 'control-element', precision: 2, step: 1, value: 0, style: 'width: 70px' });
+        const mainPitchInput = new NumericInput({ class: 'control-element', precision: 2, step: 1, value: 0, style: 'width: 70px' });
+        const mainRollInput = new NumericInput({ class: 'control-element', precision: 2, step: 1, value: 0, style: 'width: 70px' });
         const mainRollLock = new Button({ class: ['control-element', 'roll-lock-btn'], text: '' });
         mainRollLock.dom.title = localize('panel.camera-frames.transform.roll-lock');
         mainPropsRotGrid.dom.style.display = 'grid';
-        mainPropsRotGrid.dom.style.gridTemplateColumns = 'auto minmax(0, 1fr) auto minmax(0, 1fr) auto minmax(0, 1fr) 26px';
-        mainPropsRotGrid.dom.style.columnGap = '4px';
+        mainPropsRotGrid.dom.style.gridTemplateColumns = '24px 70px 24px 70px 24px 70px 26px';
+        mainPropsRotGrid.dom.style.columnGap = '2px';
         mainPropsRotGrid.dom.style.alignItems = 'center';
         mainPropsRotGrid.append(new Label({ class: 'control-label', text: localize('panel.camera-frames.transform.yaw') }));
         mainPropsRotGrid.append(mainYawInput);
@@ -201,7 +213,7 @@ class MainCameraPropsPanel extends Container {
 
         const mainPropsNearClipRow = new Container({ class: 'control-parent' });
         mainPropsNearClipRow.dom.style.display = 'grid';
-        mainPropsNearClipRow.dom.style.gridTemplateColumns = 'auto minmax(0, 1fr)';
+        mainPropsNearClipRow.dom.style.gridTemplateColumns = '120px 1fr';
         mainPropsNearClipRow.dom.style.columnGap = '6px';
         mainPropsNearClipRow.dom.style.alignItems = 'center';
         const mainPropsNearClipLabel = new Label({ class: 'control-label', text: localize('panel.camera-frames.near-clip') });
@@ -211,7 +223,7 @@ class MainCameraPropsPanel extends Container {
             step: nearStep,
             min: MIN_NEAR_CLIP,
             value: DEFAULT_NEAR_CLIP,
-            style: 'width: 100%'
+            style: 'width: 120px'
         });
         mainPropsNearClipRow.append(mainPropsNearClipLabel);
         mainPropsNearClipRow.append(mainPropsNearClipInput);

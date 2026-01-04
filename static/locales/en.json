@@ -93,6 +93,7 @@
     "panel.camera-frames.mode.main": "Main Camera",
     "panel.camera-frames.main-props.toggle": "Main Camera Properties",
     "panel.camera-frames.main-props.title": "Main Camera Properties",
+    "panel.camera-frames.main-props.close": "Close Main Camera Properties",
     "panel.camera-frames.layout.title": "Layout",
     "panel.camera-frames.layout.anchor": "Anchor",
     "panel.camera-frames.layout.width": "Width (%)",

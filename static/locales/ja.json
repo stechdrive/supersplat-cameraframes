@@ -93,6 +93,7 @@
     "panel.camera-frames.mode.main": "メインカメラ表示",
     "panel.camera-frames.main-props.toggle": "メインカメラプロパティ",
     "panel.camera-frames.main-props.title": "メインカメラプロパティ",
+    "panel.camera-frames.main-props.close": "メインカメラプロパティを閉じる",
     "panel.camera-frames.layout.title": "大判指定",
     "panel.camera-frames.layout.anchor": "基準点",
     "panel.camera-frames.layout.width": "幅(%)",
