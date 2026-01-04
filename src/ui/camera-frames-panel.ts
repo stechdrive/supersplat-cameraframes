@@ -498,6 +498,12 @@ class CameraFramesPanel extends Panel {
         viewportLensControl.append(viewportTargetButton);
         viewportLensRow.append(viewportLensLabel);
         viewportLensRow.append(viewportLensControl);
+        const updateLensVisibility = () => {
+            const showMainLens = framesEnabled;
+            fovRow.dom.style.display = showMainLens ? 'flex' : 'none';
+            viewportLensRow.dom.style.display = showMainLens ? 'none' : 'flex';
+        };
+        updateLensVisibility();
 
         // canvas zoom
         const canvasZoomLabel = new Label({ class: 'control-label', text: localize('panel.camera-frames.canvas-zoom') });
@@ -924,9 +930,8 @@ class CameraFramesPanel extends Panel {
                 lastFovInfo = info;
             }
             const current = lastFovInfo;
-            const sliderEnabled = framesActive() && !!current;
+            const sliderEnabled = framesEnabled && !!current;
             fovSlider.enabled = sliderEnabled;
-            viewportLensSlider.enabled = uiTarget === 'viewport' && !framesEnabled;
             if (!sliderEnabled || !current) {
                 suppress = false;
                 return;
@@ -1601,6 +1606,7 @@ class CameraFramesPanel extends Panel {
             framesEnabled = state.enabled;
             updateNearClipUI();
             updateTargetUI();
+            updateLensVisibility();
             if (uiTarget === 'main' && state.mainCameraPose?.navMode) {
                 setNavModeState(state.mainCameraPose.navMode);
             }
