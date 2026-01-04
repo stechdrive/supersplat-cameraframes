@@ -394,7 +394,7 @@
         touch-action: none;
         width: 100%;
         box-sizing: border-box;
-        padding: 6px;
+        padding: 4px 6px;
         gap: 6px;
         align-items: center;
     }
@@ -405,8 +405,11 @@
     }
 
     .panel-header-icon svg {
-        width: 32.5px;
-        height: 32.5px;
+        width: 24px;
+        height: 24px;
+        display: block;
+        transform: scale(1.35);
+        transform-origin: center;
     }
 
     &.dragging {

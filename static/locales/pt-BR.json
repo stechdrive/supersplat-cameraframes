@@ -230,5 +230,7 @@
     "tooltip.timeline.total-frames": "Total de Quadros",
     "tooltip.timeline.smoothness": "Suavidade",
     "panel.camera-frames.camera-presets.reference-image.unset": "Não definido",
-    "panel.camera-frames.main-props.close": "Fechar propriedades da câmera principal"
+    "panel.camera-frames.main-props.toggle": "Controles da câmera principal",
+    "panel.camera-frames.main-props.title": "Controles da câmera principal",
+    "panel.camera-frames.main-props.close": "Fechar controles da câmera principal"
 }

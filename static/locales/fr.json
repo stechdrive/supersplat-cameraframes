@@ -230,5 +230,7 @@
     "tooltip.timeline.total-frames": "Nombre total de frames",
     "tooltip.timeline.smoothness": "Douceur",
     "panel.camera-frames.camera-presets.reference-image.unset": "Non défini",
-    "panel.camera-frames.main-props.close": "Fermer les propriétés de la caméra principale"
+    "panel.camera-frames.main-props.toggle": "Commandes de la caméra principale",
+    "panel.camera-frames.main-props.title": "Commandes de la caméra principale",
+    "panel.camera-frames.main-props.close": "Fermer les commandes de la caméra principale"
 }
