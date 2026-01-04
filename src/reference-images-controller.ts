@@ -84,7 +84,7 @@ const clamp = (value: number, min: number, max: number) => Math.max(min, Math.mi
 const isFiniteNumber = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
 
 const DEFAULT_REFERENCE_IMAGE_PRESET_ID = 'refpreset-blank';
-const DEFAULT_REFERENCE_IMAGE_PRESET_NAME = 'RefImg:blank';
+const DEFAULT_REFERENCE_IMAGE_PRESET_NAME = '(blank)';
 const LEGACY_REFERENCE_IMAGE_PRESET_ID = 'refpreset-1';
 const LEGACY_REFERENCE_IMAGE_PRESET_NAME = 'Preset 1';
 const REFERENCE_IMAGE_PRESET_PREFIX = 'RefImg:';

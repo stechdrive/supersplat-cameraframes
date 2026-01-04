@@ -1443,8 +1443,15 @@ class CameraFramesPanel extends Panel {
                         control.dom.addEventListener(evt, (e: Event) => e.stopPropagation());
                     });
                 });
+                const referenceLabel = new Label({
+                    class: 'camera-preset-reference-label',
+                    text: localize('panel.camera-frames.camera-presets.reference-image.label')
+                });
+                const referenceRow = new Container({ class: 'camera-preset-reference-row' });
+                referenceRow.append(referenceLabel);
+                referenceRow.append(referenceSelect);
                 labelStack.append(nameLabel);
-                labelStack.append(referenceSelect);
+                labelStack.append(referenceRow);
                 row.append(labelStack);
 
                 let pendingApplyId: number | null = null;

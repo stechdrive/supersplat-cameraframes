@@ -131,6 +131,7 @@
     "panel.camera-frames.camera-presets.rename": "Rename camera preset",
     "panel.camera-frames.camera-presets.default-name": "camera{{index}}",
     "panel.camera-frames.camera-presets.reference-image.unset": "Not set",
+    "panel.camera-frames.camera-presets.reference-image.label": "Reference:",
     "panel.camera-frames.camera-presets.status.enabled": "Camera Frames enabled",
     "panel.camera-frames.camera-presets.status.disabled": "Camera Frames disabled",
     "panel.camera-frames.main-camera-file": "Main Camera (.sscam)",
