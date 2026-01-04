@@ -4,11 +4,11 @@
 
 - ベースコード: `src/camera-frames.ts` / `src/ui/camera-frames-panel.ts` / `src/camera.ts` / `src/scene.ts` / `src/render.ts`（package version 2.16.5 / HEAD 時点）。
 - 関連実装: `src/reference-image-controller.ts` / `src/reference-image-types.ts` / `src/render.ts`（参照画像のプレビュー/書き出し・includeReferenceImage フラグ・永続化）。
-- CAMERA FRAMES 個別バージョン: `cameraFramesVersion` = **v2.14.0**（`package.json` 由来、`#app-label` に `| CAMERA FRAMES v2.14.0` を追加表示）。
+- CAMERA FRAMES 個別バージョン: `cameraFramesVersion` = **v2.15.0**（`package.json` 由来、`#app-label` に `| CAMERA FRAMES v2.15.0` を追加表示）。
 - 本書は v9 を置き換える **実装準拠版 v10**。更新点:
-  - ヘッダーを **CAMERA FRAMES ON/OFF + メインカメラプロパティ（サブパネル）** に整理し、uiTarget 切替 UI を撤去。
-  - 焦点距離 UI を **メイン表示/編集表示で一本化**。編集視点でのメイン編集はサブパネルに集約。
-  - `mainEditMode` を追加し、CF OFF でもサブパネル表示中はフラスタム強調と near clip 反映を維持。
+  - ヘッダーを **CAMERA FRAMES ON/OFF + メインカメラプロパティ（独立パネル）** に整理し、uiTarget 切替 UI を撤去。
+  - 焦点距離 UI を **メイン表示/編集表示で一本化**。編集視点でのメイン編集はメインカメラプロパティパネルに集約。
+  - `mainEditMode` を追加し、CF OFF でもメインカメラプロパティパネル表示中はフラスタム強調と near clip 反映を維持。
 
 ---
 
@@ -34,7 +34,7 @@
    - 150dpi PNG への pHYs 付与、PSD レイヤー分割、グリッド/アイレベルのオプション出力、ニアクリップ安全化など現行実装の細部も要件化。
 
 6. **CAMERA FRAMES OFF 時のカメラ編集補助**
-   - Main Camera Pose を保持し、CAMERA FRAMES 無効時は **メインカメラプロパティ（サブパネル）** から pose/FOV(mm)/navMode/near を編集できる。
+   - Main Camera Pose を保持し、CAMERA FRAMES 無効時は **メインカメラプロパティパネル** から pose/FOV(mm)/navMode/near を編集できる。
    - 編集表示時は通常カメラ用のレンズ(mm)スライダーを表示し、メイン表示時は構図基準 FOV(mm) を表示する。
 
 ---
@@ -83,8 +83,8 @@
 
 ### 2.8 表示モードと Main Camera Pose
 - **framesEnabled** が true のときはメイン表示（CAMERA FRAMES ON）、false のときは編集表示。
-- `mainCameraPose` は CAMERA FRAMES 用の基準ポーズ。編集表示中も保持し、**メインカメラプロパティ（サブパネル）** から編集できる。
-- サブパネル表示中は **mainEditMode** として扱い、メインフラスタムを選択色で強調（描画のみでヒット不可）。
+- `mainCameraPose` は CAMERA FRAMES 用の基準ポーズ。編集表示中も保持し、**メインカメラプロパティパネル** から編集できる。
+- メインカメラプロパティパネル表示中は **mainEditMode** として扱い、メインフラスタムを選択色で強調（描画のみでヒット不可）。
 
 ### 2.9 Viewport Lens（編集表示用）
 - 編集表示時のみ有効なレンズ(mm)スライダー。現在のカメラ FOV を 35mm 換算で表示し、`camera.setFov` で反映。
@@ -234,7 +234,7 @@ top1    = bottom1 + height1;
 ## 5. UI 仕様（パネル・オーバーレイ）
 
 ### 5.1 パネル共通
-- PCUI ベース。ヘッダーに **CAMERA FRAMES ON/OFF トグル（Main/Viewport アイコン）** と **メインカメラプロパティ（サブパネル）** ボタン、**コンパクト切替**（コンテンツ全折りたたみ）を配置。ヘッダードラッグで移動でき、ウィンドウ内にクランプ。リサイズ時も位置を補正。
+- PCUI ベース。ヘッダーに **CAMERA FRAMES ON/OFF トグル（Main/Viewport アイコン）** と **メインカメラプロパティパネル（独立）** ボタン、**コンパクト切替**（コンテンツ全折りたたみ）を配置。ヘッダードラッグで移動でき、ウィンドウ内にクランプ。リサイズ時も位置を補正。
 - パネル上の pointer イベントはキャンバス操作へ伝搬させない（stopPropagation）。`pointerenter` でオーバーレイのヒットテストを解除。
 - コンパクト時はヘッダーのみ表示。ON/OFF はヘッダーの Main/Viewport ボタンを押して切り替える（Main=ON、Viewport=OFF）。Main=ON へ切り替える際は `camera.setNavMode('fpv')` も同時に発火（`src/main.ts` の初回自動 ON も同様）。
 - メインカメラプロパティは **CAMERA FRAMES OFF** のときのみ開閉でき、ON 中はロック表示。
@@ -245,7 +245,7 @@ top1    = bottom1 + height1;
 ### 5.2 レイアウト（レンダーボックス）
 - 折りたたみ可能ヘッダー（初期は畳み）。アンカー 3×3 ボタン、幅%・高さ%（最小100/最大1000 UI、実際は 16000px クランプ）、表示倍率(viewZoom 25?100)、出力解像度表示。
 - 出力解像度表示は論理サイズ (outW/outH)、拡大率 (kx/ky)、ビューポート溢れ警告を含む。
-- FOV(mm) スライダーは eqMm 表示。**メイン表示時のみ**有効。編集表示でメイン FOV を編集する場合はサブパネル内の FOV を使う。
+- FOV(mm) スライダーは eqMm 表示。**メイン表示時のみ**有効。編集表示でメイン FOV を編集する場合はメインカメラプロパティパネル内の FOV を使う。
 - Viewport lens(mm) スライダーは **編集表示時のみ**有効。
 
 ### 5.3 フレーム管理
@@ -273,15 +273,15 @@ top1    = bottom1 + height1;
 - 折りたたみセクション（初期畳み）。Orbit/FPV 切替アイコン、位置 XYZ、回転 yaw/pitch/roll（ロールロック付き）、ローカル移動スライダー（right/up/forward、操作後は 0 に戻る）、ニアクリップ入力。
 - Alt でスロー編集（nearClip step=0.1, precision=3、姿勢・位置変化も 0.1 倍）。
 - 数値入力フォーカス中は transform の自動同期を抑止し、フォーカスアウトで再同期。
-- メイン表示時は mainCameraPose を編集、編集表示時は通常カメラを編集。編集表示中にメインを調整する場合はサブパネルを使う。
-- nearClip 入力はメイン表示時のみ表示・有効（編集表示ではサブパネル側に表示）。
+- メイン表示時は mainCameraPose を編集、編集表示時は通常カメラを編集。編集表示中にメインを調整する場合はメインカメラプロパティパネルを使う。
+- nearClip 入力はメイン表示時のみ表示・有効（編集表示ではメインカメラプロパティパネル側に表示）。
 
 ### 5.8 オーバーレイ描画
 - キャンバス直後に `#camera-frames-overlay` を挿入。devicePixelRatio でスケール。デフォルト pointerEvents=none。
 - レンダーボックス: 白破線 1px。フレーム: 赤 2px、選択中は白点線 1px を重ねる。ハンドル: 白塗り + 赤縁 10px、回転ハンドルは枠から 30px 上。
 - マスク: スコープに応じて対象フレーム群の外接矩形外を黒で塗る（opacity 指定）。
 - 90°刻み回転時はエクスポートの枠線をピクセルスナップしてシャープに描く。
-- CAMERA FRAMES ON または mainEditMode（サブパネル表示中）のとき、デバッグレイヤーに main フラスタムを選択色で描画（選択=マゼンタ、非選択=シアン）。非インタラクティブ。
+- CAMERA FRAMES ON または mainEditMode（メインカメラプロパティパネル表示中）のとき、デバッグレイヤーに main フラスタムを選択色で描画（選択=マゼンタ、非選択=シアン）。非インタラクティブ。
 
 ---
 
@@ -297,7 +297,7 @@ top1    = bottom1 + height1;
 - 無効化:
   - 現在の pose を mainCameraPose に保存し、near override と customFrustum を解除、lockFovAxis を解放。
   - viewportPoseRuntime/viewportFovRuntime があれば通常カメラへ戻す。
-  - 状態は保持したまま追従ロジックを停止。編集表示からサブパネル編集が可能。
+  - 状態は保持したまま追従ロジックを停止。編集表示からメインカメラプロパティパネルで編集可能。
 
 ### 6.2 ビューポートリサイズ / フォースリフレッシュ
 - `ResizeObserver` と `camera.resize` / `cameraFrames.forceRefreshViewport` で検知。CSS px で overlay サイズとスケールを更新し、`computeViewportMapping(true)` で AutoFit と center 補正を実施。アンカーのスクリーン位置を維持。
@@ -334,18 +334,18 @@ top1    = bottom1 + height1;
 - `lostpointercapture` でドラッグ履歴を commit。フラスタム自体のドラッグ・選択は無効化。
 
 ### 6.10 ニアクリップ
-- UI から設定するとデバウンスで履歴記録（CAMERA FRAMES 有効時は near override を即時適用）。メイン表示またはサブパネル内で入力欄を表示。
+- UI から設定するとデバウンスで履歴記録（CAMERA FRAMES 有効時は near override を即時適用）。メイン表示またはメインカメラプロパティパネル内で入力欄を表示。
 - `computeSafeNearClip` で 0.01 以上、`far*0.1`・`boundRadius*0.5` 以内、`far` 未満に補正。ガードをスケジュールして数フレーム後に再確認。
 
 ### 6.11 FOV(mm) / Viewport Lens(mm)
-- メイン表示またはサブパネルの FOV スライダー変更で `baseFov` を更新、baseFrustum を再構築。表示値は renderBox スケールや viewZoom に影響されない。
+- メイン表示またはメインカメラプロパティパネルの FOV スライダー変更で `baseFov` を更新、baseFrustum を再構築。表示値は renderBox スケールや viewZoom に影響されない。
 - 編集表示中は Viewport lens スライダーで通常カメラの FOV を mm で編集（baseFov は変更しない）。範囲は renderBox 基準のクロップを考慮した HFOV 10?120° 相当。
 - eqMm 計算は `DEFAULT_FRAME_BASE` のアスペクト基準。viewportFovRuntime で CF ON/OFF への往復時に FOV を復元。
 
 ### 6.12 Main Camera Pose 管理
 - CAMERA FRAMES 有効時のカメラ操作は mainCameraPose に反映（タイムライン再生中は更新しない）。無効時のカメラ操作は viewportPoseRuntime へ保存し、viewport lens 表示を更新。
-- メイン表示中の Transform/FOV/near/navMode 編集は mainCameraPose にのみ適用され、CAMERA FRAMES ON 時の構図に使用される。編集表示中でもサブパネルから mainCameraPose を編集できる。
-- サブパネルの開閉可否: `!enabled` かつ `mainCameraPose` が存在し、書き出し中でないときのみ。
+- メイン表示中の Transform/FOV/near/navMode 編集は mainCameraPose にのみ適用され、CAMERA FRAMES ON 時の構図に使用される。編集表示中でもメインカメラプロパティパネルから mainCameraPose を編集できる。
+- メインカメラプロパティパネルの開閉可否: `!enabled` かつ `mainCameraPose` が存在し、書き出し中でないときのみ。
 
 ---
 
@@ -411,7 +411,7 @@ viewZoom・ビューポートサイズ非依存。
   - frames: 追加/削除/選択/pos/scalePct/rotationDeg/anchor/order、アンカー・回転リセット
   - mask: enabled/opacity/scope
   - nearClip
-  - mainCameraPose（メイン表示/サブパネルでの transform/nav/fov/near 編集含む）
+  - mainCameraPose（メイン表示/メインカメラプロパティパネルでの transform/nav/fov/near 編集含む）
   - レンダーボックスパン（Shift+ドラッグ）
 - Export 設定（exportName/exportFormat/exportGridOverlay/exportModelLayers/exportTarget/exportPresetIds）は履歴対象外。
 - 履歴適用後は `cameraFrames.stateChanged` を再送して UI を同期し、オーバーレイカーソルを再計算。
@@ -424,11 +424,11 @@ viewZoom・ビューポートサイズ非依存。
 - 状態管理、ビューポートマッピング、フラスタム計算、オーバーレイ描画、ポインタ操作、export パイプラインを担当。
 - `camera.setCustomFrustum` に外挿フラスタムを渡し、CAMERA FRAMES 有効時は `camera.rect/scissorRect` を使わない。
 - near override 適用、cameraFramesVersion 表示の付与、History 連携、mainCameraPose/viewportPose の切替・復元、viewport lens 提供を行う。
-- CAMERA FRAMES ON または mainEditMode（サブパネル表示中）のとき、main フラスタムを debugLayer に選択色で描画。タイムライン再生中は mainPose の自動更新を抑止。
+- CAMERA FRAMES ON または mainEditMode（メインカメラプロパティパネル表示中）のとき、main フラスタムを debugLayer に選択色で描画。タイムライン再生中は mainPose の自動更新を抑止。
 
 ### 9.2 UI パネル（`src/ui/camera-frames-panel.ts`）
 - PCUI パネル構築、入力値のバリデーションとイベント発火、パネル移動/折りたたみ、レンダリングボタン・スピナー制御。
-- FOV(mm) / Viewport lens(mm) の範囲更新、出力解像度とビューポート溢れ警告表示、グリッド/モデルレイヤートグルの状態管理、メイン/編集表示の切替とサブパネルの開閉管理、transform 入力の適用先切替。
+- FOV(mm) / Viewport lens(mm) の範囲更新、出力解像度とビューポート溢れ警告表示、グリッド/モデルレイヤートグルの状態管理、メイン/編集表示の切替とメインカメラプロパティパネルの開閉管理、transform 入力の適用先切替。
 
 ### 9.3 カメラ / シーン（`src/camera.ts`, `src/scene.ts`）
 - `camera.setCustomFrustum` で渡された値を投影行列に反映。CAMERA FRAMES 有効時はアスペクト/水平FOVを固定し、Rect/Scissor を毎フレーム 0,0,1,1 へリセット。
@@ -456,7 +456,7 @@ viewZoom・ビューポートサイズ非依存。
 10. **グリッド/アイレベル出力**: Export でオーバーレイを有効にすると、PNG では合成、PSD では専用レイヤーが追加され、premultiply の不整合がない。
 11. **モデルレイヤー出力 (PSD)**: 複数モデルを可視にして PSD 出力すると、モデルごとに個別レイヤーが追加され、World/グリッド/ギズモが混ざらない。
 12. **Undo/Redo**: ドラッグ開始/終了で 1 ステップ、連続入力は 250ms でまとめられる。レンダーボックス・viewZoom・FOV・nearClip・フレーム編集・マスク・mainCameraPose が履歴対象で、export 設定は対象外。
-13. **CAMERA FRAMES OFF のレンズ/pose**: 編集表示で viewport lens(mm) を動かすと通常カメラの FOV が変わる。サブパネルで main の pose/FOV/near を編集すると main フラスタムがデバッグ描画され、有効化時に適用される。
+13. **CAMERA FRAMES OFF のレンズ/pose**: 編集表示で viewport lens(mm) を動かすと通常カメラの FOV が変わる。メインカメラプロパティパネルで main の pose/FOV/near を編集すると main フラスタムがデバッグ描画され、有効化時に適用される。
 14. **参照画像の書き出し**: 参照画像を読み込み、表示を ON にした上で Export の Reference トグルを ON/OFF すると、PNG/PSD に参照画像が含まれる/含まれないが切り替わる。front/back の指定に応じて PSD の `Reference` が underlay/overlay に分かれ、PNG でも前後関係が一致する（opacity の扱い: PNG は焼き込み、PSD はレイヤー opacity）。
 
 ---

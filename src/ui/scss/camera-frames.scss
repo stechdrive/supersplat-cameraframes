@@ -377,16 +377,34 @@
     border-radius: 4px;
 }
 
-.main-props-panel {
-    margin-left: 0;
-}
+#main-camera-props-panel {
+    top: 50%;
+    transform: translate(0, -50%);
+    right: calc(480px + var(--camera-frames-help-offset-right, 0px));
+    width: 320px;
+    z-index: 5;
+    overflow: visible;
 
-.main-props-title {
-    display: block;
-    font-size: 12px;
-    font-weight: 600;
-    color: $text-secondary;
-    margin: 0 0 4px 0;
+    .panel-header {
+        cursor: move;
+        user-select: none;
+        touch-action: none;
+    }
+
+    &.dragging {
+        opacity: 0.98;
+    }
+
+    &:not(.pcui-hidden) {
+        display: flex;
+    }
+
+    .main-camera-props-body {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        padding: 8px;
+    }
 }
 
 .frames-section-body {
