@@ -218,6 +218,7 @@ class CameraFramesPanel extends Panel {
         let mainPropsPanelVisible = false;
         let updateMainPropsButton = () => {};
         let updateMainPropsPanelVisibility = () => {};
+        let updateCamTransformLabel = () => {};
         let altSlow = false;
         let lastPose = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0 };
         let transformEditing = false;
@@ -895,6 +896,7 @@ class CameraFramesPanel extends Panel {
             mainCamBtn.class[framesEnabled ? 'add' : 'remove']('active');
             updateMainPropsButton();
             updateMainPropsPanelVisibility();
+            updateCamTransformLabel();
         };
 
         // helpers
@@ -1101,7 +1103,13 @@ class CameraFramesPanel extends Panel {
 
         const camTransformHeader = new Container({ class: ['control-parent', 'collapsible-header'] });
         const camTransformArrow = new Label({ class: 'collapsible-arrow', text: '▶' });
-        const camTransformLabel = new Label({ class: 'control-label', text: localize('panel.camera-frames.transform.title') });
+        const camTransformLabel = new Label({ class: 'control-label', text: '' });
+        updateCamTransformLabel = () => {
+            camTransformLabel.text = framesEnabled ?
+                localize('panel.camera-frames.transform.title.main') :
+                localize('panel.camera-frames.transform.title.viewport');
+        };
+        updateCamTransformLabel();
         const camNavControls = new Container({ class: 'cam-nav-controls' });
         const orbitIcon = new Container({ class: ['cam-nav-icon', 'active'] });
         orbitIcon.dom.appendChild(createSvg(orbitSvg));

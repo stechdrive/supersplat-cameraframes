@@ -233,4 +233,6 @@
     "panel.camera-frames.main-props.toggle": "Controles da câmera principal",
     "panel.camera-frames.main-props.title": "Controles da câmera principal",
     "panel.camera-frames.main-props.close": "Fechar controles da câmera principal"
+    "panel.camera-frames.transform.title.main": "Controles da câmera principal",
+    "panel.camera-frames.transform.title.viewport": "Controles da câmera de edição",
 }

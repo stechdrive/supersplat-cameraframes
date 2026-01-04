@@ -233,4 +233,6 @@
     "panel.camera-frames.main-props.toggle": "Управление основной камерой",
     "panel.camera-frames.main-props.title": "Управление основной камерой",
     "panel.camera-frames.main-props.close": "Закрыть управление основной камерой"
+    "panel.camera-frames.transform.title.main": "Управление основной камерой",
+    "panel.camera-frames.transform.title.viewport": "Управление камерой редактирования",
 }

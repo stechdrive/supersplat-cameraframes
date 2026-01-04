@@ -233,4 +233,6 @@
     "panel.camera-frames.main-props.toggle": "主相机操作",
     "panel.camera-frames.main-props.title": "主相机操作",
     "panel.camera-frames.main-props.close": "关闭主相机操作"
+    "panel.camera-frames.transform.title.main": "主相机操作",
+    "panel.camera-frames.transform.title.viewport": "编辑相机操作",
 }
