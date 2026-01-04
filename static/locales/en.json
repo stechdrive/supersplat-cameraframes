@@ -162,6 +162,7 @@
     "panel.camera-frames.transform.orbit": "Orbit navigation",
     "panel.camera-frames.transform.fpv": "FPV navigation",
     "panel.reference-image.title": "Reference Images",
+    "panel.reference-image.preset-name": "Preset Name",
     "panel.reference-image.toggle": "Toggle Reference Image Panel",
     "panel.reference-image.close": "Close reference image panel",
     "panel.reference-image.empty": "No reference images loaded",

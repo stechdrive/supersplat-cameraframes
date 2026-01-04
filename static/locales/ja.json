@@ -162,6 +162,7 @@
     "panel.camera-frames.transform.orbit": "オービット操作",
     "panel.camera-frames.transform.fpv": "FPV操作",
     "panel.reference-image.title": "下絵",
+    "panel.reference-image.preset-name": "登録名",
     "panel.reference-image.toggle": "下絵読み込み",
     "panel.reference-image.close": "下絵パネルを閉じる",
     "panel.reference-image.empty": "下絵が未読み込みです",

@@ -75,6 +75,7 @@ type AddContext = {
     presetId: string | null;
     cameraPresetId: string | null;
     cameraName: string;
+    presetNameHint?: string;
 };
 
 type ReferenceImageItemBase = ReferenceImageItemState | ReferenceImageItemV2;
@@ -87,8 +88,6 @@ const DEFAULT_REFERENCE_IMAGE_PRESET_ID = 'refpreset-blank';
 const DEFAULT_REFERENCE_IMAGE_PRESET_NAME = '(blank)';
 const LEGACY_REFERENCE_IMAGE_PRESET_ID = 'refpreset-1';
 const LEGACY_REFERENCE_IMAGE_PRESET_NAME = 'Preset 1';
-const REFERENCE_IMAGE_PRESET_PREFIX = 'RefImg:';
-
 let fallbackIdCounter = 0;
 const createId = () => {
     try {
@@ -1359,10 +1358,10 @@ class ReferenceImagesController {
         }
 
         const rawCameraName = (context?.cameraName ?? '').trim();
-        const baseName = rawCameraName || this.nextPresetName();
-        const presetName = baseName.startsWith(REFERENCE_IMAGE_PRESET_PREFIX) ?
-            baseName :
-            `${REFERENCE_IMAGE_PRESET_PREFIX}${baseName}`;
+        const rawPresetNameHint = (context?.presetNameHint ?? '').trim();
+        // Prefer the first imported filename so the preset name matches what the user added.
+        const baseName = rawPresetNameHint || rawCameraName || this.nextPresetName();
+        const presetName = baseName;
         const nextPreset: ReferenceImagePreset = {
             id: createPresetId(),
             name: presetName,
@@ -1488,6 +1487,9 @@ class ReferenceImagesController {
                 offsetPx: { x: 0, y: 0 },
                 anchor: { ax: 0.5, ay: 0.5 }
             });
+        }
+        if (pending[0]?.name && !addContext.presetNameHint) {
+            addContext.presetNameHint = pending[0].name;
         }
         return this.applyPendingAdds(pending, recordHistory, 'referenceImages.add', addContext);
     }
@@ -2238,6 +2240,9 @@ class ReferenceImagesController {
     private async importPsd(blob: Blob, filename?: string, opts?: { group?: ReferenceImageItemGroup; }) {
         const group = normalizeGroup(opts?.group, this.getActiveItem()?.group ?? 'front');
         const addContext = this.captureAddContext();
+        if (filename && !addContext.presetNameHint) {
+            addContext.presetNameHint = normalizeReferenceImageFilename(filename);
+        }
         const arrayBuffer = await blob.arrayBuffer();
         const psd = readPsd(arrayBuffer, { skipCompositeImageData: true, skipThumbnail: true });
         const width = (psd as any)?.width ?? 0;
