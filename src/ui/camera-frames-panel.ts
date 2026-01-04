@@ -216,10 +216,14 @@ class CameraFramesPanel extends Panel {
         let uiTarget: 'viewport' | 'main' = 'viewport';
         let canSelectMain = false;
         let mainPropsPanelOpen = false;
+        let mainPropsPanelVisible = false;
         let altSlow = false;
         let lastPose = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0 };
+        let mainPropsPose = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0 };
         let transformEditing = false;
         let transformEditingDepth = 0;
+        let mainPropsTransformEditing = false;
+        let mainPropsTransformEditingDepth = 0;
         let compact = false;
         const framesActive = () => framesEnabled || uiTarget === 'main';
 
@@ -504,6 +508,18 @@ class CameraFramesPanel extends Panel {
             viewportLensRow.dom.style.display = showMainLens ? 'none' : 'flex';
         };
         updateLensVisibility();
+
+        const mainPropsPanel = new Container({ class: ['inline-details', 'main-props-panel'] });
+        mainPropsPanel.dom.style.display = 'none';
+        mainPropsPanel.dom.style.flexDirection = 'column';
+        mainPropsPanel.dom.style.gap = '6px';
+        const mainPropsTitle = new Label({ class: 'main-props-title', text: localize('panel.camera-frames.mode.main') });
+        const mainPropsBody = new Container({ class: 'main-props-body' });
+        mainPropsBody.dom.style.display = 'flex';
+        mainPropsBody.dom.style.flexDirection = 'column';
+        mainPropsBody.dom.style.gap = '6px';
+        mainPropsPanel.append(mainPropsTitle);
+        mainPropsPanel.append(mainPropsBody);
 
         // canvas zoom
         const canvasZoomLabel = new Label({ class: 'control-label', text: localize('panel.camera-frames.canvas-zoom') });
@@ -863,7 +879,7 @@ class CameraFramesPanel extends Panel {
                 return;
             }
             mainPropsPanelOpen = next;
-            events.fire('cameraFrames.setMainEditMode', mainPropsPanelOpen);
+            updateMainPropsPanelVisibility();
             updateMainPropsButton();
         };
 
@@ -872,8 +888,18 @@ class CameraFramesPanel extends Panel {
             mainPropsBtn.class[enabled ? 'remove' : 'add']('locked');
             const active = mainPropsPanelOpen && enabled;
             mainPropsBtn.class[active ? 'add' : 'remove']('active');
-            mainPropsBtn.dom.setAttribute('aria-pressed', mainPropsPanelOpen ? 'true' : 'false');
+            mainPropsBtn.dom.setAttribute('aria-pressed', active ? 'true' : 'false');
             mainPropsBtn.dom.setAttribute('aria-disabled', enabled ? 'false' : 'true');
+        };
+
+        const updateMainPropsPanelVisibility = () => {
+            const enabled = !framesEnabled && canSelectMain;
+            const visible = enabled && mainPropsPanelOpen;
+            mainPropsPanel.dom.style.display = visible ? 'flex' : 'none';
+            if (mainPropsPanelVisible !== visible) {
+                mainPropsPanelVisible = visible;
+                events.fire('cameraFrames.setMainEditMode', mainPropsPanelVisible);
+            }
         };
 
         const setTargetButtonState = (button: Button, active: boolean, enabled: boolean) => {
@@ -910,6 +936,7 @@ class CameraFramesPanel extends Panel {
             }
             mainCamBtn.class[framesEnabled ? 'add' : 'remove']('active');
             updateMainPropsButton();
+            updateMainPropsPanelVisibility();
         };
 
         viewportTargetButton.on('click', () => {
@@ -959,6 +986,10 @@ class CameraFramesPanel extends Panel {
         widthScale.input.on('change', syncRenderBoxScale);
         heightScale.input.on('change', syncRenderBoxScale);
         fovSlider.on('change', (value: number) => {
+            if (suppress) return;
+            events.fire('cameraFrames.setEqFovMm', value);
+        });
+        mainPropsFovSlider.on('change', (value: number) => {
             if (suppress) return;
             events.fire('cameraFrames.setEqFovMm', value);
         });
@@ -1047,6 +1078,121 @@ class CameraFramesPanel extends Panel {
         };
         maskOpacityInput.on('change', updateMaskOpacity);
 
+        const mainPropsFovRow = new Container({ class: 'control-parent' });
+        const mainPropsFovLabel = new Label({ class: 'control-label', text: localize('panel.camera-frames.fov') });
+        const mainPropsFovSlider = new SliderInput({
+            class: 'control-element',
+            min: 10,
+            max: 200,
+            precision: 1,
+            value: 35
+        });
+        mainPropsFovSlider.dom.style.flex = '1 1 0';
+        const mainPropsFovControl = new Container({ class: ['control-element-expand', 'lens-control'] });
+        mainPropsFovControl.dom.style.display = 'flex';
+        mainPropsFovControl.dom.style.alignItems = 'center';
+        mainPropsFovControl.dom.style.gap = '6px';
+        mainPropsFovControl.append(mainPropsFovSlider);
+        mainPropsFovRow.append(mainPropsFovLabel);
+        mainPropsFovRow.append(mainPropsFovControl);
+        mainPropsBody.append(mainPropsFovRow);
+
+        const mainPropsPosGrid = new Container({ class: 'control-parent' });
+        const mainPosX = new NumericInput({ class: 'control-element', precision: 3, step: 0.01, value: 0, style: 'width: 70px' });
+        const mainPosY = new NumericInput({ class: 'control-element', precision: 3, step: 0.01, value: 0, style: 'width: 70px' });
+        const mainPosZ = new NumericInput({ class: 'control-element', precision: 3, step: 0.01, value: 0, style: 'width: 70px' });
+        mainPropsPosGrid.dom.style.display = 'grid';
+        mainPropsPosGrid.dom.style.gridTemplateColumns = '28px 1fr 28px 1fr 28px 1fr';
+        mainPropsPosGrid.dom.style.columnGap = '4px';
+        mainPropsPosGrid.dom.style.alignItems = 'center';
+        mainPropsPosGrid.append(new Label({ class: 'control-label', text: 'X' }));
+        mainPropsPosGrid.append(mainPosX);
+        mainPropsPosGrid.append(new Label({ class: 'control-label', text: 'Y' }));
+        mainPropsPosGrid.append(mainPosY);
+        mainPropsPosGrid.append(new Label({ class: 'control-label', text: 'Z' }));
+        mainPropsPosGrid.append(mainPosZ);
+        mainPropsBody.append(mainPropsPosGrid);
+
+        const mainPropsRotGrid = new Container({ class: 'control-parent' });
+        const mainYawInput = new NumericInput({ class: 'control-element', precision: 2, step: 1, value: 0, style: 'width: 60px' });
+        const mainPitchInput = new NumericInput({ class: 'control-element', precision: 2, step: 1, value: 0, style: 'width: 60px' });
+        const mainRollInput = new NumericInput({ class: 'control-element', precision: 2, step: 1, value: 0, style: 'width: 60px' });
+        const mainRollLock = new Button({ class: ['control-element', 'roll-lock-btn'], text: '' });
+        mainRollLock.dom.title = localize('panel.camera-frames.transform.roll-lock');
+        mainPropsRotGrid.dom.style.display = 'grid';
+        mainPropsRotGrid.dom.style.gridTemplateColumns = '24px 70px 24px 70px 24px 70px 26px';
+        mainPropsRotGrid.dom.style.columnGap = '2px';
+        mainPropsRotGrid.dom.style.alignItems = 'center';
+        mainPropsRotGrid.append(new Label({ class: 'control-label', text: localize('panel.camera-frames.transform.yaw') }));
+        mainPropsRotGrid.append(mainYawInput);
+        mainPropsRotGrid.append(new Label({ class: 'control-label', text: localize('panel.camera-frames.transform.pitch') }));
+        mainPropsRotGrid.append(mainPitchInput);
+        mainPropsRotGrid.append(new Label({ class: 'control-label', text: localize('panel.camera-frames.transform.roll') }));
+        mainPropsRotGrid.append(mainRollInput);
+        mainPropsRotGrid.append(mainRollLock);
+        mainPropsBody.append(mainPropsRotGrid);
+
+        const mainPropsLocalRow = new Container({ class: 'control-parent' });
+        const mainSliderLabelR = new Label({ class: 'control-label', text: localize('panel.camera-frames.transform.right-left') });
+        const mainSliderR = new SliderInput({ class: 'control-element-expand', min: -1, max: 1, step: 0.01, value: 0 });
+        const mainSliderLabelU = new Label({ class: 'control-label', text: localize('panel.camera-frames.transform.up-down') });
+        const mainSliderU = new SliderInput({ class: 'control-element-expand', min: -1, max: 1, step: 0.01, value: 0 });
+        const mainSliderLabelF = new Label({ class: 'control-label', text: localize('panel.camera-frames.transform.forward-back') });
+        const mainSliderF = new SliderInput({ class: 'control-element-expand', min: -1, max: 1, step: 0.01, value: 0 });
+        const mainPropsLocalGrid = new Container({ class: 'control-parent' });
+        mainPropsLocalGrid.dom.style.display = 'grid';
+        mainPropsLocalGrid.dom.style.gridTemplateColumns = '32px 1fr 32px 1fr 32px 1fr';
+        mainPropsLocalGrid.dom.style.columnGap = '6px';
+        mainPropsLocalGrid.dom.style.alignItems = 'center';
+        mainPropsLocalGrid.append(mainSliderLabelR);
+        mainPropsLocalGrid.append(mainSliderR);
+        mainPropsLocalGrid.append(mainSliderLabelU);
+        mainPropsLocalGrid.append(mainSliderU);
+        mainPropsLocalGrid.append(mainSliderLabelF);
+        mainPropsLocalGrid.append(mainSliderF);
+        mainPropsLocalRow.append(mainPropsLocalGrid);
+        mainPropsBody.append(mainPropsLocalRow);
+
+        const nearStep = 0.01;
+        const nearStepAlt = 0.001;
+        const nearPrecision = 3;
+        const nearPrecisionAlt = 4;
+
+        const mainPropsNearClipRow = new Container({ class: 'control-parent' });
+        mainPropsNearClipRow.dom.style.display = 'grid';
+        mainPropsNearClipRow.dom.style.gridTemplateColumns = '120px 1fr';
+        mainPropsNearClipRow.dom.style.columnGap = '6px';
+        mainPropsNearClipRow.dom.style.alignItems = 'center';
+        const mainPropsNearClipLabel = new Label({ class: 'control-label', text: localize('panel.camera-frames.near-clip') });
+        const mainPropsNearClipInput = new NumericInput({
+            class: 'control-element',
+            precision: nearPrecision,
+            step: nearStep,
+            min: MIN_NEAR_CLIP,
+            value: DEFAULT_NEAR_CLIP,
+            style: 'width: 120px'
+        });
+        mainPropsNearClipRow.append(mainPropsNearClipLabel);
+        mainPropsNearClipRow.append(mainPropsNearClipInput);
+        mainPropsBody.append(mainPropsNearClipRow);
+
+        const updateMainPropsFovUI = () => {
+            suppress = true;
+            const current = lastFovInfo;
+            mainPropsFovSlider.enabled = !framesEnabled && !!current;
+            if (!current) {
+                suppress = false;
+                return;
+            }
+            const minMm = Math.min(current.minEqMm, current.maxEqMm);
+            const maxMm = Math.max(current.minEqMm, current.maxEqMm);
+            mainPropsFovSlider.min = minMm;
+            mainPropsFovSlider.max = maxMm;
+            const clamped = Math.min(maxMm, Math.max(minMm, current.eqMm));
+            mainPropsFovSlider.value = clamped;
+            suppress = false;
+        };
+
         // camera transform controls (compact, single-column rows)
         const posGrid = new Container({ class: 'control-parent' });
         const posX = new NumericInput({ class: 'control-element', precision: 3, step: 0.01, value: 0, style: 'width: 70px' });
@@ -1087,10 +1233,6 @@ class CameraFramesPanel extends Panel {
         nearClipRow.dom.style.columnGap = '6px';
         nearClipRow.dom.style.alignItems = 'center';
         const nearClipLabel = new Label({ class: 'control-label', text: localize('panel.camera-frames.near-clip') });
-        const nearStep = 0.01;
-        const nearStepAlt = 0.001;
-        const nearPrecision = 3;
-        const nearPrecisionAlt = 4;
         const nearClipInput = new NumericInput({
             class: 'control-element',
             precision: nearPrecision,
@@ -1193,6 +1335,17 @@ class CameraFramesPanel extends Panel {
             };
         };
 
+        const syncMainPropsPoseFromInputs = () => {
+            mainPropsPose = {
+                x: mainPosX.value,
+                y: mainPosY.value,
+                z: mainPosZ.value,
+                yaw: mainYawInput.value,
+                pitch: mainPitchInput.value,
+                roll: mainRollInput.value
+            };
+        };
+
         // 編集中はカメラの自動反映を抑止するためフォーカスを追跡
         [posX, posY, posZ, yawInput, pitchInput, rollInput].forEach((input) => {
             input.dom.addEventListener('focusin', () => {
@@ -1208,8 +1361,23 @@ class CameraFramesPanel extends Panel {
             });
         });
 
+        [mainPosX, mainPosY, mainPosZ, mainYawInput, mainPitchInput, mainRollInput].forEach((input) => {
+            input.dom.addEventListener('focusin', () => {
+                mainPropsTransformEditingDepth += 1;
+                mainPropsTransformEditing = true;
+            });
+            input.dom.addEventListener('focusout', () => {
+                mainPropsTransformEditingDepth = Math.max(0, mainPropsTransformEditingDepth - 1);
+                mainPropsTransformEditing = mainPropsTransformEditingDepth > 0;
+                if (!mainPropsTransformEditing) {
+                    syncMainPropsPoseFromInputs();
+                }
+            });
+        });
+
 
         let rollLocked = false;
+        let mainPropsRollLocked = false;
         const applyRotationChange = () => {
             if (suppress) return;
             const factor = altSlow ? 0.1 : 1;
@@ -1237,17 +1405,52 @@ class CameraFramesPanel extends Panel {
                 events.fire('camera.setRotationEuler', rotationPayload);
             }
         };
+        const applyMainPropsRotationChange = () => {
+            if (suppress) return;
+            const factor = altSlow ? 0.1 : 1;
+            const dyaw = mainYawInput.value - mainPropsPose.yaw;
+            const dpitch = mainPitchInput.value - mainPropsPose.pitch;
+            const droll = mainRollInput.value - mainPropsPose.roll;
+            const newYaw = mainPropsPose.yaw + dyaw * factor;
+            const newPitch = mainPropsPose.pitch + dpitch * factor;
+            const newRoll = mainPropsPose.roll + droll * factor;
+            suppress = true;
+            mainYawInput.value = newYaw;
+            mainPitchInput.value = newPitch;
+            mainRollInput.value = newRoll;
+            suppress = false;
+            mainPropsPose = { ...mainPropsPose, yaw: newYaw, pitch: newPitch, roll: newRoll };
+            const rotationPayload = {
+                yaw: newYaw,
+                pitch: newPitch,
+                roll: newRoll,
+                lockRoll: mainPropsRollLocked
+            };
+            events.fire('cameraFrames.setMainCameraRotation', rotationPayload);
+        };
         const setRollLockUI = (locked: boolean) => {
             rollLocked = locked;
             rollLock.dom.innerHTML = '';
             rollLock.dom.appendChild(createSvg(locked ? lockSvg : unlockSvg));
             rollLock.class[locked ? 'add' : 'remove']('active');
         };
+        const setMainRollLockUI = (locked: boolean) => {
+            mainPropsRollLocked = locked;
+            mainRollLock.dom.innerHTML = '';
+            mainRollLock.dom.appendChild(createSvg(locked ? lockSvg : unlockSvg));
+            mainRollLock.class[locked ? 'add' : 'remove']('active');
+        };
         setRollLockUI(false);
+        setMainRollLockUI(false);
         rollLock.on('click', () => {
             if (suppress) return;
             setRollLockUI(!rollLocked);
             applyRotationChange();
+        });
+        mainRollLock.on('click', () => {
+            if (suppress) return;
+            setMainRollLockUI(!mainPropsRollLocked);
+            applyMainPropsRotationChange();
         });
 
         const applyPose = () => {
@@ -1281,6 +1484,12 @@ class CameraFramesPanel extends Panel {
                 events.fire('camera.nudgeLocal', payload);
             }
         };
+        const applyMainPropsLocalDelta = (right: number, up: number, forward: number) => {
+            if (suppress) return;
+            const mul = altSlow ? 0.1 : 1;
+            const payload = { right: right * mul, up: up * mul, forward: forward * mul, scale: 1 };
+            events.fire('cameraFrames.nudgeMainCamera', payload);
+        };
 
         const resetSlider = (slider: SliderInput) => {
             suppress = true;
@@ -1300,12 +1509,26 @@ class CameraFramesPanel extends Panel {
             applyLocalDelta(0, 0, v);
             resetSlider(sliderF);
         });
+        mainSliderR.on('change', (v: number) => {
+            applyMainPropsLocalDelta(v, 0, 0);
+            resetSlider(mainSliderR);
+        });
+        mainSliderU.on('change', (v: number) => {
+            applyMainPropsLocalDelta(0, v, 0);
+            resetSlider(mainSliderU);
+        });
+        mainSliderF.on('change', (v: number) => {
+            applyMainPropsLocalDelta(0, 0, v);
+            resetSlider(mainSliderF);
+        });
 
         const updateNearStep = () => {
             const step = altSlow ? nearStepAlt : nearStep;
             const precision = altSlow ? nearPrecisionAlt : nearPrecision;
             nearClipInput.step = step;
             nearClipInput.precision = precision;
+            mainPropsNearClipInput.step = step;
+            mainPropsNearClipInput.precision = precision;
         };
         updateNearStep();
 
@@ -1348,19 +1571,46 @@ class CameraFramesPanel extends Panel {
                 events.fire('camera.setPosition', positionPayload);
             }
         };
+        const applyMainPropsPositionChange = () => {
+            if (suppress) return;
+            const factor = altSlow ? 0.1 : 1;
+            const dx = mainPosX.value - mainPropsPose.x;
+            const dy = mainPosY.value - mainPropsPose.y;
+            const dz = mainPosZ.value - mainPropsPose.z;
+            const newX = mainPropsPose.x + dx * factor;
+            const newY = mainPropsPose.y + dy * factor;
+            const newZ = mainPropsPose.z + dz * factor;
+            suppress = true;
+            mainPosX.value = newX;
+            mainPosY.value = newY;
+            mainPosZ.value = newZ;
+            suppress = false;
+            mainPropsPose.x = newX;
+            mainPropsPose.y = newY;
+            mainPropsPose.z = newZ;
+            const positionPayload = { x: newX, y: newY, z: newZ };
+            events.fire('cameraFrames.setMainCameraPosition', positionPayload);
+        };
         posX.on('change', applyPositionChange);
         posY.on('change', applyPositionChange);
         posZ.on('change', applyPositionChange);
+        mainPosX.on('change', applyMainPropsPositionChange);
+        mainPosY.on('change', applyMainPropsPositionChange);
+        mainPosZ.on('change', applyMainPropsPositionChange);
 
         yawInput.on('change', applyRotationChange);
         pitchInput.on('change', applyRotationChange);
         rollInput.on('change', applyRotationChange);
+        mainYawInput.on('change', applyMainPropsRotationChange);
+        mainPitchInput.on('change', applyMainPropsRotationChange);
+        mainRollInput.on('change', applyMainPropsRotationChange);
 
         const applyNearClipChange = (value: number) => {
             if (suppress) return;
             events.fire('cameraFrames.setNearClip', value);
         };
         nearClipInput.on('change', applyNearClipChange);
+        mainPropsNearClipInput.on('change', applyNearClipChange);
 
         // hide numeric boxes on sliders (slider-only look)
         const hideSliderInputs = (slider: SliderInput) => {
@@ -1373,11 +1623,12 @@ class CameraFramesPanel extends Panel {
                 sliderEl.style.width = '100%';
             }
         };
-        [sliderR, sliderU, sliderF].forEach(hideSliderInputs);
+        [sliderR, sliderU, sliderF, mainSliderR, mainSliderU, mainSliderF].forEach(hideSliderInputs);
 
         // assemble
         this.content.append(fovRow);
         this.content.append(viewportLensRow);
+        this.content.append(mainPropsPanel);
         this.content.append(zoomMaskRow);
         this.content.append(maskDetails);
         this.content.append(exportRow);
@@ -1688,12 +1939,14 @@ class CameraFramesPanel extends Panel {
                 events.invoke('camera.near');
             if (typeof nearValue === 'number' && isFinite(nearValue)) {
                 nearClipInput.value = nearValue;
+                mainPropsNearClipInput.value = nearValue;
             }
 
             lastState = state;
             suppress = false;
 
             updateFovUI();
+            updateMainPropsFovUI();
             applyViewportLensState();
             // update camera pose display (pull live values)
             if (!transformEditing) {
@@ -1710,6 +1963,12 @@ class CameraFramesPanel extends Panel {
                         pitch: transform.rotation.pitch,
                         roll: transform.rotation.roll
                     };
+                }
+            }
+            if (!mainPropsTransformEditing) {
+                const mainTransform = (events.invoke('cameraFrames.mainTransform') as any);
+                if (mainTransform) {
+                    applyMainPropsTransformToInputs(mainTransform);
                 }
             }
         };
@@ -1732,6 +1991,7 @@ class CameraFramesPanel extends Panel {
 
         events.on('cameraFrames.fovInfoChanged', (info: FovInfo) => {
             updateFovUI(info);
+            updateMainPropsFovUI();
         });
         events.on('cameraFrames.uiTargetChanged', (target: 'viewport' | 'main') => {
             uiTarget = target === 'main' ? 'main' : 'viewport';
@@ -1741,6 +2001,7 @@ class CameraFramesPanel extends Panel {
             updateNearClipUI();
             updateTargetUI();
             updateFovUI();
+            updateMainPropsFovUI();
             applyViewportLensState();
             const nav = uiTarget === 'main' ? (lastState?.mainCameraPose?.navMode ?? navMode) : (events.invoke('camera.navMode') as ('orbit' | 'fpv'));
             if (nav) {
@@ -1801,6 +2062,27 @@ class CameraFramesPanel extends Panel {
             };
         }
 
+        function applyMainPropsTransformToInputs(t: any) {
+            if (!t) return;
+            if (mainPropsTransformEditing) return;
+            suppress = true;
+            mainPosX.value = t.position.x;
+            mainPosY.value = t.position.y;
+            mainPosZ.value = t.position.z;
+            mainYawInput.value = t.rotation.yaw;
+            mainPitchInput.value = t.rotation.pitch;
+            mainRollInput.value = t.rotation.roll;
+            suppress = false;
+            mainPropsPose = {
+                x: t.position.x,
+                y: t.position.y,
+                z: t.position.z,
+                yaw: t.rotation.yaw,
+                pitch: t.rotation.pitch,
+                roll: t.rotation.roll
+            };
+        }
+
         events.on('camera.transform', (t: any) => {
             if (uiTarget !== 'viewport') return;
             applyTransformToInputs(t);
@@ -1823,6 +2105,7 @@ class CameraFramesPanel extends Panel {
             const initialFovInfo = events.invoke('cameraFrames.fovInfo') as FovInfo;
             if (initialFovInfo) {
                 updateFovUI(initialFovInfo);
+                updateMainPropsFovUI();
             }
 
             if (pendingState) {
@@ -1854,6 +2137,12 @@ class CameraFramesPanel extends Panel {
                         pitch: initialTransform.rotation.pitch,
                         roll: initialTransform.rotation.roll
                     };
+                }
+            }
+            if (!mainPropsTransformEditing) {
+                const mainTransform = (events.invoke('cameraFrames.mainTransform') as any);
+                if (mainTransform) {
+                    applyMainPropsTransformToInputs(mainTransform);
                 }
             }
         };
