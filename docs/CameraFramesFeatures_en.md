@@ -6,13 +6,13 @@ CAMERA FRAMES v2.15.0 lets you lay out multiple frames on an A4-like master shee
 - **Anchored render box scaling**: 3×3 anchors drive off-axis frustums so horizontal/vertical scale and viewZoom never drift the anchored composition.
 - **Preview = export**: Aside from viewZoom, what you see in preview matches PNG/PSD pixels. Export forces viewZoom=100% and centered mapping, then restores the preview frustum.
 - **Multi-frame management**: Add/move/rotate/scale/change anchors for up to 20 frames; mask and draw order are preserved.
-- **Dual camera handling**: When CAMERA FRAMES is on, the main composition is held. When off, use the editor camera to explore, and open the separate Main Camera Properties panel to edit the main camera as needed.
+- **Dual camera handling**: When CAMERA FRAMES is on, the capture composition is held. When off, use the edit camera to explore, and open the separate Capture Camera Controls panel to edit the capture camera as needed.
 - **Export options**: PNG/PSD, grid+eye-level combined toggle, PSD model layers, 150dpi pHYs, unpremultiply, and per-frame layers.
 - **Reference image presets**: Auto-create a preset named after the first imported file and allow renaming in the panel (`(blank)` is read-only).
 
 ## 2. Panel and toggles
-- Header provides **CAMERA FRAMES ON/OFF** (Main=ON, Viewport=OFF icons), **Main Camera Properties** (separate panel) button, and **Compact** toggle. Compact mode shows only the header.
-- The Main Camera Properties panel can be opened only while CAMERA FRAMES is OFF. While open, the main frustum stays highlighted as a main-edit mode.
+- Header provides **CAMERA FRAMES ON/OFF** (Capture=ON, Edit=OFF icons), **Capture Camera Controls** (separate panel) button, and **Compact** toggle. Compact mode shows only the header.
+- The Capture Camera Controls panel can be opened only while CAMERA FRAMES is OFF. While open, the capture frustum stays highlighted as a capture edit mode.
 - Panel can be dragged and is clamped inside the window; pointer events on the panel do not fall through to the canvas.
 - Label shows `| CAMERA FRAMES v2.15.0`.
 
@@ -20,7 +20,7 @@ CAMERA FRAMES v2.15.0 lets you lay out multiple frames on an A4-like master shee
 - Master sheet `1754 × 1240px` (A4 at 150dpi). `Width/Height (%)` are clamped to 100%+ up to 16000px equivalent. 3×3 anchor sets the pivot for future scaling.
 - On viewport resize, AutoFit updates `fitScale` and adjusts center so the anchored screen position stays fixed.
 - **Canvas Zoom (25–100%)**: Preview-only magnification. Zooming out shrinks the sheet and frames evenly and reveals more of the scene.
-- **FOV (mm)**: Visible in main view only; edits the composition base horizontal FOV in 35mm equivalent (HFOV 10–120°). Use the Main Camera Properties panel to edit main FOV while in edit view.
+- **FOV (mm)**: Visible in capture view only; edits the composition base horizontal FOV in 35mm equivalent (HFOV 10–120°). Use the Capture Camera Controls panel to edit capture camera FOV while in edit view.
 - **Viewport lens (mm)**: Visible in edit view only; edits the normal camera FOV in mm (same range conversion).
 - Output resolution readout shows logical size, scale, and viewport overflow warnings.
 
@@ -46,10 +46,10 @@ CAMERA FRAMES v2.15.0 lets you lay out multiple frames on an A4-like master shee
 - PSD layer order: grid → eye-level → models → frames (grouped by leading frame letter) → Render. PNG is compressed with 150dpi pHYs.
 
 ## 7. Camera / view / transform
-- CAMERA FRAMES ON/OFF switches between **main view** and **edit view**. mainPose is retained while OFF; the Main Camera Properties panel edits the main camera in edit view.
-- Transform section edits the currently visible camera (main view = main camera, edit view = editor camera). Alt enables fine adjustment.
+- CAMERA FRAMES ON/OFF switches between **capture view** and **edit view**. mainPose is retained while OFF; the Capture Camera Controls panel edits the capture camera in edit view.
+- Transform section edits the currently visible camera (capture view = capture camera, edit view = edit camera). Alt enables fine adjustment.
 - Toggle navMode between Orbit/FPV. While an input has focus, automatic syncing pauses until blur.
-- In main view, composition FOV and nearClip apply to mainPose. In edit view, transforms apply to the normal camera; returning to main view reapplies mainPose.
+- In capture view, composition FOV and nearClip apply to mainPose. In edit view, transforms apply to the normal camera; returning to capture view reapplies mainPose.
 - nearClip is auto-guarded to safe values (≥0.01, within far×0.1 and sceneRadius×0.5). mainPose auto-updates are paused during timeline playback.
 
 ## 8. Viewport interactions

@@ -9,7 +9,7 @@ const notify = (pressed: boolean) => {
         return;
     }
     altPressed = pressed;
-    listeners.forEach((listener) => listener(altPressed));
+    listeners.forEach(listener => listener(altPressed));
 };
 
 const ensureInit = () => {

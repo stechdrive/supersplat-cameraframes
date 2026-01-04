@@ -893,6 +893,17 @@ class CameraFramesPanel extends Panel {
             setMainPropsPanelOpen(false);
         });
 
+        const updateRenderButton = () => {
+            const enabled = framesEnabled && !rendering;
+            renderButton.enabled = enabled;
+            renderButton.dom.setAttribute('aria-disabled', enabled ? 'false' : 'true');
+            const label = framesEnabled ?
+                localize('panel.camera-frames.export.render.main') :
+                localize('panel.camera-frames.export.render.edit-disabled');
+            renderButton.dom.title = label;
+            renderButton.dom.setAttribute('aria-label', label);
+        };
+
         const updateTargetUI = (state?: CameraFramesState | null) => {
             resolveTargetAvailability(state);
             mainCamBtn.class[framesEnabled ? 'add' : 'remove']('active');
@@ -979,16 +990,6 @@ class CameraFramesPanel extends Panel {
             events.fire('cameraFrames.setExportModelLayers', !modelLayerEnabled);
         });
 
-        const updateRenderButton = () => {
-            const enabled = framesEnabled && !rendering;
-            renderButton.enabled = enabled;
-            renderButton.dom.setAttribute('aria-disabled', enabled ? 'false' : 'true');
-            const label = framesEnabled ?
-                localize('panel.camera-frames.export.render.main') :
-                localize('panel.camera-frames.export.render.edit-disabled');
-            renderButton.dom.title = label;
-            renderButton.dom.setAttribute('aria-label', label);
-        };
         const setRenderBusy = (busy: boolean) => {
             rendering = busy;
             updateRenderButton();
