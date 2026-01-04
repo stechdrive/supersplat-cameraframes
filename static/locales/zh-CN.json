@@ -228,5 +228,12 @@
     "tooltip.timeline.remove-key": "删除关键帧",
     "tooltip.timeline.frame-rate": "帧率",
     "tooltip.timeline.total-frames": "总帧数",
-    "tooltip.timeline.smoothness": "平滑度"
+    "tooltip.timeline.smoothness": "平滑度",
+    "panel.camera-frames.camera-presets.reference-image.unset": "未设置",
+    "panel.camera-frames.mode.toggle": "切换主/编辑相机",
+    "panel.camera-frames.main-props.toggle": "主相机操作",
+    "panel.camera-frames.main-props.title": "主相机操作",
+    "panel.camera-frames.main-props.close": "关闭主相机操作"
+    "panel.camera-frames.transform.title.main": "主相机操作",
+    "panel.camera-frames.transform.title.viewport": "编辑相机操作",
 }

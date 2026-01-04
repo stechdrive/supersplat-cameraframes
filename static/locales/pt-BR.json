@@ -228,5 +228,12 @@
     "tooltip.timeline.remove-key": "Remover Quadro",
     "tooltip.timeline.frame-rate": "Taxa de Quadros",
     "tooltip.timeline.total-frames": "Total de Quadros",
-    "tooltip.timeline.smoothness": "Suavidade"
+    "tooltip.timeline.smoothness": "Suavidade",
+    "panel.camera-frames.camera-presets.reference-image.unset": "Não definido",
+    "panel.camera-frames.mode.toggle": "Alternar câmera principal/edição",
+    "panel.camera-frames.main-props.toggle": "Controles da câmera principal",
+    "panel.camera-frames.main-props.title": "Controles da câmera principal",
+    "panel.camera-frames.main-props.close": "Fechar controles da câmera principal"
+    "panel.camera-frames.transform.title.main": "Controles da câmera principal",
+    "panel.camera-frames.transform.title.viewport": "Controles da câmera de edição",
 }
