@@ -1254,6 +1254,8 @@ export class CameraFramesController {
 
             const target = this.normalizeExportTarget(options?.target ?? this.state.exportTarget);
             if (target === 'current') {
+                // Ensure splat sorter updates for the active camera before exporting.
+                await this.scene.renderSystem.waitForSorter();
                 await renderOnce();
                 return;
             }
@@ -1282,6 +1284,8 @@ export class CameraFramesController {
                     }
                     this.applyCameraPreset(presetId, { skipHistory: true });
                     await this.syncReferenceImagesPreset(presetId);
+                    // Ensure splat sorter updates for the preset camera before exporting.
+                    await this.scene.renderSystem.waitForSorter();
                     await renderOnce();
                 }
             } finally {
