@@ -158,7 +158,7 @@ class MainCameraPropsPanel extends Container {
         mainPropsPosGrid.dom.style.gridTemplateColumns = '28px 1fr 28px 1fr 28px 1fr';
         mainPropsPosGrid.dom.style.columnGap = '4px';
         mainPropsPosGrid.dom.style.alignItems = 'center';
-        mainPropsPosGrid.dom.style.paddingRight = '4px';
+        mainPropsPosGrid.dom.style.paddingRight = '8px';
         mainPropsPosGrid.dom.style.boxSizing = 'border-box';
         mainPropsPosGrid.append(new Label({ class: 'control-label', text: 'X' }));
         mainPropsPosGrid.append(mainPosX);
@@ -169,9 +169,9 @@ class MainCameraPropsPanel extends Container {
         body.append(mainPropsPosGrid);
 
         const mainPropsRotGrid = new Container({ class: 'control-parent' });
-        const mainYawInput = new NumericInput({ class: 'control-element', precision: 2, step: 1, value: 0, style: 'width: 70px' });
-        const mainPitchInput = new NumericInput({ class: 'control-element', precision: 2, step: 1, value: 0, style: 'width: 70px' });
-        const mainRollInput = new NumericInput({ class: 'control-element', precision: 2, step: 1, value: 0, style: 'width: 70px' });
+        const mainYawInput = new NumericInput({ class: 'control-element', precision: 2, step: 1, value: 0, style: 'width: 60px' });
+        const mainPitchInput = new NumericInput({ class: 'control-element', precision: 2, step: 1, value: 0, style: 'width: 60px' });
+        const mainRollInput = new NumericInput({ class: 'control-element', precision: 2, step: 1, value: 0, style: 'width: 60px' });
         const mainRollLock = new Button({ class: ['control-element', 'roll-lock-btn'], text: '' });
         mainRollLock.dom.title = localize('panel.camera-frames.transform.roll-lock');
         mainPropsRotGrid.dom.style.display = 'grid';
