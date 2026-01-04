@@ -881,6 +881,7 @@ export const setNearClip = ({
     suppressHistory,
     getStateEnabled,
     getUiTarget,
+    getMainEditMode,
     getNearClip,
     setNearClipState,
     applyNearClipOverride,

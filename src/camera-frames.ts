@@ -194,7 +194,6 @@ export class CameraFramesController {
     private suppressViewportFovCapture = false;
     private orthoGuardActive = false;
     private mainEditMode = false;
-    private uiTarget: 'viewport' | 'main' = 'viewport';
     private mainCameraSelected = false;
     private suppressReferencePresetSync = false;
     private lastReferenceSyncPresetId: string | null = null;
@@ -352,8 +351,12 @@ export class CameraFramesController {
         };
     }
 
+    private getUiTarget(): 'viewport' | 'main' {
+        return this.state.enabled ? 'main' : 'viewport';
+    }
+
     private orthoToggleAllowed() {
-        return !this.state.enabled && this.uiTarget === 'viewport' && !this.scene.camera.targetSize;
+        return !this.state.enabled && !this.scene.camera.targetSize;
     }
 
     private orthoBlocked() {
@@ -547,26 +550,12 @@ export class CameraFramesController {
     }
 
     private setUiTarget(target: 'viewport' | 'main') {
-        const canSelectMain = this.canSelectMainTarget();
-        const resolved = (target === 'main' && canSelectMain) ? 'main' : 'viewport';
-        const changed = this.uiTarget !== resolved;
-        this.uiTarget = resolved;
-        if (changed) {
-            this.events.fire('cameraFrames.uiTargetChanged', this.uiTarget);
-        }
-        if (this.updateMainCameraSelected()) {
-            this.requestRender();
-        }
-        if (resolved === 'main') {
-            this.clearViewportNearOverride();
-        } else if (!this.state.enabled && changed) {
-            this.applyViewportNearOverride();
-        }
+        this.setEnabled(target === 'main');
     }
 
     private ensureUiTargetAvailability() {
-        if (this.uiTarget === 'main' && !this.canSelectMainTarget()) {
-            this.setUiTarget('viewport');
+        if (this.state.enabled) {
+            this.ensureMainCameraPose();
         }
     }
 
@@ -574,7 +563,6 @@ export class CameraFramesController {
         const apply = () => {
             const basePose = this.ensureMainCameraPose();
             if (!basePose) {
-                this.setUiTarget('viewport');
                 return;
             }
             const next = this.clonePoseSnapshot(basePose);
@@ -894,7 +882,7 @@ export class CameraFramesController {
                 return;
             }
             const pose = this.captureCameraPose();
-            const usingMainCamera = this.state.enabled || this.uiTarget === 'main';
+            const usingMainCamera = this.state.enabled;
             if (pose) {
                 if (usingMainCamera) {
                     const playing = !!this.events.invoke('timeline.playing');
@@ -963,7 +951,6 @@ export class CameraFramesController {
             this.viewportPoseRuntime = null;
             this.viewportPoseRuntimeWorldDistance = null;
             this.hasEnteredViewportOnce = !this.state.enabled;
-            this.setUiTarget('viewport');
             this.frustumDragState = null;
             this.frustumDebugCache = {
                 pose: null,
@@ -981,24 +968,13 @@ export class CameraFramesController {
         this.events.function('cameraFrames.viewportLens', () => this.getViewportLensState());
         this.events.on('cameraFrames.setViewportLens', (mm: number) => this.setViewportLensMm(mm));
         this.events.on('cameraFrames.setMainEditMode', (value: boolean) => this.setMainEditMode(value));
-        this.events.function('cameraFrames.uiTarget', () => this.uiTarget);
+        this.events.function('cameraFrames.uiTarget', () => this.getUiTarget());
         this.events.function('cameraFrames.uiTargetAvailability', () => ({
-            uiTarget: this.uiTarget,
+            uiTarget: this.getUiTarget(),
             canSelectMain: this.canSelectMainTarget()
         }));
         this.events.on('cameraFrames.setUiTarget', (target: 'viewport' | 'main') => {
-            const prevTarget = this.uiTarget;
-            if (!this.state.enabled && target === 'main' && prevTarget === 'viewport') {
-                this.captureViewportRuntimeFromCamera();
-            }
             this.setUiTarget(target);
-            if (!this.state.enabled && prevTarget !== this.uiTarget) {
-                if (this.uiTarget === 'main') {
-                    this.applyMainCameraView();
-                } else {
-                    this.applyViewportRuntimeToCamera();
-                }
-            }
             this.updatePointerFromLast();
         });
         this.events.function('cameraFrames.mainTransform', () => this.getMainCameraTransform());
@@ -1282,7 +1258,6 @@ export class CameraFramesController {
             }
 
             const prevSnapshot = this.snapshot();
-            const prevUiTarget = this.uiTarget;
             const prevSuppressReferenceSync = this.suppressReferencePresetSync;
             // 書き出し中は下絵プリセットを明示同期し、stateChanged由来の切替と競合させない
             this.suppressReferencePresetSync = true;
@@ -1299,7 +1274,6 @@ export class CameraFramesController {
                 try {
                     this.applySnapshot(prevSnapshot);
                     await this.syncReferenceImagesPreset(this.selectedPresetId);
-                    this.events.fire('cameraFrames.setUiTarget', prevUiTarget);
                 } finally {
                     this.suppressReferencePresetSync = prevSuppressReferenceSync;
                 }
@@ -1319,8 +1293,7 @@ export class CameraFramesController {
         this.events.on('camera.fov', (value?: number) => {
             const currentFov = (typeof value === 'number' && isFinite(value)) ? value : this.events.invoke('camera.fov');
             if (!this.state.enabled) {
-                if (this.uiTarget === 'viewport' &&
-                    !this.suppressViewportFovCapture &&
+                if (!this.suppressViewportFovCapture &&
                     typeof currentFov === 'number' &&
                     isFinite(currentFov)) {
                     this.viewportFovRuntime = currentFov;
@@ -1734,11 +1707,11 @@ export class CameraFramesController {
     private setEnabled(value: boolean) {
         this.historyRecord('cameraFrames.enabled', () => {
             if (value === this.state.enabled) return;
+            const prevUiTarget = this.getUiTarget();
             this.clearViewportNearOverride();
             const currentPose = this.captureCameraPose();
             this.normalizeMainRenderBoxProjection(this.scene.camera.fov);
 
-            this.setUiTarget('viewport');
             if (value) {
                 // OFF -> ON
                 this.viewportPoseRuntime = this.clonePoseSnapshot(currentPose);
@@ -1862,6 +1835,10 @@ export class CameraFramesController {
                 this.applyViewportNearOverride();
             }
             this.events.fire('cameraFrames.enabled', this.state.enabled);
+            const nextUiTarget = this.getUiTarget();
+            if (prevUiTarget !== nextUiTarget) {
+                this.events.fire('cameraFrames.uiTargetChanged', nextUiTarget);
+            }
             this.updateMainCameraSelected();
             this.emitStateChanged();
             this.updateFovInfo();
@@ -1883,7 +1860,7 @@ export class CameraFramesController {
             value,
             suppressHistory,
             getStateEnabled: () => this.state.enabled,
-            getUiTarget: () => this.uiTarget,
+            getUiTarget: () => this.getUiTarget(),
             getMainEditMode: () => this.mainEditMode,
             getNearClip: () => this.state.nearClip,
             setNearClipState: (next) => {
@@ -1921,7 +1898,7 @@ export class CameraFramesController {
     private shouldApplyViewportNearOverride() {
         return shouldApplyViewportNearOverrideCamera({
             stateEnabled: this.state.enabled,
-            uiTarget: this.uiTarget,
+            uiTarget: this.getUiTarget(),
             scene: this.scene
         });
     }
@@ -2153,8 +2130,7 @@ export class CameraFramesController {
 
     private applyCameraPreset(id: string, options?: { skipHistory?: boolean; }) {
         const apply = () => {
-            const prevSelectedPresetId = this.selectedPresetId;
-            const prevUiTarget = this.uiTarget;
+            const prevEnabled = this.state.enabled;
             this.syncSelectedPresetFromState();
             const preset = this.state.cameraPresets.find(item => item.id === id);
             if (!preset) {
@@ -2168,6 +2144,7 @@ export class CameraFramesController {
             baseState.mainCameraPose = this.rebuildMainCameraPoseFromPreset(preset, baseState);
             baseState.nearClip = preset.mainCamera.nearClip ?? null;
             this.normalizeProjectionIntoState(baseState, preset.mainCamera.projection);
+            baseState.enabled = prevEnabled;
             const exportTarget = this.normalizeExportTarget(this.state.exportTarget);
             const exportPresetIds = this.normalizeExportPresetIds(this.state.exportPresetIds);
             const nextState: CameraFramesState = {
@@ -2177,14 +2154,6 @@ export class CameraFramesController {
                 cameraPresets: this.state.cameraPresets
             };
             this.applySnapshot(nextState);
-            if (!this.state.enabled && prevSelectedPresetId !== preset.id) {
-                if (prevUiTarget === 'viewport') {
-                    this.captureViewportRuntimeFromCamera();
-                }
-                this.setUiTarget('main');
-                this.applyMainCameraView();
-                this.updatePointerFromLast();
-            }
             this.events.fire('cameraFrames.forceRefreshViewport');
         };
         if (options?.skipHistory) {
@@ -2815,6 +2784,7 @@ export class CameraFramesController {
     }
 
     public applySnapshot(snapshot: CameraFramesState) {
+        const prevUiTarget = this.getUiTarget();
         const prevViewportPose = this.clonePoseSnapshot(this.viewportPoseRuntime);
         const prevViewportWorldDistance = this.viewportPoseRuntimeWorldDistance;
         const prevViewportFov = this.viewportFovRuntime;
@@ -2862,6 +2832,11 @@ export class CameraFramesController {
             updatePointerFromLast: () => this.updatePointerFromLast(),
             updateFovInfo: () => this.updateFovInfo()
         });
+        this.updateMainCameraSelected();
+        const nextUiTarget = this.getUiTarget();
+        if (prevUiTarget !== nextUiTarget) {
+            this.events.fire('cameraFrames.uiTargetChanged', nextUiTarget);
+        }
         this.syncPresetCounter();
         this.viewportPoseRuntime = this.clonePoseSnapshot(prevViewportPose);
         this.viewportPoseRuntimeWorldDistance = prevViewportPose ? prevViewportWorldDistance : null;
@@ -2897,6 +2872,7 @@ export class CameraFramesController {
     }
 
     private deserialize(docState: any) {
+        const prevUiTarget = this.getUiTarget();
         deserializeSerialize({
             docState,
             scene: this.scene,
@@ -2940,6 +2916,11 @@ export class CameraFramesController {
             updatePointerFromLast: () => this.updatePointerFromLast(),
             updateFovInfo: () => this.updateFovInfo()
         });
+        this.updateMainCameraSelected();
+        const nextUiTarget = this.getUiTarget();
+        if (prevUiTarget !== nextUiTarget) {
+            this.events.fire('cameraFrames.uiTargetChanged', nextUiTarget);
+        }
         this.syncPresetCounter();
     }
 }
