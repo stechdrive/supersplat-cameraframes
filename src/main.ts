@@ -280,8 +280,8 @@ const main = async () => {
     const referenceImagesController = registerReferenceImages(events, scene);
     const referenceImagesHistory = new ReferenceImagesHistory(
         events,
-        () => referenceImagesController.snapshot(),
-        snapshot => referenceImagesController.applySnapshot(snapshot)
+        () => referenceImagesController.snapshotFull(),
+        snapshot => referenceImagesController.applySnapshotFull(snapshot)
     );
     referenceImagesController.setHistory(referenceImagesHistory);
     registerDocEvents(scene, events);

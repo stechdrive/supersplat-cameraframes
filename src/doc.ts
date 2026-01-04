@@ -2,6 +2,7 @@ import { ElementType } from './element';
 import { Events } from './events';
 import { Model } from './model';
 import { recentFiles } from './recent-files';
+import { normalizeReferenceImageFilename } from './reference-image-filename';
 import { Scene } from './scene';
 import { DownloadWriter, FileStreamWriter } from './serialize/writer';
 import { ZipReader } from './serialize/zip-reader';
@@ -204,6 +205,22 @@ const registerDocEvents = (scene: Scene, events: Events) => {
             scene.docDeserializeLighting(document.lighting ?? null);
             const referenceDocState = document.referenceImages ?? document.referenceImage ?? null;
             const referenceBlobs = new Map<string, Blob>();
+            if (referenceDocState?.assets && Array.isArray(referenceDocState.assets)) {
+                for (const asset of referenceDocState.assets) {
+                    const assetId = asset?.id;
+                    const filename = asset?.source?.filename;
+                    if (typeof assetId !== 'string' || !assetId || typeof filename !== 'string' || !filename) {
+                        continue;
+                    }
+                    const safeName = normalizeReferenceImageFilename(filename);
+                    const refPath = `reference-images/assets/${assetId}/${safeName}`;
+                    try {
+                        referenceBlobs.set(refPath, await zip.blob(refPath));
+                    } catch (error) {
+                        console.warn(`reference image missing: ${refPath}`, error);
+                    }
+                }
+            }
             if (referenceDocState?.items && Array.isArray(referenceDocState.items)) {
                 for (const item of referenceDocState.items) {
                     const id = item?.id;

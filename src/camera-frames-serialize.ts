@@ -139,6 +139,8 @@ const normalizeExportPresetIds = (value: unknown, presets: CameraPreset[]): stri
     return next;
 };
 
+const LEGACY_REFERENCE_IMAGE_PRESET_ID = 'refpreset-1';
+
 const cloneCameraFramesStateBase = (
     state: CameraFramesStateBase,
     clonePoseSnapshot: ClonePoseSnapshot,
@@ -172,6 +174,7 @@ const cloneCameraPreset = (
     return {
         id: preset.id,
         name: preset.name,
+        referenceImagePresetId: preset.referenceImagePresetId ?? LEGACY_REFERENCE_IMAGE_PRESET_ID,
         selected: preset.selected,
         mainCamera: {
             transform: {
@@ -228,6 +231,9 @@ const normalizeCameraPreset = (
     if (!id || !name) {
         return null;
     }
+    const referenceImagePresetId = (typeof (value as any).referenceImagePresetId === 'string' && (value as any).referenceImagePresetId) ?
+        (value as any).referenceImagePresetId :
+        LEGACY_REFERENCE_IMAGE_PRESET_ID;
     if (!isObject(value.mainCamera) || !isObject((value.mainCamera as any).transform)) {
         return null;
     }
@@ -274,6 +280,7 @@ const normalizeCameraPreset = (
     return {
         id,
         name,
+        referenceImagePresetId,
         selected: !!value.selected,
         mainCamera,
         cameraFramesState
@@ -284,11 +291,15 @@ export const snapshot = ({ state, clonePoseSnapshot, normalizeFormat }: Snapshot
     const baseState = cloneCameraFramesStateBase(state, clonePoseSnapshot, normalizeFormat);
     const exportTarget = normalizeExportTarget(state.exportTarget);
     const exportPresetIds = normalizeExportPresetIds(state.exportPresetIds, state.cameraPresets ?? []);
+    const selectedPresetId = (typeof state.selectedPresetId === 'string' && state.cameraPresets.some(preset => preset.id === state.selectedPresetId)) ?
+        state.selectedPresetId :
+        (state.cameraPresets.find(preset => preset.selected)?.id ?? null);
     return {
         ...baseState,
         exportTarget,
         exportPresetIds,
-        cameraPresets: state.cameraPresets.map(preset => cloneCameraPreset(preset, clonePoseSnapshot, normalizeFormat))
+        cameraPresets: state.cameraPresets.map(preset => cloneCameraPreset(preset, clonePoseSnapshot, normalizeFormat)),
+        selectedPresetId
     };
 };
 
@@ -346,7 +357,14 @@ export const applySnapshot = ({
             setHasEnteredViewportOnce(true);
         }
         setSelectedId(state.frames.find(f => f.selected)?.id ?? null);
-        setSelectedPresetId(state.cameraPresets.find(preset => preset.selected)?.id ?? null);
+        const resolvedSelectedPresetId = (typeof state.selectedPresetId === 'string' && state.cameraPresets.some(preset => preset.id === state.selectedPresetId)) ?
+            state.selectedPresetId :
+            (state.cameraPresets.find(preset => preset.selected)?.id ?? null);
+        setSelectedPresetId(resolvedSelectedPresetId);
+        state.selectedPresetId = resolvedSelectedPresetId;
+        state.cameraPresets.forEach((preset) => {
+            preset.selected = preset.id === resolvedSelectedPresetId;
+        });
         state.nearClip = computeSafeNearClip(state.nearClip);
         state.exportGridOverlay = !!state.exportGridOverlay;
         state.exportModelLayers = !!state.exportModelLayers;
@@ -432,7 +450,8 @@ export const deserialize = ({
             exportModelLayers: false,
             exportTarget: 'current',
             exportPresetIds: [],
-            cameraPresets: []
+            cameraPresets: [],
+            selectedPresetId: null
         };
         setState(nextState);
         normalizeMainRenderBoxProjection(scene.camera.fov);
@@ -563,7 +582,8 @@ export const deserialize = ({
         exportTarget,
         exportPresetIds,
         mainCameraPose,
-        cameraPresets
+        cameraPresets,
+        selectedPresetId: null
     };
 
     setState(nextState);
@@ -593,6 +613,7 @@ export const deserialize = ({
         rawSelectedPresetId :
         (cameraPresets[0]?.id ?? null);
     setSelectedPresetId(resolvedSelectedPresetId);
+    nextState.selectedPresetId = resolvedSelectedPresetId;
     nextState.cameraPresets.forEach((preset) => {
         preset.selected = preset.id === resolvedSelectedPresetId;
     });

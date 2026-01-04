@@ -228,5 +228,6 @@
     "tooltip.timeline.remove-key": "Key entfernen",
     "tooltip.timeline.frame-rate": "Bildrate",
     "tooltip.timeline.total-frames": "Gesamtanzahl der Frames",
-    "tooltip.timeline.smoothness": "Weichheit"
+    "tooltip.timeline.smoothness": "Weichheit",
+    "panel.camera-frames.camera-presets.reference-image.unset": "Nicht festgelegt"
 }

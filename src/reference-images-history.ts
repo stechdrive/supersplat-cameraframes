@@ -1,6 +1,6 @@
 import { Events } from './events';
 import { SnapshotOp } from './history-ops';
-import type { ReferenceImagesState } from './reference-images-types';
+import type { ReferenceImagesFullState } from './reference-images-types';
 
 const cloneState = <T>(value: T): T => JSON.parse(JSON.stringify(value));
 
@@ -8,13 +8,13 @@ const isEqual = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify
 
 class ReferenceImagesHistory {
     private events: Events;
-    private getSnapshot: () => ReferenceImagesState;
-    private applySnapshot: (snapshot: ReferenceImagesState) => void;
+    private getSnapshot: () => ReferenceImagesFullState;
+    private applySnapshot: (snapshot: ReferenceImagesFullState) => void;
     private applying = false;
     private activeLabel: string | null = null;
-    private before: ReferenceImagesState | null = null;
+    private before: ReferenceImagesFullState | null = null;
 
-    constructor(events: Events, getSnapshot: () => ReferenceImagesState, applySnapshot: (snapshot: ReferenceImagesState) => void) {
+    constructor(events: Events, getSnapshot: () => ReferenceImagesFullState, applySnapshot: (snapshot: ReferenceImagesFullState) => void) {
         this.events = events;
         this.getSnapshot = getSnapshot;
         this.applySnapshot = applySnapshot;
@@ -44,7 +44,7 @@ class ReferenceImagesHistory {
         if (isEqual(before, after)) {
             return;
         }
-        const op = new SnapshotOp<ReferenceImagesState>({
+        const op = new SnapshotOp<ReferenceImagesFullState>({
             name,
             before,
             after,
@@ -71,7 +71,7 @@ class ReferenceImagesHistory {
         }
     }
 
-    private applyWithGuard(snapshot: ReferenceImagesState) {
+    private applyWithGuard(snapshot: ReferenceImagesFullState) {
         this.applying = true;
         try {
             this.applySnapshot(cloneState(snapshot));
