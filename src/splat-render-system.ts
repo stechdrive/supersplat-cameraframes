@@ -69,6 +69,8 @@ class SplatRenderSystem {
     private visibilityRebuildDebounceMs = 400;
     private sorterCentersDirty = false;
     private sorterMapping: Uint32Array | null = null;
+    private sorterUpdatedHandle: { off: () => void } | null = null;
+    private sorterUpdatedSorter: unknown | null = null;
 
     constructor(scene: Scene) {
         this.scene = scene;
@@ -227,6 +229,33 @@ class SplatRenderSystem {
 
     private markSorterCentersDirty() {
         this.sorterCentersDirty = true;
+    }
+
+    private clearSorterUpdatedHandler() {
+        if (this.sorterUpdatedHandle) {
+            this.sorterUpdatedHandle.off();
+        }
+        this.sorterUpdatedHandle = null;
+        this.sorterUpdatedSorter = null;
+    }
+
+    private ensureSorterUpdatedHandler() {
+        const sorter = this.mergedEntity.gsplat?.instance?.sorter;
+        if (!sorter) {
+            this.clearSorterUpdatedHandler();
+            return;
+        }
+        if (this.sorterUpdatedHandle && this.sorterUpdatedSorter === sorter) {
+            return;
+        }
+        this.clearSorterUpdatedHandler();
+        this.sorterUpdatedSorter = sorter;
+        this.sorterUpdatedHandle = sorter.on('updated', () => {
+            this.scene.forceRender = true;
+            this.sources.forEach((s) => {
+                s.changedCounter++;
+            });
+        });
     }
 
     private flushSorterCenters() {
@@ -617,6 +646,7 @@ class SplatRenderSystem {
     }
 
     private destroyMerged() {
+        this.clearSorterUpdatedHandler();
         if (this.mergedEntity.gsplat) {
             this.mergedEntity.removeComponent('gsplat');
         }
@@ -649,6 +679,8 @@ class SplatRenderSystem {
     onPreRender() {
         const instance = this.mergedEntity.gsplat?.instance;
         if (!instance) return;
+
+        this.ensureSorterUpdatedHandler();
 
         // check if we need to run delayed transform updates
         // this is necessary because the sorter (worker) and GPU resources might not be ready
@@ -716,6 +748,7 @@ class SplatRenderSystem {
         }
 
         // 前掃除
+        this.transformPalette.destroy();
         this.transformPalette = new TransformPalette(this.scene.graphicsDevice);
 
         // プロパティ検証
@@ -976,12 +1009,7 @@ class SplatRenderSystem {
             }
         }
 
-        instance.sorter.on('updated', () => {
-            this.scene.forceRender = true;
-            this.sources.forEach((s) => {
-                s.changedCounter++;
-            });
-        });
+        this.ensureSorterUpdatedHandler();
 
         this.rebuildSorterMapping();
         this.scene.forceRender = true;
