@@ -150,23 +150,32 @@ class MainCameraPropsPanel extends Container {
         mainPropsFovRow.append(mainPropsFovControl);
         body.append(mainPropsFovRow);
 
-        const mainPropsPosGrid = new Container({ class: 'control-parent' });
+        const mainPropsPosRow = new Container({ class: 'control-parent' });
         const mainPosX = new NumericInput({ class: 'control-element', precision: 3, step: 0.01, value: 0, style: 'width: 70px' });
         const mainPosY = new NumericInput({ class: 'control-element', precision: 3, step: 0.01, value: 0, style: 'width: 70px' });
         const mainPosZ = new NumericInput({ class: 'control-element', precision: 3, step: 0.01, value: 0, style: 'width: 70px' });
-        mainPropsPosGrid.dom.style.display = 'grid';
-        mainPropsPosGrid.dom.style.gridTemplateColumns = '28px 1fr 28px 1fr 28px 1fr';
-        mainPropsPosGrid.dom.style.columnGap = '4px';
-        mainPropsPosGrid.dom.style.alignItems = 'center';
-        mainPropsPosGrid.dom.style.paddingRight = '8px';
-        mainPropsPosGrid.dom.style.boxSizing = 'border-box';
-        mainPropsPosGrid.append(new Label({ class: 'control-label', text: 'X' }));
-        mainPropsPosGrid.append(mainPosX);
-        mainPropsPosGrid.append(new Label({ class: 'control-label', text: 'Y' }));
-        mainPropsPosGrid.append(mainPosY);
-        mainPropsPosGrid.append(new Label({ class: 'control-label', text: 'Z' }));
-        mainPropsPosGrid.append(mainPosZ);
-        body.append(mainPropsPosGrid);
+        mainPropsPosRow.dom.style.display = 'flex';
+        mainPropsPosRow.dom.style.alignItems = 'center';
+        mainPropsPosRow.dom.style.gap = '6px';
+        mainPropsPosRow.dom.style.paddingRight = '8px';
+        mainPropsPosRow.dom.style.boxSizing = 'border-box';
+        const axisPair = (text: string, input: NumericInput) => {
+            const pair = new Container();
+            pair.dom.style.display = 'flex';
+            pair.dom.style.alignItems = 'center';
+            pair.dom.style.gap = '2px';
+            pair.dom.style.flex = '1 1 0';
+            const label = new Label({ class: 'control-label', text });
+            label.dom.style.width = 'auto';
+            label.dom.style.margin = '0';
+            pair.append(label);
+            pair.append(input);
+            return pair;
+        };
+        mainPropsPosRow.append(axisPair('X', mainPosX));
+        mainPropsPosRow.append(axisPair('Y', mainPosY));
+        mainPropsPosRow.append(axisPair('Z', mainPosZ));
+        body.append(mainPropsPosRow);
 
         const mainPropsRotGrid = new Container({ class: 'control-parent' });
         const mainYawInput = new NumericInput({ class: 'control-element', precision: 2, step: 1, value: 0, style: 'width: 60px' });
