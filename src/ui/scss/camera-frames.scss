@@ -165,6 +165,21 @@
                 background-color: $clr-hilight;
                 color: $clr-active;
             }
+
+            &.locked {
+                opacity: 0.45;
+                cursor: not-allowed;
+                background-color: transparent;
+
+                &:hover {
+                    background-color: transparent;
+                }
+            }
+
+            &.locked.active {
+                background-color: transparent;
+                color: $text-secondary;
+            }
         }
     }
 }
