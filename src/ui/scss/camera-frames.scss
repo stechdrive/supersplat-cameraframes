@@ -383,7 +383,6 @@
     right: calc(480px + var(--camera-frames-help-offset-right, 0px));
     width: 320px;
     z-index: 5;
-    display: flex;
     flex-direction: column;
     align-items: stretch;
     overflow: hidden;
@@ -401,7 +400,7 @@
         opacity: 0.98;
     }
 
-    &:not(.pcui-hidden) {
+    &:not(.pcui-hidden):not([hidden]) {
         display: flex;
     }
 
