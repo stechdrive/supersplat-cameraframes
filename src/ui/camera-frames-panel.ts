@@ -213,7 +213,6 @@ class CameraFramesPanel extends Panel {
         let exportPresetIds: string[] = [];
         let navMode: 'orbit' | 'fpv' = 'orbit';
         let viewportLensEnabled = false;
-        let uiTarget: 'viewport' | 'main' = 'viewport';
         let canSelectMain = false;
         let mainPropsPanelOpen = false;
         let mainPropsPanelVisible = false;
@@ -225,7 +224,6 @@ class CameraFramesPanel extends Panel {
         let mainPropsTransformEditing = false;
         let mainPropsTransformEditingDepth = 0;
         let compact = false;
-        const framesActive = () => framesEnabled || uiTarget === 'main';
 
         let maskDetailsCollapsed = true;
         let exportDetailsCollapsed = true;
@@ -382,13 +380,6 @@ class CameraFramesPanel extends Panel {
         this.header.append(collapseButton);
         setCompact(false);
 
-        const viewportTargetButton = new Button({ class: ['radio-button'], text: '' });
-        const mainTargetButton = new Button({ class: ['radio-button'], text: '' });
-        viewportTargetButton.dom.setAttribute('aria-label', localize('panel.camera-frames.target.viewport'));
-        mainTargetButton.dom.setAttribute('aria-label', localize('panel.camera-frames.target.main'));
-        viewportTargetButton.dom.title = localize('panel.camera-frames.target.select');
-        mainTargetButton.dom.title = localize('panel.camera-frames.target.select');
-
         // layout group (大判指定)
         const layoutGroup = new Container({ class: ['layout-group'] });
         const layoutHeader = new Container({ class: ['layout-header', 'collapsible-header'] });
@@ -481,7 +472,6 @@ class CameraFramesPanel extends Panel {
         fovControl.dom.style.alignItems = 'center';
         fovControl.dom.style.gap = '6px';
         fovControl.append(fovSlider);
-        fovControl.append(mainTargetButton);
         fovRow.append(fovLabel);
         fovRow.append(fovControl);
         const viewportLensRow = new Container({ class: 'control-parent' });
@@ -499,7 +489,6 @@ class CameraFramesPanel extends Panel {
         viewportLensControl.dom.style.alignItems = 'center';
         viewportLensControl.dom.style.gap = '6px';
         viewportLensControl.append(viewportLensSlider);
-        viewportLensControl.append(viewportTargetButton);
         viewportLensRow.append(viewportLensLabel);
         viewportLensRow.append(viewportLensControl);
         const updateLensVisibility = () => {
@@ -864,13 +853,9 @@ class CameraFramesPanel extends Panel {
             updateMaskDetailsVisibility();
         });
 
-        const resolveTargetAvailability = () => {
-            const availability = events.invoke('cameraFrames.uiTargetAvailability') as { canSelectMain?: boolean } | null;
-            if (availability && typeof availability.canSelectMain === 'boolean') {
-                canSelectMain = availability.canSelectMain;
-            } else {
-                canSelectMain = !framesEnabled && !!lastState?.mainCameraPose;
-            }
+        const resolveTargetAvailability = (state?: CameraFramesState | null) => {
+            const current = state ?? lastState;
+            canSelectMain = !framesEnabled && !!current?.mainCameraPose;
         };
 
         const setMainPropsPanelOpen = (value: boolean) => {
@@ -902,53 +887,12 @@ class CameraFramesPanel extends Panel {
             }
         };
 
-        const setTargetButtonState = (button: Button, active: boolean, enabled: boolean) => {
-            button.class[active ? 'add' : 'remove']('active');
-            button.class[enabled ? 'remove' : 'add']('locked');
-            if (!enabled) {
-                button.class.remove('active'); // ロック時はactive表示を消す（Plan通りMain固定に見せる場合は別ロジックだが、ここではradioの見た目制御）
-            }
-            if (!enabled && active) {
-                // MainがロックされているがActiveとして表示したい場合（CF=ON時）、activeかつlockedにする
-                button.class.add('active');
-            }
-
-            button.dom.setAttribute('aria-pressed', active ? 'true' : 'false');
-            button.enabled = enabled; // input要素としてのdisable
-            button.dom.setAttribute('aria-disabled', enabled ? 'false' : 'true');
-        };
-
-        const updateTargetUI = () => {
-            resolveTargetAvailability();
-            const mainEnabled = canSelectMain && !framesEnabled;
-            // CF有効時は Main=Selected/Locked, Viewport=Unselected/Locked
-            // CF無効時は 通常のRadio動作
-            if (framesEnabled) {
-                setTargetButtonState(viewportTargetButton, false, false);
-                setTargetButtonState(mainTargetButton, true, false);
-                mainTargetButton.dom.title = localize('panel.camera-frames.target.locked');
-                viewportTargetButton.dom.title = localize('panel.camera-frames.target.locked');
-            } else {
-                setTargetButtonState(viewportTargetButton, uiTarget === 'viewport', true);
-                setTargetButtonState(mainTargetButton, uiTarget === 'main', mainEnabled);
-                mainTargetButton.dom.title = localize('panel.camera-frames.target.select');
-                viewportTargetButton.dom.title = localize('panel.camera-frames.target.select');
-            }
+        const updateTargetUI = (state?: CameraFramesState | null) => {
+            resolveTargetAvailability(state);
             mainCamBtn.class[framesEnabled ? 'add' : 'remove']('active');
             updateMainPropsButton();
             updateMainPropsPanelVisibility();
         };
-
-        viewportTargetButton.on('click', () => {
-            if (suppress) return;
-            events.fire('cameraFrames.setUiTarget', 'viewport');
-        });
-        mainTargetButton.on('click', () => {
-            if (suppress) return;
-            resolveTargetAvailability();
-            if (!canSelectMain || framesEnabled) return;
-            events.fire('cameraFrames.setUiTarget', 'main');
-        });
 
         // helpers
         const updateFovUI = (info?: FovInfo) => {
@@ -1310,7 +1254,7 @@ class CameraFramesPanel extends Panel {
         const setNavModeUI = (mode: 'orbit' | 'fpv') => {
             if (suppress) return;
             setNavModeState(mode);
-            if (uiTarget === 'main') {
+            if (framesEnabled) {
                 events.fire('cameraFrames.setMainNavMode', mode);
             } else {
                 events.fire('camera.setNavMode', mode);
@@ -1399,7 +1343,7 @@ class CameraFramesPanel extends Panel {
                 roll: newRoll,
                 lockRoll: rollLocked
             };
-            if (uiTarget === 'main') {
+            if (framesEnabled) {
                 events.fire('cameraFrames.setMainCameraRotation', rotationPayload);
             } else {
                 events.fire('camera.setRotationEuler', rotationPayload);
@@ -1467,7 +1411,7 @@ class CameraFramesPanel extends Panel {
                 roll: rollInput.value,
                 lockRoll: rollLocked
             };
-            if (uiTarget === 'main') {
+            if (framesEnabled) {
                 events.fire('cameraFrames.setMainCameraPose', { position, rotation });
             } else {
                 events.fire('camera.setPositionWorld', position);
@@ -1478,7 +1422,7 @@ class CameraFramesPanel extends Panel {
             if (suppress) return;
             const mul = altSlow ? 0.1 : 1;
             const payload = { right: right * mul, up: up * mul, forward: forward * mul, scale: 1 };
-            if (uiTarget === 'main') {
+            if (framesEnabled) {
                 events.fire('cameraFrames.nudgeMainCamera', payload);
             } else {
                 events.fire('camera.nudgeLocal', payload);
@@ -1565,7 +1509,7 @@ class CameraFramesPanel extends Panel {
             lastPose.y = newY;
             lastPose.z = newZ;
             const positionPayload = { x: newX, y: newY, z: newZ };
-            if (uiTarget === 'main') {
+            if (framesEnabled) {
                 events.fire('cameraFrames.setMainCameraPosition', positionPayload);
             } else {
                 events.fire('camera.setPosition', positionPayload);
@@ -1845,9 +1789,8 @@ class CameraFramesPanel extends Panel {
         };
 
         const updateNearClipUI = () => {
-            const active = framesActive();
-            nearClipRow.dom.style.display = active ? 'grid' : 'none';
-            nearClipInput.enabled = active;
+            nearClipRow.dom.style.display = framesEnabled ? 'grid' : 'none';
+            nearClipInput.enabled = framesEnabled;
         };
         // state update hook
         const updateFromState = (state: CameraFramesState) => {
@@ -1856,10 +1799,15 @@ class CameraFramesPanel extends Panel {
             // enableToggle.value = state.enabled;
             framesEnabled = state.enabled;
             updateNearClipUI();
-            updateTargetUI();
+            updateTargetUI(state);
             updateLensVisibility();
-            if (uiTarget === 'main' && state.mainCameraPose?.navMode) {
+            if (framesEnabled && state.mainCameraPose?.navMode) {
                 setNavModeState(state.mainCameraPose.navMode);
+            } else if (!framesEnabled) {
+                const viewportNav = events.invoke('camera.navMode') as ('orbit' | 'fpv');
+                if (viewportNav) {
+                    setNavModeState(viewportNav);
+                }
             }
 
             widthScale.input.value = state.renderBox.scalePct.x;
@@ -1950,7 +1898,7 @@ class CameraFramesPanel extends Panel {
             applyViewportLensState();
             // update camera pose display (pull live values)
             if (!transformEditing) {
-                const transform = (uiTarget === 'main') ?
+                const transform = framesEnabled ?
                     (events.invoke('cameraFrames.mainTransform') as any) :
                     (events.invoke('camera.transform') as any);
                 if (transform) {
@@ -1993,36 +1941,12 @@ class CameraFramesPanel extends Panel {
             updateFovUI(info);
             updateMainPropsFovUI();
         });
-        events.on('cameraFrames.uiTargetChanged', (target: 'viewport' | 'main') => {
-            uiTarget = target === 'main' ? 'main' : 'viewport';
-            if (!appReady) {
-                return;
-            }
-            updateNearClipUI();
-            updateTargetUI();
-            updateFovUI();
-            updateMainPropsFovUI();
-            applyViewportLensState();
-            const nav = uiTarget === 'main' ? (lastState?.mainCameraPose?.navMode ?? navMode) : (events.invoke('camera.navMode') as ('orbit' | 'fpv'));
-            if (nav) {
-                setNavModeState(nav);
-            }
-            if (!transformEditing) {
-                const transform = (uiTarget === 'main') ?
-                    (events.invoke('cameraFrames.mainTransform') as any) :
-                    (events.invoke('camera.transform') as any);
-                if (transform) {
-                    applyTransformToInputs(transform);
-                }
-            }
-        });
-
         function applyViewportLensState(info?: { enabled: boolean; mm: number; min: number; max: number }) {
             suppress = true;
-            const state = (uiTarget === 'viewport' && !framesEnabled) ? (info ?? (events.invoke('cameraFrames.viewportLens') as any)) : null;
+            const state = !framesEnabled ? (info ?? (events.invoke('cameraFrames.viewportLens') as any)) : null;
             if (state) {
                 viewportLensEnabled = !!state.enabled;
-                viewportLensSlider.enabled = viewportLensEnabled && uiTarget === 'viewport' && !framesEnabled;
+                viewportLensSlider.enabled = viewportLensEnabled && !framesEnabled;
                 viewportLensSlider.min = state.min ?? viewportLensSlider.min;
                 viewportLensSlider.max = state.max ?? viewportLensSlider.max;
                 if (typeof state.mm === 'number' && isFinite(state.mm)) {
@@ -2037,7 +1961,7 @@ class CameraFramesPanel extends Panel {
         events.on('cameraFrames.viewportLensChanged', (info: any) => applyViewportLensState(info));
 
         events.on('camera.navMode', (mode: 'orbit' | 'fpv') => {
-            if (uiTarget !== 'viewport') return;
+            if (framesEnabled) return;
             setNavModeState(mode);
         });
 
@@ -2084,7 +2008,7 @@ class CameraFramesPanel extends Panel {
         }
 
         events.on('camera.transform', (t: any) => {
-            if (uiTarget !== 'viewport') return;
+            if (framesEnabled) return;
             applyTransformToInputs(t);
         });
 
@@ -2099,8 +2023,8 @@ class CameraFramesPanel extends Panel {
             applyReferenceIncludeState(referenceState);
             const referencePresetsState = (events.invoke('referenceImages.presetsState') as ReferenceImagesPresetsState | null) ?? null;
             applyReferencePresetsState(referencePresetsState);
-
-            uiTarget = (events.invoke('cameraFrames.uiTarget') as ('viewport' | 'main')) ?? 'viewport';
+            const enabled = events.invoke('cameraFrames.enabled') as boolean;
+            framesEnabled = !!enabled;
 
             const initialFovInfo = events.invoke('cameraFrames.fovInfo') as FovInfo;
             if (initialFovInfo) {
@@ -2116,15 +2040,16 @@ class CameraFramesPanel extends Panel {
                 applyViewportLensState();
             }
 
-            const initialNav = uiTarget === 'main' ?
-                (lastState?.mainCameraPose?.navMode ?? (events.invoke('camera.navMode') as ('orbit' | 'fpv'))) :
-                (events.invoke('camera.navMode') as ('orbit' | 'fpv'));
+            const viewportNav = (events.invoke('camera.navMode') as ('orbit' | 'fpv'));
+            const initialNav = framesEnabled ?
+                (lastState?.mainCameraPose?.navMode ?? viewportNav) :
+                viewportNav;
             if (initialNav) {
                 setNavModeState(initialNav);
             }
 
             if (!transformEditing) {
-                const initialTransform = (uiTarget === 'main') ?
+                const initialTransform = framesEnabled ?
                     (events.invoke('cameraFrames.mainTransform') as any) :
                     (events.invoke('camera.transform') as any);
                 if (initialTransform) {
