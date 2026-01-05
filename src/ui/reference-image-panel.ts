@@ -1,4 +1,4 @@
-import { Button, Container, Label, NumericInput, SelectInput } from '@playcanvas/pcui';
+import { Button, Container, Label, NumericInput, SelectInput, TextInput } from '@playcanvas/pcui';
 
 import { Events } from '../events';
 import { formatInteger, localize } from './localization';
@@ -48,6 +48,11 @@ type ReferenceImagesState = {
     items: ReferenceImageItemState[];
 };
 
+type ReferenceImagesPresetsState = {
+    activePresetId: string | null;
+    presets: Array<{ id: string; name: string; }>;
+};
+
 type SelectionBaseEntry = {
     offsetX: number;
     offsetY: number;
@@ -64,6 +69,8 @@ type ViewportMapping = {
     logicalW: number;
     logicalH: number;
 };
+
+const DEFAULT_REFERENCE_IMAGE_PRESET_ID = 'refpreset-blank';
 
 const isFiniteNumber = (value: unknown): value is number => typeof value === 'number' && isFinite(value);
 
@@ -85,6 +92,11 @@ class ReferenceImagePanel extends Container {
         let selectionAnchorId: string | null = null;
         const relativeInputs = new Set<NumericInput>();
         const selectionBaseByInput = new Map<NumericInput, SelectionBase>();
+        let activePresetId: string | null = null;
+        let activePresetName = '';
+        let presetEditing = false;
+        let presetEditId: string | null = null;
+        let presetEditName = '';
 
         const panelHeader = new Container({ class: 'panel-header' });
         const panelIcon = new Container({ class: 'panel-header-icon' });
@@ -179,6 +191,18 @@ class ReferenceImagePanel extends Container {
             ['pointerdown', 'pointerup', 'click'].forEach((evt) => {
                 button.dom.addEventListener(evt, (e: Event) => e.stopPropagation());
             });
+        });
+
+        const presetRow = new Container({ class: ['control-parent', 'reference-image-preset-row'] });
+        const presetLabel = new Label({ class: 'control-label', text: localize('panel.reference-image.preset-name') });
+        const presetInput = new TextInput({ class: ['control-element-expand', 'reference-image-preset-input'] });
+        presetInput.dom.title = localize('panel.reference-image.preset-name');
+        presetInput.dom.setAttribute('aria-label', presetInput.dom.title);
+        presetInput.enabled = false;
+        presetRow.append(presetLabel);
+        presetRow.append(presetInput);
+        ['pointerdown', 'pointerup', 'click', 'dblclick'].forEach((evt) => {
+            presetInput.dom.addEventListener(evt, (e: Event) => e.stopPropagation());
         });
 
         // list (back/front)
@@ -978,6 +1002,85 @@ class ReferenceImagePanel extends Container {
             }
         });
 
+        const beginPresetEdit = () => {
+            if (!presetInput.enabled) {
+                return;
+            }
+            presetEditing = true;
+            presetEditId = activePresetId;
+            presetEditName = activePresetName;
+        };
+
+        const finishPresetEdit = (commit: boolean) => {
+            if (!presetEditing) {
+                return;
+            }
+            presetEditing = false;
+            const editId = presetEditId;
+            const baseName = presetEditName;
+            presetEditId = null;
+            presetEditName = '';
+            if (!commit || !editId || editId === DEFAULT_REFERENCE_IMAGE_PRESET_ID) {
+                presetInput.value = activePresetName;
+                return;
+            }
+            const nextName = presetInput.value.trim();
+            if (!nextName) {
+                presetInput.value = baseName;
+                return;
+            }
+            if (nextName !== baseName) {
+                events.fire('referenceImages.renamePreset', editId, nextName);
+            } else {
+                presetInput.value = baseName;
+            }
+        };
+
+        presetInput.input.addEventListener('focus', () => {
+            beginPresetEdit();
+        });
+        presetInput.input.addEventListener('blur', () => {
+            finishPresetEdit(true);
+        });
+        presetInput.input.addEventListener('keydown', (event: KeyboardEvent) => {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                finishPresetEdit(true);
+                presetInput.input.blur();
+            } else if (event.key === 'Escape') {
+                event.preventDefault();
+                finishPresetEdit(false);
+                presetInput.input.blur();
+            }
+        });
+
+        const applyPresetsState = (state?: ReferenceImagesPresetsState | null) => {
+            const presets = Array.isArray(state?.presets) ? state.presets : [];
+            const nextActiveId = state?.activePresetId ?? null;
+            const activePreset = nextActiveId ? presets.find(preset => preset.id === nextActiveId) ?? null : null;
+            const nextName = activePreset?.name ?? '';
+            const editable = !!nextActiveId && nextActiveId !== DEFAULT_REFERENCE_IMAGE_PRESET_ID;
+            const presetChanged = nextActiveId !== activePresetId;
+
+            activePresetId = nextActiveId;
+            activePresetName = nextName;
+
+            presetInput.enabled = editable;
+            if (!editable && document.activeElement === presetInput.input) {
+                presetInput.input.blur();
+            }
+
+            if (presetChanged) {
+                presetEditing = false;
+                presetEditId = null;
+                presetEditName = '';
+            }
+
+            if (!presetEditing) {
+                presetInput.value = nextName;
+            }
+        };
+
         const applyState = (state?: ReferenceImagesState | null) => {
             suppress = true;
 
@@ -1077,8 +1180,11 @@ class ReferenceImagePanel extends Container {
             appReady = true;
             const initialState = events.invoke('referenceImages.state') as ReferenceImagesState | null;
             applyState(initialState);
+            const initialPresetsState = events.invoke('referenceImages.presetsState') as ReferenceImagesPresetsState | null;
+            applyPresetsState(initialPresetsState);
         });
         events.on('referenceImages.stateChanged', (state: ReferenceImagesState) => applyState(state));
+        events.on('referenceImages.presetsState', (state: ReferenceImagesPresetsState) => applyPresetsState(state));
 
         const setVisible = (visible: boolean) => {
             const nextHidden = !visible;
@@ -1108,6 +1214,7 @@ class ReferenceImagePanel extends Container {
         });
 
         body.append(actionsRow);
+        body.append(presetRow);
         body.append(lists);
         body.append(positionGroup);
         body.append(groupRow);

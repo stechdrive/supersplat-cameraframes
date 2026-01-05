@@ -135,6 +135,7 @@ class Splat extends Element {
 
     destroy() {
         super.destroy();
+        this.transformPalette?.destroy();
         this.entity.destroy();
         this.asset.registry.remove(this.asset);
         this.asset.unload();

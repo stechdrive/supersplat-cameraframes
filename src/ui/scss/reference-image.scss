@@ -37,6 +37,15 @@
         gap: 6px;
     }
 
+    .reference-image-preset-row {
+        align-items: center;
+        gap: 6px;
+    }
+
+    .reference-image-preset-input {
+        min-width: 0;
+    }
+
     .reference-image-lists {
         display: flex;
         flex-direction: column;

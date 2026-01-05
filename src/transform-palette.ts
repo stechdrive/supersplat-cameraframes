@@ -25,6 +25,7 @@ class TransformPalette {
     endUpdate: () => void;
     alloc: (num?: number) => number;
     free: (num?: number) => void;
+    destroy: () => void;
     texture: Texture;
 
     constructor(device: GraphicsDevice, initialSize = 4096) {
@@ -32,6 +33,7 @@ class TransformPalette {
         let data: Float32Array;
         let batchDepth = 0;
         let pendingUpload = false;
+        let destroyed = false;
 
         // reallocate the storage texture and copy over old data
         const realloc = (width: number, height: number) => {
@@ -114,6 +116,16 @@ class TransformPalette {
 
         this.free = (num = 1) => {
             nextIdx -= num;
+        };
+
+        this.destroy = () => {
+            if (destroyed) {
+                return;
+            }
+            destroyed = true;
+            if (texture) {
+                texture.destroy();
+            }
         };
 
         Object.defineProperty(this, 'texture', { get() {

@@ -228,5 +228,11 @@
     "tooltip.timeline.frame-rate": "Velocidad de fotogramas",
     "tooltip.timeline.total-frames": "Fotogramas totales",
     "tooltip.timeline.smoothness": "Suavidad",
-    "panel.camera-frames.camera-presets.reference-image.unset": "Sin configurar"
+    "panel.camera-frames.camera-presets.reference-image.unset": "Sin configurar",
+    "panel.camera-frames.mode.toggle": "Cambiar cámara principal/edición",
+    "panel.camera-frames.main-props.toggle": "Controles de la cámara principal",
+    "panel.camera-frames.main-props.title": "Controles de la cámara principal",
+    "panel.camera-frames.main-props.close": "Cerrar controles de la cámara principal"
+    "panel.camera-frames.transform.title.main": "Controles de la cámara principal",
+    "panel.camera-frames.transform.title.viewport": "Controles de la cámara de edición",
 }

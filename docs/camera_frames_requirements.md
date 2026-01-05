@@ -1,44 +1,41 @@
-# supersplat CAMERA FRAMES / Render Box 要件定義 v9（現行実装準拠）
+# supersplat CAMERA FRAMES / Render Box 要件定義 v10（現行実装準拠）
 
 ## 0. バージョンと参照
 
-- ベースコード: `src/camera-frames.ts` / `src/ui/camera-frames-panel.ts` / `src/camera.ts` / `src/scene.ts` / `src/render.ts`（package version 2.16.4 / HEAD 時点）。
+- ベースコード: `src/camera-frames.ts` / `src/ui/camera-frames-panel.ts` / `src/camera.ts` / `src/scene.ts` / `src/render.ts`（package version 2.16.5 / HEAD 時点）。
 - 関連実装: `src/reference-image-controller.ts` / `src/reference-image-types.ts` / `src/render.ts`（参照画像のプレビュー/書き出し・includeReferenceImage フラグ・永続化）。
-- CAMERA FRAMES 個別バージョン: `cameraFramesVersion` = **v2.13.0**（`package.json` 由来、`#app-label` に `| CAMERA FRAMES v2.13.0` を追加表示）。
-- 本書は v8 を置き換える **実装準拠版 v9**。更新点:
-  - マスクに `scope: 'all' | 'selected'` を追加し、スコープ選択と不透明度(%)入力を UI/履歴/永続化に反映（デフォルト 80% / all）。
-  - ターゲット切替をラジオ風ボタンで明示。CAMERA FRAMES ON 時は Main/Viewport ともロック表示、OFF 時のみ main 選択可（mainCameraPose 保持時）。Main デバッグフラスタムの色は選択中=マゼンタ/非選択=シアン。
-  - Export 前後で `syncExportFrustum` により targetSize を一時設定→復元し、プレビューフラスタムへ戻す。グリッド/アイレベルは単一トグルで両方出力、モデルレイヤーは可視モデルごとに単体描画（PSD のみ）。
-  - パネルヘッダーの ON/OFF トグル（Main/Viewport アイコン）とコンパクト切替を正式化。タイムライン再生中は mainCameraPose の自動更新を抑止。
-  - 参照画像（Reference Image）のヘッダー連携（パネル開閉/表示切替）と Export への取り込みトグル（includeInRender）を追加。PNG はピクセル合成、PSD は `Reference` レイヤーで front/back を反映。
-  - 起動後の初回 `postrender` で CAMERA FRAMES を自動 ON + `camera.setNavMode('fpv')`（`src/main.ts`）。
+- CAMERA FRAMES 個別バージョン: `cameraFramesVersion` = **v2.15.0**（`package.json` 由来、`#app-label` に `| CAMERA FRAMES v2.15.0` を追加表示）。
+- 本書は v9 を置き換える **実装準拠版 v10**。更新点:
+ - ヘッダーを **CAMERA FRAMES ON/OFF + 撮影カメラ操作パネル** に整理し、uiTarget 切替 UI を撤去。
+ - 焦点距離 UI を **撮影表示/編集表示で一本化**。編集視点での撮影カメラ編集は撮影カメラ操作パネルに集約。
+ - `mainEditMode` を追加し、CF OFF でも撮影カメラ操作パネル表示中はフラスタム強調と near clip 反映を維持。
 
 ---
 
 ## 1. 目的とゴール
 
 1. **レンダーボックスのアンカー付き拡縮**
-   - 9 アンカー（左/中央/右 × 上/中央/下）から基準点を選び、基準側の構図を完全維持したまま反対側だけ視野を増減させる off-axis フラスタムを実現する。
-   - 横縦別々の拡大率を掛けてもアンカー位置の構図が崩れない。
+ - 9 アンカー（左/中央/右 × 上/中央/下）から基準点を選び、基準側の構図を完全維持したまま反対側だけ視野を増減させる off-axis フラスタムを実現する。
+ - 横縦別々の拡大率を掛けてもアンカー位置の構図が崩れない。
 
 2. **表示倍率（viewZoom 25-100%）の縮小表示**
-   - ズームアウト時は「元の構図を縮小した像」がキャンバス内で小さくなり、周囲の 3D シーンが余白として見えてくる。キャンバス外が黒で欠けない。
-   - WebGL 描画・レンダーボックス枠・フレーム・マスクを一体で縮小し、フラスタムを拡張して全画面を埋める。
+ - ズームアウト時は「元の構図を縮小した像」がキャンバス内で小さくなり、周囲の 3D シーンが余白として見えてくる。キャンバス外が黒で欠けない。
+ - WebGL 描画・レンダーボックス枠・フレーム・マスクを一体で縮小し、フラスタムを拡張して全画面を埋める。
 
 3. **基準 FOV と実効フラスタムの分離**
-   - 表示値としての FOV(mm) = **構図基準水平 FOV** を保持し、UI で変更があったときのみ再設定。
-   - 実投影はレンダーボックス拡大量・viewZoom・アンカーから都度再計算する。
+ - 表示値としての FOV(mm) = **構図基準水平 FOV** を保持し、UI で変更があったときのみ再設定。
+ - 実投影はレンダーボックス拡大量・viewZoom・アンカーから都度再計算する。
 
 4. **プレビューと書き出しの一致**
-   - プレビューで見えているレンダーボックス内の内容が、PNG/PSD 出力とピクセル単位で一致する（書き出し時は viewZoom=100%・フラスタム拡張なし）。
+ - プレビューで見えているレンダーボックス内の内容が、PNG/PSD 出力とピクセル単位で一致する（書き出し時は viewZoom=100%・フラスタム拡張なし）。
 
 5. **既存 UX の維持 + 実装強化**
-   - フレームの移動/回転/スケール/アンカー操作、Shift 軸ロック、Alt 基準変更、ダブルクリックリセット等の操作性を維持。
-   - 150dpi PNG への pHYs 付与、PSD レイヤー分割、グリッド/アイレベルのオプション出力、ニアクリップ安全化など現行実装の細部も要件化。
+ - フレームの移動/回転/スケール/アンカー操作、Shift 軸ロック、Alt 基準変更、ダブルクリックリセット等の操作性を維持。
+ - 150dpi PNG への pHYs 付与、PSD レイヤー分割、グリッド/アイレベルのオプション出力、ニアクリップ安全化など現行実装の細部も要件化。
 
 6. **CAMERA FRAMES OFF 時のカメラ編集補助**
-   - Main Camera Pose を保持し、CAMERA FRAMES 無効時でも UI から pose/FOV(mm)/navMode/near を編集できる。
-   - Viewport ターゲットでは通常カメラ用のレンズ(mm)スライダーを提供し、main ターゲットでは構図基準 FOV(mm) を保持する。
+ - Capture Camera Pose を保持し、CAMERA FRAMES 無効時は **撮影カメラ操作パネル** から pose/FOV(mm)/navMode/near を編集できる。
+ - 編集表示時は通常カメラ用のレンズ(mm)スライダーを表示し、撮影表示時は構図基準 FOV(mm) を表示する。
 
 ---
 
@@ -50,11 +47,11 @@
 ### 2.2 レンダーボックス（Render Box / 基準紙）
 - 基準解像度: `1754 × 1240 px`（A4 150dpi）。
 - スケール:
-  ```ts
-  logicalW = baseW * scale.kx; // kx = scalePct.x / 100
-  logicalH = baseH * scale.ky; // ky = scalePct.y / 100
-  ```
-  100%以上のみ許容、各軸 16000px 以下にクランプ。
+ ```ts
+ logicalW = baseW * scale.kx; // kx = scalePct.x / 100
+ logicalH = baseH * scale.ky; // ky = scalePct.y / 100
+ ```
+ 100%以上のみ許容、各軸 16000px 以下にクランプ。
 - アンカー `ax/ay` = 0 | 0.5 | 1。アンカーは「構図を固定する基準点」で、拡縮時の off-axis 変形に使う。UI グリッドは ay=0 が「上」に相当する。
 - `center` はスクリーン座標 (px)。リサイズ時もアンカーのスクリーン位置を保つよう補正。
 - `fitScale` = viewZoom=100% 時に論理サイズをビューポートへフィットさせる係数。`viewScale = fitScale * (viewZoomPct / 100)` がオーバーレイの実スケール。
@@ -84,19 +81,21 @@
 - リサイズ・拡縮・ズームを繰り返しても、アンカー基準のスクリーン座標と構図がずれない。
 - 毎回 `baseFrustum + 現在パラメータ` から再計算し、差分更新や累積誤差を持たない。
 
-### 2.8 UI ターゲットと Main Camera Pose
-- **uiTarget** = `'viewport' | 'main'`。CAMERA FRAMES 無効時のみ main を選択可能（`mainCameraPose` 保持済みかつ書き出し中でない場合）。有効化時は強制で viewport。
-- `mainCameraPose` は CAMERA FRAMES 用の基準ポーズ。無効化時も保持し、main ターゲットで編集できる。viewport ターゲットは通常カメラを直接編集。
-- main ターゲット選択中はデバッグレイヤーに main フラスタムを描画（選択色: マゼンタ、非選択時: シアン）。描画のみでヒット不可。
+### 2.8 表示モードと Capture Camera Pose
+- **framesEnabled** が true のときは撮影表示（CAMERA FRAMES ON）、false のときは編集表示。
+- `mainCameraPose` は CAMERA FRAMES 用の基準ポーズ。編集表示中も保持し、**撮影カメラ操作パネル** から編集できる。
+- 撮影カメラ操作パネル表示中は **mainEditMode** として扱い、撮影フラスタムを選択色で強調（描画のみでヒット不可）。
 
-### 2.9 Viewport Lens (CAMERA FRAMES OFF 用)
-- CAMERA FRAMES 無効かつ uiTarget=viewport 時のみ有効なレンズ(mm)スライダー。現在のカメラ FOV を 35mm 換算で表示し、`camera.setFov` で反映。
+### 2.9 Viewport Lens（編集表示用）
+- 編集表示時のみ有効なレンズ(mm)スライダー。現在のカメラ FOV を 35mm 換算で表示し、`camera.setFov` で反映。
 - 換算レンジは renderBox 基準幅によるクロップ係数を用いて計算（HFOV 10?120° 相当）。
 
 ### 2.10 参照画像（Reference Image）との連携
 - 参照画像は `ReferenceImageState`（`enabled` / `visible` / `layer: 'back'|'front'` / `opacity` / `includeInRender` など）として別モジュールで管理され、CAMERA FRAMES は **書き出し時のみ**これを参照する。
 - ベース描画（`render.offscreen`）には参照画像を混ぜず、`referenceImage.renderExportLayer(width,height,{applyOpacity})` で **別キャンバス**として生成して合成する（`render.offscreen({ includeReferenceImage:false })` 固定）。
 - 取り込み条件: `enabled && visible && includeInRender` を満たす場合のみ。条件を満たさない／参照画像未ロードの場合は出力に含めない。
+- 参照画像はプリセット単位で管理する。デフォルトは `(blank)` の空プリセット。
+- 下絵を初めて読み込むタイミングでアクティブプリセットが `(blank)` の場合、読み込んだ最初のファイル名をプリセット名として新規作成し自動で切り替える（以後は自動更新しない）。
 - PNG: `applyOpacity=true` で不透明度をピクセルに焼き込み、`layer='back'` は `destination-over`、`layer='front'` は `source-over` で合成する。
 - PSD: `applyOpacity=false`（キャンバスは不透明度 1.0）とし、PSD レイヤー側の `opacity` として保持する。`layer='back'` は underlay（Render の下）、`layer='front'` は overlay（モデル/フレームの間）へ。レイヤー名は `'Reference'`。
 
@@ -107,18 +106,18 @@
 ### 3.1 CameraFramesState
 ```ts
 type CameraFramesState = {
-  enabled: boolean;
-  renderBox: RenderBoxState;
-  frames: FrameState[];
-  mask: FrameMaskState;
-  mainCameraPose?: CameraPoseSnapshot | null;
-  nearClip?: number | null;
-  exportName?: string;
-  exportFormat?: 'png' | 'psd';
-  exportGridOverlay?: boolean;
-  exportModelLayers?: boolean;
-  exportTarget?: 'current' | 'all' | 'selected';
-  exportPresetIds?: string[];
+ enabled: boolean;
+ renderBox: RenderBoxState;
+ frames: FrameState[];
+ mask: FrameMaskState;
+ mainCameraPose?: CameraPoseSnapshot | null;
+ nearClip?: number | null;
+ exportName?: string;
+ exportFormat?: 'png' | 'psd';
+ exportGridOverlay?: boolean;
+ exportModelLayers?: boolean;
+ exportTarget?: 'current' | 'all' | 'selected';
+ exportPresetIds?: string[];
 };
 ```
 
@@ -150,7 +149,7 @@ type CameraFramesState = {
 - `mainCameraPose`: 現在のカメラ姿勢を初期スナップショットして保持（未取得なら有効化時に取得）。
 - `enabled`: デフォルトは false。ただし起動後の初回 `postrender` で `cameraFrames.setEnabled(true)` を発火し、自動的に有効化される（`src/main.ts`）。
 - `nearClip`: null（有効化時にカメラ値から安全値を算出して固定）
-- `exportName`: `'cf-%cam'`（`%cam` は選択中のカメラデータのプリセット名に置換）
+- `exportName`: `'cf-%cam'`（`%cam` は選択中のカメラリストのプリセット名に置換）
 - `exportFormat`: 既定は `psd`（UI の `defaultValue` / 既存ドキュメントで未指定時のフォールバック）。ただしドキュメント未保存からの初期化 (`docState=null`) では `png` を採用し、その後の状態・UI 表示はこれに追従する。
 - `exportGridOverlay`: false
 - `exportModelLayers`: false
@@ -177,41 +176,41 @@ type CameraFramesState = {
 ### 4.2 基準フラスタム（`rebuildBaseFrustum`）
 - アスペクト: **レンダーボックスの baseSize** を使用（A4 なら A4 比率）。基準フレーム比 (16:9) は使用しない。
 - FOV:
-  ```ts
-  baseFovDeg = projection.baseFov ?? scene.camera.fov ?? HFOV_MIN;
-  horizontalRad = clampFov(baseFovDeg -> horizontal, aspect); // 10?120°
-  halfW = near * tan(horizontalRad / 2);
-  halfH = halfW / aspect;
-  l0=-halfW, r0=halfW, b0=-halfH, t0=halfH;
-  ```
+ ```ts
+ baseFovDeg = projection.baseFov ?? scene.camera.fov ?? HFOV_MIN;
+ horizontalRad = clampFov(baseFovDeg -> horizontal, aspect); // 10?120°
+ halfW = near * tan(horizontalRad / 2);
+ halfH = halfW / aspect;
+ l0=-halfW, r0=halfW, b0=-halfH, t0=halfH;
+ ```
 - `lockFovAxis` は `'horizontal'` 固定（CAMERA FRAMES 有効時）。`camera.horizontalFov` も水平固定へ設定。
 - Ortho 時は `orthoHalfHeight` を使用して左右上下を決定。
 
 ### 4.3 レンダーボックス拡大量とアンカーによる off-axis
 ```ts
-width1  = (r0 - l0) * kx;
+width1 = (r0 - l0) * kx;
 height1 = (t0 - b0) * ky;
-left1   = l0 + ax * ((r0 - l0) - width1);
-right1  = left1 + width1;
+left1 = l0 + ax * ((r0 - l0) - width1);
+right1 = left1 + width1;
 // ay=0 が「上」を指すため、Y-up フラスタムでは (1 - ay) を使う
 bottom1 = b0 + (1 - ay) * ((t0 - b0) - height1);
-top1    = bottom1 + height1;
+top1 = bottom1 + height1;
 ```
 - これが **書き出し時のフラスタム**（拡張なし）でもある。
 
 ### 4.4 プレビュー時のフラスタム拡張（外挿）
 1. `rectPxRaw`（スクリーン上のレンダーボックス矩形・クリップなし）と `rbW/rbH`（近面上の幅）から 1px 当たりのワールド幅:
-   ```ts
-   pxToWorldX = rbW / rectPxRaw.w;
-   pxToWorldY = rbH / rectPxRaw.h;
-   ```
+ ```ts
+ pxToWorldX = rbW / rectPxRaw.w;
+ pxToWorldY = rbH / rectPxRaw.h;
+ ```
 2. 画面全域をカバーする left/right/top/bottom:
-   ```ts
-   left   = rbLeft  - rectPxRaw.x * pxToWorldX;
-   right  = left + vw * pxToWorldX;
-   top    = rbTop   + rectPxRaw.y * pxToWorldY;   // DOM Y=上, フラスタム Y-up
-   bottom = top - vh * pxToWorldY;
-   ```
+ ```ts
+ left = rbLeft - rectPxRaw.x * pxToWorldX;
+ right = left + vw * pxToWorldX;
+ top = rbTop + rectPxRaw.y * pxToWorldY; // DOM Y=上, フラスタム Y-up
+ bottom = top - vh * pxToWorldY;
+ ```
 3. これを `camera.setCustomFrustum` に適用し、PlayCanvas の Rect/Scissor は常に 0,0,1,1 にリセット。
 
 ### 4.5 書き出し時のフラスタム
@@ -221,12 +220,12 @@ top1    = bottom1 + height1;
 ### 4.6 FOV(mm) 計算
 - クロップ係数: `crop = renderBox.baseSize.w / 1536`。
 - 換算:
-  ```ts
-  eqMm = (W_35MM / (2 * tan(hfovRad/2))) * crop;
-  hfovFrameDeg = 2 * atan(tan(hfovRad/2) / crop);
-  ```
+ ```ts
+ eqMm = (W_35MM / (2 * tan(hfovRad/2))) * crop;
+ hfovFrameDeg = 2 * atan(tan(hfovRad/2) / crop);
+ ```
 - UI スライダーの範囲は `HFOV_MIN/HFOV_MAX` を mm に変換した値で動的決定。計算時のアスペクトは `DEFAULT_FRAME_BASE` (16:9)。変更時のみ `baseFov` を更新し再計算。
-- CAMERA FRAMES 無効時の viewport lens(mm) は同じ換算式で現在のカメラ FOV を表示・編集する（uiTarget=viewport のみ、main ターゲットでは baseFov を編集）。
+- 編集表示時の viewport lens(mm) は同じ換算式で現在のカメラ FOV を表示・編集する（撮影表示では baseFov を編集）。
 
 ### 4.7 ニアクリップ安全化
 - `computeSafeNearClip`: `near > 0` かつ `near < far`、`far*0.1` / `boundRadius*0.5` を上限とする。無効値時は `DEFAULT_NEAR_CLIP=0.01`。
@@ -237,18 +236,20 @@ top1    = bottom1 + height1;
 ## 5. UI 仕様（パネル・オーバーレイ）
 
 ### 5.1 パネル共通
-- PCUI ベース。ヘッダーに **CAMERA FRAMES ON/OFF トグル（Main/Viewport アイコン）** と **コンパクト切替**（コンテンツ全折りたたみ）を配置。ヘッダードラッグで移動でき、ウィンドウ内にクランプ。リサイズ時も位置を補正。
+- PCUI ベース。ヘッダーに **CAMERA FRAMES ON/OFF トグル（Capture/Edit アイコン）** と **撮影カメラ操作パネル** ボタン、**コンパクト切替**（コンテンツ全折りたたみ）を配置。ヘッダードラッグで移動でき、ウィンドウ内にクランプ。リサイズ時も位置を補正。
 - パネル上の pointer イベントはキャンバス操作へ伝搬させない（stopPropagation）。`pointerenter` でオーバーレイのヒットテストを解除。
-- コンパクト時はヘッダーのみ表示。ON/OFF はヘッダーの Main/Viewport ボタンを押して切り替える（Main=ON、Viewport=OFF）。Main=ON へ切り替える際は `camera.setNavMode('fpv')` も同時に発火（`src/main.ts` の初回自動 ON も同様）。
+- コンパクト時はヘッダーのみ表示。ON/OFF はヘッダーの Capture/Edit ボタンを押して切り替える（撮影=ON、編集=OFF）。撮影=ON へ切り替える際は `camera.setNavMode('fpv')` も同時に発火（`src/main.ts` の初回自動 ON も同様）。
+- 撮影カメラ操作パネルは **CAMERA FRAMES OFF** のときのみ開閉でき、ON 中はロック表示。
 - ヘッダーに参照画像ボタンを追加:
-  - 参照画像パネルの表示切替（`referenceImagePanel.toggleVisible`）
-  - 参照画像の表示/非表示（`referenceImage.setVisible`）。参照画像が未ロードの場合は無効化され、ロード済みの場合のみ active 状態とアイコン（shown/hidden）を切り替える。
+ - 参照画像パネルの表示切替（`referenceImagePanel.toggleVisible`）
+ - 参照画像の表示/非表示（`referenceImage.setVisible`）。参照画像が未ロードの場合は無効化され、ロード済みの場合のみ active 状態とアイコン（shown/hidden）を切り替える。
+- 参照画像パネルには `登録名` 入力を配置し、アクティブな下絵セット名を編集できる（`(blank)` は編集不可）。
 
 ### 5.2 レイアウト（レンダーボックス）
 - 折りたたみ可能ヘッダー（初期は畳み）。アンカー 3×3 ボタン、幅%・高さ%（最小100/最大1000 UI、実際は 16000px クランプ）、表示倍率(viewZoom 25?100)、出力解像度表示。
 - 出力解像度表示は論理サイズ (outW/outH)、拡大率 (kx/ky)、ビューポート溢れ警告を含む。
-- FOV(mm) スライダーは eqMm 表示。framesActive（CAMERA FRAMES ON または uiTarget=main）時のみ有効。右に **ターゲットボタン(Main)** を並べ、main 選択時のみ有効化（CAMERA FRAMES ON 時はロック表示で選択不可）。
-- Viewport lens(mm) スライダーは **CAMERA FRAMES OFF かつ uiTarget=viewport** のときのみ有効。右に **ターゲットボタン(Viewport)** を並べ、CF ON 時はロック表示。
+- FOV(mm) スライダーは eqMm 表示。**撮影表示時のみ**有効。編集表示で撮影カメラの FOV を編集する場合は撮影カメラ操作パネル内の FOV を使う。
+- Viewport lens(mm) スライダーは **編集表示時のみ**有効。
 
 ### 5.3 フレーム管理
 - 追加（+）、削除（ゴミ箱）ボタン、リストで A/B/C… を表示。テキストは実効ピクセルサイズ（レンダーボックススケール込み）と % を表示。
@@ -260,30 +261,30 @@ top1    = bottom1 + height1;
 - プレビュー専用。履歴・永続化対象。
 
 ### 5.5 FOV / ズーム / レンズ
-- FOV(mm) スライダーは eqMm ベース。framesActive 時のみ有効。
+- FOV(mm) スライダーは eqMm ベース。撮影表示時のみ有効。
 - Canvas Zoom 入力は 25?100%。入力即時で viewZoom を更新。
-- Viewport lens(mm) スライダーは CAMERA FRAMES OFF 時の通常カメラ用。uiTarget=viewport かつ framesEnabled=false でのみ有効。範囲は renderBox 基準のクロップを考慮した HFOV 10?120° 相当。
+- Viewport lens(mm) スライダーは編集表示時の通常カメラ用。範囲は renderBox 基準のクロップを考慮した HFOV 10?120° 相当。
 
 ### 5.6 Export
 - ファイル名テキスト（拡張子自動付与、空白時は `camera-frames`）。フォーマット選択（PSD/PNG）。トグル 3 つ:
-  - Grid/Eye-level オーバーレイ出力トグル（1 つのボタンで両方制御。PNG は合成、PSD はレイヤー追加）。
-  - Model layers トグル（PSD のみ有効。UI 表示は常時、PNG 選択時は無視）。
-  - Reference Image 取り込みトグル（参照画像側の `includeInRender` を切り替える。`enabled && visible && includeInRender` の場合のみ書き出しに含まれる。PNG は合成、PSD は `Reference` レイヤーで front/back を反映）。
+ - Grid/Eye-level オーバーレイ出力トグル（1 つのボタンで両方制御。PNG は合成、PSD はレイヤー追加）。
+ - Model layers トグル（PSD のみ有効。UI 表示は常時、PNG 選択時は無視）。
+ - Reference Image 取り込みトグル（参照画像側の `includeInRender` を切り替える。`enabled && visible && includeInRender` の場合のみ書き出しに含まれる。PNG は合成、PSD は `Reference` レイヤーで front/back を反映）。
 - Render ボタンと進捗スピナー（描画中はボタン無効化）。UI の `defaultValue` は PSD だが、初期化状態（`docState=null`）では state 側が `png` を持つため、初回 `cameraFrames.stateChanged` 同期後は PNG が選択状態となる。
 
 ### 5.7 カメラ Transform / ナビゲーション
 - 折りたたみセクション（初期畳み）。Orbit/FPV 切替アイコン、位置 XYZ、回転 yaw/pitch/roll（ロールロック付き）、ローカル移動スライダー（right/up/forward、操作後は 0 に戻る）、ニアクリップ入力。
 - Alt でスロー編集（nearClip step=0.1, precision=3、姿勢・位置変化も 0.1 倍）。
 - 数値入力フォーカス中は transform の自動同期を抑止し、フォーカスアウトで再同期。
-- uiTarget=main のときは mainCameraPose を編集、uiTarget=viewport のときは通常カメラを編集。CAMERA FRAMES 有効時は uiTarget=viewport に固定（ターゲットボタンはロック表示）。
-- nearClip 入力は framesActive 時のみ表示・有効。
+- 撮影表示時は mainCameraPose を編集、編集表示時は通常カメラを編集。編集表示中に撮影カメラを調整する場合は撮影カメラ操作パネルを使う。
+- nearClip 入力は撮影表示時のみ表示・有効（編集表示では撮影カメラ操作パネル側に表示）。
 
 ### 5.8 オーバーレイ描画
 - キャンバス直後に `#camera-frames-overlay` を挿入。devicePixelRatio でスケール。デフォルト pointerEvents=none。
 - レンダーボックス: 白破線 1px。フレーム: 赤 2px、選択中は白点線 1px を重ねる。ハンドル: 白塗り + 赤縁 10px、回転ハンドルは枠から 30px 上。
 - マスク: スコープに応じて対象フレーム群の外接矩形外を黒で塗る（opacity 指定）。
 - 90°刻み回転時はエクスポートの枠線をピクセルスナップしてシャープに描く。
-- CAMERA FRAMES OFF 時でも main ターゲット選択中はデバッグレイヤーに main フラスタムを描画（選択=マゼンタ、非選択=シアン）。非インタラクティブ。
+- CAMERA FRAMES ON または mainEditMode（撮影カメラ操作パネル表示中）のとき、デバッグレイヤーに撮影フラスタムを選択色で描画（選択=マゼンタ、非選択=シアン）。非インタラクティブ。
 
 ---
 
@@ -291,15 +292,15 @@ top1    = bottom1 + height1;
 
 ### 6.1 有効化 / 無効化
 - 有効化:
-  - 現在の viewport pose/FOV を保持し、`camera.setLockFraming(true)` と `camera.setLockFovAxis('horizontal')` を設定。uiTarget を viewport に固定。
-  - `mainCameraPose` が空なら現在のカメラを基準として確保し、これを適用。baseFov をカメラから引き継ぎ UI へ同期。
-  - 現在の near を安全値に補正して override。`initDefaultsIfNeeded` で center をビューポート中央へ補完し、fitScale を算出、フレーム未生成なら 1 枚追加。
-  - baseFrustum 再構築 → フラスタム同期 → オーバーレイ再描画 → near guard をスケジュールし、viewport lens 状態を更新。
-  - 起動時（初回 `postrender`）も `cameraFrames.setEnabled(true)` を発火して自動的にこのフローへ入る。併せて `camera.setNavMode('fpv')` を発火（`src/main.ts`）。
+ - 現在の viewport pose/FOV を保持し、`camera.setLockFraming(true)` と `camera.setLockFovAxis('horizontal')` を設定。撮影表示に切り替えて構図を固定する。
+ - `mainCameraPose` が空なら現在のカメラを基準として確保し、これを適用。baseFov をカメラから引き継ぎ UI へ同期。
+ - 現在の near を安全値に補正して override。`initDefaultsIfNeeded` で center をビューポート中央へ補完し、fitScale を算出、フレーム未生成なら 1 枚追加。
+ - baseFrustum 再構築 → フラスタム同期 → オーバーレイ再描画 → near guard をスケジュールし、viewport lens 状態を更新。
+ - 起動時（初回 `postrender`）も `cameraFrames.setEnabled(true)` を発火して自動的にこのフローへ入る。併せて `camera.setNavMode('fpv')` を発火（`src/main.ts`）。
 - 無効化:
-  - 現在の pose を mainCameraPose に保存し、near override と customFrustum を解除、lockFovAxis を解放。
-  - viewportPoseRuntime/viewportFovRuntime があれば通常カメラへ戻す。
-  - 状態は保持したまま追従ロジックを停止。main ターゲットの選択が再度可能。
+ - 現在の pose を mainCameraPose に保存し、near override と customFrustum を解除、lockFovAxis を解放。
+ - viewportPoseRuntime/viewportFovRuntime があれば通常カメラへ戻す。
+ - 状態は保持したまま追従ロジックを停止。編集表示から撮影カメラ操作パネルで編集可能。
 
 ### 6.2 ビューポートリサイズ / フォースリフレッシュ
 - `ResizeObserver` と `camera.resize` / `cameraFrames.forceRefreshViewport` で検知。CSS px で overlay サイズとスケールを更新し、`computeViewportMapping(true)` で AutoFit と center 補正を実施。アンカーのスクリーン位置を維持。
@@ -336,18 +337,18 @@ top1    = bottom1 + height1;
 - `lostpointercapture` でドラッグ履歴を commit。フラスタム自体のドラッグ・選択は無効化。
 
 ### 6.10 ニアクリップ
-- UI から設定するとデバウンスで履歴記録（CAMERA FRAMES 有効時は near override を即時適用）。framesActive 時のみ入力欄表示。
+- UI から設定するとデバウンスで履歴記録（CAMERA FRAMES 有効時は near override を即時適用）。撮影表示または撮影カメラ操作パネル内で入力欄を表示。
 - `computeSafeNearClip` で 0.01 以上、`far*0.1`・`boundRadius*0.5` 以内、`far` 未満に補正。ガードをスケジュールして数フレーム後に再確認。
 
 ### 6.11 FOV(mm) / Viewport Lens(mm)
-- framesActive 時の FOV スライダー変更で `baseFov` を更新、baseFrustum を再構築。表示値は renderBox スケールや viewZoom に影響されない。
-- CAMERA FRAMES 無効かつ uiTarget=viewport の場合は Viewport lens スライダーで通常カメラの FOV を mm で編集（baseFov は変更しない）。範囲は renderBox 基準のクロップを考慮した HFOV 10?120° 相当。
+- 撮影表示または撮影カメラ操作パネルの FOV スライダー変更で `baseFov` を更新、baseFrustum を再構築。表示値は renderBox スケールや viewZoom に影響されない。
+- 編集表示中は Viewport lens スライダーで通常カメラの FOV を mm で編集（baseFov は変更しない）。範囲は renderBox 基準のクロップを考慮した HFOV 10?120° 相当。
 - eqMm 計算は `DEFAULT_FRAME_BASE` のアスペクト基準。viewportFovRuntime で CF ON/OFF への往復時に FOV を復元。
 
-### 6.12 Main Camera Pose 管理
+### 6.12 Capture Camera Pose 管理
 - CAMERA FRAMES 有効時のカメラ操作は mainCameraPose に反映（タイムライン再生中は更新しない）。無効時のカメラ操作は viewportPoseRuntime へ保存し、viewport lens 表示を更新。
-- uiTarget=main で Transform/FOV/near/navMode を編集すると mainCameraPose にのみ適用され、CAMERA FRAMES ON 時に使用される。CAMERA FRAMES OFF 中は main フラスタムをデバッグ描画。
-- main ターゲット選択可否: `!enabled` かつ `mainCameraPose` が存在し、書き出し中でないときのみ。不可になった場合は uiTarget を viewport に戻す。
+- 撮影表示中の Transform/FOV/near/navMode 編集は mainCameraPose にのみ適用され、CAMERA FRAMES ON 時の構図に使用される。編集表示中でも撮影カメラ操作パネルから mainCameraPose を編集できる。
+- 撮影カメラ操作パネルの開閉可否: `!enabled` かつ `mainCameraPose` が存在し、書き出し中でないときのみ。
 
 ---
 
@@ -373,21 +374,21 @@ viewZoom・ビューポートサイズ非依存。
 
 ### 7.3 PNG
 - ベース + (任意)参照画像 + (任意)グリッド/アイレベル + フレームを合成。
-  - グリッドは `destination-over` で背面に合成。
-  - 参照画像は `layer='back'` の場合 `destination-over`、`layer='front'` の場合 `source-over`。不透明度は参照画像のエクスポートキャンバス側に焼き込み（`applyOpacity=true`）。
-  - アイレベルは `source-over` で前面合成。
+ - グリッドは `destination-over` で背面に合成。
+ - 参照画像は `layer='back'` の場合 `destination-over`、`layer='front'` の場合 `source-over`。不透明度は参照画像のエクスポートキャンバス側に焼き込み（`applyOpacity=true`）。
+ - アイレベルは `source-over` で前面合成。
 - pHYs チャンクで DPI=150 を付与。`PngCompressor` で圧縮し、ダウンロード。
 - `render.offscreen` のダブルフリップを回避するため、コンプレッサー前に一度 bottom-up へ戻す。
 
 ### 7.4 PSD
 - 合成順（背面→前面、`exportPsd` の underlays→Render→overlays）:
-  1. Reference（参照画像、`layer='back'` の場合のみ / opacity は PSD レイヤーで保持）
-  2. Render（ベース描画、参照画像なし）
-  3. グリッド（有効時）
-  4. アイレベル（有効時）
-  5. モデルレイヤー群（有効時、可視モデルごと）
-  6. Reference（参照画像、`layer='front'` の場合のみ / opacity は PSD レイヤーで保持）
-  7. フレームレイヤー群（管理名ごとにまとめ、各レイヤーは赤枠のみ）
+ 1. Reference（参照画像、`layer='back'` の場合のみ / opacity は PSD レイヤーで保持）
+ 2. Render（ベース描画、参照画像なし）
+ 3. グリッド（有効時）
+ 4. アイレベル（有効時）
+ 5. モデルレイヤー群（有効時、可視モデルごと）
+ 6. Reference（参照画像、`layer='front'` の場合のみ / opacity は PSD レイヤーで保持）
+ 7. フレームレイヤー群（管理名ごとにまとめ、各レイヤーは赤枠のみ）
 - PSD には 150 PPI 情報とサムネイルを含める。マスクは含めない。
 
 ---
@@ -399,22 +400,22 @@ viewZoom・ビューポートサイズ非依存。
 - 保存フィールド: `enabled`, `renderBox`（baseSize/scalePct/scale/anchor/center/fitScale/viewZoom/lastViewport/projection）、`frames`、`mask`（scope 含む）、`nearClip`、`exportName`、`exportFormat`、`exportGridOverlay`、`exportModelLayers`、`exportTarget`、`exportPresetIds`、`selectedId`、`mainCameraPose`、`version`（cameraFramesVersion）。
 - 参照画像の保存は別系統（`docSerialize.referenceImage` / `docDeserialize.referenceImage`）で行う。Export に影響する `includeInRender` / `visible` / `layer` / `opacity` は参照画像側の永続化対象。
 - 読み込み時:
-  - legacy `uiScale/viewScale/fovY` に対応。
-  - scale を 100%以上・16000px 以下へクランプ。viewZoom を 25?100 に正規化。
-  - nearClip は安全値へ補正。`selectedId` に合わせて selected を再設定（指定無ければ先頭）。
-  - ビューポート情報が不足しても現在の viewport から AutoFit を推定。
-  - projection.baseFov が無ければカメラ fov から補完。mainCameraPose が無ければ現在のカメラから補完。
+ - legacy `uiScale/viewScale/fovY` に対応。
+ - scale を 100%以上・16000px 以下へクランプ。viewZoom を 25?100 に正規化。
+ - nearClip は安全値へ補正。`selectedId` に合わせて selected を再設定（指定無ければ先頭）。
+ - ビューポート情報が不足しても現在の viewport から AutoFit を推定。
+ - projection.baseFov が無ければカメラ fov から補完。mainCameraPose が無ければ現在のカメラから補完。
 
 ### 8.2 Undo / Redo（`CameraFramesHistory`）
 - スナップショット履歴。ドラッグ開始/終了で begin/commit、連続編集は `debounced`（250ms）。
 - 対象:
-  - enabled トグル
-  - renderBox: scalePct/scale、anchor、center、fitScale、viewZoomPct、projection.baseFov
-  - frames: 追加/削除/選択/pos/scalePct/rotationDeg/anchor/order、アンカー・回転リセット
-  - mask: enabled/opacity/scope
-  - nearClip
-  - mainCameraPose（uiTarget=main の transform/nav/fov/near 編集含む）
-  - レンダーボックスパン（Shift+ドラッグ）
+ - enabled トグル
+ - renderBox: scalePct/scale、anchor、center、fitScale、viewZoomPct、projection.baseFov
+ - frames: 追加/削除/選択/pos/scalePct/rotationDeg/anchor/order、アンカー・回転リセット
+ - mask: enabled/opacity/scope
+ - nearClip
+ - mainCameraPose（撮影表示/撮影カメラ操作パネルでの transform/nav/fov/near 編集含む）
+ - レンダーボックスパン（Shift+ドラッグ）
 - Export 設定（exportName/exportFormat/exportGridOverlay/exportModelLayers/exportTarget/exportPresetIds）は履歴対象外。
 - 履歴適用後は `cameraFrames.stateChanged` を再送して UI を同期し、オーバーレイカーソルを再計算。
 
@@ -426,11 +427,11 @@ viewZoom・ビューポートサイズ非依存。
 - 状態管理、ビューポートマッピング、フラスタム計算、オーバーレイ描画、ポインタ操作、export パイプラインを担当。
 - `camera.setCustomFrustum` に外挿フラスタムを渡し、CAMERA FRAMES 有効時は `camera.rect/scissorRect` を使わない。
 - near override 適用、cameraFramesVersion 表示の付与、History 連携、mainCameraPose/viewportPose の切替・復元、viewport lens 提供を行う。
-- CAMERA FRAMES OFF 時は main フラスタムを debugLayer に描画（選択状態を uiTarget で反映）。タイムライン再生中は mainPose の自動更新を抑止。
+- CAMERA FRAMES ON または mainEditMode（撮影カメラ操作パネル表示中）のとき、撮影フラスタムを debugLayer に選択色で描画。タイムライン再生中は mainPose の自動更新を抑止。
 
 ### 9.2 UI パネル（`src/ui/camera-frames-panel.ts`）
 - PCUI パネル構築、入力値のバリデーションとイベント発火、パネル移動/折りたたみ、レンダリングボタン・スピナー制御。
-- FOV(mm) / Viewport lens(mm) の範囲更新、出力解像度とビューポート溢れ警告表示、グリッド/モデルレイヤートグルの状態管理、uiTarget 切替と transform 入力の適用先切替（CF ON 時はロック表示）。
+- FOV(mm) / Viewport lens(mm) の範囲更新、出力解像度とビューポート溢れ警告表示、グリッド/モデルレイヤートグルの状態管理、撮影/編集表示の切替と撮影カメラ操作パネルの開閉管理、transform 入力の適用先切替。
 
 ### 9.3 カメラ / シーン（`src/camera.ts`, `src/scene.ts`）
 - `camera.setCustomFrustum` で渡された値を投影行列に反映。CAMERA FRAMES 有効時はアスペクト/水平FOVを固定し、Rect/Scissor を毎フレーム 0,0,1,1 へリセット。
@@ -458,13 +459,13 @@ viewZoom・ビューポートサイズ非依存。
 10. **グリッド/アイレベル出力**: Export でオーバーレイを有効にすると、PNG では合成、PSD では専用レイヤーが追加され、premultiply の不整合がない。
 11. **モデルレイヤー出力 (PSD)**: 複数モデルを可視にして PSD 出力すると、モデルごとに個別レイヤーが追加され、World/グリッド/ギズモが混ざらない。
 12. **Undo/Redo**: ドラッグ開始/終了で 1 ステップ、連続入力は 250ms でまとめられる。レンダーボックス・viewZoom・FOV・nearClip・フレーム編集・マスク・mainCameraPose が履歴対象で、export 設定は対象外。
-13. **CAMERA FRAMES OFF のレンズ/pose**: uiTarget=viewport で viewport lens(mm) を動かすと通常カメラの FOV が変わる。uiTarget=main で pose/FOV/near を編集すると main フラスタムがデバッグ描画され、有効化時に適用される（ターゲットボタンが OFF 時のみ有効）。
+13. **CAMERA FRAMES OFF のレンズ/pose**: 編集表示で viewport lens(mm) を動かすと通常カメラの FOV が変わる。撮影カメラ操作パネルで撮影カメラの pose/FOV/near を編集すると撮影フラスタムがデバッグ描画され、有効化時に適用される。
 14. **参照画像の書き出し**: 参照画像を読み込み、表示を ON にした上で Export の Reference トグルを ON/OFF すると、PNG/PSD に参照画像が含まれる/含まれないが切り替わる。front/back の指定に応じて PSD の `Reference` が underlay/overlay に分かれ、PNG でも前後関係が一致する（opacity の扱い: PNG は焼き込み、PSD はレイヤー opacity）。
 
 ---
 
 ## 付録 A: Rect/Scissor モデル（参考）
-フラスタム拡張方式へ移行したため、`camera.rect` / `camera.scissorRect` は常に `0,0,1,1` にリセットする。  
+フラスタム拡張方式へ移行したため、`camera.rect` / `camera.scissorRect` は常に `0,0,1,1` にリセットする。 
 v3 まで使用していた Rect/Scissor による正規化座標計算は、px→world 変換の検証用参考情報としてのみ保持する。
 ```ts
 rectNorm.x = rectPx.x / vw;

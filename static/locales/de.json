@@ -229,5 +229,11 @@
     "tooltip.timeline.frame-rate": "Bildrate",
     "tooltip.timeline.total-frames": "Gesamtanzahl der Frames",
     "tooltip.timeline.smoothness": "Weichheit",
-    "panel.camera-frames.camera-presets.reference-image.unset": "Nicht festgelegt"
+    "panel.camera-frames.camera-presets.reference-image.unset": "Nicht festgelegt",
+    "panel.camera-frames.main-props.toggle": "Hauptkamera-Steuerung",
+    "panel.camera-frames.main-props.title": "Hauptkamera-Steuerung",
+    "panel.camera-frames.main-props.close": "Hauptkamera-Steuerung schließen",
+    "panel.camera-frames.mode.toggle": "Haupt-/Bearbeitungskamera umschalten",
+    "panel.camera-frames.transform.title.main": "Hauptkamera-Steuerung",
+    "panel.camera-frames.transform.title.viewport": "Bearbeitungskamera-Steuerung",
 }

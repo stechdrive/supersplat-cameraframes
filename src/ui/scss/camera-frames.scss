@@ -135,11 +135,11 @@
     .header-toggle-group {
         display: flex;
         align-items: center;
-        background-color: $bcg-dark;
-        border: 1px solid $bcg-light;
+        background-color: transparent;
+        border: none;
         border-radius: 4px;
-        padding: 2px;
-        gap: 2px;
+        padding: 0;
+        gap: 10px;
         margin-right: 8px;
 
         .toggle-icon-btn {
@@ -150,6 +150,7 @@
             border-radius: 2px;
             cursor: pointer;
             color: $text-secondary;
+            overflow: visible;
 
             &:hover {
                 background-color: rgba(255, 255, 255, 0.1);
@@ -159,11 +160,34 @@
                 width: 24px;
                 height: 24px;
                 pointer-events: none;
+                display: block;
+            }
+
+            &.main-mode-toggle {
+                svg {
+                    transform: scale(1.7);
+                    transform-origin: center;
+                }
             }
 
             &.active {
                 background-color: $clr-hilight;
                 color: $clr-active;
+            }
+
+            &.locked {
+                opacity: 0.45;
+                cursor: not-allowed;
+                background-color: transparent;
+
+                &:hover {
+                    background-color: transparent;
+                }
+            }
+
+            &.locked.active {
+                background-color: transparent;
+                color: $text-secondary;
             }
         }
     }
@@ -362,6 +386,59 @@
     border-radius: 4px;
 }
 
+#main-camera-props-panel {
+    top: 50%;
+    transform: translate(0, -50%);
+    right: calc(480px + var(--camera-frames-help-offset-right, 0px));
+    width: 360px;
+    z-index: 5;
+    flex-direction: column;
+    align-items: stretch;
+    overflow: hidden;
+    box-sizing: border-box;
+
+    .panel-header {
+        cursor: move;
+        user-select: none;
+        touch-action: none;
+        width: 100%;
+        box-sizing: border-box;
+        padding: 4px 6px;
+        gap: 6px;
+        align-items: center;
+    }
+
+    .panel-header-icon {
+        display: flex;
+        align-items: center;
+    }
+
+    .panel-header-icon svg {
+        width: 24px;
+        height: 24px;
+        display: block;
+        transform: scale(1.35);
+        transform-origin: center;
+    }
+
+    &.dragging {
+        opacity: 0.98;
+    }
+
+    &:not(.pcui-hidden):not([hidden]) {
+        display: flex;
+    }
+
+    .main-camera-props-body {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        padding: 8px;
+        width: 100%;
+        box-sizing: border-box;
+    }
+}
+
 .frames-section-body {
     padding: 6px 8px 8px 12px;
     margin-left: 8px;
@@ -384,6 +461,10 @@
     display: flex;
     flex-direction: column;
     gap: 4px;
+    max-height: clamp(140px, 35vh, 300px);
+    overflow-y: auto;
+    scrollbar-gutter: stable;
+    min-height: 0;
 }
 
 .camera-preset-row {
@@ -395,6 +476,8 @@
     background-color: rgba($bcg-dark, 0.2);
     cursor: pointer;
     box-sizing: border-box;
+    flex: 0 0 auto;
+    min-height: 44px;
 
     &:hover {
         background-color: rgba($bcg-dark, 0.5);
@@ -420,7 +503,7 @@
     min-width: 0;
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: 4px;
 }
 
 .camera-preset-name {
@@ -436,6 +519,27 @@
     width: 100%;
     font-size: 11px;
     line-height: 14px;
+    flex: 1 1 0;
+    min-height: 24px;
+    height: 24px;
+    align-self: stretch;
+    box-sizing: border-box;
+}
+
+.camera-preset-reference-row {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+    min-height: 20px;
+}
+
+.camera-preset-reference-label {
+    font-size: 11px;
+    line-height: 14px;
+    color: $text-secondary;
+    white-space: nowrap;
+    flex: 0 0 auto;
 }
 
 .camera-preset-sub {

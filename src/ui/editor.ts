@@ -10,6 +10,7 @@ import { ColorPanel } from './color-panel';
 import { ExportPopup } from './export-popup';
 import { ImageSettingsDialog } from './image-settings-dialog';
 import { localize, localizeInit } from './localization';
+import { MainCameraPropsPanel } from './main-camera-props-panel';
 import { Menu } from './menu';
 import { ModeToggle } from './mode-toggle';
 import logo from './playcanvas-logo.png';
@@ -126,6 +127,7 @@ class EditorUI {
         const colorPanel = new ColorPanel(events, tooltips);
         const referenceImagePanel = new ReferenceImagePanel(events);
         const cameraFramesPanel = new CameraFramesPanel(events);
+        const mainCameraPropsPanel = new MainCameraPropsPanel(events);
         const cameraFramesHelpPanel = new CameraFramesHelpPanel(events);
         const bottomToolbar = new BottomToolbar(events, tooltips);
         const rightToolbar = new RightToolbar(events, tooltips);
@@ -140,6 +142,7 @@ class EditorUI {
         canvasContainer.append(viewPanel);
         canvasContainer.append(colorPanel);
         canvasContainer.append(cameraFramesPanel);
+        canvasContainer.append(mainCameraPropsPanel);
         canvasContainer.append(cameraFramesHelpPanel);
         canvasContainer.append(referenceImagePanel);
         canvasContainer.append(bottomToolbar);

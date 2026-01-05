@@ -229,5 +229,11 @@
     "tooltip.timeline.frame-rate": "Частота кадров",
     "tooltip.timeline.total-frames": "Всего кадров",
     "tooltip.timeline.smoothness": "Плавность",
-    "panel.camera-frames.camera-presets.reference-image.unset": "Не задано"
+    "panel.camera-frames.camera-presets.reference-image.unset": "Не задано",
+    "panel.camera-frames.mode.toggle": "Переключить основную/редактируемую камеру",
+    "panel.camera-frames.main-props.toggle": "Управление основной камерой",
+    "panel.camera-frames.main-props.title": "Управление основной камерой",
+    "panel.camera-frames.main-props.close": "Закрыть управление основной камерой"
+    "panel.camera-frames.transform.title.main": "Управление основной камерой",
+    "panel.camera-frames.transform.title.viewport": "Управление камерой редактирования",
 }

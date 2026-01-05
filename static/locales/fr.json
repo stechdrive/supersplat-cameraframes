@@ -229,5 +229,11 @@
     "tooltip.timeline.frame-rate": "Fréquence d'image",
     "tooltip.timeline.total-frames": "Nombre total de frames",
     "tooltip.timeline.smoothness": "Douceur",
-    "panel.camera-frames.camera-presets.reference-image.unset": "Non défini"
+    "panel.camera-frames.camera-presets.reference-image.unset": "Non défini",
+    "panel.camera-frames.mode.toggle": "Basculer caméra principale/édition",
+    "panel.camera-frames.main-props.toggle": "Commandes de la caméra principale",
+    "panel.camera-frames.main-props.title": "Commandes de la caméra principale",
+    "panel.camera-frames.main-props.close": "Fermer les commandes de la caméra principale"
+    "panel.camera-frames.transform.title.main": "Commandes de la caméra principale",
+    "panel.camera-frames.transform.title.viewport": "Commandes de la caméra d'édition",
 }

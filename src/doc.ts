@@ -10,7 +10,7 @@ import { ZipWriter } from './serialize/zip-writer';
 import { Splat } from './splat';
 import { serializePly } from './splat-serialize';
 import { Transform } from './transform';
-import { localize } from './ui/localization';
+import { formatInteger, localize } from './ui/localization';
 
 // NOTE: This fork extends the upstream ssproj format, but we keep the on-disk
 // `document.json.version` as 0 to maximize the chance that upstream can load it.
@@ -243,7 +243,19 @@ const registerDocEvents = (scene: Scene, events: Events) => {
                     console.warn(`reference image missing: ${refPath}`, error);
                 }
             }
-            await events.invoke('docDeserialize.referenceImages', referenceDocState, referenceBlobs);
+            const referenceLoadReport = await events.invoke('docDeserialize.referenceImages', referenceDocState, referenceBlobs) as {
+                missingItems?: number;
+            } | null;
+            if (referenceLoadReport?.missingItems) {
+                await events.invoke('showPopup', {
+                    type: 'info',
+                    header: localize('panel.reference-image.title'),
+                    message: localize('doc.reference-images.missing', {
+                        count: formatInteger(referenceLoadReport.missingItems)
+                    })
+                });
+            }
+            events.fire('cameraFrames.syncReferenceImages');
 
             // refresh the pivot to reflect the loaded transform
             const currentSelection = events.invoke('selection');
