@@ -3584,7 +3584,7 @@
   display: block;
 }
 #camera-frames-panel .header-toggle-group .toggle-icon-btn.main-mode-toggle svg {
-  transform: scale(2);
+  transform: scale(1.7);
   transform-origin: center;
 }
 #camera-frames-panel .header-toggle-group .toggle-icon-btn.active {
