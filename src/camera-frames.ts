@@ -1141,6 +1141,11 @@ export class CameraFramesController {
         this.events.on('cameraFrames.setPresetReferenceImage', (id: string, referencePresetId: string) => {
             this.setPresetReferenceImage(id, referencePresetId);
         });
+        this.events.on('cameraFrames.syncReferenceImages', () => {
+            this.lastReferenceSyncPresetId = null;
+            this.lastReferenceSyncReferencePresetId = null;
+            this.syncReferenceImagesFromSnapshot(this.snapshot());
+        });
 
         // frames
         this.events.on('cameraFrames.addFrame', () => this.addFrame());

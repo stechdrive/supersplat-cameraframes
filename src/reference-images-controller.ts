@@ -78,6 +78,10 @@ type AddContext = {
     presetNameHint?: string;
 };
 
+type ReferenceImagesLoadReport = {
+    missingItems: number;
+};
+
 type ReferenceImageItemBase = ReferenceImageItemState | ReferenceImageItemV2;
 
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
@@ -247,6 +251,22 @@ const ensureBlankPreset = (presets: ReferenceImagePreset[]) => {
     presets.push(createDefaultPreset());
 };
 
+const ensureUniquePresetIds = (presets: ReferenceImagePreset[]) => {
+    const seen = new Set<string>();
+    presets.forEach((preset) => {
+        let id = preset.id;
+        if (!id || seen.has(id)) {
+            let nextId = createPresetId();
+            while (seen.has(nextId)) {
+                nextId = createPresetId();
+            }
+            id = nextId;
+            preset.id = id;
+        }
+        seen.add(id);
+    });
+};
+
 const normalizePreset = (value: any): ReferenceImagePreset | null => {
     if (!value || typeof value !== 'object') {
         return null;
@@ -284,6 +304,7 @@ const normalizeFullState = (value: any): ReferenceImagesFullState => {
         presets.push(createDefaultPreset());
     }
     ensureBlankPreset(presets);
+    ensureUniquePresetIds(presets);
     const assetsRaw = Array.isArray(value?.assets) ? (value.assets as unknown[]) : [];
     const assets = assetsRaw.filter((asset): asset is ReferenceImageAsset => {
         const candidate = asset as ReferenceImageAsset | null;
@@ -792,7 +813,7 @@ class ReferenceImagesController {
 
         this.events.function('docSerialize.referenceImages', () => this.serializeDoc());
         this.events.function('docDeserialize.referenceImages', async (docState: any, blobs: Map<string, Blob>) => {
-            await this.deserializeDoc(docState, blobs);
+            return await this.deserializeDoc(docState, blobs);
         });
         this.events.function('referenceImages.docAssets', () => this.docAssets());
 
@@ -854,7 +875,7 @@ class ReferenceImagesController {
         });
         this.events.function('docSerialize.referenceImage', () => this.serializeLegacyDoc());
         this.events.function('docDeserialize.referenceImage', async (docState: any, blob?: Blob | null) => {
-            await this.deserializeLegacyDoc(docState, blob ?? null);
+            return await this.deserializeLegacyDoc(docState, blob ?? null);
         });
     }
 
@@ -1926,16 +1947,17 @@ class ReferenceImagesController {
         return assets;
     }
 
-    private async deserializeLegacyDoc(docState: any, blob: Blob | null) {
+    private async deserializeLegacyDoc(docState: any, blob: Blob | null): Promise<ReferenceImagesLoadReport> {
         const blobs = new Map<string, Blob>();
         if (blob instanceof Blob) {
             const safeName = normalizeReferenceImageFilename(docState?.source?.filename ?? DEFAULT_REFERENCE_IMAGE_FILENAME);
             blobs.set(`reference-image/${safeName}`, blob);
         }
-        await this.deserializeDoc(docState, blobs);
+        return await this.deserializeDoc(docState, blobs);
     }
 
-    private async deserializeDoc(docState: any, blobs: Map<string, Blob>) {
+    private async deserializeDoc(docState: any, blobs: Map<string, Blob>): Promise<ReferenceImagesLoadReport> {
+        const report: ReferenceImagesLoadReport = { missingItems: 0 };
         const resetRuntimeState = () => {
             this.activePresetGeneration += 1;
             for (const runtime of this.runtimeById.values()) {
@@ -2002,6 +2024,7 @@ class ReferenceImagesController {
                 preset.items.forEach((item) => {
                     const asset = assetsById.get(item.assetId);
                     if (!asset) {
+                        report.missingItems += 1;
                         console.warn(`reference image asset missing: ${item.assetId}`);
                         return;
                     }
@@ -2009,6 +2032,7 @@ class ReferenceImagesController {
                     const path = `reference-images/assets/${asset.id}/${safeFilename}`;
                     const blob = blobs?.get(path) ?? null;
                     if (!blob) {
+                        report.missingItems += 1;
                         console.warn(`reference image missing: ${path}`);
                         return;
                     }
@@ -2058,7 +2082,7 @@ class ReferenceImagesController {
             this.requestRender();
             this.fireStateChanged();
             this.firePresetsStateChanged();
-            return;
+            return report;
         }
 
         const normalizeDoc = (docRoot && Array.isArray((docRoot as any).items)) ? docRoot : null;
@@ -2128,8 +2152,9 @@ class ReferenceImagesController {
                     this.requestRender();
                     this.fireStateChanged();
                     this.firePresetsStateChanged();
-                    return;
+                    return report;
                 }
+                report.missingItems += 1;
             }
 
             resetRuntimeState();
@@ -2146,7 +2171,7 @@ class ReferenceImagesController {
             this.requestRender();
             this.fireStateChanged();
             this.firePresetsStateChanged();
-            return;
+            return report;
         }
 
         const doc = normalizeDoc as ReferenceImagesDocStateV1;
@@ -2166,6 +2191,7 @@ class ReferenceImagesController {
             const path = `reference-images/${normalized.id}/${safeFilename}`;
             const blob = blobs?.get(path) ?? null;
             if (!blob) {
+                report.missingItems += 1;
                 console.warn(`reference image missing: ${path}`);
                 continue;
             }
@@ -2235,6 +2261,7 @@ class ReferenceImagesController {
         this.requestRender();
         this.fireStateChanged();
         this.firePresetsStateChanged();
+        return report;
     }
 
     private async importPsd(blob: Blob, filename?: string, opts?: { group?: ReferenceImageItemGroup; }) {

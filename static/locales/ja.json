@@ -322,6 +322,7 @@
     "doc.reset-message": "シーンをリセットしてもよろしいですか？",
     "doc.save-failed": "保存に失敗",
     "doc.load-failed": "読み込みに失敗",
+    "doc.reference-images.missing": "下絵の一部を読み込めませんでした（{{count}}件欠落）。",
     "tooltip.right-toolbar.splat-mode": "スプラットモード ( M )",
     "tooltip.right-toolbar.show-hide": "スプラットの表示/非表示 ( Space )",
     "tooltip.right-toolbar.frame-selection": "選択をフレームイン ( F )",

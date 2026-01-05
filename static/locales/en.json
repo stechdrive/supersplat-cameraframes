@@ -322,6 +322,7 @@
     "doc.reset-message": "Are you sure you want to reset the scene?",
     "doc.save-failed": "Failed to Save",
     "doc.load-failed": "Failed to Load",
+    "doc.reference-images.missing": "Some reference images could not be loaded ({{count}} item(s) missing).",
     "tooltip.right-toolbar.splat-mode": "Splat Mode ( M )",
     "tooltip.right-toolbar.show-hide": "Show/Hide Splats ( Space )",
     "tooltip.right-toolbar.frame-selection": "Frame Selection ( F )",
