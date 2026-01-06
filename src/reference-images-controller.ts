@@ -12,8 +12,10 @@ import {
     DEFAULT_REFERENCE_IMAGES_STATE,
     type ReferenceImageAsset,
     type ReferenceImageItemGroup,
+    type ReferenceImageItemOverride,
     type ReferenceImageItemState,
     type ReferenceImageItemV2,
+    type ReferenceImagePresetOverride,
     type ReferenceImagePreset,
     type ReferenceImagesDocState,
     type ReferenceImagesDocStateV1,
@@ -29,6 +31,7 @@ type ViewportMapping = {
     logicalH: number;
     rectPxRaw: { x: number; y: number; w: number; h: number; };
     rectNormRaw: { x: number; y: number; w: number; h: number; };
+    anchor?: { ax: number; ay: number; };
 };
 
 type ReferenceImageItemRuntime = {
@@ -377,7 +380,12 @@ class ReferenceImagesController {
         this.renderer = new ReferenceImageRenderer();
         this.scene.add(this.renderer);
         this.registerEvents();
-        this.events.on('cameraFrames.stateChanged', () => this.requestRender());
+        this.events.on('cameraFrames.stateChanged', () => {
+            this.rebuildActiveState();
+            this.updateRenderer();
+            this.requestRender();
+            this.fireStateChanged();
+        });
         this.events.on('prerender', () => this.updateRenderer());
         this.events.on('scene.clear', () => this.reset());
         this.syncPresetCounter();
@@ -591,24 +599,96 @@ class ReferenceImagesController {
         return this.fullState.presets.find(preset => preset.id === this.fullState.activePresetId) ?? this.fullState.presets[0];
     }
 
-    private buildActiveItemsFromPreset(preset: ReferenceImagePreset, assetsById: Map<string, ReferenceImageAsset>) {
+    private getReferenceImageOverride(presetId: string) {
+        if (!this.events.functions.has('cameraFrames.referenceOverrides.get')) {
+            return null;
+        }
+        return (this.events.invoke('cameraFrames.referenceOverrides.get', presetId) as ReferenceImagePresetOverride | null) ?? null;
+    }
+
+    private resolveRenderBoxSize(mapping: ViewportMapping | null) {
+        const w = mapping?.logicalW;
+        const h = mapping?.logicalH;
+        if (!isFiniteNumber(w) || !isFiniteNumber(h) || w <= 0 || h <= 0) {
+            return null;
+        }
+        return { w, h };
+    }
+
+    private resolveRenderBoxAnchor(mapping: ViewportMapping | null) {
+        const ax = isFiniteNumber(mapping?.anchor?.ax) ? clamp(mapping.anchor!.ax, 0, 1) : 0.5;
+        const ay = isFiniteNumber(mapping?.anchor?.ay) ? clamp(mapping.anchor!.ay, 0, 1) : 0.5;
+        return { ax, ay };
+    }
+
+    private ensurePresetBaseRenderBox(preset: ReferenceImagePreset, currentSize: { w: number; h: number; } | null) {
+        const existing = preset.baseRenderBox;
+        if (existing && isFiniteNumber(existing.w) && isFiniteNumber(existing.h) && existing.w > 0 && existing.h > 0) {
+            return existing;
+        }
+        if (!currentSize || !isFiniteNumber(currentSize.w) || !isFiniteNumber(currentSize.h) || currentSize.w <= 0 || currentSize.h <= 0) {
+            return null;
+        }
+        const next = { w: currentSize.w, h: currentSize.h };
+        preset.baseRenderBox = next;
+        return next;
+    }
+
+    private applyRenderBoxOffsetCorrection(
+        offsetPx: { x: number; y: number; },
+        anchor: { ax: number; ay: number; },
+        baseRenderBox: { w: number; h: number; } | null,
+        currentSize: { w: number; h: number; } | null,
+        renderBoxAnchor: { ax: number; ay: number; }
+    ) {
+        if (!baseRenderBox || !currentSize) {
+            return { x: offsetPx.x, y: offsetPx.y };
+        }
+        const dx = (anchor.ax - renderBoxAnchor.ax) * (currentSize.w - baseRenderBox.w);
+        const dy = (anchor.ay - renderBoxAnchor.ay) * (currentSize.h - baseRenderBox.h);
+        return {
+            x: offsetPx.x + dx,
+            y: offsetPx.y + dy
+        };
+    }
+
+    private buildActiveItemsFromPreset(
+        preset: ReferenceImagePreset,
+        assetsById: Map<string, ReferenceImageAsset>,
+        override: ReferenceImagePresetOverride | null
+    ) {
         const items: ReferenceImageItemState[] = [];
+        const overrideItems = override?.items ?? null;
         preset.items.forEach((item) => {
             const source = assetsById.get(item.assetId)?.source ?? null;
             if (!source) {
                 return;
             }
+            const overrideItem: ReferenceImageItemOverride | null = overrideItems?.[item.id] ?? null;
+            const name = typeof overrideItem?.name === 'string' ? overrideItem.name : item.name;
+            const overrideGroup = overrideItem?.group;
+            const overrideOrder = overrideItem?.order;
+            const overrideOpacity = overrideItem?.opacity;
+            const overrideScale = overrideItem?.scalePct;
+            const group = isReferenceImageGroup(overrideGroup) ? overrideGroup : item.group;
+            const order = isFiniteNumber(overrideOrder) ? Math.max(0, Math.floor(overrideOrder)) : item.order;
+            const visible = typeof overrideItem?.visible === 'boolean' ? overrideItem.visible : item.visible;
+            const includeInRender = typeof overrideItem?.includeInRender === 'boolean' ? overrideItem.includeInRender : item.includeInRender;
+            const opacity = isFiniteNumber(overrideOpacity) ? clamp(overrideOpacity, 0, 1) : item.opacity;
+            const scalePct = isFiniteNumber(overrideScale) ? clamp(overrideScale, 1, 400) : item.scalePct;
+            const anchor = normalizeAnchor(overrideItem?.anchor ?? item.anchor, item.anchor);
+            const offsetPx = normalizeOffset(overrideItem?.offsetPx ?? item.offsetPx, item.offsetPx);
             items.push({
                 id: item.id,
-                name: item.name,
-                group: item.group,
-                order: item.order,
-                visible: item.visible,
-                includeInRender: item.includeInRender,
-                opacity: item.opacity,
-                scalePct: item.scalePct,
-                offsetPx: { ...item.offsetPx },
-                anchor: { ...item.anchor },
+                name,
+                group,
+                order,
+                visible,
+                includeInRender,
+                opacity,
+                scalePct,
+                offsetPx,
+                anchor,
                 source
             });
         });
@@ -618,14 +698,22 @@ class ReferenceImagesController {
     private rebuildActiveState() {
         const preset = this.getActivePreset();
         const assetsById = this.buildAssetsById();
-        const items = this.buildActiveItemsFromPreset(preset, assetsById);
+        const override = this.getReferenceImageOverride(preset.id);
+        const items = this.buildActiveItemsFromPreset(preset, assetsById, override);
         let activeId = preset.activeId;
+        if (activeId && !preset.items.some(item => item.id === activeId)) {
+            activeId = preset.items[0]?.id ?? null;
+            preset.activeId = activeId;
+        }
+        if (override && Object.prototype.hasOwnProperty.call(override, 'activeId')) {
+            activeId = override.activeId ?? null;
+        }
         if (activeId && !items.some(item => item.id === activeId)) {
             activeId = items[0]?.id ?? null;
         }
-        preset.activeId = activeId;
+        const masterVisible = (override && typeof override.masterVisible === 'boolean') ? override.masterVisible : preset.masterVisible;
         this.state = {
-            masterVisible: preset.masterVisible,
+            masterVisible,
             activeId,
             items
         };
@@ -1237,7 +1325,8 @@ class ReferenceImagesController {
             logicalW: mapping.logicalW,
             logicalH: mapping.logicalH,
             rectPxRaw: mapping.rectPxRaw,
-            rectNormRaw: mapping.rectNormRaw
+            rectNormRaw: mapping.rectNormRaw,
+            anchor: mapping.anchor
         };
     }
 
@@ -1264,7 +1353,14 @@ class ReferenceImagesController {
         return { w: device.width, h: device.height };
     }
 
-    private computeRect(item: ReferenceImageItemState, runtime: ReferenceImageItemRuntime, mapping: ViewportMapping | null) {
+    private computeRect(
+        item: ReferenceImageItemState,
+        runtime: ReferenceImageItemRuntime,
+        mapping: ViewportMapping | null,
+        baseRenderBox: { w: number; h: number; } | null,
+        currentSize: { w: number; h: number; } | null,
+        renderBoxAnchor: { ax: number; ay: number; }
+    ) {
         if (!mapping || !runtime.texture || !this.state.masterVisible || !item.visible) {
             return null;
         }
@@ -1275,11 +1371,12 @@ class ReferenceImagesController {
         const anchor = item.anchor;
         const logicalAnchorX = mapping.logicalW * anchor.ax;
         const logicalAnchorY = mapping.logicalH * anchor.ay;
+        const effectiveOffset = this.applyRenderBoxOffsetCorrection(item.offsetPx, anchor, baseRenderBox, currentSize, renderBoxAnchor);
         const scaleK = item.scalePct / 100;
         const imgW = item.source.appliedSize.w * scaleK;
         const imgH = item.source.appliedSize.h * scaleK;
-        const topLeftX = logicalAnchorX - anchor.ax * imgW - item.offsetPx.x;
-        const topLeftY = logicalAnchorY - anchor.ay * imgH - item.offsetPx.y;
+        const topLeftX = logicalAnchorX - anchor.ax * imgW - effectiveOffset.x;
+        const topLeftY = logicalAnchorY - anchor.ay * imgH - effectiveOffset.y;
         const rect = {
             x: mapping.rectPxRaw.x + topLeftX * viewScale,
             y: mapping.rectPxRaw.y + topLeftY * viewScale,
@@ -1311,6 +1408,10 @@ class ReferenceImagesController {
             return;
         }
         const mapping = this.getViewportMapping();
+        const currentSize = this.resolveRenderBoxSize(mapping);
+        const preset = this.getActivePreset();
+        const baseRenderBox = this.ensurePresetBaseRenderBox(preset, currentSize);
+        const renderBoxAnchor = this.resolveRenderBoxAnchor(mapping);
         const backParams: RenderParams[] = [];
         const frontParams: RenderParams[] = [];
         const sorted = [...this.state.items].sort((a, b) => {
@@ -1323,7 +1424,7 @@ class ReferenceImagesController {
             if (!runtime?.texture) {
                 return;
             }
-            const rect = this.computeRect(item, runtime, mapping);
+            const rect = this.computeRect(item, runtime, mapping, baseRenderBox, currentSize, renderBoxAnchor);
             if (!rect) {
                 return;
             }
@@ -1827,11 +1928,14 @@ class ReferenceImagesController {
         }
 
         const anchor = item.anchor;
+        const baseRenderBox = this.ensurePresetBaseRenderBox(this.getActivePreset(), { w: outW, h: outH });
+        const renderBoxAnchor = this.resolveRenderBoxAnchor(this.getViewportMapping());
+        const effectiveOffset = this.applyRenderBoxOffsetCorrection(item.offsetPx, anchor, baseRenderBox, { w: outW, h: outH }, renderBoxAnchor);
         const scaleK = item.scalePct / 100;
         const imgW = source.appliedSize.w * scaleK;
         const imgH = source.appliedSize.h * scaleK;
-        let x0 = outW * anchor.ax - anchor.ax * imgW - item.offsetPx.x;
-        let y0 = outH * anchor.ay - anchor.ay * imgH - item.offsetPx.y;
+        let x0 = outW * anchor.ax - anchor.ax * imgW - effectiveOffset.x;
+        let y0 = outH * anchor.ay - anchor.ay * imgH - effectiveOffset.y;
         let drawW = imgW;
         let drawH = imgH;
 
