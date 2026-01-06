@@ -740,6 +740,10 @@ class ReferenceImagesController {
             back: [],
             front: []
         };
+        const mapping = this.getViewportMapping();
+        const currentSize = this.resolveRenderBoxSize(mapping);
+        const renderBoxAnchor = this.resolveRenderBoxAnchor(mapping);
+        const baseRenderBox = this.ensurePresetBaseRenderBox(preset, currentSize);
         preset.items.forEach((item) => {
             const source = assetsById.get(item.assetId)?.source ?? null;
             if (!source) {
@@ -759,7 +763,14 @@ class ReferenceImagesController {
             const opacity = isFiniteNumber(overrideOpacity) ? clamp(overrideOpacity, 0, 1) : item.opacity;
             const scalePct = isFiniteNumber(overrideScale) ? clamp(overrideScale, 1, 400) : item.scalePct;
             const anchor = normalizeAnchor(overrideItem?.anchor ?? item.anchor, item.anchor);
-            const offsetPx = normalizeOffset(overrideItem?.offsetPx ?? item.offsetPx, item.offsetPx);
+            const storedOffset = normalizeOffset(overrideItem?.offsetPx ?? item.offsetPx, item.offsetPx);
+            const offsetPx = this.applyRenderBoxOffsetCorrection(
+                storedOffset,
+                anchor,
+                baseRenderBox,
+                currentSize,
+                renderBoxAnchor
+            );
             const nextItem: ReferenceImageItemState = {
                 id: item.id,
                 name,
@@ -1481,10 +1492,7 @@ class ReferenceImagesController {
     private computeRect(
         item: ReferenceImageItemState,
         runtime: ReferenceImageItemRuntime,
-        mapping: ViewportMapping | null,
-        baseRenderBox: { w: number; h: number; } | null,
-        currentSize: { w: number; h: number; } | null,
-        renderBoxAnchor: { ax: number; ay: number; }
+        mapping: ViewportMapping | null
     ) {
         if (!mapping || !runtime.texture || !this.state.masterVisible || !item.visible) {
             return null;
@@ -1496,12 +1504,11 @@ class ReferenceImagesController {
         const anchor = item.anchor;
         const logicalAnchorX = mapping.logicalW * anchor.ax;
         const logicalAnchorY = mapping.logicalH * anchor.ay;
-        const effectiveOffset = this.applyRenderBoxOffsetCorrection(item.offsetPx, anchor, baseRenderBox, currentSize, renderBoxAnchor);
         const scaleK = item.scalePct / 100;
         const imgW = item.source.appliedSize.w * scaleK;
         const imgH = item.source.appliedSize.h * scaleK;
-        const topLeftX = logicalAnchorX - anchor.ax * imgW - effectiveOffset.x;
-        const topLeftY = logicalAnchorY - anchor.ay * imgH - effectiveOffset.y;
+        const topLeftX = logicalAnchorX - anchor.ax * imgW - item.offsetPx.x;
+        const topLeftY = logicalAnchorY - anchor.ay * imgH - item.offsetPx.y;
         const rect = {
             x: mapping.rectPxRaw.x + topLeftX * viewScale,
             y: mapping.rectPxRaw.y + topLeftY * viewScale,
@@ -1533,10 +1540,9 @@ class ReferenceImagesController {
             return;
         }
         const mapping = this.getViewportMapping();
-        const currentSize = this.resolveRenderBoxSize(mapping);
         const preset = this.getActivePreset();
-        const baseRenderBox = this.ensurePresetBaseRenderBox(preset, currentSize);
-        const renderBoxAnchor = this.resolveRenderBoxAnchor(mapping);
+        const currentSize = this.resolveRenderBoxSize(mapping);
+        this.ensurePresetBaseRenderBox(preset, currentSize);
         const backParams: RenderParams[] = [];
         const frontParams: RenderParams[] = [];
         const sorted = [...this.state.items].sort((a, b) => {
@@ -1549,7 +1555,7 @@ class ReferenceImagesController {
             if (!runtime?.texture) {
                 return;
             }
-            const rect = this.computeRect(item, runtime, mapping, baseRenderBox, currentSize, renderBoxAnchor);
+            const rect = this.computeRect(item, runtime, mapping);
             if (!rect) {
                 return;
             }
@@ -2251,9 +2257,29 @@ class ReferenceImagesController {
         }
 
         const anchor = item.anchor;
-        const baseRenderBox = this.ensurePresetBaseRenderBox(this.getActivePreset(), { w: outW, h: outH });
-        const renderBoxAnchor = this.resolveRenderBoxAnchor(this.getViewportMapping());
-        const effectiveOffset = this.applyRenderBoxOffsetCorrection(item.offsetPx, anchor, baseRenderBox, { w: outW, h: outH }, renderBoxAnchor);
+        const mapping = this.getViewportMapping();
+        const currentSize = this.resolveRenderBoxSize(mapping);
+        const renderBoxAnchor = this.resolveRenderBoxAnchor(mapping);
+        const preset = this.getActivePreset();
+        const baseRenderBox = this.ensurePresetBaseRenderBox(preset, currentSize) ??
+            this.ensurePresetBaseRenderBox(preset, { w: outW, h: outH });
+        let effectiveOffset = item.offsetPx;
+        if (baseRenderBox && currentSize) {
+            const storedOffset = this.removeRenderBoxOffsetCorrection(
+                item.offsetPx,
+                anchor,
+                baseRenderBox,
+                currentSize,
+                renderBoxAnchor
+            );
+            effectiveOffset = this.applyRenderBoxOffsetCorrection(
+                storedOffset,
+                anchor,
+                baseRenderBox,
+                { w: outW, h: outH },
+                renderBoxAnchor
+            );
+        }
         const scaleK = item.scalePct / 100;
         const imgW = source.appliedSize.w * scaleK;
         const imgH = source.appliedSize.h * scaleK;

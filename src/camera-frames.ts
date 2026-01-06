@@ -112,7 +112,12 @@ import { CameraPresetReferenceImageOp } from './edit-ops';
 import { ElementType } from './element';
 import { Events } from './events';
 import { PngCompressor } from './png-compressor';
-import type { ReferenceImageItemGroup, ReferenceImageItemOverride, ReferenceImagePresetOverride } from './reference-images-types';
+import type {
+    ReferenceImageItemGroup,
+    ReferenceImageItemOverride,
+    ReferenceImageOverrides,
+    ReferenceImagePresetOverride
+} from './reference-images-types';
 import { Scene } from './scene';
 import { localize } from './ui/localization';
 
@@ -1490,14 +1495,20 @@ export class CameraFramesController {
         };
     }
 
-    private createCameraPreset(name?: string): CameraPreset {
+    private createCameraPreset(
+        name?: string,
+        options?: { referenceImagePresetId?: string; referenceImageOverrides?: ReferenceImageOverrides | null; }
+    ): CameraPreset {
         this.ensureMainCameraPose();
         const baseState = this.cloneCameraFramesStateBaseFromCurrent();
         const mainTransform = this.getMainCameraTransform() ?? this.scene.camera.getTransform();
         const rawBaseFov = this.scene.camera?.fov ?? baseState.renderBox?.projection?.baseFov ?? 60;
         const baseFov = (typeof rawBaseFov === 'number' && isFinite(rawBaseFov)) ? rawBaseFov : 60;
-        const referenceImagePresetId = DEFAULT_REFERENCE_IMAGE_PRESET_ID;
-        return {
+        const referenceImagePresetId = (typeof options?.referenceImagePresetId === 'string' && options.referenceImagePresetId) ?
+            options.referenceImagePresetId :
+            DEFAULT_REFERENCE_IMAGE_PRESET_ID;
+        const referenceImageOverrides = this.cloneReferenceImageOverrides(options?.referenceImageOverrides);
+        const preset: CameraPreset = {
             id: this.createPresetId(),
             name: name ?? this.nextPresetName(),
             referenceImagePresetId,
@@ -1515,6 +1526,10 @@ export class CameraFramesController {
             },
             cameraFramesState: baseState
         };
+        if (referenceImageOverrides) {
+            preset.referenceImageOverrides = referenceImageOverrides;
+        }
+        return preset;
     }
 
     private ensureDefaultPreset() {
@@ -1539,6 +1554,28 @@ export class CameraFramesController {
             return null;
         }
         return JSON.parse(JSON.stringify(value)) as ReferenceImagePresetOverride;
+    }
+
+    private cloneReferenceImageOverrides(value?: ReferenceImageOverrides | null) {
+        if (!value) {
+            return undefined;
+        }
+        const keys = Object.keys(value);
+        if (keys.length === 0) {
+            return undefined;
+        }
+        return JSON.parse(JSON.stringify(value)) as ReferenceImageOverrides;
+    }
+
+    private buildReferenceOverrideKey(preset: CameraPreset) {
+        const name = (preset.name ?? '').trim();
+        if (!name) {
+            return null;
+        }
+        const referenceImagePresetId = (typeof preset.referenceImagePresetId === 'string' && preset.referenceImagePresetId) ?
+            preset.referenceImagePresetId :
+            DEFAULT_REFERENCE_IMAGE_PRESET_ID;
+        return `${referenceImagePresetId}::${name}`;
     }
 
     private getReferenceImageOverride(presetId: string) {
@@ -2487,7 +2524,12 @@ export class CameraFramesController {
 
     private addCameraPreset() {
         this.historyRecord('cameraFrames.addCameraPreset', () => {
-            const preset = this.createCameraPreset();
+            const basePreset = this.findSelectedPreset();
+            const referenceImagePresetId = basePreset?.referenceImagePresetId ?? DEFAULT_REFERENCE_IMAGE_PRESET_ID;
+            const preset = this.createCameraPreset(undefined, {
+                referenceImagePresetId,
+                referenceImageOverrides: basePreset?.referenceImageOverrides ?? null
+            });
             this.state.cameraPresets.forEach((item) => {
                 item.selected = false;
             });
@@ -3237,7 +3279,55 @@ export class CameraFramesController {
     }
 
     public replaceCameraPresets(presets: CameraPreset[], selectedId?: string | null) {
-        const nextPresets = presets.map(preset => JSON.parse(JSON.stringify(preset)) as CameraPreset);
+        const existingPresets = this.state.cameraPresets;
+        const existingById = new Map(existingPresets.map(preset => [preset.id, preset]));
+        const existingKeyCounts = new Map<string, number>();
+        const existingByKey = new Map<string, CameraPreset>();
+        existingPresets.forEach((preset) => {
+            const overrides = preset.referenceImageOverrides;
+            if (!overrides || Object.keys(overrides).length === 0) {
+                return;
+            }
+            const key = this.buildReferenceOverrideKey(preset);
+            if (!key) {
+                return;
+            }
+            existingKeyCounts.set(key, (existingKeyCounts.get(key) ?? 0) + 1);
+            if (!existingByKey.has(key)) {
+                existingByKey.set(key, preset);
+            }
+        });
+
+        const incomingKeyCounts = new Map<string, number>();
+        presets.forEach((preset) => {
+            const key = this.buildReferenceOverrideKey(preset);
+            if (!key) {
+                return;
+            }
+            incomingKeyCounts.set(key, (incomingKeyCounts.get(key) ?? 0) + 1);
+        });
+
+        const nextPresets = presets.map((preset) => {
+            const cloned = JSON.parse(JSON.stringify(preset)) as CameraPreset;
+            const hasOverrides = !!cloned.referenceImageOverrides && Object.keys(cloned.referenceImageOverrides).length > 0;
+            if (!hasOverrides) {
+                delete cloned.referenceImageOverrides;
+                let overrideSource = existingById.get(cloned.id)?.referenceImageOverrides ?? undefined;
+                if (!overrideSource) {
+                    const key = this.buildReferenceOverrideKey(cloned);
+                    if (key &&
+                        existingKeyCounts.get(key) === 1 &&
+                        incomingKeyCounts.get(key) === 1) {
+                        overrideSource = existingByKey.get(key)?.referenceImageOverrides;
+                    }
+                }
+                const clonedOverrides = this.cloneReferenceImageOverrides(overrideSource);
+                if (clonedOverrides) {
+                    cloned.referenceImageOverrides = clonedOverrides;
+                }
+            }
+            return cloned;
+        });
         this.state.cameraPresets = nextPresets;
         this.state.exportPresetIds = this.normalizeExportPresetIds(this.state.exportPresetIds);
         this.syncPresetCounter();
