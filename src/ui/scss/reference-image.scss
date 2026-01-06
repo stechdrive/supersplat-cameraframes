@@ -37,6 +37,32 @@
         gap: 6px;
     }
 
+    .reference-image-mode-row {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        width: 100%;
+    }
+
+    .reference-image-mode-button.pcui-button {
+        flex: 1 1 0;
+        min-width: 0;
+        padding: 4px 6px;
+        font-size: 12px;
+        line-height: 18px;
+        text-align: center;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .reference-image-mode-button.active {
+        color: $text-primary;
+        border-color: rgba($text-primary, 0.55);
+        background: rgba($text-primary, 0.12);
+        box-shadow: inset 0 0 0 1px rgba($text-primary, 0.2);
+    }
+
     .reference-image-preset-row {
         align-items: center;
         gap: 6px;
@@ -137,6 +163,31 @@
         border-color: rgba($clr-hilight, 0.9);
         box-shadow: 0 0 0 1px rgba($clr-hilight, 0.2);
         filter: drop-shadow(0 0 2px rgba($clr-hilight, 0.35));
+    }
+
+    .reference-image-item-override-controls {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        flex: 0 0 auto;
+    }
+
+    .reference-image-item-override {
+        margin: 0;
+        padding: 2px 4px;
+        border-radius: 3px;
+        font-size: 10px;
+        line-height: 1;
+        color: $clr-hilight;
+        background: rgba($clr-hilight, 0.18);
+        letter-spacing: 0.2px;
+    }
+
+    .reference-image-item-revert.pcui-button {
+        padding: 2px 6px;
+        height: 20px;
+        font-size: 10px;
+        line-height: 16px;
     }
 
     .reference-image-item-reorder svg {

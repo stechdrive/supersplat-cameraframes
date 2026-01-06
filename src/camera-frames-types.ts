@@ -1,5 +1,7 @@
 import type { Quat, Vec3 } from 'playcanvas';
 
+import type { ReferenceImageOverrides } from './reference-images-types';
+
 export type RenderBoxState = {
     baseSize: { w: number; h: number; };
     scalePct: { x: number; y: number; };
@@ -67,6 +69,7 @@ export type CameraPreset = {
     id: string;
     name: string;
     referenceImagePresetId: string;
+    referenceImageOverrides?: ReferenceImageOverrides;
     selected?: boolean;
     mainCamera: {
         transform: { position: Vec3Json; rotation: RotationJson; };

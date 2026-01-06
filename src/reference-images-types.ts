@@ -28,11 +28,43 @@ type ReferenceImageAsset = {
     source: ReferenceImageSourceMeta;
 };
 
+type ReferenceImageBaseRenderBox = {
+    w: number;
+    h: number;
+};
+
+type ReferenceImageRenderBoxCorrection = {
+    x: number;
+    y: number;
+};
+
+type ReferenceImageItemOverride = {
+    name?: string;
+    group?: ReferenceImageItemGroup;
+    order?: number;
+    visible?: boolean;
+    includeInRender?: boolean;
+    opacity?: number;
+    scalePct?: number;
+    offsetPx?: { x: number; y: number; };
+    anchor?: { ax: number; ay: number; };
+};
+
+type ReferenceImagePresetOverride = {
+    masterVisible?: boolean;
+    activeId?: string | null;
+    renderBoxCorrection?: ReferenceImageRenderBoxCorrection | null;
+    items?: Record<string, ReferenceImageItemOverride>;
+};
+
+type ReferenceImageOverrides = Record<string, ReferenceImagePresetOverride>;
+
 type ReferenceImagePreset = {
     id: string;
     name: string;
     masterVisible: boolean;
     activeId: string | null;
+    baseRenderBox?: ReferenceImageBaseRenderBox;
     items: ReferenceImageItemV2[];
 };
 
@@ -84,6 +116,11 @@ export type {
     ReferenceImageItemState,
     ReferenceImageItemV2,
     ReferenceImageAsset,
+    ReferenceImageBaseRenderBox,
+    ReferenceImageRenderBoxCorrection,
+    ReferenceImageItemOverride,
+    ReferenceImageOverrides,
+    ReferenceImagePresetOverride,
     ReferenceImagePreset,
     ReferenceImagesDocState,
     ReferenceImagesDocStateV1,
