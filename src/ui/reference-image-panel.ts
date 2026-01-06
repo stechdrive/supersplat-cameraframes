@@ -234,30 +234,6 @@ class ReferenceImagePanel extends Container {
             syncEditMode();
         };
 
-        const setEditMode = (next: 'shared' | 'camera') => {
-            if (next === 'camera' && !canUseCameraMode()) {
-                next = 'shared';
-            }
-            if (editMode === next) {
-                return;
-            }
-            editMode = next;
-            updateModeControls();
-            if (lastState) {
-                applyState(lastState);
-            } else {
-                applyState(events.invoke('referenceImages.state') as ReferenceImagesState | null);
-            }
-            if (lastPresetsState) {
-                applyPresetsState(lastPresetsState);
-            } else {
-                applyPresetsState(events.invoke('referenceImages.presetsState') as ReferenceImagesPresetsState | null);
-            }
-        };
-
-        sharedModeButton.on('click', () => setEditMode('shared'));
-        cameraModeButton.on('click', () => setEditMode('camera'));
-
         // actions row
         const actionsRow = new Container({ class: ['control-parent', 'reference-image-actions-row'] });
         const infoLabel = new Label({ class: ['control-element-expand', 'reference-image-info'], text: localize('panel.reference-image.empty') });
@@ -1233,25 +1209,6 @@ class ReferenceImagePanel extends Container {
             }
         };
 
-        const applyCameraPresetsState = (state?: CameraFramesPresetsState | null) => {
-            const presets = Array.isArray(state?.presets) ? state.presets : [];
-            const selectedId = state?.selectedPresetId ?? null;
-            const selectedPreset = selectedId ? presets.find(preset => preset.id === selectedId) ?? null : null;
-            cameraPresetId = selectedPreset?.id ?? null;
-            cameraPresetName = (selectedPreset?.name ?? '').trim();
-            if (editMode === 'camera' && !canUseCameraMode()) {
-                setEditMode('shared');
-                return;
-            }
-            updateModeControls();
-            if (lastState) {
-                applyState(lastState);
-            }
-            if (lastPresetsState) {
-                applyPresetsState(lastPresetsState);
-            }
-        };
-
         const applyState = (state?: ReferenceImagesState | null) => {
             suppress = true;
 
@@ -1345,6 +1302,49 @@ class ReferenceImagePanel extends Container {
             }
 
             suppress = false;
+        };
+
+        const setEditMode = (next: 'shared' | 'camera') => {
+            if (next === 'camera' && !canUseCameraMode()) {
+                next = 'shared';
+            }
+            if (editMode === next) {
+                return;
+            }
+            editMode = next;
+            updateModeControls();
+            if (lastState) {
+                applyState(lastState);
+            } else {
+                applyState(events.invoke('referenceImages.state') as ReferenceImagesState | null);
+            }
+            if (lastPresetsState) {
+                applyPresetsState(lastPresetsState);
+            } else {
+                applyPresetsState(events.invoke('referenceImages.presetsState') as ReferenceImagesPresetsState | null);
+            }
+        };
+
+        sharedModeButton.on('click', () => setEditMode('shared'));
+        cameraModeButton.on('click', () => setEditMode('camera'));
+
+        const applyCameraPresetsState = (state?: CameraFramesPresetsState | null) => {
+            const presets = Array.isArray(state?.presets) ? state.presets : [];
+            const selectedId = state?.selectedPresetId ?? null;
+            const selectedPreset = selectedId ? presets.find(preset => preset.id === selectedId) ?? null : null;
+            cameraPresetId = selectedPreset?.id ?? null;
+            cameraPresetName = (selectedPreset?.name ?? '').trim();
+            if (editMode === 'camera' && !canUseCameraMode()) {
+                setEditMode('shared');
+                return;
+            }
+            updateModeControls();
+            if (lastState) {
+                applyState(lastState);
+            }
+            if (lastPresetsState) {
+                applyPresetsState(lastPresetsState);
+            }
         };
 
         let appReady = false;

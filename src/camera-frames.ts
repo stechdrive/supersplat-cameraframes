@@ -101,7 +101,6 @@ import type {
     Viewport,
     ViewportMapping
 } from './camera-frames-types';
-import type { ReferenceImageItemGroup, ReferenceImageItemOverride, ReferenceImagePresetOverride } from './reference-images-types';
 import { cameraFramesVersion } from './camera-frames-version';
 import {
     computeViewportMapping as computeViewportMappingViewport,
@@ -113,6 +112,7 @@ import { CameraPresetReferenceImageOp } from './edit-ops';
 import { ElementType } from './element';
 import { Events } from './events';
 import { PngCompressor } from './png-compressor';
+import type { ReferenceImageItemGroup, ReferenceImageItemOverride, ReferenceImagePresetOverride } from './reference-images-types';
 import { Scene } from './scene';
 import { localize } from './ui/localization';
 

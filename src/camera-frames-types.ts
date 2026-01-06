@@ -1,4 +1,5 @@
 import type { Quat, Vec3 } from 'playcanvas';
+
 import type { ReferenceImageOverrides } from './reference-images-types';
 
 export type RenderBoxState = {

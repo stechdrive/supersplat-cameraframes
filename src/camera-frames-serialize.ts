@@ -12,12 +12,12 @@ import type {
     Viewport,
     ViewportMapping
 } from './camera-frames-types';
+import type { Events } from './events';
 import type {
     ReferenceImageItemOverride,
     ReferenceImageOverrides,
     ReferenceImagePresetOverride
 } from './reference-images-types';
-import type { Events } from './events';
 import type { Scene } from './scene';
 
 type ApplyCameraPose = (pose: CameraPoseSnapshot, options: { silent: boolean; allowOrtho: boolean; }) => void;
