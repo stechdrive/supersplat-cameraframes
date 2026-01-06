@@ -34,6 +34,17 @@ type ViewportMapping = {
     anchor?: { ax: number; ay: number; };
 };
 
+type CameraFramesPresetsState = {
+    selectedPresetId?: string | null;
+};
+
+type RenderBoxCorrectionState = {
+    base: { w: number; h: number; };
+    size: { w: number; h: number; };
+    anchor: { ax: number; ay: number; };
+    correction: { x: number; y: number; };
+};
+
 type ReferenceImageItemRuntime = {
     assetId: string;
     blob: Blob | null;
@@ -374,6 +385,7 @@ class ReferenceImagesController {
     private activePresetGeneration = 0;
     private activePresetTask: Promise<void> | null = null;
     private editMode: 'shared' | 'camera' = 'camera';
+    private renderBoxCorrectionByPreset = new Map<string, RenderBoxCorrectionState>();
 
     constructor(events: Events, scene: Scene) {
         this.events = events;
@@ -673,10 +685,52 @@ class ReferenceImagesController {
         return { w, h };
     }
 
-    private resolveRenderBoxAnchor(mapping: ViewportMapping | null) {
+    private resolveRenderBoxCorrection(
+        mapping: ViewportMapping | null,
+        baseRenderBox: { w: number; h: number; } | null,
+        currentSize: { w: number; h: number; } | null
+    ) {
         const ax = isFiniteNumber(mapping?.anchor?.ax) ? clamp(mapping.anchor!.ax, 0, 1) : 0.5;
         const ay = isFiniteNumber(mapping?.anchor?.ay) ? clamp(mapping.anchor!.ay, 0, 1) : 0.5;
-        return { ax, ay };
+        const anchor = { ax, ay };
+        if (!baseRenderBox || !currentSize) {
+            return { anchor, correction: { x: 0, y: 0 } };
+        }
+        const presetsState = this.events.invoke('cameraFrames.presetsState') as CameraFramesPresetsState | null;
+        const cameraPresetId = typeof presetsState?.selectedPresetId === 'string' ? presetsState.selectedPresetId : null;
+        const referencePresetId = this.fullState.activePresetId ?? null;
+        const key = `${cameraPresetId ?? '__default__'}::${referencePresetId ?? '__ref-default__'}`;
+        const existing = this.renderBoxCorrectionByPreset.get(key);
+        const baseChanged = !existing ||
+            Math.abs(existing.base.w - baseRenderBox.w) > 1e-3 ||
+            Math.abs(existing.base.h - baseRenderBox.h) > 1e-3;
+        if (!existing || baseChanged) {
+            const nextState: RenderBoxCorrectionState = {
+                base: { w: baseRenderBox.w, h: baseRenderBox.h },
+                size: { w: currentSize.w, h: currentSize.h },
+                anchor,
+                correction: { x: 0, y: 0 }
+            };
+            this.renderBoxCorrectionByPreset.set(key, nextState);
+            return { anchor, correction: { x: 0, y: 0 } };
+        }
+        const anchorChanged = Math.abs(existing.anchor.ax - anchor.ax) > 1e-6 ||
+            Math.abs(existing.anchor.ay - anchor.ay) > 1e-6;
+        const sizeChanged = Math.abs(existing.size.w - currentSize.w) > 1e-3 ||
+            Math.abs(existing.size.h - currentSize.h) > 1e-3;
+        if (anchorChanged) {
+            const deltaW = existing.size.w - baseRenderBox.w;
+            const deltaH = existing.size.h - baseRenderBox.h;
+            existing.correction = {
+                x: existing.correction.x + (anchor.ax - existing.anchor.ax) * deltaW,
+                y: existing.correction.y + (anchor.ay - existing.anchor.ay) * deltaH
+            };
+            existing.anchor = anchor;
+        }
+        if (sizeChanged) {
+            existing.size = { w: currentSize.w, h: currentSize.h };
+        }
+        return { anchor: existing.anchor, correction: existing.correction };
     }
 
     private ensurePresetBaseRenderBox(preset: ReferenceImagePreset, currentSize: { w: number; h: number; } | null) {
@@ -697,7 +751,8 @@ class ReferenceImagesController {
         anchor: { ax: number; ay: number; },
         baseRenderBox: { w: number; h: number; } | null,
         currentSize: { w: number; h: number; } | null,
-        renderBoxAnchor: { ax: number; ay: number; }
+        renderBoxAnchor: { ax: number; ay: number; },
+        correction: { x: number; y: number; }
     ) {
         if (!baseRenderBox || !currentSize) {
             return { x: offsetPx.x, y: offsetPx.y };
@@ -705,8 +760,8 @@ class ReferenceImagesController {
         const dx = (anchor.ax - renderBoxAnchor.ax) * (currentSize.w - baseRenderBox.w);
         const dy = (anchor.ay - renderBoxAnchor.ay) * (currentSize.h - baseRenderBox.h);
         return {
-            x: offsetPx.x + dx,
-            y: offsetPx.y + dy
+            x: offsetPx.x + dx + correction.x,
+            y: offsetPx.y + dy + correction.y
         };
     }
 
@@ -715,7 +770,8 @@ class ReferenceImagesController {
         anchor: { ax: number; ay: number; },
         baseRenderBox: { w: number; h: number; } | null,
         currentSize: { w: number; h: number; } | null,
-        renderBoxAnchor: { ax: number; ay: number; }
+        renderBoxAnchor: { ax: number; ay: number; },
+        correction: { x: number; y: number; }
     ) {
         if (!baseRenderBox || !currentSize) {
             return { x: offsetPx.x, y: offsetPx.y };
@@ -723,8 +779,8 @@ class ReferenceImagesController {
         const dx = (anchor.ax - renderBoxAnchor.ax) * (currentSize.w - baseRenderBox.w);
         const dy = (anchor.ay - renderBoxAnchor.ay) * (currentSize.h - baseRenderBox.h);
         return {
-            x: offsetPx.x - dx,
-            y: offsetPx.y - dy
+            x: offsetPx.x - dx - correction.x,
+            y: offsetPx.y - dy - correction.y
         };
     }
 
@@ -742,8 +798,8 @@ class ReferenceImagesController {
         };
         const mapping = this.getViewportMapping();
         const currentSize = this.resolveRenderBoxSize(mapping);
-        const renderBoxAnchor = this.resolveRenderBoxAnchor(mapping);
         const baseRenderBox = this.ensurePresetBaseRenderBox(preset, currentSize);
+        const renderBoxCorrection = this.resolveRenderBoxCorrection(mapping, baseRenderBox, currentSize);
         preset.items.forEach((item) => {
             const source = assetsById.get(item.assetId)?.source ?? null;
             if (!source) {
@@ -769,7 +825,8 @@ class ReferenceImagesController {
                 anchor,
                 baseRenderBox,
                 currentSize,
-                renderBoxAnchor
+                renderBoxCorrection.anchor,
+                renderBoxCorrection.correction
             );
             const nextItem: ReferenceImageItemState = {
                 id: item.id,
@@ -1975,6 +2032,7 @@ class ReferenceImagesController {
         let renderMetaResolved = false;
         let currentSize: { w: number; h: number; } | null = null;
         let renderBoxAnchor: { ax: number; ay: number; } = { ax: 0.5, ay: 0.5 };
+        let renderBoxCorrection: { x: number; y: number; } = { x: 0, y: 0 };
         let baseRenderBox: { w: number; h: number; } | null = null;
 
         const ensureRenderMeta = () => {
@@ -1983,8 +2041,10 @@ class ReferenceImagesController {
             }
             const mapping = this.getViewportMapping();
             currentSize = this.resolveRenderBoxSize(mapping);
-            renderBoxAnchor = this.resolveRenderBoxAnchor(mapping);
             baseRenderBox = this.ensurePresetBaseRenderBox(preset, currentSize);
+            const correction = this.resolveRenderBoxCorrection(mapping, baseRenderBox, currentSize);
+            renderBoxAnchor = correction.anchor;
+            renderBoxCorrection = correction.correction;
             renderMetaResolved = true;
         };
 
@@ -2030,7 +2090,8 @@ class ReferenceImagesController {
                     anchor,
                     baseRenderBox,
                     currentSize,
-                    renderBoxAnchor
+                    renderBoxAnchor,
+                    renderBoxCorrection
                 );
                 nextPatch.offsetPx = storedOffset;
             }
@@ -2259,10 +2320,10 @@ class ReferenceImagesController {
         const anchor = item.anchor;
         const mapping = this.getViewportMapping();
         const currentSize = this.resolveRenderBoxSize(mapping);
-        const renderBoxAnchor = this.resolveRenderBoxAnchor(mapping);
         const preset = this.getActivePreset();
         const baseRenderBox = this.ensurePresetBaseRenderBox(preset, currentSize) ??
             this.ensurePresetBaseRenderBox(preset, { w: outW, h: outH });
+        const renderBoxCorrection = this.resolveRenderBoxCorrection(mapping, baseRenderBox, currentSize);
         let effectiveOffset = item.offsetPx;
         if (baseRenderBox && currentSize) {
             const storedOffset = this.removeRenderBoxOffsetCorrection(
@@ -2270,14 +2331,16 @@ class ReferenceImagesController {
                 anchor,
                 baseRenderBox,
                 currentSize,
-                renderBoxAnchor
+                renderBoxCorrection.anchor,
+                renderBoxCorrection.correction
             );
             effectiveOffset = this.applyRenderBoxOffsetCorrection(
                 storedOffset,
                 anchor,
                 baseRenderBox,
                 { w: outW, h: outH },
-                renderBoxAnchor
+                renderBoxCorrection.anchor,
+                renderBoxCorrection.correction
             );
         }
         const scaleK = item.scalePct / 100;
