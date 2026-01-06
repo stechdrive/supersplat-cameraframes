@@ -108,9 +108,7 @@ class ReferenceImagePanel extends Container {
         let presetEditing = false;
         let presetEditId: string | null = null;
         let presetEditName = '';
-        let editMode: 'shared' | 'camera' = 'camera';
         let cameraPresetId: string | null = null;
-        let cameraPresetName = '';
         let lastState: ReferenceImagesState | null = null;
         let lastPresetsState: ReferenceImagesPresetsState | null = null;
 
@@ -189,49 +187,11 @@ class ReferenceImagePanel extends Container {
 
         const body = new Container({ class: 'reference-image-body' });
 
-        const modeRow = new Container({ class: 'reference-image-mode-row' });
-        const sharedModeButton = new Button({ class: ['reference-image-mode-button'], text: '' });
-        const cameraModeButton = new Button({ class: ['reference-image-mode-button'], text: '' });
-        modeRow.append(sharedModeButton);
-        modeRow.append(cameraModeButton);
-        [sharedModeButton, cameraModeButton].forEach((button) => {
-            ['pointerdown', 'pointerup', 'click'].forEach((evt) => {
-                button.dom.addEventListener(evt, (e: Event) => e.stopPropagation());
-            });
-        });
-
         const canUseOverrides = () => events.functions.has('cameraFrames.referenceOverrides.get');
         const canUseCameraMode = () => canUseOverrides() && !!cameraPresetId;
-        const isCameraMode = () => editMode === 'camera' && canUseCameraMode();
-        const isSharedMode = () => !isCameraMode();
+        const canEditItems = () => !canUseOverrides() || canUseCameraMode();
         const syncEditMode = () => {
-            events.fire('referenceImages.setEditMode', isCameraMode() ? 'camera' : 'shared');
-        };
-
-        const updateModeControls = () => {
-            if (!canUseOverrides()) {
-                modeRow.hidden = true;
-                syncEditMode();
-                return;
-            }
-            modeRow.hidden = false;
-            const sharedLabel = localize('panel.reference-image.mode.shared');
-            const cameraName = cameraPresetName || localize('panel.reference-image.mode.camera-unknown');
-            const cameraLabel = localize('panel.reference-image.mode.camera', { name: cameraName });
-            sharedModeButton.text = sharedLabel;
-            sharedModeButton.dom.title = sharedLabel;
-            sharedModeButton.dom.setAttribute('aria-label', sharedLabel);
-            cameraModeButton.text = cameraLabel;
-            cameraModeButton.dom.title = cameraLabel;
-            cameraModeButton.dom.setAttribute('aria-label', cameraLabel);
-            const cameraAvailable = canUseCameraMode();
-            cameraModeButton.enabled = cameraAvailable;
-            if (!cameraAvailable && editMode !== 'shared') {
-                editMode = 'shared';
-            }
-            sharedModeButton.class[isSharedMode() ? 'add' : 'remove']('active');
-            cameraModeButton.class[isCameraMode() ? 'add' : 'remove']('active');
-            syncEditMode();
+            events.fire('referenceImages.setEditMode', canUseCameraMode() ? 'camera' : 'shared');
         };
 
         // actions row
@@ -326,7 +286,7 @@ class ReferenceImagePanel extends Container {
         };
 
         const getOverrideItemIds = () => {
-            if (!isCameraMode() || !activePresetId) {
+            if (!canUseCameraMode() || !activePresetId) {
                 return new Set<string>();
             }
             const override = (events.invoke('cameraFrames.referenceOverrides.get', activePresetId) as ReferenceImagePresetOverride | null) ?? null;
@@ -433,8 +393,8 @@ class ReferenceImagePanel extends Container {
             const activeId = state?.activeId ?? null;
             const items = Array.isArray(state?.items) ? state.items : [];
             const itemsById = new Map(items.map(item => [item.id, item]));
-            const allowItemEdits = isCameraMode();
-            const allowSharedEdits = isSharedMode();
+            const allowItemEdits = canEditItems();
+            const allowSharedEdits = true;
             const overrideItemIds = allowItemEdits ? getOverrideItemIds() : new Set<string>();
             // UIリストは「上が優先(手前)」になるよう、order が大きいものを上に表示する
             const compareOrderDesc = (a: ReferenceImageItemState, b: ReferenceImageItemState) => (b.order - a.order) || a.id.localeCompare(b.id);
@@ -714,7 +674,7 @@ class ReferenceImagePanel extends Container {
             };
 
             const begin = () => {
-                if (suppress || active || !isCameraMode()) {
+                if (suppress || active || !canEditItems()) {
                     return;
                 }
                 active = true;
@@ -805,10 +765,6 @@ class ReferenceImagePanel extends Container {
         };
 
         fileInput.addEventListener('change', async () => {
-            if (!isSharedMode()) {
-                fileInput.value = '';
-                return;
-            }
             const files = Array.from(fileInput.files ?? []);
             fileInput.value = '';
             if (files.length === 0) {
@@ -831,13 +787,10 @@ class ReferenceImagePanel extends Container {
         });
 
         addButton.on('click', () => {
-            if (!isSharedMode()) {
-                return;
-            }
             fileInput.click();
         });
         clearAllButton.on('click', async () => {
-            if (suppress || !isSharedMode()) return;
+            if (suppress) return;
             const result = await events.invoke('showPopup', {
                 type: 'yesno',
                 header: localize('panel.reference-image.title'),
@@ -849,7 +802,7 @@ class ReferenceImagePanel extends Container {
         });
 
         const applyActivePatch = (patch: ReferenceImageItemPatch) => {
-            if (!isCameraMode()) {
+            if (!canEditItems()) {
                 return;
             }
             const state = events.invoke('referenceImages.state') as ReferenceImagesState | null;
@@ -861,7 +814,7 @@ class ReferenceImagePanel extends Container {
         };
 
         const applySelectionUpdates = (updates: Array<{ id: string; patch: ReferenceImageItemPatch }>) => {
-            if (!isCameraMode()) {
+            if (!canEditItems()) {
                 return;
             }
             if (updates.length === 0) {
@@ -871,7 +824,7 @@ class ReferenceImagePanel extends Container {
         };
 
         const applySelectionPatch = (patch: ReferenceImageItemPatch) => {
-            if (!isCameraMode()) {
+            if (!canEditItems()) {
                 return;
             }
             const state = events.invoke('referenceImages.state') as ReferenceImagesState | null;
@@ -1053,11 +1006,11 @@ class ReferenceImagePanel extends Container {
         };
 
         groupSelect.on('change', (value: 'back' | 'front') => {
-            if (suppress || !isCameraMode()) return;
+            if (suppress || !canEditItems()) return;
             applyActivePatch({ group: value });
         });
         opacityInput.on('change', (value: number) => {
-            if (suppress || !isCameraMode()) return;
+            if (suppress || !canEditItems()) return;
             if (relativeInputs.has(opacityInput)) {
                 if (applyRelativeUpdates(
                     opacityInput,
@@ -1071,7 +1024,7 @@ class ReferenceImagePanel extends Container {
             applySelectionPatch({ opacity: value / 100 });
         });
         scaleInput.on('change', (value: number) => {
-            if (suppress || !isCameraMode()) return;
+            if (suppress || !canEditItems()) return;
             const state = events.invoke('referenceImages.state') as ReferenceImagesState | null;
             const relative = relativeInputs.has(scaleInput);
             const base = relative ? (selectionBaseByInput.get(scaleInput) ?? null) : null;
@@ -1091,7 +1044,7 @@ class ReferenceImagePanel extends Container {
             applySelectionPatch({ scalePct: value });
         });
         offsetX.on('change', (value: number) => {
-            if (suppress || !isCameraMode()) return;
+            if (suppress || !canEditItems()) return;
             if (relativeInputs.has(offsetX)) {
                 if (applyRelativeUpdates(
                     offsetX,
@@ -1105,7 +1058,7 @@ class ReferenceImagePanel extends Container {
             applySelectionPatch({ offsetPx: { x: -value } });
         });
         offsetY.on('change', (value: number) => {
-            if (suppress || !isCameraMode()) return;
+            if (suppress || !canEditItems()) return;
             if (relativeInputs.has(offsetY)) {
                 if (applyRelativeUpdates(
                     offsetY,
@@ -1120,7 +1073,7 @@ class ReferenceImagePanel extends Container {
         });
 
         centerButton.on('click', () => {
-            if (suppress || !isCameraMode()) return;
+            if (suppress || !canEditItems()) return;
             const state = events.invoke('referenceImages.state') as ReferenceImagesState | null;
             const activeId = state?.activeId ?? null;
             if (activeId) {
@@ -1187,7 +1140,7 @@ class ReferenceImagePanel extends Container {
             const activePreset = nextActiveId ? presets.find(preset => preset.id === nextActiveId) ?? null : null;
             const nextName = activePreset?.name ?? '';
             const editablePreset = !!nextActiveId && nextActiveId !== DEFAULT_REFERENCE_IMAGE_PRESET_ID;
-            const editable = editablePreset && isSharedMode();
+            const editable = editablePreset;
             const presetChanged = nextActiveId !== activePresetId;
 
             activePresetId = nextActiveId;
@@ -1222,8 +1175,8 @@ class ReferenceImagePanel extends Container {
             rebuildList(safeState);
 
             const hasItems = items.length > 0;
-            const allowItemEdits = isCameraMode();
-            const allowSharedEdits = isSharedMode();
+            const allowItemEdits = canEditItems();
+            const allowSharedEdits = true;
             addButton.enabled = allowSharedEdits;
             clearAllButton.enabled = allowSharedEdits && hasItems;
 
@@ -1304,41 +1257,12 @@ class ReferenceImagePanel extends Container {
             suppress = false;
         };
 
-        const setEditMode = (next: 'shared' | 'camera') => {
-            if (next === 'camera' && !canUseCameraMode()) {
-                next = 'shared';
-            }
-            if (editMode === next) {
-                return;
-            }
-            editMode = next;
-            updateModeControls();
-            if (lastState) {
-                applyState(lastState);
-            } else {
-                applyState(events.invoke('referenceImages.state') as ReferenceImagesState | null);
-            }
-            if (lastPresetsState) {
-                applyPresetsState(lastPresetsState);
-            } else {
-                applyPresetsState(events.invoke('referenceImages.presetsState') as ReferenceImagesPresetsState | null);
-            }
-        };
-
-        sharedModeButton.on('click', () => setEditMode('shared'));
-        cameraModeButton.on('click', () => setEditMode('camera'));
-
         const applyCameraPresetsState = (state?: CameraFramesPresetsState | null) => {
             const presets = Array.isArray(state?.presets) ? state.presets : [];
             const selectedId = state?.selectedPresetId ?? null;
             const selectedPreset = selectedId ? presets.find(preset => preset.id === selectedId) ?? null : null;
             cameraPresetId = selectedPreset?.id ?? null;
-            cameraPresetName = (selectedPreset?.name ?? '').trim();
-            if (editMode === 'camera' && !canUseCameraMode()) {
-                setEditMode('shared');
-                return;
-            }
-            updateModeControls();
+            syncEditMode();
             if (lastState) {
                 applyState(lastState);
             }
@@ -1361,7 +1285,7 @@ class ReferenceImagePanel extends Container {
                 const initialCameraPresetsState = events.invoke('cameraFrames.presetsState') as CameraFramesPresetsState | null;
                 applyCameraPresetsState(initialCameraPresetsState);
             } else {
-                updateModeControls();
+                syncEditMode();
             }
         });
         events.on('referenceImages.stateChanged', (state: ReferenceImagesState) => applyState(state));
@@ -1395,7 +1319,6 @@ class ReferenceImagePanel extends Container {
             }
         });
 
-        body.append(modeRow);
         body.append(actionsRow);
         body.append(presetRow);
         body.append(lists);
