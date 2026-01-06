@@ -101,6 +101,7 @@ import type {
     Viewport,
     ViewportMapping
 } from './camera-frames-types';
+import type { ReferenceImageItemOverride, ReferenceImagePresetOverride } from './reference-images-types';
 import { cameraFramesVersion } from './camera-frames-version';
 import {
     computeViewportMapping as computeViewportMappingViewport,
@@ -1141,6 +1142,23 @@ export class CameraFramesController {
         this.events.on('cameraFrames.setPresetReferenceImage', (id: string, referencePresetId: string) => {
             this.setPresetReferenceImage(id, referencePresetId);
         });
+        // 参照画像のカメラ別 override
+        this.events.function('cameraFrames.referenceOverrides.get', (presetId: string) => {
+            return this.getReferenceImageOverride(presetId);
+        });
+        this.events.on('cameraFrames.referenceOverrides.patch', (presetId: string, patch: ReferenceImagePresetOverride) => {
+            this.patchReferenceImageOverride(presetId, patch);
+        });
+        this.events.on('cameraFrames.referenceOverrides.clear', (presetId: string, itemIds?: string[]) => {
+            this.clearReferenceImageOverride(presetId, itemIds);
+        });
+        this.events.on('cameraFrames.referenceOverrides.historyBegin', (label: string) => {
+            const resolved = (typeof label === 'string' && label) ? label : 'cameraFrames.referenceOverrides';
+            this.historyBegin(resolved);
+        });
+        this.events.on('cameraFrames.referenceOverrides.historyCommit', (label?: string) => {
+            this.historyCommit(label);
+        });
         this.events.on('cameraFrames.syncReferenceImages', () => {
             this.lastReferenceSyncPresetId = null;
             this.lastReferenceSyncReferencePresetId = null;
@@ -1502,6 +1520,176 @@ export class CameraFramesController {
             return null;
         }
         return this.state.cameraPresets.find(preset => preset.id === this.selectedPresetId) ?? null;
+    }
+
+    private cloneReferenceImagePresetOverride(value?: ReferenceImagePresetOverride | null) {
+        if (!value) {
+            return null;
+        }
+        return JSON.parse(JSON.stringify(value)) as ReferenceImagePresetOverride;
+    }
+
+    private getReferenceImageOverride(presetId: string) {
+        const targetId = typeof presetId === 'string' ? presetId : '';
+        if (!targetId) {
+            return null;
+        }
+        const preset = this.findSelectedPreset();
+        if (!preset?.referenceImageOverrides) {
+            return null;
+        }
+        return this.cloneReferenceImagePresetOverride(preset.referenceImageOverrides[targetId]);
+    }
+
+    private mergeReferenceImagePresetOverride(
+        base: ReferenceImagePresetOverride | undefined,
+        patch: ReferenceImagePresetOverride
+    ) {
+        const next = base ? JSON.parse(JSON.stringify(base)) as ReferenceImagePresetOverride : {};
+        if (typeof patch.masterVisible === 'boolean') {
+            next.masterVisible = patch.masterVisible;
+        }
+        if (patch.activeId === null || typeof patch.activeId === 'string') {
+            next.activeId = patch.activeId;
+        }
+        if (patch.items && typeof patch.items === 'object') {
+            const items = next.items ?? {};
+            Object.entries(patch.items).forEach(([id, itemPatch]) => {
+                if (!id || !itemPatch || typeof itemPatch !== 'object') {
+                    return;
+                }
+                const nextItem: ReferenceImageItemOverride = items[id] ? { ...items[id] } : {};
+                if (itemPatch.name !== undefined) {
+                    nextItem.name = itemPatch.name;
+                }
+                if (itemPatch.group !== undefined) {
+                    nextItem.group = itemPatch.group;
+                }
+                if (itemPatch.order !== undefined) {
+                    nextItem.order = itemPatch.order;
+                }
+                if (itemPatch.visible !== undefined) {
+                    nextItem.visible = itemPatch.visible;
+                }
+                if (itemPatch.includeInRender !== undefined) {
+                    nextItem.includeInRender = itemPatch.includeInRender;
+                }
+                if (itemPatch.opacity !== undefined) {
+                    nextItem.opacity = itemPatch.opacity;
+                }
+                if (itemPatch.scalePct !== undefined) {
+                    nextItem.scalePct = itemPatch.scalePct;
+                }
+                if (itemPatch.offsetPx !== undefined) {
+                    nextItem.offsetPx = itemPatch.offsetPx ? { ...itemPatch.offsetPx } : itemPatch.offsetPx;
+                }
+                if (itemPatch.anchor !== undefined) {
+                    nextItem.anchor = itemPatch.anchor ? { ...itemPatch.anchor } : itemPatch.anchor;
+                }
+                if (Object.keys(nextItem).length > 0) {
+                    items[id] = nextItem;
+                }
+            });
+            if (Object.keys(items).length > 0) {
+                next.items = items;
+            } else {
+                delete next.items;
+            }
+        }
+        return next;
+    }
+
+    private patchReferenceImageOverride(presetId: string, patch: ReferenceImagePresetOverride) {
+        const targetId = typeof presetId === 'string' ? presetId : '';
+        if (!targetId || !patch || typeof patch !== 'object') {
+            return;
+        }
+        const preset = this.findSelectedPreset();
+        if (!preset) {
+            return;
+        }
+        this.historyRecord('cameraFrames.referenceOverrides', () => {
+            const prevOverride = preset.referenceImageOverrides?.[targetId];
+            const nextOverride = this.mergeReferenceImagePresetOverride(prevOverride, patch);
+            const normalizedNext = Object.keys(nextOverride).length > 0 ? nextOverride : null;
+            const before = JSON.stringify(prevOverride ?? null);
+            const after = JSON.stringify(normalizedNext);
+            if (before === after) {
+                return;
+            }
+            if (normalizedNext) {
+                if (!preset.referenceImageOverrides) {
+                    preset.referenceImageOverrides = {};
+                }
+                preset.referenceImageOverrides[targetId] = normalizedNext;
+            } else if (preset.referenceImageOverrides) {
+                delete preset.referenceImageOverrides[targetId];
+                if (Object.keys(preset.referenceImageOverrides).length === 0) {
+                    delete preset.referenceImageOverrides;
+                }
+            }
+            this.emitStateChanged();
+        });
+    }
+
+    private clearReferenceImageOverride(presetId: string, itemIds?: string[]) {
+        const targetId = typeof presetId === 'string' ? presetId : '';
+        if (!targetId) {
+            return;
+        }
+        const preset = this.findSelectedPreset();
+        if (!preset?.referenceImageOverrides) {
+            return;
+        }
+        this.historyRecord('cameraFrames.referenceOverrides', () => {
+            const overrides = preset.referenceImageOverrides;
+            if (!overrides) {
+                return;
+            }
+            const target = overrides[targetId];
+            if (!target) {
+                return;
+            }
+            let changed = false;
+            if (Array.isArray(itemIds)) {
+                if (itemIds.length === 0) {
+                    return;
+                }
+                if (target.items) {
+                    const nextItems = { ...target.items };
+                    itemIds.forEach((id) => {
+                        if (typeof id !== 'string' || !id) {
+                            return;
+                        }
+                        if (Object.prototype.hasOwnProperty.call(nextItems, id)) {
+                            delete nextItems[id];
+                            changed = true;
+                        }
+                    });
+                    if (changed) {
+                        if (Object.keys(nextItems).length > 0) {
+                            target.items = nextItems;
+                        } else {
+                            delete target.items;
+                        }
+                    }
+                }
+            } else {
+                delete overrides[targetId];
+                changed = true;
+            }
+
+            if (!changed) {
+                return;
+            }
+            if (overrides[targetId] && Object.keys(overrides[targetId]).length === 0) {
+                delete overrides[targetId];
+            }
+            if (Object.keys(overrides).length === 0) {
+                delete preset.referenceImageOverrides;
+            }
+            this.emitStateChanged();
+        });
     }
 
     private syncSelectedPresetMainCameraFromState(preset?: CameraPreset) {
