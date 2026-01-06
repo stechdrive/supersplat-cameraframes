@@ -548,10 +548,6 @@ class ReferenceImagePanel extends Container {
                     row.append(exportButton);
                     row.append(nameStack);
                     if (allowItemEdits && overrideItemIds.has(item.id)) {
-                        const overrideBadge = new Label({
-                            class: 'reference-image-item-override',
-                            text: localize('panel.reference-image.override-badge')
-                        });
                         const overrideReset = new Button({
                             class: ['reference-image-item-revert'],
                             text: localize('panel.reference-image.override-reset')
@@ -567,7 +563,6 @@ class ReferenceImagePanel extends Container {
                         });
                         stop(overrideReset);
                         const overrideControls = new Container({ class: 'reference-image-item-override-controls' });
-                        overrideControls.append(overrideBadge);
                         overrideControls.append(overrideReset);
                         row.append(overrideControls);
                     }
