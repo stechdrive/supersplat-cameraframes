@@ -401,11 +401,19 @@ class ReferenceImagesController {
     }
 
     private historyBegin(label: string) {
+        if (this.canUseReferenceOverrides()) {
+            this.events.fire('cameraFrames.referenceOverrides.historyBegin', label);
+            return;
+        }
         if (!this.history || this.history.isApplying() || this.applyingHistory) return;
         this.history.begin(label);
     }
 
     private historyCommit(label?: string) {
+        if (this.canUseReferenceOverrides()) {
+            this.events.fire('cameraFrames.referenceOverrides.historyCommit', label);
+            return;
+        }
         if (!this.history || this.history.isApplying() || this.applyingHistory) return;
         this.history.commit(label);
     }
@@ -606,6 +614,10 @@ class ReferenceImagesController {
         return (this.events.invoke('cameraFrames.referenceOverrides.get', presetId) as ReferenceImagePresetOverride | null) ?? null;
     }
 
+    private canUseReferenceOverrides() {
+        return this.events.functions.has('cameraFrames.referenceOverrides.get');
+    }
+
     private resolveRenderBoxSize(mapping: ViewportMapping | null) {
         const w = mapping?.logicalW;
         const h = mapping?.logicalH;
@@ -649,6 +661,24 @@ class ReferenceImagesController {
         return {
             x: offsetPx.x + dx,
             y: offsetPx.y + dy
+        };
+    }
+
+    private removeRenderBoxOffsetCorrection(
+        offsetPx: { x: number; y: number; },
+        anchor: { ax: number; ay: number; },
+        baseRenderBox: { w: number; h: number; } | null,
+        currentSize: { w: number; h: number; } | null,
+        renderBoxAnchor: { ax: number; ay: number; }
+    ) {
+        if (!baseRenderBox || !currentSize) {
+            return { x: offsetPx.x, y: offsetPx.y };
+        }
+        const dx = (anchor.ax - renderBoxAnchor.ax) * (currentSize.w - baseRenderBox.w);
+        const dy = (anchor.ay - renderBoxAnchor.ay) * (currentSize.h - baseRenderBox.h);
+        return {
+            x: offsetPx.x - dx,
+            y: offsetPx.y - dy
         };
     }
 
@@ -1063,17 +1093,21 @@ class ReferenceImagesController {
 
     private setMasterVisible(value: boolean) {
         const next = !!value;
-        const preset = this.getActivePreset();
-        if (next === preset.masterVisible) {
+        if (next === this.state.masterVisible) {
             return;
         }
-        this.historyRecord('referenceImages.masterVisible', () => {
-            preset.masterVisible = next;
-            this.state.masterVisible = next;
-            this.updateRenderer();
-            this.requestRender();
-            this.fireStateChanged();
-        });
+        const preset = this.getActivePreset();
+        if (!this.canUseReferenceOverrides()) {
+            this.historyRecord('referenceImages.masterVisible', () => {
+                preset.masterVisible = next;
+                this.state.masterVisible = next;
+                this.updateRenderer();
+                this.requestRender();
+                this.fireStateChanged();
+            });
+            return;
+        }
+        this.events.fire('cameraFrames.referenceOverrides.patch', preset.id, { masterVisible: next });
     }
 
     private toggleMasterVisible() {
@@ -1711,9 +1745,13 @@ class ReferenceImagesController {
         if (next && !preset.items.some(i => i.id === next)) {
             return;
         }
-        preset.activeId = next;
-        this.state.activeId = next;
-        this.fireStateChanged();
+        if (!this.canUseReferenceOverrides()) {
+            preset.activeId = next;
+            this.state.activeId = next;
+            this.fireStateChanged();
+            return;
+        }
+        this.events.fire('cameraFrames.referenceOverrides.patch', preset.id, { activeId: next });
     }
 
     private applyPatchToItem(item: ReferenceImageItemBase, patch: ReferenceImageItemPatch, items: ReferenceImageItemBase[]) {
@@ -1760,6 +1798,14 @@ class ReferenceImagesController {
         if (updates.length === 0) {
             return;
         }
+        if (this.canUseReferenceOverrides()) {
+            this.updateManyOverride(updates);
+            return;
+        }
+        this.updateManyShared(updates);
+    }
+
+    private updateManyShared(updates: Array<{ id: string; patch: ReferenceImageItemPatch; }>) {
         const preset = this.getActivePreset();
         const itemsById = new Map(this.state.items.map(item => [item.id, item]));
         const fullItemsById = new Map(preset.items.map(item => [item.id, item]));
@@ -1795,6 +1841,133 @@ class ReferenceImagesController {
         });
     }
 
+    private updateManyOverride(updates: Array<{ id: string; patch: ReferenceImageItemPatch; }>) {
+        const preset = this.getActivePreset();
+        const presetItemsById = new Map(preset.items.map(item => [item.id, item]));
+        const currentItemsById = new Map(this.state.items.map(item => [item.id, item]));
+        const nextItems = this.state.items.map(item => ({
+            ...item,
+            offsetPx: { ...item.offsetPx },
+            anchor: { ...item.anchor }
+        }));
+        const nextItemsById = new Map(nextItems.map(item => [item.id, item]));
+        const beforeGroups = new Map(this.state.items.map(item => [item.id, item.group]));
+        let groupChanged = false;
+
+        updates.forEach((update) => {
+            if (!update?.id || !update.patch || !presetItemsById.has(update.id)) {
+                return;
+            }
+            const target = nextItemsById.get(update.id);
+            if (!target) {
+                return;
+            }
+            if (this.applyPatchToItem(target, update.patch, nextItems)) {
+                groupChanged = true;
+            }
+        });
+
+        if (groupChanged) {
+            normalizeOrders(nextItems);
+        }
+
+        const patchItems: Record<string, ReferenceImageItemOverride> = {};
+        let requestMasterVisible = false;
+        let renderMetaResolved = false;
+        let currentSize: { w: number; h: number; } | null = null;
+        let renderBoxAnchor: { ax: number; ay: number; } = { ax: 0.5, ay: 0.5 };
+        let baseRenderBox: { w: number; h: number; } | null = null;
+
+        const ensureRenderMeta = () => {
+            if (renderMetaResolved) {
+                return;
+            }
+            const mapping = this.getViewportMapping();
+            currentSize = this.resolveRenderBoxSize(mapping);
+            renderBoxAnchor = this.resolveRenderBoxAnchor(mapping);
+            baseRenderBox = this.ensurePresetBaseRenderBox(preset, currentSize);
+            renderMetaResolved = true;
+        };
+
+        updates.forEach((update) => {
+            if (!update?.id || !update.patch || !presetItemsById.has(update.id)) {
+                return;
+            }
+            const current = currentItemsById.get(update.id);
+            if (!current) {
+                return;
+            }
+            const patch = update.patch;
+            const nextPatch: ReferenceImageItemOverride = {};
+            if (typeof patch.name === 'string' && patch.name.trim()) {
+                nextPatch.name = patch.name.trim();
+            }
+            if (typeof patch.visible === 'boolean') {
+                nextPatch.visible = patch.visible;
+                if (patch.visible === true) {
+                    requestMasterVisible = true;
+                }
+            }
+            if (typeof patch.includeInRender === 'boolean') {
+                nextPatch.includeInRender = patch.includeInRender;
+            }
+            if (typeof patch.opacity === 'number') {
+                nextPatch.opacity = clamp(patch.opacity, 0, 1);
+            }
+            if (typeof patch.scalePct === 'number') {
+                nextPatch.scalePct = clamp(patch.scalePct, 1, 400);
+            }
+            let nextAnchor: { ax: number; ay: number; } | null = null;
+            if (patch.anchor && typeof patch.anchor === 'object') {
+                nextAnchor = normalizeAnchor(patch.anchor, current.anchor);
+                nextPatch.anchor = nextAnchor;
+            }
+            if (patch.offsetPx && typeof patch.offsetPx === 'object') {
+                const effectiveOffset = normalizeOffset(patch.offsetPx, current.offsetPx);
+                const anchor = nextAnchor ?? current.anchor;
+                ensureRenderMeta();
+                const storedOffset = this.removeRenderBoxOffsetCorrection(
+                    effectiveOffset,
+                    anchor,
+                    baseRenderBox,
+                    currentSize,
+                    renderBoxAnchor
+                );
+                nextPatch.offsetPx = storedOffset;
+            }
+            if (typeof patch.group === 'string' && isReferenceImageGroup(patch.group)) {
+                nextPatch.group = patch.group;
+            }
+            if (Object.keys(nextPatch).length > 0) {
+                patchItems[update.id] = nextPatch;
+            }
+        });
+
+        if (groupChanged) {
+            nextItems.forEach((item) => {
+                const nextPatch = patchItems[item.id] ?? {};
+                nextPatch.order = item.order;
+                const beforeGroup = beforeGroups.get(item.id);
+                if (beforeGroup && beforeGroup !== item.group) {
+                    nextPatch.group = item.group;
+                }
+                patchItems[item.id] = nextPatch;
+            });
+        }
+
+        const overridePatch: ReferenceImagePresetOverride = {};
+        if (Object.keys(patchItems).length > 0) {
+            overridePatch.items = patchItems;
+        }
+        if (requestMasterVisible) {
+            overridePatch.masterVisible = true;
+        }
+        if (Object.keys(overridePatch).length === 0) {
+            return;
+        }
+        this.events.fire('cameraFrames.referenceOverrides.patch', preset.id, overridePatch);
+    }
+
     private update(id: string, patch: ReferenceImageItemPatch) {
         if (typeof id !== 'string' || !id || !patch) {
             return;
@@ -1816,40 +1989,97 @@ class ReferenceImagesController {
             return;
         }
         const preset = this.getActivePreset();
-        const item = preset.items.find(i => i.id === id);
-        if (!item) {
+        if (!preset.items.some(i => i.id === id)) {
             return;
         }
-        const toGroup = normalizeGroup(payload?.group, item.group);
+        if (!this.canUseReferenceOverrides()) {
+            const item = preset.items.find(i => i.id === id);
+            if (!item) {
+                return;
+            }
+            const toGroup = normalizeGroup(payload?.group, item.group);
+            const toIndex = isFiniteNumber(payload?.toIndex) ? Math.max(0, Math.floor(payload.toIndex)) : 0;
+
+            this.historyRecord('referenceImages.reorder', () => {
+                const applyReorder = (items: ReferenceImageItemBase[]) => {
+                    const target = items.find(i => i.id === id);
+                    if (!target) {
+                        return;
+                    }
+                    target.group = toGroup;
+                    const groupItems = items
+                    .filter(i => i.group === toGroup && i.id !== id)
+                    .sort((a, b) => a.order - b.order);
+                    const clampedIndex = Math.max(0, Math.min(groupItems.length, toIndex));
+                    groupItems.splice(clampedIndex, 0, target);
+                    groupItems.forEach((i, idx) => {
+                        i.order = idx;
+                    });
+                    const otherGroup: ReferenceImageItemGroup = toGroup === 'back' ? 'front' : 'back';
+                    const otherItems = items.filter(i => i.group === otherGroup).sort((a, b) => a.order - b.order);
+                    otherItems.forEach((i, idx) => {
+                        i.order = idx;
+                    });
+                };
+                applyReorder(preset.items);
+                applyReorder(this.state.items);
+                this.updateRenderer();
+                this.requestRender();
+                this.fireStateChanged();
+            });
+            return;
+        }
+        const stateItem = this.state.items.find(i => i.id === id);
+        if (!stateItem) {
+            return;
+        }
+        const toGroup = normalizeGroup(payload?.group, stateItem.group);
         const toIndex = isFiniteNumber(payload?.toIndex) ? Math.max(0, Math.floor(payload.toIndex)) : 0;
 
-        this.historyRecord('referenceImages.reorder', () => {
-            const applyReorder = (items: ReferenceImageItemBase[]) => {
-                const target = items.find(i => i.id === id);
-                if (!target) {
-                    return;
-                }
-                target.group = toGroup;
-                const groupItems = items
-                .filter(i => i.group === toGroup && i.id !== id)
-                .sort((a, b) => a.order - b.order);
-                const clampedIndex = Math.max(0, Math.min(groupItems.length, toIndex));
-                groupItems.splice(clampedIndex, 0, target);
-                groupItems.forEach((i, idx) => {
-                    i.order = idx;
-                });
-                const otherGroup: ReferenceImageItemGroup = toGroup === 'back' ? 'front' : 'back';
-                const otherItems = items.filter(i => i.group === otherGroup).sort((a, b) => a.order - b.order);
-                otherItems.forEach((i, idx) => {
-                    i.order = idx;
-                });
+        const beforeGroups = new Map(this.state.items.map(item => [item.id, item.group]));
+        const nextItems = this.state.items.map(item => ({
+            ...item,
+            offsetPx: { ...item.offsetPx },
+            anchor: { ...item.anchor }
+        }));
+        const applyReorder = (items: ReferenceImageItemBase[]) => {
+            const target = items.find(i => i.id === id);
+            if (!target) {
+                return;
+            }
+            target.group = toGroup;
+            const groupItems = items
+            .filter(i => i.group === toGroup && i.id !== id)
+            .sort((a, b) => a.order - b.order);
+            const clampedIndex = Math.max(0, Math.min(groupItems.length, toIndex));
+            groupItems.splice(clampedIndex, 0, target);
+            groupItems.forEach((i, idx) => {
+                i.order = idx;
+            });
+            const otherGroup: ReferenceImageItemGroup = toGroup === 'back' ? 'front' : 'back';
+            const otherItems = items.filter(i => i.group === otherGroup).sort((a, b) => a.order - b.order);
+            otherItems.forEach((i, idx) => {
+                i.order = idx;
+            });
+        };
+        applyReorder(nextItems);
+
+        const patchItems: Record<string, ReferenceImageItemOverride> = {};
+        nextItems.forEach((item) => {
+            const patch: ReferenceImageItemOverride = {
+                order: item.order
             };
-            applyReorder(preset.items);
-            applyReorder(this.state.items);
-            this.updateRenderer();
-            this.requestRender();
-            this.fireStateChanged();
+            const beforeGroup = beforeGroups.get(item.id);
+            if (beforeGroup && beforeGroup !== item.group) {
+                patch.group = item.group;
+            }
+            patchItems[item.id] = patch;
         });
+
+        if (Object.keys(patchItems).length === 0) {
+            return;
+        }
+        this.events.fire('cameraFrames.referenceOverrides.patch', preset.id, { items: patchItems });
     }
 
     private trimExportCanvas(options: { outW: number; outH: number; x0: number; y0: number; w: number; h: number; }) {
