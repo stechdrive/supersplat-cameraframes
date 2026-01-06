@@ -53,6 +53,17 @@ type ReferenceImagesPresetsState = {
     presets: Array<{ id: string; name: string; }>;
 };
 
+type CameraFramesPresetsState = {
+    selectedPresetId: string | null;
+    presets: Array<{ id: string; name: string; referenceImagePresetId?: string; }>;
+};
+
+type ReferenceImagePresetOverride = {
+    masterVisible?: boolean;
+    activeId?: string | null;
+    items?: Record<string, Record<string, unknown>>;
+};
+
 type SelectionBaseEntry = {
     offsetX: number;
     offsetY: number;
@@ -97,6 +108,11 @@ class ReferenceImagePanel extends Container {
         let presetEditing = false;
         let presetEditId: string | null = null;
         let presetEditName = '';
+        let editMode: 'shared' | 'camera' = 'camera';
+        let cameraPresetId: string | null = null;
+        let cameraPresetName = '';
+        let lastState: ReferenceImagesState | null = null;
+        let lastPresetsState: ReferenceImagesPresetsState | null = null;
 
         const panelHeader = new Container({ class: 'panel-header' });
         const panelIcon = new Container({ class: 'panel-header-icon' });
@@ -172,6 +188,70 @@ class ReferenceImagePanel extends Container {
         });
 
         const body = new Container({ class: 'reference-image-body' });
+
+        const modeRow = new Container({ class: 'reference-image-mode-row' });
+        const sharedModeButton = new Button({ class: ['reference-image-mode-button'], text: '' });
+        const cameraModeButton = new Button({ class: ['reference-image-mode-button'], text: '' });
+        modeRow.append(sharedModeButton);
+        modeRow.append(cameraModeButton);
+        [sharedModeButton, cameraModeButton].forEach((button) => {
+            ['pointerdown', 'pointerup', 'click'].forEach((evt) => {
+                button.dom.addEventListener(evt, (e: Event) => e.stopPropagation());
+            });
+        });
+
+        const canUseOverrides = () => events.functions.has('cameraFrames.referenceOverrides.get');
+        const canUseCameraMode = () => canUseOverrides() && !!cameraPresetId;
+        const isCameraMode = () => editMode === 'camera' && canUseCameraMode();
+        const isSharedMode = () => !isCameraMode();
+
+        const updateModeControls = () => {
+            if (!canUseOverrides()) {
+                modeRow.hidden = true;
+                return;
+            }
+            modeRow.hidden = false;
+            const sharedLabel = localize('panel.reference-image.mode.shared');
+            const cameraName = cameraPresetName || localize('panel.reference-image.mode.camera-unknown');
+            const cameraLabel = localize('panel.reference-image.mode.camera', { name: cameraName });
+            sharedModeButton.text = sharedLabel;
+            sharedModeButton.dom.title = sharedLabel;
+            sharedModeButton.dom.setAttribute('aria-label', sharedLabel);
+            cameraModeButton.text = cameraLabel;
+            cameraModeButton.dom.title = cameraLabel;
+            cameraModeButton.dom.setAttribute('aria-label', cameraLabel);
+            const cameraAvailable = canUseCameraMode();
+            cameraModeButton.enabled = cameraAvailable;
+            if (!cameraAvailable && editMode !== 'shared') {
+                editMode = 'shared';
+            }
+            sharedModeButton.class[isSharedMode() ? 'add' : 'remove']('active');
+            cameraModeButton.class[isCameraMode() ? 'add' : 'remove']('active');
+        };
+
+        const setEditMode = (next: 'shared' | 'camera') => {
+            if (next === 'camera' && !canUseCameraMode()) {
+                next = 'shared';
+            }
+            if (editMode === next) {
+                return;
+            }
+            editMode = next;
+            updateModeControls();
+            if (lastState) {
+                applyState(lastState);
+            } else {
+                applyState(events.invoke('referenceImages.state') as ReferenceImagesState | null);
+            }
+            if (lastPresetsState) {
+                applyPresetsState(lastPresetsState);
+            } else {
+                applyPresetsState(events.invoke('referenceImages.presetsState') as ReferenceImagesPresetsState | null);
+            }
+        };
+
+        sharedModeButton.on('click', () => setEditMode('shared'));
+        cameraModeButton.on('click', () => setEditMode('camera'));
 
         // actions row
         const actionsRow = new Container({ class: ['control-parent', 'reference-image-actions-row'] });
@@ -262,6 +342,15 @@ class ReferenceImagePanel extends Container {
                 ids.push(state.activeId);
             }
             return ids;
+        };
+
+        const getOverrideItemIds = () => {
+            if (!isCameraMode() || !activePresetId) {
+                return new Set<string>();
+            }
+            const override = (events.invoke('cameraFrames.referenceOverrides.get', activePresetId) as ReferenceImagePresetOverride | null) ?? null;
+            const items = override?.items ?? null;
+            return new Set(items ? Object.keys(items) : []);
         };
 
         const captureSelectionBase = (): SelectionBase | null => {
@@ -363,6 +452,9 @@ class ReferenceImagePanel extends Container {
             const activeId = state?.activeId ?? null;
             const items = Array.isArray(state?.items) ? state.items : [];
             const itemsById = new Map(items.map(item => [item.id, item]));
+            const allowItemEdits = isCameraMode();
+            const allowSharedEdits = isSharedMode();
+            const overrideItemIds = allowItemEdits ? getOverrideItemIds() : new Set<string>();
             // UIリストは「上が優先(手前)」になるよう、order が大きいものを上に表示する
             const compareOrderDesc = (a: ReferenceImageItemState, b: ReferenceImageItemState) => (b.order - a.order) || a.id.localeCompare(b.id);
             const backItems = items.filter(i => i.group === 'back').slice().sort(compareOrderDesc);
@@ -386,8 +478,8 @@ class ReferenceImagePanel extends Container {
                     const up = createReorderButton('up', localize('panel.reference-image.reorder-up'));
                     const down = createReorderButton('down', localize('panel.reference-image.reorder-down'));
                     // 内部 order は「低いほど下(奥)」「高いほど上(手前)」
-                    up.enabled = item.order < groupItems.length - 1;
-                    down.enabled = item.order > 0;
+                    up.enabled = allowItemEdits && item.order < groupItems.length - 1;
+                    down.enabled = allowItemEdits && item.order > 0;
 
                     const visibilityButton = new Button({ class: ['icon-button', 'reference-image-item-visibility'], text: '' });
                     visibilityButton.dom.appendChild(createSvg(item.visible ? shownSvg : hiddenSvg));
@@ -395,12 +487,14 @@ class ReferenceImagePanel extends Container {
                     const visibilityLabel = item.visible ? localize('panel.reference-image.hide') : localize('panel.reference-image.show');
                     visibilityButton.dom.title = visibilityLabel;
                     visibilityButton.dom.setAttribute('aria-label', visibilityLabel);
+                    visibilityButton.enabled = allowItemEdits;
 
                     const exportButton = new Button({ class: ['icon-button', 'reference-image-item-export'], text: '' });
                     exportButton.dom.appendChild(createSvg(exportSvg));
                     exportButton.class[item.includeInRender ? 'add' : 'remove']('active');
                     exportButton.dom.title = localize('panel.reference-image.export-toggle');
                     exportButton.dom.setAttribute('aria-label', localize('panel.reference-image.export-toggle'));
+                    exportButton.enabled = allowItemEdits;
 
                     const itemName = (typeof item.name === 'string') ? item.name.trim() : '';
                     const sourceFilename = item.source?.filename ? item.source.filename.trim() : '';
@@ -423,6 +517,7 @@ class ReferenceImagePanel extends Container {
                     removeButton.dom.appendChild(createSvg(deleteSvg));
                     removeButton.dom.title = localize('panel.reference-image.delete-item');
                     removeButton.dom.setAttribute('aria-label', localize('panel.reference-image.delete-item'));
+                    removeButton.enabled = allowSharedEdits;
 
                     const stop = (button: Button) => {
                         ['pointerdown', 'pointerup', 'click'].forEach((evt) => {
@@ -432,12 +527,17 @@ class ReferenceImagePanel extends Container {
                     [up, down, visibilityButton, exportButton, removeButton].forEach(stop);
 
                     up.on('click', () => {
+                        if (!allowItemEdits) return;
                         events.fire('referenceImages.reorder', { id: item.id, group: item.group, toIndex: item.order + 1 });
                     });
                     down.on('click', () => {
+                        if (!allowItemEdits) return;
                         events.fire('referenceImages.reorder', { id: item.id, group: item.group, toIndex: item.order - 1 });
                     });
                     const applySelectionToggle = (patch: ReferenceImageItemPatch) => {
+                        if (!allowItemEdits) {
+                            return;
+                        }
                         if (!selectedIds.has(item.id)) {
                             setSelection(new Set([item.id]));
                             selectionAnchorId = item.id;
@@ -459,6 +559,9 @@ class ReferenceImagePanel extends Container {
                         applySelectionToggle({ includeInRender: !item.includeInRender });
                     });
                     removeButton.on('click', () => {
+                        if (!allowSharedEdits) {
+                            return;
+                        }
                         events.fire('referenceImages.remove', item.id);
                     });
 
@@ -503,6 +606,30 @@ class ReferenceImagePanel extends Container {
                     row.append(visibilityButton);
                     row.append(exportButton);
                     row.append(nameStack);
+                    if (allowItemEdits && overrideItemIds.has(item.id)) {
+                        const overrideBadge = new Label({
+                            class: 'reference-image-item-override',
+                            text: localize('panel.reference-image.override-badge')
+                        });
+                        const overrideReset = new Button({
+                            class: ['reference-image-item-revert'],
+                            text: localize('panel.reference-image.override-reset')
+                        });
+                        const overrideLabel = localize('panel.reference-image.override-reset');
+                        overrideReset.dom.title = overrideLabel;
+                        overrideReset.dom.setAttribute('aria-label', overrideLabel);
+                        overrideReset.on('click', () => {
+                            if (!activePresetId) {
+                                return;
+                            }
+                            events.fire('cameraFrames.referenceOverrides.clear', activePresetId, [item.id]);
+                        });
+                        stop(overrideReset);
+                        const overrideControls = new Container({ class: 'reference-image-item-override-controls' });
+                        overrideControls.append(overrideBadge);
+                        overrideControls.append(overrideReset);
+                        row.append(overrideControls);
+                    }
                     row.append(removeButton);
                     list.append(row);
                 });
@@ -606,7 +733,7 @@ class ReferenceImagePanel extends Container {
             };
 
             const begin = () => {
-                if (suppress || active) {
+                if (suppress || active || !isCameraMode()) {
                     return;
                 }
                 active = true;
@@ -697,6 +824,10 @@ class ReferenceImagePanel extends Container {
         };
 
         fileInput.addEventListener('change', async () => {
+            if (!isSharedMode()) {
+                fileInput.value = '';
+                return;
+            }
             const files = Array.from(fileInput.files ?? []);
             fileInput.value = '';
             if (files.length === 0) {
@@ -718,9 +849,14 @@ class ReferenceImagePanel extends Container {
             }
         });
 
-        addButton.on('click', () => fileInput.click());
+        addButton.on('click', () => {
+            if (!isSharedMode()) {
+                return;
+            }
+            fileInput.click();
+        });
         clearAllButton.on('click', async () => {
-            if (suppress) return;
+            if (suppress || !isSharedMode()) return;
             const result = await events.invoke('showPopup', {
                 type: 'yesno',
                 header: localize('panel.reference-image.title'),
@@ -732,6 +868,9 @@ class ReferenceImagePanel extends Container {
         });
 
         const applyActivePatch = (patch: ReferenceImageItemPatch) => {
+            if (!isCameraMode()) {
+                return;
+            }
             const state = events.invoke('referenceImages.state') as ReferenceImagesState | null;
             const activeId = state?.activeId ?? null;
             if (!activeId) {
@@ -741,6 +880,9 @@ class ReferenceImagePanel extends Container {
         };
 
         const applySelectionUpdates = (updates: Array<{ id: string; patch: ReferenceImageItemPatch }>) => {
+            if (!isCameraMode()) {
+                return;
+            }
             if (updates.length === 0) {
                 return;
             }
@@ -748,6 +890,9 @@ class ReferenceImagePanel extends Container {
         };
 
         const applySelectionPatch = (patch: ReferenceImageItemPatch) => {
+            if (!isCameraMode()) {
+                return;
+            }
             const state = events.invoke('referenceImages.state') as ReferenceImagesState | null;
             const ids = getSelectionIds(state);
             if (ids.length === 0) {
@@ -927,11 +1072,11 @@ class ReferenceImagePanel extends Container {
         };
 
         groupSelect.on('change', (value: 'back' | 'front') => {
-            if (suppress) return;
+            if (suppress || !isCameraMode()) return;
             applyActivePatch({ group: value });
         });
         opacityInput.on('change', (value: number) => {
-            if (suppress) return;
+            if (suppress || !isCameraMode()) return;
             if (relativeInputs.has(opacityInput)) {
                 if (applyRelativeUpdates(
                     opacityInput,
@@ -945,7 +1090,7 @@ class ReferenceImagePanel extends Container {
             applySelectionPatch({ opacity: value / 100 });
         });
         scaleInput.on('change', (value: number) => {
-            if (suppress) return;
+            if (suppress || !isCameraMode()) return;
             const state = events.invoke('referenceImages.state') as ReferenceImagesState | null;
             const relative = relativeInputs.has(scaleInput);
             const base = relative ? (selectionBaseByInput.get(scaleInput) ?? null) : null;
@@ -965,7 +1110,7 @@ class ReferenceImagePanel extends Container {
             applySelectionPatch({ scalePct: value });
         });
         offsetX.on('change', (value: number) => {
-            if (suppress) return;
+            if (suppress || !isCameraMode()) return;
             if (relativeInputs.has(offsetX)) {
                 if (applyRelativeUpdates(
                     offsetX,
@@ -979,7 +1124,7 @@ class ReferenceImagePanel extends Container {
             applySelectionPatch({ offsetPx: { x: -value } });
         });
         offsetY.on('change', (value: number) => {
-            if (suppress) return;
+            if (suppress || !isCameraMode()) return;
             if (relativeInputs.has(offsetY)) {
                 if (applyRelativeUpdates(
                     offsetY,
@@ -994,7 +1139,7 @@ class ReferenceImagePanel extends Container {
         });
 
         centerButton.on('click', () => {
-            if (suppress) return;
+            if (suppress || !isCameraMode()) return;
             const state = events.invoke('referenceImages.state') as ReferenceImagesState | null;
             const activeId = state?.activeId ?? null;
             if (activeId) {
@@ -1055,11 +1200,13 @@ class ReferenceImagePanel extends Container {
         });
 
         const applyPresetsState = (state?: ReferenceImagesPresetsState | null) => {
+            lastPresetsState = state ?? null;
             const presets = Array.isArray(state?.presets) ? state.presets : [];
             const nextActiveId = state?.activePresetId ?? null;
             const activePreset = nextActiveId ? presets.find(preset => preset.id === nextActiveId) ?? null : null;
             const nextName = activePreset?.name ?? '';
-            const editable = !!nextActiveId && nextActiveId !== DEFAULT_REFERENCE_IMAGE_PRESET_ID;
+            const editablePreset = !!nextActiveId && nextActiveId !== DEFAULT_REFERENCE_IMAGE_PRESET_ID;
+            const editable = editablePreset && isSharedMode();
             const presetChanged = nextActiveId !== activePresetId;
 
             activePresetId = nextActiveId;
@@ -1081,10 +1228,30 @@ class ReferenceImagePanel extends Container {
             }
         };
 
+        const applyCameraPresetsState = (state?: CameraFramesPresetsState | null) => {
+            const presets = Array.isArray(state?.presets) ? state.presets : [];
+            const selectedId = state?.selectedPresetId ?? null;
+            const selectedPreset = selectedId ? presets.find(preset => preset.id === selectedId) ?? null : null;
+            cameraPresetId = selectedPreset?.id ?? null;
+            cameraPresetName = (selectedPreset?.name ?? '').trim();
+            if (editMode === 'camera' && !canUseCameraMode()) {
+                setEditMode('shared');
+                return;
+            }
+            updateModeControls();
+            if (lastState) {
+                applyState(lastState);
+            }
+            if (lastPresetsState) {
+                applyPresetsState(lastPresetsState);
+            }
+        };
+
         const applyState = (state?: ReferenceImagesState | null) => {
             suppress = true;
 
             const safeState = state ?? { masterVisible: true, activeId: null, items: [] };
+            lastState = safeState;
             const items = Array.isArray(safeState.items) ? safeState.items : [];
             const activeId = safeState.activeId ?? null;
             const active = activeId ? items.find(i => i.id === activeId) ?? null : null;
@@ -1093,19 +1260,22 @@ class ReferenceImagePanel extends Container {
             rebuildList(safeState);
 
             const hasItems = items.length > 0;
-            clearAllButton.enabled = hasItems;
+            const allowItemEdits = isCameraMode();
+            const allowSharedEdits = isSharedMode();
+            addButton.enabled = allowSharedEdits;
+            clearAllButton.enabled = allowSharedEdits && hasItems;
 
             const selectedItems = items.filter(item => selectedIds.has(item.id));
             const selectionCount = selectedItems.length;
             const hasSelection = selectionCount > 0;
             const hasActive = !!active;
 
-            groupSelect.enabled = hasActive;
-            opacityInput.enabled = hasSelection;
-            scaleInput.enabled = hasSelection;
-            offsetX.enabled = hasSelection;
-            offsetY.enabled = hasSelection;
-            centerButton.enabled = hasActive;
+            groupSelect.enabled = allowItemEdits && hasActive;
+            opacityInput.enabled = allowItemEdits && hasSelection;
+            scaleInput.enabled = allowItemEdits && hasSelection;
+            offsetX.enabled = allowItemEdits && hasSelection;
+            offsetY.enabled = allowItemEdits && hasSelection;
+            centerButton.enabled = allowItemEdits && hasActive;
 
             groupSelect.value = (active?.group ?? 'front') as any;
 
@@ -1182,9 +1352,16 @@ class ReferenceImagePanel extends Container {
             applyState(initialState);
             const initialPresetsState = events.invoke('referenceImages.presetsState') as ReferenceImagesPresetsState | null;
             applyPresetsState(initialPresetsState);
+            if (events.functions.has('cameraFrames.presetsState')) {
+                const initialCameraPresetsState = events.invoke('cameraFrames.presetsState') as CameraFramesPresetsState | null;
+                applyCameraPresetsState(initialCameraPresetsState);
+            } else {
+                updateModeControls();
+            }
         });
         events.on('referenceImages.stateChanged', (state: ReferenceImagesState) => applyState(state));
         events.on('referenceImages.presetsState', (state: ReferenceImagesPresetsState) => applyPresetsState(state));
+        events.on('cameraFrames.presetsState', (state: CameraFramesPresetsState) => applyCameraPresetsState(state));
 
         const setVisible = (visible: boolean) => {
             const nextHidden = !visible;
@@ -1213,6 +1390,7 @@ class ReferenceImagePanel extends Container {
             }
         });
 
+        body.append(modeRow);
         body.append(actionsRow);
         body.append(presetRow);
         body.append(lists);
