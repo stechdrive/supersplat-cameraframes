@@ -154,7 +154,10 @@ const normalizeReferenceImageItemOverride = (value: unknown): ReferenceImageItem
     }
     const next: ReferenceImageItemOverride = {};
     if (typeof value.name === 'string') {
-        next.name = value.name;
+        const trimmed = value.name.trim();
+        if (trimmed) {
+            next.name = trimmed;
+        }
     }
     if (isReferenceImageItemGroup(value.group)) {
         next.group = value.group;
@@ -201,8 +204,11 @@ const normalizeReferenceImagePresetOverride = (value: unknown): ReferenceImagePr
     }
     if (value.activeId === null) {
         next.activeId = null;
-    } else if (typeof value.activeId === 'string' && value.activeId) {
-        next.activeId = value.activeId;
+    } else if (typeof value.activeId === 'string') {
+        const trimmed = value.activeId.trim();
+        if (trimmed) {
+            next.activeId = trimmed;
+        }
     }
     if (isObject(value.items)) {
         const items: Record<string, ReferenceImageItemOverride> = {};
