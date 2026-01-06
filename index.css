@@ -4244,6 +4244,29 @@ body.collapsed #camera-frames-panel {
   min-height: 32px;
   gap: 6px;
 }
+#reference-image-panel .reference-image-mode-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+}
+#reference-image-panel .reference-image-mode-button.pcui-button {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 4px 6px;
+  font-size: 12px;
+  line-height: 18px;
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#reference-image-panel .reference-image-mode-button.active {
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.55);
+  background: rgba(255, 255, 255, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.2);
+}
 #reference-image-panel .reference-image-preset-row {
   align-items: center;
   gap: 6px;
@@ -4330,6 +4353,28 @@ body.collapsed #camera-frames-panel {
   border-color: rgba(255, 102, 0, 0.9);
   box-shadow: 0 0 0 1px rgba(255, 102, 0, 0.2);
   filter: drop-shadow(0 0 2px rgba(255, 102, 0, 0.35));
+}
+#reference-image-panel .reference-image-item-override-controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+#reference-image-panel .reference-image-item-override {
+  margin: 0;
+  padding: 2px 4px;
+  border-radius: 3px;
+  font-size: 10px;
+  line-height: 1;
+  color: #f60;
+  background: rgba(255, 102, 0, 0.18);
+  letter-spacing: 0.2px;
+}
+#reference-image-panel .reference-image-item-revert.pcui-button {
+  padding: 2px 6px;
+  height: 20px;
+  font-size: 10px;
+  line-height: 16px;
 }
 #reference-image-panel .reference-image-item-reorder svg {
   width: 12px;
@@ -4603,6 +4648,7 @@ body {
   width: 100%;
   height: 100%;
   pointer-events: none;
+  z-index: 20;
 }
 
 .pcui-input-element[placeholder]::after {
