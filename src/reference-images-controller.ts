@@ -618,6 +618,21 @@ class ReferenceImagesController {
         return this.events.functions.has('cameraFrames.referenceOverrides.get');
     }
 
+    private syncReferenceOverridesForPreset(preset: ReferenceImagePreset) {
+        if (!preset?.id) {
+            return;
+        }
+        const baseItems = preset.items.map(item => ({ id: item.id, group: item.group, order: item.order }));
+        this.events.fire('cameraFrames.referenceOverrides.prune', preset.id, baseItems, { suppressHistory: true });
+    }
+
+    private removeReferenceOverridesForPreset(presetId: string) {
+        if (!presetId) {
+            return;
+        }
+        this.events.fire('cameraFrames.referenceOverrides.prune', presetId, null, { suppressHistory: true });
+    }
+
     private resolveRenderBoxSize(mapping: ViewportMapping | null) {
         const w = mapping?.logicalW;
         const h = mapping?.logicalH;
@@ -689,6 +704,11 @@ class ReferenceImagesController {
     ) {
         const items: ReferenceImageItemState[] = [];
         const overrideItems = override?.items ?? null;
+        const orderMetaById = new Map<string, { baseOrder: number; sortOrder: number; }>();
+        const grouped: Record<ReferenceImageItemGroup, ReferenceImageItemState[]> = {
+            back: [],
+            front: []
+        };
         preset.items.forEach((item) => {
             const source = assetsById.get(item.assetId)?.source ?? null;
             if (!source) {
@@ -701,18 +721,19 @@ class ReferenceImagesController {
             const overrideOpacity = overrideItem?.opacity;
             const overrideScale = overrideItem?.scalePct;
             const group = isReferenceImageGroup(overrideGroup) ? overrideGroup : item.group;
-            const order = isFiniteNumber(overrideOrder) ? Math.max(0, Math.floor(overrideOrder)) : item.order;
+            const baseOrder = item.order;
+            const sortOrder = isFiniteNumber(overrideOrder) ? Math.max(0, Math.floor(overrideOrder)) : baseOrder;
             const visible = typeof overrideItem?.visible === 'boolean' ? overrideItem.visible : item.visible;
             const includeInRender = typeof overrideItem?.includeInRender === 'boolean' ? overrideItem.includeInRender : item.includeInRender;
             const opacity = isFiniteNumber(overrideOpacity) ? clamp(overrideOpacity, 0, 1) : item.opacity;
             const scalePct = isFiniteNumber(overrideScale) ? clamp(overrideScale, 1, 400) : item.scalePct;
             const anchor = normalizeAnchor(overrideItem?.anchor ?? item.anchor, item.anchor);
             const offsetPx = normalizeOffset(overrideItem?.offsetPx ?? item.offsetPx, item.offsetPx);
-            items.push({
+            const nextItem: ReferenceImageItemState = {
                 id: item.id,
                 name,
                 group,
-                order,
+                order: sortOrder,
                 visible,
                 includeInRender,
                 opacity,
@@ -720,8 +741,37 @@ class ReferenceImagesController {
                 offsetPx,
                 anchor,
                 source
-            });
+            };
+            items.push(nextItem);
+            grouped[group].push(nextItem);
+            orderMetaById.set(item.id, { baseOrder, sortOrder });
         });
+        const normalizeGroupOrder = (group: ReferenceImageItemGroup) => {
+            const groupItems = grouped[group];
+            if (groupItems.length === 0) {
+                return;
+            }
+            groupItems.sort((a, b) => {
+                const metaA = orderMetaById.get(a.id);
+                const metaB = orderMetaById.get(b.id);
+                const orderA = metaA?.sortOrder ?? a.order;
+                const orderB = metaB?.sortOrder ?? b.order;
+                if (orderA !== orderB) {
+                    return orderA - orderB;
+                }
+                const baseOrderA = metaA?.baseOrder ?? orderA;
+                const baseOrderB = metaB?.baseOrder ?? orderB;
+                if (baseOrderA !== baseOrderB) {
+                    return baseOrderA - baseOrderB;
+                }
+                return a.id.localeCompare(b.id);
+            });
+            groupItems.forEach((item, index) => {
+                item.order = index;
+            });
+        };
+        normalizeGroupOrder('back');
+        normalizeGroupOrder('front');
         return items;
     }
 
@@ -1277,6 +1327,7 @@ class ReferenceImagesController {
                 }
                 this.releaseAsset(item.assetId);
             });
+            this.removeReferenceOverridesForPreset(presetId);
             if (this.fullState.presets.length === 0) {
                 const fallbackPreset = createDefaultPreset();
                 this.fullState.presets = [fallbackPreset];
@@ -1695,6 +1746,7 @@ class ReferenceImagesController {
                 preset.activeId = preset.items[0]?.id ?? null;
                 this.state.activeId = preset.activeId;
             }
+            this.syncReferenceOverridesForPreset(preset);
             this.releaseAsset(assetId);
             this.updateRenderer();
             this.requestRender();
@@ -1721,6 +1773,7 @@ class ReferenceImagesController {
             activeId: null,
             items: []
         };
+        this.syncReferenceOverridesForPreset(preset);
         this.renderer.clearParams();
         this.updateRenderer();
         this.requestRender();

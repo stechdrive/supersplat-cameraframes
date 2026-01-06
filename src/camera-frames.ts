@@ -101,7 +101,7 @@ import type {
     Viewport,
     ViewportMapping
 } from './camera-frames-types';
-import type { ReferenceImageItemOverride, ReferenceImagePresetOverride } from './reference-images-types';
+import type { ReferenceImageItemGroup, ReferenceImageItemOverride, ReferenceImagePresetOverride } from './reference-images-types';
 import { cameraFramesVersion } from './camera-frames-version';
 import {
     computeViewportMapping as computeViewportMappingViewport,
@@ -119,6 +119,12 @@ import { localize } from './ui/localization';
 export type { CameraFramesState } from './camera-frames-types';
 
 const DEFAULT_REFERENCE_IMAGE_PRESET_ID = 'refpreset-blank';
+
+type ReferenceImageOrderBase = {
+    id: string;
+    group: ReferenceImageItemGroup;
+    order: number;
+};
 
 export class CameraFramesController {
     private events: Events;
@@ -1152,6 +1158,12 @@ export class CameraFramesController {
         this.events.on('cameraFrames.referenceOverrides.clear', (presetId: string, itemIds?: string[]) => {
             this.clearReferenceImageOverride(presetId, itemIds);
         });
+        this.events.on(
+            'cameraFrames.referenceOverrides.prune',
+            (presetId: string, baseItems?: ReferenceImageOrderBase[] | null, options?: { suppressHistory?: boolean; }) => {
+                this.pruneReferenceImageOverrides(presetId, baseItems, options);
+            }
+        );
         this.events.on('cameraFrames.referenceOverrides.historyBegin', (label: string) => {
             const resolved = (typeof label === 'string' && label) ? label : 'cameraFrames.referenceOverrides';
             this.historyBegin(resolved);
@@ -1690,6 +1702,161 @@ export class CameraFramesController {
             }
             this.emitStateChanged();
         });
+    }
+
+    private pruneReferenceImageOverrides(
+        presetId: string,
+        baseItems?: ReferenceImageOrderBase[] | null,
+        options?: { suppressHistory?: boolean; }
+    ) {
+        const targetId = typeof presetId === 'string' ? presetId : '';
+        if (!targetId || baseItems === undefined) {
+            return;
+        }
+
+        const apply = () => {
+            const removePreset = baseItems === null;
+            const normalizedBaseItems = Array.isArray(baseItems) ? baseItems
+            .filter(item => item && typeof item.id === 'string' && item.id)
+            .map(item => ({
+                id: item.id,
+                group: (item.group === 'back' || item.group === 'front') ? item.group : 'front',
+                order: (typeof item.order === 'number' && Number.isFinite(item.order)) ? Math.max(0, Math.floor(item.order)) : 0
+            })) : [];
+            const validIds = removePreset ? null : new Set(normalizedBaseItems.map(item => item.id));
+            const baseOrderById = removePreset ? null : new Map(normalizedBaseItems.map(item => [item.id, item.order]));
+
+            const hasValidId = (id: string | null | undefined) => !!id && !!validIds && validIds.has(id);
+            let changedAny = false;
+
+            const normalizeOverrideOrders = (target: ReferenceImagePresetOverride) => {
+                if (!target.items || normalizedBaseItems.length === 0 || !baseOrderById) {
+                    return false;
+                }
+                const overrides = Object.values(target.items);
+                const hasOrder = overrides.some(item => typeof item?.order === 'number' && Number.isFinite(item.order));
+                const hasGroup = overrides.some(item => item?.group === 'back' || item?.group === 'front');
+                if (!hasOrder && !hasGroup) {
+                    return false;
+                }
+
+                const grouped = {
+                    back: [] as Array<{ id: string; baseOrder: number; sortOrder: number; }>,
+                    front: [] as Array<{ id: string; baseOrder: number; sortOrder: number; }>
+                };
+
+                normalizedBaseItems.forEach((base) => {
+                    const override = target.items?.[base.id] ?? null;
+                    const overrideGroup = override?.group;
+                    const group = (overrideGroup === 'back' || overrideGroup === 'front') ? overrideGroup : base.group;
+                    const overrideOrder = (typeof override?.order === 'number' && Number.isFinite(override.order)) ?
+                        Math.max(0, Math.floor(override.order)) :
+                        null;
+                    const baseOrder = baseOrderById.get(base.id) ?? base.order;
+                    const sortOrder = overrideOrder ?? baseOrder;
+                    grouped[group].push({ id: base.id, baseOrder, sortOrder });
+                });
+
+                let changed = false;
+                const applyGroup = (group: 'back' | 'front') => {
+                    const entries = grouped[group];
+                    entries.sort((a, b) => {
+                        if (a.sortOrder !== b.sortOrder) {
+                            return a.sortOrder - b.sortOrder;
+                        }
+                        if (a.baseOrder !== b.baseOrder) {
+                            return a.baseOrder - b.baseOrder;
+                        }
+                        return a.id.localeCompare(b.id);
+                    });
+                    entries.forEach((entry, index) => {
+                        if (!target.items) {
+                            target.items = {};
+                        }
+                        const existing = target.items[entry.id];
+                        const nextItem: ReferenceImageItemOverride = existing ? { ...existing } : {};
+                        if (nextItem.order !== index) {
+                            nextItem.order = index;
+                        }
+                        if (!existing || existing.order !== nextItem.order) {
+                            changed = true;
+                        }
+                        target.items[entry.id] = nextItem;
+                    });
+                };
+
+                applyGroup('back');
+                applyGroup('front');
+                return changed;
+            };
+
+            this.state.cameraPresets.forEach((preset) => {
+                const overrides = preset.referenceImageOverrides;
+                if (!overrides) {
+                    return;
+                }
+                const target = overrides[targetId];
+                if (!target) {
+                    return;
+                }
+
+                let changed = false;
+                if (removePreset) {
+                    delete overrides[targetId];
+                    changed = true;
+                } else if (validIds) {
+                    if (target.items) {
+                        Object.keys(target.items).forEach((id) => {
+                            if (!validIds.has(id)) {
+                                delete target.items![id];
+                                changed = true;
+                            }
+                        });
+                    }
+                    if (typeof target.activeId === 'string' && !hasValidId(target.activeId)) {
+                        delete target.activeId;
+                        changed = true;
+                    }
+                    if (target.items) {
+                        Object.keys(target.items).forEach((id) => {
+                            const entry = target.items?.[id];
+                            if (!entry || Object.keys(entry).length === 0) {
+                                delete target.items![id];
+                                changed = true;
+                            }
+                        });
+                        if (Object.keys(target.items).length === 0) {
+                            delete target.items;
+                            changed = true;
+                        }
+                    }
+                    if (normalizeOverrideOrders(target)) {
+                        changed = true;
+                    }
+                    if (Object.keys(target).length === 0) {
+                        delete overrides[targetId];
+                        changed = true;
+                    }
+                }
+
+                if (changed) {
+                    if (Object.keys(overrides).length === 0) {
+                        delete preset.referenceImageOverrides;
+                    }
+                    changedAny = true;
+                }
+            });
+
+            if (changedAny) {
+                this.emitStateChanged();
+            }
+        };
+
+        if (options?.suppressHistory) {
+            apply();
+            return;
+        }
+        this.historyRecord('cameraFrames.referenceOverrides', apply);
     }
 
     private syncSelectedPresetMainCameraFromState(preset?: CameraPreset) {
