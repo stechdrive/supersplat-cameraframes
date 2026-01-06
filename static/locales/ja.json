@@ -171,7 +171,7 @@
     "panel.reference-image.mode.camera": "カメラ別（{{name}}）",
     "panel.reference-image.mode.camera-unknown": "未選択",
     "panel.reference-image.override-badge": "OVR",
-    "panel.reference-image.override-reset": "共通に戻す",
+    "panel.reference-image.override-reset": "初期化",
     "panel.reference-image.toggle": "下絵読み込み",
     "panel.reference-image.close": "下絵パネルを閉じる",
     "panel.reference-image.empty": "下絵が未読み込みです",

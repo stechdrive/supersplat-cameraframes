@@ -171,7 +171,7 @@
     "panel.reference-image.mode.camera": "Per Camera ({{name}})",
     "panel.reference-image.mode.camera-unknown": "No Camera",
     "panel.reference-image.override-badge": "OVR",
-    "panel.reference-image.override-reset": "Reset to shared",
+    "panel.reference-image.override-reset": "Reset to default",
     "panel.reference-image.toggle": "Toggle Reference Image Panel",
     "panel.reference-image.close": "Close reference image panel",
     "panel.reference-image.empty": "No reference images loaded",
