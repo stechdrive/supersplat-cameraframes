@@ -152,6 +152,18 @@ const normalizeOffset = (value: any, fallback: { x: number; y: number; }) => {
     return { x, y };
 };
 
+const normalizeBaseRenderBox = (value: any) => {
+    if (!value || typeof value !== 'object') {
+        return undefined;
+    }
+    const w = isFiniteNumber(value.w) ? value.w : null;
+    const h = isFiniteNumber(value.h) ? value.h : null;
+    if (w === null || h === null || w <= 0 || h <= 0) {
+        return undefined;
+    }
+    return { w, h };
+};
+
 const normalizeItem = (value: any): ReferenceImageItemState | null => {
     if (!value || typeof value !== 'object') {
         return null;
@@ -278,6 +290,7 @@ const normalizePreset = (value: any): ReferenceImagePreset | null => {
         LEGACY_REFERENCE_IMAGE_PRESET_NAME;
     const name = rawName || fallbackName;
     const masterVisible = normalizeBool(value.masterVisible, true);
+    const baseRenderBox = normalizeBaseRenderBox((value as any).baseRenderBox);
     const itemsRaw = Array.isArray(value.items) ? value.items : [];
     const items = itemsRaw.map(normalizeItemV2).filter(Boolean) as ReferenceImageItemV2[];
     items.forEach((item) => {
@@ -293,6 +306,7 @@ const normalizePreset = (value: any): ReferenceImagePreset | null => {
         name,
         masterVisible,
         activeId,
+        baseRenderBox,
         items
     };
 };
@@ -1038,6 +1052,7 @@ class ReferenceImagesController {
                 name: presetName,
                 masterVisible: copyItems ? sourcePreset.masterVisible : true,
                 activeId,
+                baseRenderBox: (copyItems && sourcePreset.baseRenderBox) ? { ...sourcePreset.baseRenderBox } : undefined,
                 items
             };
             this.fullState.presets.push(preset);
@@ -1077,6 +1092,7 @@ class ReferenceImagesController {
                 name: presetName,
                 masterVisible: sourcePreset.masterVisible,
                 activeId: cloned.activeId,
+                baseRenderBox: sourcePreset.baseRenderBox ? { ...sourcePreset.baseRenderBox } : undefined,
                 items: cloned.items
             };
             this.fullState.presets.push(preset);

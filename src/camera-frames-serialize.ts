@@ -12,6 +12,11 @@ import type {
     Viewport,
     ViewportMapping
 } from './camera-frames-types';
+import type {
+    ReferenceImageItemOverride,
+    ReferenceImageOverrides,
+    ReferenceImagePresetOverride
+} from './reference-images-types';
 import type { Events } from './events';
 import type { Scene } from './scene';
 
@@ -118,6 +123,8 @@ const isObject = (value: unknown): value is Record<string, unknown> => (
     typeof value === 'object' && value !== null && !Array.isArray(value)
 );
 
+const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
+
 const normalizeExportTarget = (value: unknown): ExportTarget => (
     value === 'all' || value === 'selected' ? value : 'current'
 );
@@ -137,6 +144,106 @@ const normalizeExportPresetIds = (value: unknown, presets: CameraPreset[]): stri
         next.push(id);
     });
     return next;
+};
+
+const isReferenceImageItemGroup = (value: unknown): value is 'back' | 'front' => value === 'back' || value === 'front';
+
+const normalizeReferenceImageItemOverride = (value: unknown): ReferenceImageItemOverride | null => {
+    if (!isObject(value)) {
+        return null;
+    }
+    const next: ReferenceImageItemOverride = {};
+    if (typeof value.name === 'string') {
+        next.name = value.name;
+    }
+    if (isReferenceImageItemGroup(value.group)) {
+        next.group = value.group;
+    }
+    if (typeof value.order === 'number' && isFinite(value.order)) {
+        next.order = Math.max(0, Math.floor(value.order));
+    }
+    if (typeof value.visible === 'boolean') {
+        next.visible = value.visible;
+    }
+    if (typeof value.includeInRender === 'boolean') {
+        next.includeInRender = value.includeInRender;
+    }
+    if (typeof value.opacity === 'number' && isFinite(value.opacity)) {
+        next.opacity = clamp(value.opacity, 0, 1);
+    }
+    if (typeof value.scalePct === 'number' && isFinite(value.scalePct)) {
+        next.scalePct = clamp(value.scalePct, 1, 400);
+    }
+    if (isObject(value.offsetPx)) {
+        const x = (value.offsetPx as Record<string, unknown>).x;
+        const y = (value.offsetPx as Record<string, unknown>).y;
+        if (typeof x === 'number' && isFinite(x) && typeof y === 'number' && isFinite(y)) {
+            next.offsetPx = { x, y };
+        }
+    }
+    if (isObject(value.anchor)) {
+        const ax = (value.anchor as Record<string, unknown>).ax;
+        const ay = (value.anchor as Record<string, unknown>).ay;
+        if (typeof ax === 'number' && isFinite(ax) && typeof ay === 'number' && isFinite(ay)) {
+            next.anchor = { ax: clamp(ax, 0, 1), ay: clamp(ay, 0, 1) };
+        }
+    }
+    return Object.keys(next).length > 0 ? next : null;
+};
+
+const normalizeReferenceImagePresetOverride = (value: unknown): ReferenceImagePresetOverride | null => {
+    if (!isObject(value)) {
+        return null;
+    }
+    const next: ReferenceImagePresetOverride = {};
+    if (typeof value.masterVisible === 'boolean') {
+        next.masterVisible = value.masterVisible;
+    }
+    if (value.activeId === null) {
+        next.activeId = null;
+    } else if (typeof value.activeId === 'string' && value.activeId) {
+        next.activeId = value.activeId;
+    }
+    if (isObject(value.items)) {
+        const items: Record<string, ReferenceImageItemOverride> = {};
+        Object.entries(value.items).forEach(([id, entry]) => {
+            if (!id) {
+                return;
+            }
+            const normalized = normalizeReferenceImageItemOverride(entry);
+            if (normalized) {
+                items[id] = normalized;
+            }
+        });
+        if (Object.keys(items).length > 0) {
+            next.items = items;
+        }
+    }
+    return Object.keys(next).length > 0 ? next : null;
+};
+
+const normalizeReferenceImageOverrides = (value: unknown): ReferenceImageOverrides | undefined => {
+    if (!isObject(value)) {
+        return undefined;
+    }
+    const next: ReferenceImageOverrides = {};
+    Object.entries(value).forEach(([presetId, entry]) => {
+        if (!presetId) {
+            return;
+        }
+        const normalized = normalizeReferenceImagePresetOverride(entry);
+        if (normalized) {
+            next[presetId] = normalized;
+        }
+    });
+    return Object.keys(next).length > 0 ? next : undefined;
+};
+
+const cloneReferenceImageOverrides = (value?: ReferenceImageOverrides | null): ReferenceImageOverrides | undefined => {
+    if (!value) {
+        return undefined;
+    }
+    return JSON.parse(JSON.stringify(value)) as ReferenceImageOverrides;
 };
 
 const DEFAULT_REFERENCE_IMAGE_PRESET_ID = 'refpreset-blank';
@@ -175,6 +282,7 @@ const cloneCameraPreset = (
         id: preset.id,
         name: preset.name,
         referenceImagePresetId: preset.referenceImagePresetId ?? DEFAULT_REFERENCE_IMAGE_PRESET_ID,
+        referenceImageOverrides: cloneReferenceImageOverrides(preset.referenceImageOverrides),
         selected: preset.selected,
         mainCamera: {
             transform: {
@@ -234,6 +342,7 @@ const normalizeCameraPreset = (
     const referenceImagePresetId = (typeof (value as any).referenceImagePresetId === 'string' && (value as any).referenceImagePresetId) ?
         (value as any).referenceImagePresetId :
         DEFAULT_REFERENCE_IMAGE_PRESET_ID;
+    const referenceImageOverrides = normalizeReferenceImageOverrides((value as any).referenceImageOverrides);
     if (!isObject(value.mainCamera) || !isObject((value.mainCamera as any).transform)) {
         return null;
     }
@@ -281,6 +390,7 @@ const normalizeCameraPreset = (
         id,
         name,
         referenceImagePresetId,
+        referenceImageOverrides,
         selected: !!value.selected,
         mainCamera,
         cameraFramesState
