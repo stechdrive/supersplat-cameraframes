@@ -1157,8 +1157,12 @@ export class CameraFramesController {
         this.events.function('cameraFrames.referenceOverrides.get', (presetId: string) => {
             return this.getReferenceImageOverride(presetId);
         });
-        this.events.on('cameraFrames.referenceOverrides.patch', (presetId: string, patch: ReferenceImagePresetOverride) => {
-            this.patchReferenceImageOverride(presetId, patch);
+        this.events.on('cameraFrames.referenceOverrides.patch', (
+            presetId: string,
+            patch: ReferenceImagePresetOverride,
+            options?: { suppressHistory?: boolean; }
+        ) => {
+            this.patchReferenceImageOverride(presetId, patch, options);
         });
         this.events.on('cameraFrames.referenceOverrides.clear', (presetId: string, itemIds?: string[]) => {
             this.clearReferenceImageOverride(presetId, itemIds);
@@ -1601,6 +1605,14 @@ export class CameraFramesController {
         if (patch.activeId === null || typeof patch.activeId === 'string') {
             next.activeId = patch.activeId;
         }
+        if (patch.renderBoxCorrection === null) {
+            delete next.renderBoxCorrection;
+        } else if (patch.renderBoxCorrection && typeof patch.renderBoxCorrection === 'object') {
+            const { x, y } = patch.renderBoxCorrection as { x?: number; y?: number };
+            if (typeof x === 'number' && isFinite(x) && typeof y === 'number' && isFinite(y)) {
+                next.renderBoxCorrection = { x, y };
+            }
+        }
         if (patch.items && typeof patch.items === 'object') {
             const items = next.items ?? {};
             Object.entries(patch.items).forEach(([id, itemPatch]) => {
@@ -1648,7 +1660,11 @@ export class CameraFramesController {
         return next;
     }
 
-    private patchReferenceImageOverride(presetId: string, patch: ReferenceImagePresetOverride) {
+    private patchReferenceImageOverride(
+        presetId: string,
+        patch: ReferenceImagePresetOverride,
+        options?: { suppressHistory?: boolean; }
+    ) {
         const targetId = typeof presetId === 'string' ? presetId : '';
         if (!targetId || !patch || typeof patch !== 'object') {
             return;
@@ -1657,7 +1673,7 @@ export class CameraFramesController {
         if (!preset) {
             return;
         }
-        this.historyRecord('cameraFrames.referenceOverrides', () => {
+        const apply = () => {
             const prevOverride = preset.referenceImageOverrides?.[targetId];
             const nextOverride = this.mergeReferenceImagePresetOverride(prevOverride, patch);
             const normalizedNext = Object.keys(nextOverride).length > 0 ? nextOverride : null;
@@ -1678,7 +1694,12 @@ export class CameraFramesController {
                 }
             }
             this.emitStateChanged();
-        });
+        };
+        if (options?.suppressHistory) {
+            apply();
+            return;
+        }
+        this.historyRecord('cameraFrames.referenceOverrides', apply);
     }
 
     private clearReferenceImageOverride(presetId: string, itemIds?: string[]) {

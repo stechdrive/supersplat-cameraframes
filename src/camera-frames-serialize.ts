@@ -210,6 +210,14 @@ const normalizeReferenceImagePresetOverride = (value: unknown): ReferenceImagePr
             next.activeId = trimmed;
         }
     }
+    if (isObject((value as any).renderBoxCorrection)) {
+        const correction = (value as any).renderBoxCorrection as Record<string, unknown>;
+        const x = correction.x;
+        const y = correction.y;
+        if (typeof x === 'number' && isFinite(x) && typeof y === 'number' && isFinite(y)) {
+            next.renderBoxCorrection = { x, y };
+        }
+    }
     if (isObject(value.items)) {
         const items: Record<string, ReferenceImageItemOverride> = {};
         Object.entries(value.items).forEach(([id, entry]) => {

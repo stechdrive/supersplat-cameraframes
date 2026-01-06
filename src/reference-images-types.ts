@@ -33,6 +33,11 @@ type ReferenceImageBaseRenderBox = {
     h: number;
 };
 
+type ReferenceImageRenderBoxCorrection = {
+    x: number;
+    y: number;
+};
+
 type ReferenceImageItemOverride = {
     name?: string;
     group?: ReferenceImageItemGroup;
@@ -48,6 +53,7 @@ type ReferenceImageItemOverride = {
 type ReferenceImagePresetOverride = {
     masterVisible?: boolean;
     activeId?: string | null;
+    renderBoxCorrection?: ReferenceImageRenderBoxCorrection | null;
     items?: Record<string, ReferenceImageItemOverride>;
 };
 
@@ -111,6 +117,7 @@ export type {
     ReferenceImageItemV2,
     ReferenceImageAsset,
     ReferenceImageBaseRenderBox,
+    ReferenceImageRenderBoxCorrection,
     ReferenceImageItemOverride,
     ReferenceImageOverrides,
     ReferenceImagePresetOverride,

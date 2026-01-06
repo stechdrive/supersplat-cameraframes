@@ -733,6 +733,52 @@ class ReferenceImagesController {
         }
     }
 
+    private resolveStoredRenderBoxCorrection(referencePresetId: string | null) {
+        if (!referencePresetId || !this.canUseReferenceOverrides()) {
+            return null;
+        }
+        const override = this.getReferenceImageOverride(referencePresetId);
+        const correction = override?.renderBoxCorrection;
+        const x = correction?.x;
+        const y = correction?.y;
+        if (!isFiniteNumber(x) || !isFiniteNumber(y)) {
+            return null;
+        }
+        return { x, y };
+    }
+
+    private syncRenderBoxCorrectionOverride(
+        referencePresetId: string | null,
+        cameraPresetId: string | null,
+        correction: { x: number; y: number; } | null
+    ) {
+        if (!referencePresetId || !cameraPresetId || !this.canUseReferenceOverrides()) {
+            return;
+        }
+        const isZero = (value: { x: number; y: number; } | null) => {
+            if (!value) {
+                return true;
+            }
+            return Math.abs(value.x) < 1e-3 && Math.abs(value.y) < 1e-3;
+        };
+        const next = correction && !isZero(correction) ? { x: correction.x, y: correction.y } : null;
+        const stored = this.resolveStoredRenderBoxCorrection(referencePresetId);
+        if (isZero(next) && isZero(stored)) {
+            return;
+        }
+        if (next && stored &&
+            Math.abs(next.x - stored.x) < 1e-3 &&
+            Math.abs(next.y - stored.y) < 1e-3) {
+            return;
+        }
+        this.events.fire(
+            'cameraFrames.referenceOverrides.patch',
+            referencePresetId,
+            { renderBoxCorrection: next },
+            { suppressHistory: true }
+        );
+    }
+
     private resolveRenderBoxSize(mapping: ViewportMapping | null) {
         const w = mapping?.logicalW;
         const h = mapping?.logicalH;
@@ -762,10 +808,21 @@ class ReferenceImagesController {
         const referencePresetId = this.fullState.activePresetId ?? null;
         const key = `${cameraPresetId ?? RENDER_BOX_CORRECTION_CAMERA_DEFAULT}::${referencePresetId ?? RENDER_BOX_CORRECTION_REFERENCE_DEFAULT}`;
         const existing = this.renderBoxCorrectionByPreset.get(key);
-        const baseChanged = !existing ||
-            Math.abs(existing.base.w - baseRenderBox.w) > 1e-3 ||
+        if (!existing) {
+            const storedCorrection = this.resolveStoredRenderBoxCorrection(referencePresetId);
+            const nextCorrection = storedCorrection ?? { x: 0, y: 0 };
+            const nextState: RenderBoxCorrectionState = {
+                base: { w: baseRenderBox.w, h: baseRenderBox.h },
+                size: { w: currentSize.w, h: currentSize.h },
+                anchor,
+                correction: nextCorrection
+            };
+            this.renderBoxCorrectionByPreset.set(key, nextState);
+            return { anchor, correction: nextCorrection };
+        }
+        const baseChanged = Math.abs(existing.base.w - baseRenderBox.w) > 1e-3 ||
             Math.abs(existing.base.h - baseRenderBox.h) > 1e-3;
-        if (!existing || baseChanged) {
+        if (baseChanged) {
             const nextState: RenderBoxCorrectionState = {
                 base: { w: baseRenderBox.w, h: baseRenderBox.h },
                 size: { w: currentSize.w, h: currentSize.h },
@@ -773,6 +830,9 @@ class ReferenceImagesController {
                 correction: { x: 0, y: 0 }
             };
             this.renderBoxCorrectionByPreset.set(key, nextState);
+            if (this.resolveStoredRenderBoxCorrection(referencePresetId)) {
+                this.syncRenderBoxCorrectionOverride(referencePresetId, cameraPresetId, null);
+            }
             return { anchor, correction: { x: 0, y: 0 } };
         }
         const anchorChanged = Math.abs(existing.anchor.ax - anchor.ax) > 1e-6 ||
@@ -787,6 +847,7 @@ class ReferenceImagesController {
                 y: existing.correction.y + (anchor.ay - existing.anchor.ay) * deltaH
             };
             existing.anchor = anchor;
+            this.syncRenderBoxCorrectionOverride(referencePresetId, cameraPresetId, existing.correction);
         }
         if (sizeChanged) {
             existing.size = { w: currentSize.w, h: currentSize.h };
