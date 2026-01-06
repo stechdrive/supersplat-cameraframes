@@ -537,6 +537,11 @@ const registerCameraSave = (events: Events, scene: Scene, cameraFramesController
             referenceImagesPresetsState.presets.map(preset => ({ id: preset.id, name: preset.name })) :
             [];
 
+        const exportPresets = state.cameraPresets.map((preset) => {
+            const { referenceImageOverrides, ...rest } = preset;
+            return rest;
+        });
+
         const file: CameraSaveFileV3 = {
             type: CAMERA_SAVE_TYPE,
             version: CAMERA_SAVE_VERSION,
@@ -545,7 +550,7 @@ const registerCameraSave = (events: Events, scene: Scene, cameraFramesController
                 createdAt: now.toISOString(),
                 cameraFramesVersion
             },
-            cameraPresets: state.cameraPresets,
+            cameraPresets: exportPresets,
             referenceImagePresets
         };
 
