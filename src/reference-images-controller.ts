@@ -373,6 +373,7 @@ class ReferenceImagesController {
     private presetCounter = 0;
     private activePresetGeneration = 0;
     private activePresetTask: Promise<void> | null = null;
+    private editMode: 'shared' | 'camera' = 'camera';
 
     constructor(events: Events, scene: Scene) {
         this.events = events;
@@ -400,8 +401,20 @@ class ReferenceImagesController {
         this.history = history;
     }
 
+    private setEditMode(mode: 'shared' | 'camera') {
+        const next = mode === 'camera' ? 'camera' : 'shared';
+        if (this.editMode === next) {
+            return;
+        }
+        this.editMode = next;
+    }
+
+    private shouldUseOverrideHistory() {
+        return this.editMode === 'camera' && this.canUseReferenceOverrides();
+    }
+
     private historyBegin(label: string) {
-        if (this.canUseReferenceOverrides()) {
+        if (this.shouldUseOverrideHistory()) {
             this.events.fire('cameraFrames.referenceOverrides.historyBegin', label);
             return;
         }
@@ -410,6 +423,24 @@ class ReferenceImagesController {
     }
 
     private historyCommit(label?: string) {
+        if (this.shouldUseOverrideHistory()) {
+            this.events.fire('cameraFrames.referenceOverrides.historyCommit', label);
+            return;
+        }
+        if (!this.history || this.history.isApplying() || this.applyingHistory) return;
+        this.history.commit(label);
+    }
+
+    private legacyHistoryBegin(label: string) {
+        if (this.canUseReferenceOverrides()) {
+            this.events.fire('cameraFrames.referenceOverrides.historyBegin', label);
+            return;
+        }
+        if (!this.history || this.history.isApplying() || this.applyingHistory) return;
+        this.history.begin(label);
+    }
+
+    private legacyHistoryCommit(label?: string) {
         if (this.canUseReferenceOverrides()) {
             this.events.fire('cameraFrames.referenceOverrides.historyCommit', label);
             return;
@@ -986,6 +1017,7 @@ class ReferenceImagesController {
         this.events.on('referenceImages.updateMany', (payload: ReferenceImagesUpdateManyPayload) => this.updateMany(payload));
         this.events.on('referenceImages.center', (id: string) => this.center(id));
         this.events.on('referenceImages.reorder', (payload: { id: string; group: ReferenceImageItemGroup; toIndex: number; }) => this.reorder(payload));
+        this.events.on('referenceImages.setEditMode', (mode: 'shared' | 'camera') => this.setEditMode(mode));
         this.events.on('referenceImages.historyBegin', (label: string) => this.historyBegin(label));
         this.events.on('referenceImages.historyCommit', (label?: string) => this.historyCommit(label));
 
@@ -1015,8 +1047,8 @@ class ReferenceImagesController {
         });
         this.events.on('referenceImage.setAnchor', (anchor: { ax: number; ay: number }) => this.legacyUpdate({ anchor }));
         this.events.on('referenceImage.setIncludeInRender', (value: boolean) => this.legacyUpdate({ includeInRender: value }));
-        this.events.on('referenceImage.historyBegin', (label: string) => this.historyBegin(label));
-        this.events.on('referenceImage.historyCommit', (label?: string) => this.historyCommit(label));
+        this.events.on('referenceImage.historyBegin', (label: string) => this.legacyHistoryBegin(label));
+        this.events.on('referenceImage.historyCommit', (label?: string) => this.legacyHistoryCommit(label));
         this.events.on('referenceImage.clear', () => this.legacyClear());
         this.events.function('referenceImage.loadBlob', async (blob: Blob, filename?: string) => {
             try {
@@ -1084,8 +1116,12 @@ class ReferenceImagesController {
 
     private legacySetEnabled(value: boolean) {
         const next = !!value;
+        if (next === this.state.masterVisible) {
+            return;
+        }
         const preset = this.getActivePreset();
-        if (next === preset.masterVisible) {
+        if (this.canUseReferenceOverrides()) {
+            this.events.fire('cameraFrames.referenceOverrides.patch', preset.id, { masterVisible: next });
             return;
         }
         this.historyRecord('referenceImage.enabled', () => {
@@ -1100,6 +1136,10 @@ class ReferenceImagesController {
     private legacySetVisible(value: boolean) {
         const active = this.getActiveItem();
         if (!active) {
+            return;
+        }
+        if (this.canUseReferenceOverrides()) {
+            this.update(active.id, { visible: !!value });
             return;
         }
         const preset = this.getActivePreset();

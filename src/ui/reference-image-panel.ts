@@ -204,10 +204,14 @@ class ReferenceImagePanel extends Container {
         const canUseCameraMode = () => canUseOverrides() && !!cameraPresetId;
         const isCameraMode = () => editMode === 'camera' && canUseCameraMode();
         const isSharedMode = () => !isCameraMode();
+        const syncEditMode = () => {
+            events.fire('referenceImages.setEditMode', isCameraMode() ? 'camera' : 'shared');
+        };
 
         const updateModeControls = () => {
             if (!canUseOverrides()) {
                 modeRow.hidden = true;
+                syncEditMode();
                 return;
             }
             modeRow.hidden = false;
@@ -227,6 +231,7 @@ class ReferenceImagePanel extends Container {
             }
             sharedModeButton.class[isSharedMode() ? 'add' : 'remove']('active');
             cameraModeButton.class[isCameraMode() ? 'add' : 'remove']('active');
+            syncEditMode();
         };
 
         const setEditMode = (next: 'shared' | 'camera') => {
