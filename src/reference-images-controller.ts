@@ -36,6 +36,7 @@ type ViewportMapping = {
 
 type CameraFramesPresetsState = {
     selectedPresetId?: string | null;
+    presets?: Array<{ id: string; }>;
 };
 
 type RenderBoxCorrectionState = {
@@ -106,6 +107,8 @@ const DEFAULT_REFERENCE_IMAGE_PRESET_ID = 'refpreset-blank';
 const DEFAULT_REFERENCE_IMAGE_PRESET_NAME = '(blank)';
 const LEGACY_REFERENCE_IMAGE_PRESET_ID = 'refpreset-1';
 const LEGACY_REFERENCE_IMAGE_PRESET_NAME = 'Preset 1';
+const RENDER_BOX_CORRECTION_CAMERA_DEFAULT = '__default__';
+const RENDER_BOX_CORRECTION_REFERENCE_DEFAULT = '__ref-default__';
 let fallbackIdCounter = 0;
 const createId = () => {
     try {
@@ -676,6 +679,60 @@ class ReferenceImagesController {
         this.events.fire('cameraFrames.referenceOverrides.prune', presetId, null, { suppressHistory: true });
     }
 
+    private clearRenderBoxCorrections() {
+        if (this.renderBoxCorrectionByPreset.size === 0) {
+            return;
+        }
+        this.renderBoxCorrectionByPreset.clear();
+    }
+
+    private collectReferencePresetIds() {
+        return new Set(this.fullState.presets.map(preset => preset.id));
+    }
+
+    private collectCameraPresetIds(state: CameraFramesPresetsState | null) {
+        const presets = Array.isArray(state?.presets) ? state.presets : null;
+        if (!presets || presets.length === 0) {
+            return null;
+        }
+        const ids = new Set<string>();
+        presets.forEach((preset) => {
+            if (preset?.id) {
+                ids.add(preset.id);
+            }
+        });
+        return ids.size > 0 ? ids : null;
+    }
+
+    private pruneRenderBoxCorrections(
+        referencePresetIds?: Set<string> | null,
+        cameraPresetIds?: Set<string> | null
+    ) {
+        if (this.renderBoxCorrectionByPreset.size === 0) {
+            return;
+        }
+        for (const key of this.renderBoxCorrectionByPreset.keys()) {
+            const separatorIndex = key.indexOf('::');
+            if (separatorIndex <= 0) {
+                this.renderBoxCorrectionByPreset.delete(key);
+                continue;
+            }
+            const cameraPresetId = key.slice(0, separatorIndex);
+            const referencePresetId = key.slice(separatorIndex + 2);
+            if (referencePresetIds &&
+                referencePresetId !== RENDER_BOX_CORRECTION_REFERENCE_DEFAULT &&
+                !referencePresetIds.has(referencePresetId)) {
+                this.renderBoxCorrectionByPreset.delete(key);
+                continue;
+            }
+            if (cameraPresetIds &&
+                cameraPresetId !== RENDER_BOX_CORRECTION_CAMERA_DEFAULT &&
+                !cameraPresetIds.has(cameraPresetId)) {
+                this.renderBoxCorrectionByPreset.delete(key);
+            }
+        }
+    }
+
     private resolveRenderBoxSize(mapping: ViewportMapping | null) {
         const w = mapping?.logicalW;
         const h = mapping?.logicalH;
@@ -697,9 +754,13 @@ class ReferenceImagesController {
             return { anchor, correction: { x: 0, y: 0 } };
         }
         const presetsState = this.events.invoke('cameraFrames.presetsState') as CameraFramesPresetsState | null;
+        const cameraPresetIds = this.collectCameraPresetIds(presetsState);
+        if (cameraPresetIds) {
+            this.pruneRenderBoxCorrections(this.collectReferencePresetIds(), cameraPresetIds);
+        }
         const cameraPresetId = typeof presetsState?.selectedPresetId === 'string' ? presetsState.selectedPresetId : null;
         const referencePresetId = this.fullState.activePresetId ?? null;
-        const key = `${cameraPresetId ?? '__default__'}::${referencePresetId ?? '__ref-default__'}`;
+        const key = `${cameraPresetId ?? RENDER_BOX_CORRECTION_CAMERA_DEFAULT}::${referencePresetId ?? RENDER_BOX_CORRECTION_REFERENCE_DEFAULT}`;
         const existing = this.renderBoxCorrectionByPreset.get(key);
         const baseChanged = !existing ||
             Math.abs(existing.base.w - baseRenderBox.w) > 1e-3 ||
@@ -906,6 +967,7 @@ class ReferenceImagesController {
     }
 
     private firePresetsStateChanged() {
+        this.pruneRenderBoxCorrections(this.collectReferencePresetIds(), null);
         this.events.fire('referenceImages.presetsState', this.snapshotPresetsState());
     }
 
@@ -1034,6 +1096,7 @@ class ReferenceImagesController {
         this.assets.clear();
         this.exportWorkByAssetId.clear();
         this.exportWorkOrder = [];
+        this.clearRenderBoxCorrections();
         this.fullState = {
             version: 2,
             activePresetId: DEFAULT_REFERENCE_IMAGE_PRESET_ID,
@@ -1088,6 +1151,13 @@ class ReferenceImagesController {
         this.events.on('referenceImages.setEditMode', (mode: 'shared' | 'camera') => this.setEditMode(mode));
         this.events.on('referenceImages.historyBegin', (label: string) => this.historyBegin(label));
         this.events.on('referenceImages.historyCommit', (label?: string) => this.historyCommit(label));
+        this.events.on('cameraFrames.presetsState', (state: CameraFramesPresetsState) => {
+            const cameraPresetIds = this.collectCameraPresetIds(state);
+            if (!cameraPresetIds) {
+                return;
+            }
+            this.pruneRenderBoxCorrections(this.collectReferencePresetIds(), cameraPresetIds);
+        });
 
         this.events.function('referenceImages.renderExportLayers', async (width: number, height: number, options?: { applyOpacity?: boolean; }) => {
             return await this.renderExportLayers(width, height, options);
@@ -2499,6 +2569,7 @@ class ReferenceImagesController {
             this.assets.clear();
             this.exportWorkByAssetId.clear();
             this.exportWorkOrder = [];
+            this.clearRenderBoxCorrections();
         };
         const docRoot = (docState && typeof docState === 'object') ? docState as Record<string, any> : null;
         const hasV2Doc = !!docRoot && (
