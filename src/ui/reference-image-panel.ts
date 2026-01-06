@@ -1256,7 +1256,12 @@ class ReferenceImagePanel extends Container {
             const presets = Array.isArray(state?.presets) ? state.presets : [];
             const selectedId = state?.selectedPresetId ?? null;
             const selectedPreset = selectedId ? presets.find(preset => preset.id === selectedId) ?? null : null;
+            const prevCameraPresetId = cameraPresetId;
             cameraPresetId = selectedPreset?.id ?? null;
+            if (prevCameraPresetId !== cameraPresetId) {
+                selectedIds.clear();
+                selectionAnchorId = null;
+            }
             syncEditMode();
             if (lastState) {
                 applyState(lastState);

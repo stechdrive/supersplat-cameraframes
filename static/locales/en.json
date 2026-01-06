@@ -175,7 +175,7 @@
     "panel.reference-image.toggle": "Toggle Reference Image Panel",
     "panel.reference-image.close": "Close reference image panel",
     "panel.reference-image.empty": "No reference images loaded",
-    "panel.reference-image.multi-selected": "{count} selected",
+    "panel.reference-image.multi-selected": "{{count}} selected",
     "panel.reference-image.show": "Show reference images",
     "panel.reference-image.hide": "Hide reference images",
     "panel.reference-image.load": "Load / Replace",
