@@ -2524,11 +2524,9 @@ export class CameraFramesController {
 
     private addCameraPreset() {
         this.historyRecord('cameraFrames.addCameraPreset', () => {
-            const basePreset = this.findSelectedPreset();
-            const referenceImagePresetId = basePreset?.referenceImagePresetId ?? DEFAULT_REFERENCE_IMAGE_PRESET_ID;
             const preset = this.createCameraPreset(undefined, {
-                referenceImagePresetId,
-                referenceImageOverrides: basePreset?.referenceImageOverrides ?? null
+                referenceImagePresetId: DEFAULT_REFERENCE_IMAGE_PRESET_ID,
+                referenceImageOverrides: null
             });
             this.state.cameraPresets.forEach((item) => {
                 item.selected = false;
