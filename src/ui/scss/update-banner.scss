@@ -6,9 +6,13 @@
     left: 0;
     right: 0;
     z-index: 1000;
-    display: flex;
     justify-content: center;
     pointer-events: all;
+    display: none;
+}
+
+#update-banner:not(.pcui-hidden) {
+    display: flex;
 }
 
 #update-banner-content {
