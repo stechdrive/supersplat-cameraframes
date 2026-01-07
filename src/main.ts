@@ -112,6 +112,75 @@ const initShortcuts = (events: Events) => {
     return shortcuts;
 };
 
+const registerServiceWorkerUpdateBanner = (events: Events) => {
+    if (!('serviceWorker' in navigator)) {
+        return;
+    }
+
+    let activeRegistration: ServiceWorkerRegistration | null = null;
+    let lastNotifiedScript: string | null = null;
+
+    const reloadForUpdate = () => {
+        const waiting = activeRegistration?.waiting ?? null;
+        if (waiting) {
+            waiting.postMessage({ type: 'SKIP_WAITING' });
+        }
+        window.location.reload();
+    };
+
+    const showBanner = (scriptUrl?: string) => {
+        if (scriptUrl && scriptUrl === lastNotifiedScript) {
+            return;
+        }
+        if (scriptUrl) {
+            lastNotifiedScript = scriptUrl;
+        }
+        events.invoke('updateBanner.show', {
+            onReload: reloadForUpdate,
+            onDismiss: () => {
+                events.invoke('updateBanner.hide');
+            }
+        });
+    };
+
+    const attachToRegistration = (registration: ServiceWorkerRegistration | null) => {
+        if (!registration) {
+            return;
+        }
+        activeRegistration = registration;
+
+        if (registration.waiting && navigator.serviceWorker.controller) {
+            showBanner(registration.waiting.scriptURL);
+        }
+
+        registration.addEventListener('updatefound', () => {
+            const installing = registration.installing;
+            if (!installing) {
+                return;
+            }
+            installing.addEventListener('statechange', () => {
+                if (installing.state === 'installed' && navigator.serviceWorker.controller) {
+                    showBanner(installing.scriptURL);
+                }
+            });
+        });
+    };
+
+    navigator.serviceWorker.ready
+    .then(registration => attachToRegistration(registration))
+    .catch(() => {});
+
+    navigator.serviceWorker.getRegistration()
+    .then(registration => attachToRegistration(registration ?? null))
+    .catch(() => {});
+
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') {
+            activeRegistration?.update().catch(() => {});
+        }
+    });
+};
+
 const main = async () => {
     // root events object
     const events = new Events();
@@ -127,6 +196,7 @@ const main = async () => {
 
     // editor ui
     const editorUI = new EditorUI(events);
+    registerServiceWorkerUpdateBanner(events);
 
     // create the graphics device
     const graphicsDevice = await createGraphicsDevice(editorUI.canvas, {

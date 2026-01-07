@@ -237,4 +237,8 @@
     "panel.camera-frames.main-props.close": "Cerrar controles de la cámara principal"
     "panel.camera-frames.transform.title.main": "Controles de la cámara principal",
     "panel.camera-frames.transform.title.viewport": "Controles de la cámara de edición",
+,
+    "updateBanner.message": "A new version is available.",
+    "updateBanner.reload": "Reload",
+    "updateBanner.dismiss": "Later"
 }

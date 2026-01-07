@@ -24,6 +24,7 @@ import { ShortcutsPopup } from './shortcuts-popup';
 import { Spinner } from './spinner';
 import { TimelinePanel } from './timeline-panel';
 import { Tooltips } from './tooltips';
+import { UpdateBanner, type UpdateBannerOptions } from './update-banner';
 import { VideoSettingsDialog } from './video-settings-dialog';
 import { ViewCube } from './view-cube';
 import { ViewPanel } from './view-panel';
@@ -191,14 +192,17 @@ class EditorUI {
         // video settings
         const videoSettingsDialog = new VideoSettingsDialog(events);
 
+        // update banner
+        const updateBanner = new UpdateBanner();
+
         topContainer.append(popup);
         topContainer.append(exportPopup);
         topContainer.append(publishSettingsDialog);
         topContainer.append(imageSettingsDialog);
         topContainer.append(videoSettingsDialog);
-
         appContainer.append(editorContainer);
         appContainer.append(topContainer);
+        appContainer.append(updateBanner);
         appContainer.append(tooltipsContainer);
         appContainer.append(shortcutsPopup);
 
@@ -324,6 +328,13 @@ class EditorUI {
                     });
                 }
             }
+        });
+
+        events.function('updateBanner.show', (options?: UpdateBannerOptions) => {
+            updateBanner.show(options);
+        });
+        events.function('updateBanner.hide', () => {
+            updateBanner.hide();
         });
 
         events.function('show.about', () => {
