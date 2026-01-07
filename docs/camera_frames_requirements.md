@@ -2,9 +2,9 @@
 
 ## 0. バージョンと参照
 
-- ベースコード: `src/camera-frames.ts` / `src/ui/camera-frames-panel.ts` / `src/camera.ts` / `src/scene.ts` / `src/render.ts`（package version 2.16.5 / HEAD 時点）。
+- ベースコード: `src/camera-frames.ts` / `src/ui/camera-frames-panel.ts` / `src/camera.ts` / `src/scene.ts` / `src/render.ts`（package version 2.16.6 / HEAD 時点）。
 - 関連実装: `src/reference-image-controller.ts` / `src/reference-image-types.ts` / `src/render.ts`（参照画像のプレビュー/書き出し・includeReferenceImage フラグ・永続化）。
-- CAMERA FRAMES 個別バージョン: `cameraFramesVersion` = **v2.16.1**（`package.json` 由来、`#app-label` に `| CAMERA FRAMES v2.16.1` を追加表示）。
+- CAMERA FRAMES 個別バージョン: `cameraFramesVersion` = **v2.16.2**（`package.json` 由来、`#app-label` に `| CAMERA FRAMES v2.16.2` を追加表示）。
 - 本書は v9 を置き換える **実装準拠版 v10**。更新点:
  - ヘッダーを **CAMERA FRAMES ON/OFF + 撮影カメラ操作パネル** に整理し、uiTarget 切替 UI を撤去。
  - 焦点距離 UI を **撮影表示/編集表示で一本化**。編集視点での撮影カメラ編集は撮影カメラ操作パネルに集約。
