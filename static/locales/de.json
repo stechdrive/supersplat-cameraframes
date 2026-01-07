@@ -238,4 +238,8 @@
     "panel.camera-frames.mode.toggle": "Haupt-/Bearbeitungskamera umschalten",
     "panel.camera-frames.transform.title.main": "Hauptkamera-Steuerung",
     "panel.camera-frames.transform.title.viewport": "Bearbeitungskamera-Steuerung",
+,
+    "updateBanner.message": "A new version is available.",
+    "updateBanner.reload": "Reload",
+    "updateBanner.dismiss": "Later"
 }

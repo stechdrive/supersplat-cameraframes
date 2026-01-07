@@ -362,4 +362,8 @@
     "tooltip.timeline.frame-rate": "Frame Rate",
     "tooltip.timeline.total-frames": "Total Frames",
     "tooltip.timeline.smoothness": "Smoothness"
+,
+    "updateBanner.message": "A new version is available.",
+    "updateBanner.reload": "Reload",
+    "updateBanner.dismiss": "Later"
 }

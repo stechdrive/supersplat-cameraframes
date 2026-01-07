@@ -64,6 +64,12 @@ self.addEventListener('activate', (event) => {
     })());
 });
 
+self.addEventListener('message', (event) => {
+    if (event.data?.type === 'SKIP_WAITING') {
+        self.skipWaiting();
+    }
+});
+
 const isNavigationRequest = (request: Request) => request.mode === 'navigate' || request.destination === 'document';
 
 const cacheFirst = async (request: Request): Promise<Response> => {
