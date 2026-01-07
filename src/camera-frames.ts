@@ -1436,15 +1436,23 @@ export class CameraFramesController {
         const base = trimmed && trimmed.length > 0 ? trimmed : fallback;
         const resolved = this.applyExportNameAliases(base);
         const normalized = resolved.trim() ? resolved : fallback;
-        const hasExtension = /\.[^./\\]+$/.test(normalized);
-        return hasExtension ? normalized : `${normalized}.${format}`;
+        const extMatch = normalized.match(/\.([^./\\]+)$/);
+        const ext = extMatch ? extMatch[1].toLowerCase() : '';
+        const hasKnownExtension = ext === 'png' || ext === 'psd';
+        if (hasKnownExtension) {
+            if (ext === format) {
+                return normalized;
+            }
+            return normalized.slice(0, -extMatch![0].length) + `.${format}`;
+        }
+        return `${normalized}.${format}`;
     }
 
     private applyExportNameAliases(name: string) {
         if (!name.includes('%cam')) {
             return name;
         }
-        const presetName = this.getSelectedPresetName();
+        const presetName = this.sanitizeExportToken(this.getSelectedPresetName());
         return name.split('%cam').join(presetName);
     }
 
@@ -1458,6 +1466,26 @@ export class CameraFramesController {
             return fallback;
         }
         return localize('panel.camera-frames.camera-presets.default-name', { index: 1 });
+    }
+
+    private sanitizeExportToken(value: string) {
+        if (!value) {
+            return localize('panel.camera-frames.camera-presets.default-name', { index: 1 });
+        }
+        let cleaned = '';
+        for (let i = 0; i < value.length; i++) {
+            const code = value.charCodeAt(i);
+            if (code < 32 || code === 127) {
+                continue;
+            }
+            cleaned += value[i];
+        }
+        cleaned = cleaned.replace(/[<>:"/\\|?*]/g, '-').trim();
+        cleaned = cleaned.replace(/[. ]+$/g, '');
+        if (!cleaned || cleaned === '.' || cleaned === '..') {
+            return localize('panel.camera-frames.camera-presets.default-name', { index: 1 });
+        }
+        return cleaned;
     }
 
     private createPresetId() {
