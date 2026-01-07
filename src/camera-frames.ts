@@ -1443,7 +1443,7 @@ export class CameraFramesController {
             if (ext === format) {
                 return normalized;
             }
-            return normalized.slice(0, -extMatch![0].length) + `.${format}`;
+            return `${normalized.slice(0, -extMatch![0].length)}.${format}`;
         }
         return `${normalized}.${format}`;
     }
