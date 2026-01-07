@@ -492,6 +492,11 @@ class MainCameraPropsPanel extends Container {
             updateMainPropsFovUI(info);
         });
 
+        events.on('camera.transform', (t: any) => {
+            if (!framesEnabled) return;
+            applyMainPropsTransformToInputs(t);
+        });
+
         events.on('app.ready', () => {
             if (appReady) {
                 return;

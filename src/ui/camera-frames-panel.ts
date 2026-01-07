@@ -1783,7 +1783,8 @@ class CameraFramesPanel extends Panel {
         }
 
         events.on('camera.transform', (t: any) => {
-            if (framesEnabled) return;
+            // When CAMERA FRAMES is enabled, the viewport camera represents the main camera.
+            // Keep the numeric inputs in sync with viewport manipulation.
             applyTransformToInputs(t);
         });
 
