@@ -1,5 +1,5 @@
 const buildInfo = {
-    version: 'v2.16.0-1767704180'
+    version: 'v2.16.2-1767795714'
 };
 
 const cacheName = `superSplat-cFrames-${buildInfo.version}`;
@@ -52,6 +52,11 @@ self.addEventListener('activate', (event) => {
         await Promise.all(deletions);
         await self.clients.claim();
     })());
+});
+self.addEventListener('message', (event) => {
+    if (event.data?.type === 'SKIP_WAITING') {
+        self.skipWaiting();
+    }
 });
 const isNavigationRequest = (request) => request.mode === 'navigate' || request.destination === 'document';
 const cacheFirst = async (request) => {
