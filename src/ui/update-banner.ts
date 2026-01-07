@@ -21,6 +21,10 @@ class UpdateBanner extends Container {
 
         super(args);
 
+        ['pointerdown', 'pointerup', 'pointermove', 'wheel', 'dblclick'].forEach((eventName) => {
+            this.dom.addEventListener(eventName, (event: Event) => event.stopPropagation());
+        });
+
         const content = new Container({
             id: 'update-banner-content'
         });
