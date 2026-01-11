@@ -729,10 +729,24 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
 
     let controlMode: 'orbit' | 'fly' = 'orbit';
 
+    const resolveControlMode = (mode: 'orbit' | 'fly') => {
+        const navMode = scene.camera.navMode ?? 'orbit';
+        return navMode === 'fpv' ? 'orbit' : mode;
+    };
+
+    const enforceControlModeForNav = (mode: 'orbit' | 'fpv') => {
+        if (mode === 'fpv' && controlMode !== 'orbit') {
+            controlMode = 'orbit';
+            scene.camera.controlMode = controlMode;
+            events.fire('camera.controlMode', controlMode);
+        }
+    };
+
     const setControlMode = (mode: 'orbit' | 'fly') => {
-        if (mode !== controlMode) {
-            controlMode = mode;
-            scene.camera.controlMode = mode;
+        const next = resolveControlMode(mode);
+        if (next !== controlMode) {
+            controlMode = next;
+            scene.camera.controlMode = controlMode;
             events.fire('camera.controlMode', controlMode);
         }
     };
@@ -747,6 +761,10 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
 
     events.on('camera.toggleControlMode', () => {
         setControlMode(controlMode === 'orbit' ? 'fly' : 'orbit');
+    });
+
+    events.on('camera.navMode', (mode: 'orbit' | 'fpv') => {
+        enforceControlModeForNav(mode ?? 'orbit');
     });
 
     // camera overlay

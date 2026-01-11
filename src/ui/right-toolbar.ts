@@ -1,4 +1,4 @@
-import { Button, Container, Element, Label } from '@playcanvas/pcui';
+import { Button, Container, Element } from '@playcanvas/pcui';
 
 import { Events } from '../events';
 import { localize } from './localization';
@@ -7,8 +7,6 @@ import cameraPanelSvg from './svg/camera-panel.svg';
 import cameraResetSvg from './svg/camera-reset.svg';
 import centersSvg from './svg/centers.svg';
 import colorPanelSvg from './svg/color-panel.svg';
-import flyCameraSvg from './svg/fly-camera.svg';
-import orbitCameraSvg from './svg/orbit-camera.svg';
 import ringsSvg from './svg/rings.svg';
 import showHideSplatsSvg from './svg/show-hide-splats.svg';
 import { Tooltips } from './tooltips';
@@ -39,16 +37,6 @@ class RightToolbar extends Container {
         const showHideSplats = new Button({
             id: 'right-toolbar-show-hide',
             class: ['right-toolbar-toggle']
-        });
-
-        const orbitMode = new Button({
-            id: 'right-toolbar-orbit-mode',
-            class: ['right-toolbar-toggle', 'active']
-        });
-
-        const flyMode = new Button({
-            id: 'right-toolbar-fly-mode',
-            class: 'right-toolbar-toggle'
         });
 
         const cameraFrameSelection = new Button({
@@ -84,8 +72,6 @@ class RightToolbar extends Container {
         ringsModeToggle.dom.appendChild(centersDom);
         ringsModeToggle.dom.appendChild(ringsDom);
         showHideSplats.dom.appendChild(createSvg(showHideSplatsSvg));
-        orbitMode.dom.appendChild(createSvg(orbitCameraSvg));
-        flyMode.dom.appendChild(createSvg(flyCameraSvg));
         cameraFrameSelection.dom.appendChild(createSvg(cameraFrameSelectionSvg));
         cameraFrameMenu.dom.appendChild(createSvg(cameraPanelSvg));
         cameraReset.dom.appendChild(createSvg(cameraResetSvg));
@@ -93,9 +79,6 @@ class RightToolbar extends Container {
 
         this.append(ringsModeToggle);
         this.append(showHideSplats);
-        this.append(new Element({ class: 'right-toolbar-separator' }));
-        this.append(orbitMode);
-        this.append(flyMode);
         this.append(new Element({ class: 'right-toolbar-separator' }));
         this.append(cameraFrameSelection);
         this.append(cameraReset);
@@ -107,8 +90,6 @@ class RightToolbar extends Container {
 
         tooltips.register(ringsModeToggle, localize('tooltip.right-toolbar.splat-mode'), 'left');
         tooltips.register(showHideSplats, localize('tooltip.right-toolbar.show-hide'), 'left');
-        tooltips.register(orbitMode, localize('tooltip.right-toolbar.orbit-camera'), 'left');
-        tooltips.register(flyMode, localize('tooltip.right-toolbar.fly-camera'), 'left');
         tooltips.register(cameraFrameSelection, localize('tooltip.right-toolbar.frame-selection'), 'left');
         tooltips.register(cameraFrameMenu, localize('tooltip.right-toolbar.camera-frame'), 'left');
         tooltips.register(cameraReset, localize('tooltip.right-toolbar.reset-camera'), 'left');
@@ -122,8 +103,6 @@ class RightToolbar extends Container {
             events.fire('camera.setOverlay', true);
         });
         showHideSplats.on('click', () => events.fire('camera.toggleOverlay'));
-        orbitMode.on('click', () => events.fire('camera.setControlMode', 'orbit'));
-        flyMode.on('click', () => events.fire('camera.setControlMode', 'fly'));
         cameraFrameSelection.on('click', () => events.fire('camera.focus'));
         cameraFrameMenu.on('click', () => events.fire('cameraFramesPanel.toggle'));
         cameraReset.on('click', () => events.fire('camera.reset'));
@@ -138,11 +117,6 @@ class RightToolbar extends Container {
 
         events.on('camera.overlay', (value: boolean) => {
             showHideSplats.class[value ? 'add' : 'remove']('active');
-        });
-
-        events.on('camera.controlMode', (mode: 'orbit' | 'fly') => {
-            orbitMode.class[mode === 'orbit' ? 'add' : 'remove']('active');
-            flyMode.class[mode === 'fly' ? 'add' : 'remove']('active');
         });
 
         events.on('colorPanel.visible', (visible: boolean) => {
