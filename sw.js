@@ -1,5 +1,5 @@
 const buildInfo = {
-    version: 'v2.16.2-1767800677'
+    version: 'v2.17.0-1768116330'
 };
 
 const cacheName = `superSplat-cFrames-${buildInfo.version}`;
@@ -24,6 +24,8 @@ const staticAssets = [
     './static/images/screenshot-wide.jpg',
     './static/lib/lodepng/lodepng.js',
     './static/lib/lodepng/lodepng.wasm',
+    './static/lib/webp/webp.mjs',
+    './static/lib/webp/webp.wasm',
     './static/locales/de.json',
     './static/locales/en.json',
     './static/locales/es.json',
