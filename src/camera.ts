@@ -38,17 +38,6 @@ import { Serializer } from './serializer';
 import { Splat } from './splat';
 import { TweenValue } from './tween-value';
 
-// calculate the forward vector given azimuth and elevation
-const calcForwardVec = (result: Vec3, azim: number, elev: number) => {
-    const ex = elev * math.DEG_TO_RAD;
-    const ey = azim * math.DEG_TO_RAD;
-    const s1 = Math.sin(-ex);
-    const c1 = Math.cos(-ex);
-    const s2 = Math.sin(-ey);
-    const c2 = Math.cos(-ey);
-    result.set(-c1 * s2, s1, c1 * c2);
-};
-
 // work globals
 const cameraPosition = new Vec3();
 const plane = new Plane();
@@ -112,6 +101,23 @@ type CameraDoc = {
 };
 
 class Camera extends Element {
+    /**
+     * Calculate the forward vector given azimuth and elevation angles.
+     *
+     * @param {Vec3} result - The Vec3 to store the result in.
+     * @param {number} azim - Azimuth angle in degrees.
+     * @param {number} elev - Elevation angle in degrees.
+     */
+    static calcForwardVec(result: Vec3, azim: number, elev: number) {
+        const ex = elev * math.DEG_TO_RAD;
+        const ey = azim * math.DEG_TO_RAD;
+        const s1 = Math.sin(-ex);
+        const c1 = Math.cos(-ex);
+        const s2 = Math.sin(-ey);
+        const c2 = Math.cos(-ey);
+        result.set(-c1 * s2, s1, c1 * c2);
+    }
+
     controller: PointerController;
     entity: Entity;
     focalPointTween = new TweenValue({ x: 0, y: 0.5, z: 0 });
@@ -124,7 +130,9 @@ class Camera extends Element {
 
     sceneRadius = 1;
 
-    flySpeed = 5;
+    flySpeed = 1;
+
+    controlMode: 'orbit' | 'fly' = 'orbit';
 
     picker: Picker;
 
@@ -751,7 +759,7 @@ class Camera extends Element {
         const distNorm = this.distanceTween.value.distance;
         const framingFactor = this.getFramingFactor();
 
-        calcForwardVec(out, azimElev.azim, azimElev.elev);
+        Camera.calcForwardVec(out, azimElev.azim, azimElev.elev);
         out.mulScalar(distNorm * this.sceneRadius / framingFactor);
         out.add(this.focalPointTween.value);
         return out;
@@ -1126,7 +1134,7 @@ class Camera extends Element {
         quatOrbitYaw.transformVector(orbitOffset, orbitOffset);
 
         // pitch: yaw後の右軸で回転
-        calcForwardVec(orbitForward, nextAzim, currentAngles.elev);
+        Camera.calcForwardVec(orbitForward, nextAzim, currentAngles.elev);
         vecb.cross(Vec3.UP, orbitForward);
         if (vecb.lengthSq() < 1e-6) {
             // forward がほぼ真上/真下のときは現在の右軸を使う
@@ -1477,7 +1485,7 @@ class Camera extends Element {
                 }
 
                 // forward (pivot -> camera) using current view
-                calcForwardVec(vec, currentAngles.azim, currentAngles.elev);
+                Camera.calcForwardVec(vec, currentAngles.azim, currentAngles.elev);
                 va.copy(cameraPosition).sub(vec.mulScalar(worldDist));
                 const pivot = va;
 

@@ -1,4 +1,4 @@
-import { Button, Container, Element, Label } from '@playcanvas/pcui';
+import { Button, Container, Element } from '@playcanvas/pcui';
 
 import { Events } from '../events';
 import { localize } from './localization';
@@ -80,10 +80,10 @@ class RightToolbar extends Container {
         this.append(ringsModeToggle);
         this.append(showHideSplats);
         this.append(new Element({ class: 'right-toolbar-separator' }));
-        this.append(cameraReset);
         this.append(cameraFrameSelection);
-        this.append(colorPanel);
+        this.append(cameraReset);
         this.append(new Element({ class: 'right-toolbar-separator' }));
+        this.append(colorPanel);
         this.append(options);
         this.append(new Element({ class: 'right-toolbar-separator' }));
         this.append(cameraFrameMenu);

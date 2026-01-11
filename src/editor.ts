@@ -702,7 +702,7 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
         setAllData(!events.invoke('allData'));
     });
 
-    // camera mode
+    // camera mode (visual: centers/rings)
 
     let activeMode = 'centers';
 
@@ -723,6 +723,48 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
 
     events.on('camera.toggleMode', () => {
         setCameraMode(events.invoke('camera.mode') === 'centers' ? 'rings' : 'centers');
+    });
+
+    // camera control mode (orbit/fly)
+
+    let controlMode: 'orbit' | 'fly' = 'orbit';
+
+    const resolveControlMode = (mode: 'orbit' | 'fly') => {
+        const navMode = scene.camera.navMode ?? 'orbit';
+        return navMode === 'fpv' ? 'orbit' : mode;
+    };
+
+    const enforceControlModeForNav = (mode: 'orbit' | 'fpv') => {
+        if (mode === 'fpv' && controlMode !== 'orbit') {
+            controlMode = 'orbit';
+            scene.camera.controlMode = controlMode;
+            events.fire('camera.controlMode', controlMode);
+        }
+    };
+
+    const setControlMode = (mode: 'orbit' | 'fly') => {
+        const next = resolveControlMode(mode);
+        if (next !== controlMode) {
+            controlMode = next;
+            scene.camera.controlMode = controlMode;
+            events.fire('camera.controlMode', controlMode);
+        }
+    };
+
+    events.function('camera.controlMode', () => {
+        return controlMode;
+    });
+
+    events.on('camera.setControlMode', (mode: 'orbit' | 'fly') => {
+        setControlMode(mode);
+    });
+
+    events.on('camera.toggleControlMode', () => {
+        setControlMode(controlMode === 'orbit' ? 'fly' : 'orbit');
+    });
+
+    events.on('camera.navMode', (mode: 'orbit' | 'fpv') => {
+        enforceControlModeForNav(mode ?? 'orbit');
     });
 
     // camera overlay
