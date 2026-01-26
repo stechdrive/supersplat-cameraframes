@@ -1,7 +1,7 @@
 {
     "name": "supersplat-cameraframes",
     "version": "2.18.1",
-    "cameraFramesVersion": "v2.18.1",
+    "cameraFramesVersion": "v2.18.0",
     "author": "stechdrive",
     "contributors": [
         "PlayCanvas <support@playcanvas.com>"
