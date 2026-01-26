@@ -266,12 +266,15 @@ export const renderModelLayers = async (
 
     const layersToDisable = [
         worldLayer,
+        scene.splatLayer,
         scene.overlayLayer,
         scene.debugLayer,
         scene.gizmoLayer,
         scene.backgroundLayer,
         scene.shadowLayer,
-        scene.exportOverlayLayer
+        scene.exportOverlayLayer,
+        scene.referenceBackLayer,
+        scene.referenceFrontLayer
     ];
     layersToDisable.forEach(rememberLayer);
 
