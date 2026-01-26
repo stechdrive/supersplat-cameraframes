@@ -8,6 +8,7 @@ import {
     SEMANTIC_POSITION,
     BlendState,
     DepthState,
+    CameraComponent,
     Layer,
     QuadRender,
     ScopeSpace,
@@ -33,6 +34,7 @@ class InfiniteGrid extends Element {
     quadRender: QuadRender;
     blendState = new BlendState(false);
     depthState = new DepthState(FUNC_LESSEQUAL, true);
+    private preRenderLayerHandler: ((camera: CameraComponent, layer: Layer, transparent: boolean) => void) | null = null;
 
     visible = true;
 
@@ -71,8 +73,11 @@ class InfiniteGrid extends Element {
         };
         let plane;
 
-        this.scene.camera.camera.on('preRenderLayer', (layer: Layer, transparent: boolean) => {
+        this.preRenderLayerHandler = (cameraComponent: CameraComponent, layer: Layer, transparent: boolean) => {
             const { scene } = this;
+            if (cameraComponent !== scene.camera.camera) {
+                return;
+            }
             const overlaysEnabled = scene.camera.renderOverlays || scene.renderFlags.forceGridOverlay;
             const targetLayer = scene.renderFlags.gridLayerOverride ?? scene.debugLayer;
             if (this.visible && layer === targetLayer && !transparent && overlaysEnabled) {
@@ -85,7 +90,7 @@ class InfiniteGrid extends Element {
 
                 // select the correctly plane in orthographic mode
                 if (camera.ortho) {
-                    const cmp = (a:Vec3, b: Vec3) => 1.0 - Math.abs(a.dot(b)) < 1e-03;
+                    const cmp = (a: Vec3, b: Vec3) => 1.0 - Math.abs(a.dot(b)) < 1e-03;
                     const z = camera.worldTransform.getZ();
                     plane = cmp(z, Vec3.RIGHT) ? 0 : (cmp(z, Vec3.BACK) ? 2 : 1);
                 } else {
@@ -98,7 +103,6 @@ class InfiniteGrid extends Element {
                 view_position[1] = p.y;
                 view_position[2] = p.z;
 
-                const cameraComponent = camera.camera;
                 if (!buildCameraMatrices(cameraComponent, cameraMatrices)) {
                     viewProjectionMatrix.mul2(cameraComponent.projectionMatrix, cameraComponent.viewMatrix);
                 }
@@ -116,12 +120,18 @@ class InfiniteGrid extends Element {
 
                 this.quadRender.render();
             }
-        });
+        };
+
+        this.scene.app.scene.on('prerender:layer', this.preRenderLayerHandler);
     }
 
     remove() {
         this.shader.destroy();
         this.quadRender.destroy();
+        if (this.preRenderLayerHandler) {
+            this.scene.app.scene.off('prerender:layer', this.preRenderLayerHandler);
+            this.preRenderLayerHandler = null;
+        }
     }
 
     serialize(serializer: Serializer): void {

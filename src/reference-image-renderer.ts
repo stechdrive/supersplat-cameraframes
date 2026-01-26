@@ -6,6 +6,7 @@ import {
     SEMANTIC_POSITION,
     BlendState,
     DepthState,
+    CameraComponent,
     Layer,
     QuadRender,
     Shader,
@@ -40,8 +41,8 @@ class ReferenceImageRenderer extends Element {
     private params: { back: RenderParams[]; front: RenderParams[]; } = { back: [], front: [] };
     private targetSize: { w: number; h: number; } = { w: 1, h: 1 };
     private mainCameraHandlers: {
-        preRenderLayer: ((layer: Layer, transparent: boolean) => void) | null;
-        postRenderLayer: ((layer: Layer, transparent: boolean) => void) | null;
+        preRenderLayer: ((camera: CameraComponent, layer: Layer, transparent: boolean) => void) | null;
+        postRenderLayer: ((camera: CameraComponent, layer: Layer, transparent: boolean) => void) | null;
     } = { preRenderLayer: null, postRenderLayer: null };
     private worldLayer: Layer | null = null;
     private drawnBack = false;
@@ -88,7 +89,10 @@ class ReferenceImageRenderer extends Element {
         this.worldLayer = this.scene.app.scene.layers.getLayerByName('World');
         const mainCamera = this.scene.camera.entity.camera;
 
-        this.mainCameraHandlers.preRenderLayer = (layer: Layer, transparent: boolean) => {
+        this.mainCameraHandlers.preRenderLayer = (camera: CameraComponent, layer: Layer, transparent: boolean) => {
+            if (camera !== mainCamera) {
+                return;
+            }
             if (transparent || this.drawnBack) {
                 return;
             }
@@ -105,7 +109,10 @@ class ReferenceImageRenderer extends Element {
             this.draw('back');
         };
 
-        this.mainCameraHandlers.postRenderLayer = (layer: Layer, transparent: boolean) => {
+        this.mainCameraHandlers.postRenderLayer = (camera: CameraComponent, layer: Layer, transparent: boolean) => {
+            if (camera !== mainCamera) {
+                return;
+            }
             if (!transparent || this.drawnFront) {
                 return;
             }
@@ -119,19 +126,16 @@ class ReferenceImageRenderer extends Element {
             this.draw('front');
         };
 
-        mainCamera.on('preRenderLayer', this.mainCameraHandlers.preRenderLayer);
-        mainCamera.on('postRenderLayer', this.mainCameraHandlers.postRenderLayer);
+        this.scene.app.scene.on('prerender:layer', this.mainCameraHandlers.preRenderLayer);
+        this.scene.app.scene.on('postrender:layer', this.mainCameraHandlers.postRenderLayer);
     }
 
     remove() {
-        const mainCamera = this.scene?.camera?.entity?.camera;
-        if (mainCamera) {
-            if (this.mainCameraHandlers.preRenderLayer) {
-                mainCamera.off('preRenderLayer', this.mainCameraHandlers.preRenderLayer);
-            }
-            if (this.mainCameraHandlers.postRenderLayer) {
-                mainCamera.off('postRenderLayer', this.mainCameraHandlers.postRenderLayer);
-            }
+        if (this.mainCameraHandlers.preRenderLayer) {
+            this.scene?.app?.scene?.off('prerender:layer', this.mainCameraHandlers.preRenderLayer);
+        }
+        if (this.mainCameraHandlers.postRenderLayer) {
+            this.scene?.app?.scene?.off('postrender:layer', this.mainCameraHandlers.postRenderLayer);
         }
         this.mainCameraHandlers.preRenderLayer = null;
         this.mainCameraHandlers.postRenderLayer = null;

@@ -194,7 +194,7 @@ type ScheduleViewportNearOverrideParams = {
     shouldApplyViewportNearOverride: () => boolean;
     viewportNearDebounceId: number | null;
     setViewportNearDebounceId: (value: number | null) => void;
-    applyViewportNearOverride: () => void | Promise<void>;
+    applyViewportNearOverride: () => Promise<void>;
 };
 
 type ApplyViewportNearOverrideParams = {

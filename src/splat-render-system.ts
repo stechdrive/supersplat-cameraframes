@@ -714,7 +714,7 @@ class SplatRenderSystem {
 
         material.setParameter('mode', cameraMode === 'rings' ? 1 : 0);
         material.setParameter('ringSize', (selected && cameraOverlay && cameraMode === 'rings') ? 0.04 : 0);
-        material.setParameter('outlineMode', outlineMode);
+        material.setParameter('outlineMode', outlineMode ? 1 : 0);
         material.setParameter('clrOffset', [0, 0, 0]);
         material.setParameter('clrScale', [1, 1, 1, 1]);
     }

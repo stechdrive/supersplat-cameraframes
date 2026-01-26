@@ -468,8 +468,9 @@ class Camera extends Element {
         pushLayer(scene.gizmoLayer);
         this.entity.camera.layers = layerIds;
 
-        if (scene.config.camera.debugRender) {
-            this.entity.camera.setShaderPass(`debug_${scene.config.camera.debugRender}`);
+        const debugRender = (scene.config as any)?.camera?.debugRender;
+        if (debugRender) {
+            this.entity.camera.setShaderPass(`debug_${debugRender}`);
         }
 
         // create render passes

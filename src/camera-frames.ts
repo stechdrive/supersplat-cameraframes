@@ -3087,17 +3087,16 @@ export class CameraFramesController {
         if (!appLabel) {
             return;
         }
-        const EXISTING_CLASS = 'camera-frames-version';
-        const existing = appLabel.querySelector(`.${EXISTING_CLASS}`);
-        const text = ` | CAMERA FRAMES ${cameraFramesVersion}`;
-        if (existing) {
-            existing.textContent = text;
-            return;
+        const baseAttr = 'data-app-label-base';
+        let baseText = appLabel.getAttribute(baseAttr);
+        if (!baseText) {
+            baseText = appLabel.textContent ?? '';
+            appLabel.setAttribute(baseAttr, baseText);
         }
-        const span = document.createElement('span');
-        span.className = EXISTING_CLASS;
-        span.textContent = text;
-        appLabel.appendChild(span);
+        const nextText = `${baseText} | CAMERA FRAMES ${cameraFramesVersion}`;
+        if (appLabel.textContent !== nextText) {
+            appLabel.textContent = nextText;
+        }
     }
 
     attachPointerHandlers() {

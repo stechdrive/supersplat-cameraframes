@@ -3,6 +3,7 @@ import {
     BLENDMODE_ONE,
     BLENDMODE_ZERO,
     BlendState,
+    CameraComponent,
     Layer
 } from 'playcanvas';
 
@@ -14,6 +15,7 @@ class Underlay extends Element {
     shaderQuad: ShaderQuad;
     renderPass: SimpleRenderPass;
     enabled = true;
+    private preRenderLayerHandler: ((camera: CameraComponent, layer: Layer, transparent: boolean) => void) | null = null;
 
     constructor() {
         super(ElementType.other);
@@ -32,7 +34,10 @@ class Underlay extends Element {
 
         const { camera, events } = this.scene;
 
-        camera.camera.on('preRenderLayer', (layer: Layer, transparent: boolean) => {
+        this.preRenderLayerHandler = (cameraComponent: CameraComponent, layer: Layer, transparent: boolean) => {
+            if (cameraComponent !== camera.camera) {
+                return;
+            }
             // underlay is used when outline mode is disabled
             if (!this.enabled || events.invoke('view.outlineSelection')) {
                 return;
@@ -46,11 +51,17 @@ class Underlay extends Element {
             this.renderPass.execute({
                 srcTexture: camera.workTarget.colorBuffer
             });
-        });
+        };
+
+        this.scene.app.scene.on('prerender:layer', this.preRenderLayerHandler);
     }
 
     remove() {
         // event listeners are cleaned up when camera is destroyed
+        if (this.preRenderLayerHandler) {
+            this.scene.app.scene.off('prerender:layer', this.preRenderLayerHandler);
+            this.preRenderLayerHandler = null;
+        }
     }
 
     onPreRender() {
