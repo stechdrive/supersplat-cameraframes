@@ -13,6 +13,7 @@ import {
 } from 'playcanvas';
 
 import { version } from '../package.json';
+import { Events } from './events';
 import {
     BufferWriter,
     ProgressWriter,
@@ -1134,10 +1135,11 @@ const serializeViewer = async (splats: Splat[], serializeSettings: SerializeSett
 
 type SogSettings = SerializeSettings & {
     iterations: number;
+    events?: Events;
 };
 
 const serializeSog = async (splats: Splat[], settings: SogSettings, writer: Writer): Promise<void> => {
-    const { maxSHBands = 3, iterations = 10 } = settings;
+    const { maxSHBands = 3, iterations = 10, events } = settings;
 
     // Determine which members to extract
     const shCoeffs = [0, 3, 8, 15][maxSHBands];
@@ -1171,7 +1173,7 @@ const serializeSog = async (splats: Splat[], settings: SogSettings, writer: Writ
         splats,
         getSingleSplat,
         filterFunc,
-        { iterations, maxSHBands },
+        { iterations, maxSHBands, events },
         writer
     );
 };
