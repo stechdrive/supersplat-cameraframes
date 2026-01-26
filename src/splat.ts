@@ -50,9 +50,7 @@ class Splat extends Element {
     selectionBoundStorage: BoundingBox;
     localBoundStorage: BoundingBox;
     worldBoundStorage: BoundingBox;
-    selectionBoundDirty = true;
-    localBoundDirty = true;
-    worldBoundDirty = true;
+
     _visible = true;
     transformPalette: TransformPalette;
 
@@ -141,7 +139,7 @@ class Splat extends Element {
         this.asset.unload();
     }
 
-    updateState(changedState = State.selected) {
+    async updateState(changedState = State.selected) {
         const state = this.splatData.getProp('state') as Uint8Array;
 
         const result = this.scene.renderSystem.updateState(this);
@@ -154,15 +152,21 @@ class Splat extends Element {
             this.numVisible = result.numVisible;
         }
 
-        this.makeSelectionBoundDirty();
-
         // handle splats being added or removed
+        if (changedState & State.deleted) {
+            await this.updateSorting();
+        } else {
+            await this.updateLocalBounds();
+        }
         this.scene.forceRender = true;
         this.scene.events.fire('splat.stateChanged', this);
     }
 
-    updatePositions() {
-        const data = this.scene.renderSystem.calcPositions(this);
+    async updatePositions() {
+        const data = await this.scene.dataProcessor.calcPositions(this);
+        if (data.length === 0) {
+            return;
+        }
 
         // update the splat centers which are used for render-time sorting
         const state = this.splatData.getProp('state') as Uint8Array;
@@ -179,6 +183,7 @@ class Splat extends Element {
             }
         }
 
+        await this.updateSorting();
         this.scene.forceRender = true;
         this.scene.events.fire('splat.positionsChanged', this);
     }
@@ -186,7 +191,7 @@ class Splat extends Element {
     updatePositionsPartial(selectedCount: number) {
         const data = this.splatData;
         if (selectedCount > Math.min(20000, data.numSplats * 0.05)) {
-            this.updatePositions();
+            void this.updatePositions();
             return;
         }
 
@@ -247,7 +252,7 @@ class Splat extends Element {
 
         const data = this.splatData;
         if (indices.length > Math.min(20000, data.numSplats * 0.05)) {
-            this.updatePositions();
+            void this.updatePositions();
             return;
         }
 
@@ -302,6 +307,11 @@ class Splat extends Element {
         this.scene.events.fire('splat.positionsChanged', this);
     }
 
+    async updateSorting() {
+        await this.scene.renderSystem.waitForSorter();
+        await this.updateLocalBounds();
+    }
+
     get worldTransform() {
         return this.entity.getWorldTransform();
     }
@@ -343,7 +353,7 @@ class Splat extends Element {
         return true;
     }
 
-    add() {
+    async add() {
         // add the entity to the scene
         this.scene.contentRoot.addChild(this.entity);
 
@@ -351,7 +361,7 @@ class Splat extends Element {
         this.stateTexture = this.scene.renderSystem.stateTexture;
         this.transformTexture = this.scene.renderSystem.transformTexture;
         this.scene.renderSystem.updateSplatParams(this);
-        this.updateState();
+        await this.updateState();
 
         // 標準GSplatコンポーネントは統合レンダラーが吸収するため常時無効化。
         // ここを再有効化すると標準レンダー経路が復活してゴーストが再発する。
@@ -416,56 +426,31 @@ class Splat extends Element {
             entity.setLocalScale(scale);
         }
 
-        this.makeSelectionBoundDirty();
         this.scene.renderSystem.updateTransform(this, skipCenterUpdate);
+        this.updateWorldBound();
         this.scene.events.fire('splat.moved', this);
     }
 
-    makeSelectionBoundDirty() {
-        this.selectionBoundDirty = true;
-        this.makeLocalBoundDirty();
+    // calculate both selection and local bounds (async, callers must await)
+    async updateLocalBounds(): Promise<void> {
+        await this.scene.dataProcessor.calcBound(this, this.selectionBoundStorage, this.localBoundStorage);
+        this.updateWorldBound();
     }
 
-    makeLocalBoundDirty() {
-        this.localBoundDirty = true;
-        this.makeWorldBoundDirty();
-    }
-
-    makeWorldBoundDirty() {
-        this.worldBoundDirty = true;
+    // update world bound from local bound (synchronous)
+    private updateWorldBound() {
+        this.worldBoundStorage.setFromTransformedAabb(this.localBoundStorage, this.entity.getWorldTransform());
         this.scene.boundDirty = true;
     }
 
     // get the selection bound
     get selectionBound() {
-        const selectionBound = this.selectionBoundStorage;
-        if (this.selectionBoundDirty) {
-            const bound = this.scene.renderSystem.getBound(this, 'selected');
-            if (bound) {
-                selectionBound.copy(bound);
-            } else {
-                selectionBound.center.set(0, 0, 0);
-                selectionBound.halfExtents.set(0, 0, 0);
-            }
-            this.selectionBoundDirty = false;
-        }
-        return selectionBound;
+        return this.selectionBoundStorage;
     }
 
     // get local space bound
     get localBound() {
-        const localBound = this.localBoundStorage;
-        if (this.localBoundDirty) {
-            const bound = this.scene.renderSystem.getBound(this, 'visible');
-            if (bound) {
-                localBound.copy(bound);
-            } else {
-                localBound.center.set(0, 0, 0);
-                localBound.halfExtents.set(0, 0, 0);
-            }
-            this.localBoundDirty = false;
-        }
-        return localBound;
+        return this.localBoundStorage;
     }
 
     // get world space bound
@@ -473,14 +458,7 @@ class Splat extends Element {
         if (!this.scene.renderSystem.counts.has(this) || !this.visible) {
             return null;
         }
-        const worldBound = this.worldBoundStorage;
-        if (this.worldBoundDirty) {
-            worldBound.copy(this.localBound);
-
-            // flag scene bound as dirty
-            this.worldBoundDirty = false;
-        }
-        return worldBound;
+        return this.worldBoundStorage;
     }
 
     set visible(value: boolean) {
@@ -500,7 +478,7 @@ class Splat extends Element {
             }
         }
 
-        this.updateState(State.hidden);
+        void this.updateState(State.hidden);
         const renderSystem = this.scene.renderSystem;
         const needsImmediateRebuild = next && !renderSystem.isSplatActive(this);
         if (!next || needsImmediateRebuild) {
@@ -615,15 +593,19 @@ class Splat extends Element {
         return this._selectionAlpha;
     }
 
+    // get pivot position/rotation/scale (caller should have awaited operation that changed data)
     getPivot(mode: 'center' | 'boundCenter', selection: boolean, result: Transform) {
         const { entity } = this;
         switch (mode) {
             case 'center':
                 result.set(entity.getLocalPosition(), entity.getLocalRotation(), entity.getLocalScale());
                 break;
-            case 'boundCenter':
-                result.set((selection ? this.selectionBound : this.localBound).center, entity.getLocalRotation(), entity.getLocalScale());
+            case 'boundCenter': {
+                const bound = selection ? this.selectionBound : this.localBound;
+                entity.getLocalTransform().transformPoint(bound.center, vec);
+                result.set(vec, entity.getLocalRotation(), entity.getLocalScale());
                 break;
+            }
         }
     }
 

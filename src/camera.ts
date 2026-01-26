@@ -850,6 +850,10 @@ class Camera extends Element {
             ].forEach(layer => addLayer(this.gizmoPass, layer));
             this.gizmoPass.setClearDepth(1);
             this.gizmoPass.setClearStencil(0);
+            if (this.gizmoPass.renderActions[0]) {
+                this.gizmoPass.renderActions[0].clearDepth = true;
+                this.gizmoPass.renderActions[0].clearStencil = true;
+            }
 
             this.finalPass.init(null);
 

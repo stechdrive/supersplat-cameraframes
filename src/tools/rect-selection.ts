@@ -70,7 +70,7 @@ class RectSelection {
             svg.classList.add('hidden');
         };
 
-        const pointerup = (e: PointerEvent) => {
+        const pointerup = async (e: PointerEvent) => {
             if (e.pointerId === dragId) {
                 e.preventDefault();
                 e.stopPropagation();
@@ -85,10 +85,8 @@ class RectSelection {
                 }
                 const clamp01 = (value: number) => Math.max(0, Math.min(1, value));
 
-                dragEnd();
-
                 if (dragMoved) {
-                    // rect select
+                    // rect select - wait for selection to complete before hiding rect
                     const minX = Math.min(start.x, end.x);
                     const minY = Math.min(start.y, end.y);
                     const maxX = Math.max(start.x, end.x);
@@ -100,20 +98,22 @@ class RectSelection {
                     if (endX <= startX || endY <= startY) {
                         return;
                     }
-                    events.fire(
+                    await events.invoke(
                         'select.rect',
                         op, {
                             start: { x: startX, y: startY },
                             end: { x: endX, y: endY }
                         });
                 } else {
-                    // pick
-                    events.fire(
+                    // pick - wait for selection to complete before hiding rect
+                    await events.invoke(
                         'select.point',
                         op,
                         { x: clamp01(e.offsetX / w), y: clamp01(e.offsetY / h) }
                     );
                 }
+
+                dragEnd();
             }
         };
 

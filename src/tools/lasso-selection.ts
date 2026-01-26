@@ -55,7 +55,7 @@ class LassoSelection {
             paint();
         };
 
-        const commitSelection = (e: PointerEvent) => {
+        const commitSelection = async (e: PointerEvent) => {
             // initialize canvas
             if (canvas.width !== parent.clientWidth || canvas.height !== parent.clientHeight) {
                 canvas.width = parent.clientWidth;
@@ -80,7 +80,8 @@ class LassoSelection {
             context.closePath();
             context.fill();
 
-            events.fire(
+            // wait for selection to complete
+            await events.invoke(
                 'select.byMask',
                 op,
                 canvas,
@@ -114,14 +115,15 @@ class LassoSelection {
             dragId = undefined;
         };
 
-        const pointerup = (e: PointerEvent) => {
+        const pointerup = async (e: PointerEvent) => {
             if (e.pointerId === dragId) {
                 e.preventDefault();
                 e.stopPropagation();
 
-                dragEnd();
+                // wait for selection to complete before clearing polygon
+                await commitSelection(e);
 
-                commitSelection(e);
+                dragEnd();
 
                 points = [];
                 paint();

@@ -182,7 +182,6 @@ class SplatsTransformHandler implements TransformHandler {
         transformPalette.endUpdate();
 
         this.splat.scene.renderSystem.updateTransform(this.splat, true);
-        this.splat.makeSelectionBoundDirty();
 
         const world = this.splat.entity.getWorldTransform();
         mat2.copy(world).invert();
@@ -218,14 +217,14 @@ class SplatsTransformHandler implements TransformHandler {
         }
     }
 
-    end() {
+    async end() {
         const { splat, transform, paletteMap } = this;
 
         splat.scene.endBoundPreview(splat);
 
         // TODO: consider moving this to update() function above so splats are sorted correctly
         // for render during drag (which is slower).
-        splat.updatePositionsForIndices(this.selectedIndices);
+        await splat.updatePositions();
         splat.selectionAlpha = 1;
         splat.scene.outline.enabled = true;
         splat.scene.underlay.enabled = true;

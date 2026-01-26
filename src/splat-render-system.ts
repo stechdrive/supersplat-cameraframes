@@ -314,7 +314,7 @@ class SplatRenderSystem {
         if (dirty) {
             const boundingBox = entry;
             const onlySelected = mode === 'selected';
-            this.scene.dataProcessor.calcBound(this.getProcessorContext(splat), boundingBox, onlySelected);
+            void this.scene.dataProcessor.calcBound(this.getProcessorContext(splat), boundingBox, onlySelected);
             if (mode === 'selected') {
                 cache.selectionDirty = false;
             } else {
@@ -325,7 +325,7 @@ class SplatRenderSystem {
         return entry;
     }
 
-    calcPositions(splat: Splat) {
+    async calcPositions(splat: Splat) {
         const count = this.counts.get(splat) ?? 0;
         if (count === 0) {
             return new Float32Array(0);

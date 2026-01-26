@@ -181,14 +181,14 @@ const registerDocEvents = (scene: Scene, events: Events) => {
             resetScene();
 
             scene.renderSystem.freeze();
-            stagedModels.forEach(({ model, settings }) => {
-                scene.add(model);
+            for (const { model, settings } of stagedModels) {
+                await scene.add(model);
                 model.docDeserialize(settings ?? {});
-            });
-            stagedSplats.forEach(({ splat, settings }) => {
-                scene.add(splat);
+            }
+            for (const { splat, settings } of stagedSplats) {
+                await scene.add(splat);
                 splat.docDeserialize(settings ?? {});
-            });
+            }
             scene.renderSystem.unfreeze();
 
             // FIXME: trigger scene bound calc in a better way
