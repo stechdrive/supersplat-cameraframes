@@ -2,6 +2,7 @@ import { Container, Element, Label } from '@playcanvas/pcui';
 
 import { Events } from '../events';
 import { recentFiles } from '../recent-files';
+import { ShortcutManager } from '../shortcut-manager';
 import { localize } from './localization';
 import { MenuPanel, MenuItem } from './menu-panel';
 import arrowSvg from './svg/arrow.svg';
@@ -119,6 +120,9 @@ class Menu extends Container {
 
         menubar.append(buttonsContainer);
 
+        // Get the shortcut manager for displaying keyboard shortcuts
+        const shortcutManager: ShortcutManager = events.invoke('shortcutManager');
+
         const exportMenuPanel = new MenuPanel([{
             text: localize('menu.file.export.ply'),
             icon: createSvg(sceneExport),
@@ -208,19 +212,19 @@ class Menu extends Container {
         const selectionMenuPanel = new MenuPanel([{
             text: localize('menu.select.all'),
             icon: createSvg(selectAll),
-            extra: 'Ctrl + A',
+            extra: shortcutManager.formatShortcut('select.all'),
             isEnabled: hasActiveSplat,
             onSelect: () => events.fire('select.all')
         }, {
             text: localize('menu.select.none'),
             icon: createSvg(selectNone),
-            extra: 'Shift + A',
+            extra: shortcutManager.formatShortcut('select.none'),
             isEnabled: hasActiveSplat,
             onSelect: () => events.fire('select.none')
         }, {
             text: localize('menu.select.invert'),
             icon: createSvg(selectInverse),
-            extra: 'Ctrl + I',
+            extra: shortcutManager.formatShortcut('select.invert'),
             isEnabled: hasActiveSplat,
             onSelect: () => events.fire('select.invert')
         }, {
@@ -228,19 +232,19 @@ class Menu extends Container {
         }, {
             text: localize('menu.select.lock'),
             icon: createSvg(selectLock),
-            extra: 'H',
+            extra: shortcutManager.formatShortcut('select.hide'),
             isEnabled: hasSplatSelection,
             onSelect: () => events.fire('select.hide')
         }, {
             text: localize('menu.select.unlock'),
             icon: createSvg(selectUnlock),
-            extra: 'U',
+            extra: shortcutManager.formatShortcut('select.unhide'),
             isEnabled: hasActiveSplat,
             onSelect: () => events.fire('select.unhide')
         }, {
             text: localize('menu.select.delete'),
             icon: createSvg(selectDelete),
-            extra: 'Delete',
+            extra: shortcutManager.formatShortcut('select.delete'),
             isEnabled: hasSplatSelection,
             onSelect: () => events.fire('select.delete')
         }, {
