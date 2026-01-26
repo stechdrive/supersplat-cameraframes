@@ -57,7 +57,7 @@ class PointerController {
         const pan = (x: number, y: number, dx: number, dy: number) => {
             // For panning to work at any zoom level, we use screen point to world projection
             // to work out how far we need to pan the pivotEntity in world space
-            const c = camera.entity.camera;
+            const c = camera.camera;
             const framingFactor = camera.lockFraming ? 1 : (camera.fovFactor || 1);
             const distance = camera.distanceTween.value.distance * camera.sceneRadius / framingFactor;
             const targetSize = camera.targetSize ?? camera.scene.targetSize;
@@ -347,7 +347,7 @@ class PointerController {
                     if (camera.controlMode === 'fly' && !isFpvNav()) {
                         // In fly mode, pinch moves forward/backward by moving focal point
                         const zoomDelta = (ml - midlen) * 0.01;
-                        const worldTransform = camera.entity.getWorldTransform();
+                        const worldTransform = camera.mainCamera.getWorldTransform();
                         const zAxis = worldTransform.getZ();
                         moveVec.copy(zAxis).mulScalar(-zoomDelta * camera.flySpeed);
                         const p = camera.focalPoint.add(moveVec);
@@ -380,7 +380,7 @@ class PointerController {
             } else if (camera.controlMode === 'fly') {
                 // Fly mode: wheel moves forward/backward by moving focal point
                 const factor = camera.flySpeed * 0.01;
-                const worldTransform = camera.entity.getWorldTransform();
+                const worldTransform = camera.mainCamera.getWorldTransform();
                 const zAxis = worldTransform.getZ();
                 moveVec.copy(zAxis).mulScalar(deltaY * factor);
                 const p = camera.focalPoint.add(moveVec);
@@ -528,7 +528,7 @@ class PointerController {
                     // Calculate speed modifier based on current modifier key state
                     const speedMod = shiftDown ? 10 : (ctrlDown ? 0.1 : 1);
                     const factor = deltaTime * camera.flySpeed * speedMod;
-                    const worldTransform = camera.entity.getWorldTransform();
+                    const worldTransform = camera.worldTransform;
 
                     moveVec.set(0, 0, 0);
 
@@ -564,7 +564,7 @@ class PointerController {
 
             if (x || z) {
                 const factor = deltaTime * camera.flySpeed;
-                const worldTransform = camera.entity.getWorldTransform();
+                const worldTransform = camera.worldTransform;
                 const xAxis = worldTransform.getX().mulScalar(x * factor);
                 const zAxis = worldTransform.getZ().mulScalar(z * factor);
                 const p = camera.focalPoint.add(xAxis).add(zAxis);

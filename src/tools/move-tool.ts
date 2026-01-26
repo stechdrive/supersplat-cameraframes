@@ -7,7 +7,7 @@ import { Scene } from '../scene';
 
 class MoveTool extends TransformTool {
     constructor(events: Events, scene: Scene) {
-        const gizmo = new TranslateGizmo(createGizmoCamera(scene.camera.entity.camera), scene.gizmoLayer);
+        const gizmo = new TranslateGizmo(createGizmoCamera(scene.camera.camera), scene.gizmoLayer);
 
         super(gizmo, events, scene);
     }

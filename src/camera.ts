@@ -15,12 +15,16 @@ import {
     TONEMAP_LINEAR,
     TONEMAP_NEUTRAL,
     BoundingBox,
+    Color,
     Entity,
+    Layer,
     Mat4,
     Picker as ModelPicker,
     Plane,
     Quat,
     Ray,
+    RenderPass,
+    RenderPassForward,
     RenderTarget,
     Texture,
     Vec3,
@@ -36,8 +40,10 @@ import { Element, ElementType } from './element';
 import { Picker } from './picker';
 import { Model } from './model';
 import { Serializer } from './serializer';
+import { vertexShader, fragmentShader } from './shaders/blit-shader';
 import { Splat } from './splat';
 import { TweenValue } from './tween-value';
+import { ShaderQuad, SimpleRenderPass } from './utils/simple-render-pass';
 
 // work globals
 const cameraPosition = new Vec3();
@@ -120,7 +126,6 @@ class Camera extends Element {
     }
 
     controller: PointerController;
-    entity: Entity;
     focalPointTween = new TweenValue({ x: 0, y: 0.5, z: 0 });
     azimElevTween = new TweenValue({ azim: 30, elev: -15 });
     distanceTween = new TweenValue({ distance: 1 });
@@ -138,12 +143,22 @@ class Camera extends Element {
     picker: Picker;
     modelPicker: ModelPicker;
 
-    renderTarget: RenderTarget;
+    mainCamera: Entity;
+
+    mainTarget: RenderTarget;
+    splatTarget: RenderTarget;
+    colorTarget: RenderTarget;
     workTarget: RenderTarget;
+
+    // Render passes
+    clearPass: RenderPass;
+    mainPass: RenderPassForward;
+    splatPass: RenderPassForward;
+    gizmoPass: RenderPassForward;
+    finalPass: SimpleRenderPass;
 
     // overridden target size
     targetSize: { width: number, height: number } = null;
-
     suppressFinalBlit = false;
 
     renderOverlays = true;
@@ -190,19 +205,16 @@ class Camera extends Element {
 
     constructor() {
         super(ElementType.camera);
-        // create the camera entity
-        this.entity = new Entity('Camera');
-        this.entity.addComponent('camera');
 
-        // NOTE: this call is needed for refraction effect to work correctly, but
-        // it slows rendering and should only be made when required.
-        // this.entity.camera.requestSceneColorMap(true);
+        // create the camera entity
+        this.mainCamera = new Entity('Camera');
+        this.mainCamera.addComponent('camera');
     }
 
     // ortho
     set ortho(value: boolean) {
         if (value !== this.ortho) {
-            this.entity.camera.projection = value ? PROJECTION_ORTHOGRAPHIC : PROJECTION_PERSPECTIVE;
+            this.camera.projection = value ? PROJECTION_ORTHOGRAPHIC : PROJECTION_PERSPECTIVE;
             this.scene.events.fire('camera.ortho', value);
             this.scene.forceRender = true;
             this.emitTransform(true);
@@ -210,16 +222,16 @@ class Camera extends Element {
     }
 
     get ortho() {
-        return this.entity.camera.projection === PROJECTION_ORTHOGRAPHIC;
+        return this.camera.projection === PROJECTION_ORTHOGRAPHIC;
     }
 
     // fov
     set fov(value: number) {
-        this.entity.camera.fov = value;
+        this.camera.fov = value;
     }
 
     get fov() {
-        return this.entity.camera.fov;
+        return this.camera.fov;
     }
 
     // tonemapping
@@ -236,14 +248,14 @@ class Camera extends Element {
 
         const tvalue = mapping[value];
 
-        if (tvalue !== undefined && tvalue !== this.entity.camera.toneMapping) {
-            this.entity.camera.toneMapping = tvalue;
+        if (tvalue !== undefined && tvalue !== this.camera.toneMapping) {
+            this.camera.toneMapping = tvalue;
             this.scene.events.fire('camera.tonemapping', value);
         }
     }
 
     get tonemapping() {
-        switch (this.entity.camera.toneMapping) {
+        switch (this.camera.toneMapping) {
             case TONEMAP_NONE: return 'none';
             case TONEMAP_LINEAR: return 'linear';
             case TONEMAP_NEUTRAL: return 'neutral';
@@ -257,20 +269,20 @@ class Camera extends Element {
 
     // near clip
     set near(value: number) {
-        this.entity.camera.nearClip = value;
+        this.camera.nearClip = value;
     }
 
     get near() {
-        return this.entity.camera.nearClip;
+        return this.camera.nearClip;
     }
 
     // far clip
     set far(value: number) {
-        this.entity.camera.farClip = value;
+        this.camera.farClip = value;
     }
 
     get far() {
-        return this.entity.camera.farClip;
+        return this.camera.farClip;
     }
 
     setCustomFrustum(frustum: CameraCustomFrustum | null) {
@@ -417,7 +429,7 @@ class Camera extends Element {
 
     // transform the world space coordinate to normalized screen coordinate
     worldToScreen(world: Vec3, screen: Vec3) {
-        const camera = this.entity.camera;
+        const camera = this.camera;
         if (!buildCameraMatrices(camera, cameraMatricesScratch)) {
             cameraMatricesScratch.viewProjection.mul2(camera.projectionMatrix, camera.viewMatrix);
         }
@@ -431,20 +443,55 @@ class Camera extends Element {
     }
 
     add() {
-        this.scene.cameraRoot.addChild(this.entity);
-        this.entity.camera.layers = this.entity.camera.layers.concat([
-            this.scene.shadowLayer.id,
-            this.scene.debugLayer.id,
-            this.scene.exportOverlayLayer.id,
-            this.scene.gizmoLayer.id
-        ]);
+        const scene = this.scene;
+        const { camera } = this;
 
-        if (this.scene.config.camera.debugRender) {
-            this.entity.camera.setShaderPass(`debug_${this.scene.config.camera.debugRender}`);
+        scene.cameraRoot.addChild(this.entity);
+
+        // configure camera to render all layers
+        const layerIds: number[] = [];
+        const pushLayer = (layer?: Layer | null) => {
+            if (layer && !layerIds.includes(layer.id)) {
+                layerIds.push(layer.id);
+            }
+        };
+        pushLayer(scene.backgroundLayer);
+        pushLayer(scene.shadowLayer);
+        pushLayer(scene.modelLightingLayer);
+        pushLayer(scene.debugLayer);
+        pushLayer(scene.exportOverlayLayer);
+        pushLayer(scene.referenceBackLayer);
+        pushLayer(scene.worldLayer);
+        pushLayer(scene.splatLayer);
+        pushLayer(scene.referenceFrontLayer);
+        pushLayer(scene.overlayLayer);
+        pushLayer(scene.gizmoLayer);
+        this.entity.camera.layers = layerIds;
+
+        if (scene.config.camera.debugRender) {
+            this.entity.camera.setShaderPass(`debug_${scene.config.camera.debugRender}`);
         }
 
-        const target = document.getElementById('canvas-container');
+        // create render passes
+        const device = scene.graphicsDevice;
+        const { app } = scene;
+        const renderer = app.renderer;
+        const composition = app.scene.layers;
 
+        this.clearPass = new RenderPass(device);
+        this.mainPass = new RenderPassForward(device, composition, app.scene, renderer);
+        this.splatPass = new RenderPassForward(device, composition, app.scene, renderer);
+        this.gizmoPass = new RenderPassForward(device, composition, app.scene, renderer);
+        this.finalPass = new SimpleRenderPass(device,
+            new ShaderQuad(device, vertexShader, fragmentShader, 'final-blit'), {
+                vars: () => {
+                    return {
+                        srcTexture: this.mainTarget?.colorBuffer
+                    };
+                }
+            });
+
+        const target = document.getElementById('canvas-container');
         this.controller = new PointerController(this, target);
 
         // lock framing control (CAMERA FRAMES)
@@ -462,17 +509,17 @@ class Camera extends Element {
         });
 
         // apply scene config
-        const config = this.scene.config;
+        const config = scene.config;
         const controls = config.controls;
 
         // configure background
-        this.entity.camera.clearColor.set(0, 0, 0, 0);
+        camera.clearColor.set(0, 0, 0, 0);
 
         this.minElev = (controls.minPolarAngle * 180) / Math.PI - 90;
         this.maxElev = (controls.maxPolarAngle * 180) / Math.PI - 90;
 
         // tonemapping
-        this.scene.camera.entity.camera.toneMapping = {
+        camera.toneMapping = {
             linear: TONEMAP_LINEAR,
             filmic: TONEMAP_FILMIC,
             hejl: TONEMAP_HEJL,
@@ -482,7 +529,7 @@ class Camera extends Element {
         }[config.camera.toneMapping];
 
         // exposure
-        this.scene.app.scene.exposure = config.camera.exposure;
+        scene.app.scene.exposure = config.camera.exposure;
 
         this.fov = config.camera.fov;
         this.navMode = controls.navMode as ('orbit' | 'fpv') ?? 'orbit';
@@ -496,15 +543,15 @@ class Camera extends Element {
         this.setDistance(controls.initialZoom, 0);
 
         // picker
-        const { width, height } = this.scene.targetSize;
-        this.picker = new Picker(this.scene);
-        this.modelPicker = new ModelPicker(this.scene.app, Math.max(1, width), Math.max(1, height));
+        const { width, height } = scene.targetSize;
+        this.picker = new Picker(scene);
+        this.modelPicker = new ModelPicker(scene.app, Math.max(1, width), Math.max(1, height));
 
-        this.scene.events.on('scene.boundChanged', this.onBoundChanged, this);
+        scene.events.on('scene.boundChanged', this.onBoundChanged, this);
 
         // prepare camera-specific uniforms
         this.updateCameraUniforms = () => {
-            const device = this.scene.graphicsDevice;
+            const device = scene.graphicsDevice;
             const entity = this.entity;
             const camera = entity.camera;
             const { scope } = device;
@@ -637,26 +684,35 @@ class Camera extends Element {
     }
 
     remove() {
+        const { scene } = this;
+
         // unregister lock controls
         if (this.lockFramingHandler) {
-            this.scene.events.off('camera.setLockFraming', this.lockFramingHandler);
+            scene.events.off('camera.setLockFraming', this.lockFramingHandler);
         }
         if (this.lockFovAxisHandler) {
-            this.scene.events.off('camera.setLockFovAxis', this.lockFovAxisHandler);
+            scene.events.off('camera.setLockFovAxis', this.lockFovAxisHandler);
         }
 
         this.controller.destroy();
         this.controller = null;
 
-        this.entity.camera.layers = this.entity.camera.layers.filter(layer => layer !== this.scene.shadowLayer.id);
-        this.scene.cameraRoot.removeChild(this.entity);
+        // cleanup render passes
+        this.clearPass?.destroy();
+        this.mainPass?.destroy();
+        this.splatPass?.destroy();
+        this.gizmoPass?.destroy();
+        this.finalPass?.destroy();
+        this.camera.renderPasses = null;
+
+        scene.cameraRoot.removeChild(this.entity);
 
         this.picker?.destroy();
         this.picker = null;
         this.modelPicker?.destroy?.();
         this.modelPicker = null;
 
-        this.scene.events.off('scene.boundChanged', this.onBoundChanged, this);
+        scene.events.off('scene.boundChanged', this.onBoundChanged, this);
     }
 
     // handle the scene's bound changing. the camera must be configured to render
@@ -671,29 +727,35 @@ class Camera extends Element {
     }
 
     serialize(serializer: Serializer) {
-        serializer.packa(this.entity.getWorldTransform().data);
+        serializer.packa(this.worldTransform.data);
         serializer.pack(
             this.fov,
             this.tonemapping,
-            this.renderTarget?.width,
-            this.renderTarget?.height,
+            this.mainTarget?.width ?? this.scene.targetSize.width,
+            this.mainTarget?.height ?? this.scene.targetSize.height,
             this.rollTween.target.roll ?? 0
         );
     }
 
     // handle the viewer canvas resizing
     rebuildRenderTargets() {
-        const { width, height } = this.targetSize;
-        const { renderTarget } = this;
+        const { scene } = this;
+        const size = this.targetSize ?? scene.targetSize;
+        const width = size?.width ?? 0;
+        const height = size?.height ?? 0;
+        if (!(width > 0 && height > 0)) {
+            return;
+        }
+        const { mainTarget } = this;
 
         // early out if size is unchanged
-        if (renderTarget && renderTarget.width === width && renderTarget.height === height) {
+        if (mainTarget && mainTarget.width === width && mainTarget.height === height) {
             return;
         }
 
-        if (!renderTarget) {
+        if (!mainTarget) {
             // first time - construct render targets
-            const { graphicsDevice } = this.scene;
+            const { graphicsDevice } = scene;
 
             const createTexture = (name: string, width: number, height: number, format: number) => {
                 return new Texture(graphicsDevice, {
@@ -709,30 +771,97 @@ class Camera extends Element {
                 });
             };
 
+            const colorBuffer = createTexture('cameraColor', width, height, PIXELFORMAT_RGBA16F);
+            const workBuffer = createTexture('workColor', width, height, PIXELFORMAT_RGBA8);
+            const depthBuffer = createTexture('cameraDepth', width, height, PIXELFORMAT_DEPTH);
+
             // create main render target
-            this.renderTarget = new RenderTarget({
-                colorBuffer: createTexture('cameraColor', width, height, PIXELFORMAT_RGBA16F),
-                depthBuffer: createTexture('cameraDepth', width, height, PIXELFORMAT_DEPTH),
+            this.mainTarget = new RenderTarget({
+                colorBuffer,
+                depthBuffer,
+                flipY: false,
+                autoResolve: false
+            });
+            this.entity.camera.renderTarget = this.mainTarget;
+
+            // create MRT render target for splat pass
+            this.splatTarget = new RenderTarget({
+                colorBuffers: [
+                    colorBuffer,        // RT0: main color (shared)
+                    workBuffer          // RT1: overlay output (shared with workTarget)
+                ],
+                depthBuffer,
                 flipY: false,
                 autoResolve: false
             });
 
-            // create work buffer
+            this.colorTarget = new RenderTarget({
+                colorBuffer,
+                depth: false,
+                autoResolve: false
+            });
+
+            // create work buffer (used for picking, overlay output, and other operations)
             this.workTarget = new RenderTarget({
-                colorBuffer: createTexture('workColor', width, height, PIXELFORMAT_RGBA8),
+                colorBuffer: workBuffer,
                 depth: false,
                 autoResolve: false
             });
 
             // set picker render targets
-            this.entity.camera.renderTarget = this.renderTarget;
-            this.picker.setRenderTargets(this.renderTarget, this.workTarget);
+            this.picker.setRenderTargets(this.colorTarget, this.workTarget);
+
+            // clear all targets
+            this.clearPass.init(this.splatTarget);
+            this.clearPass.setClearColor(new Color(0, 0, 0, 0));
+            this.clearPass.setClearDepth(1);
+            this.clearPass.setClearStencil(0);
+
+            // configure main pass - world layer with clears
+            this.mainPass.init(this.mainTarget);
+            const addLayer = (pass: RenderPassForward, layer?: Layer | null) => {
+                if (!layer) {
+                    return;
+                }
+                pass.addLayer(this.camera, layer, false, false);
+                pass.addLayer(this.camera, layer, true, false);
+            };
+            [
+                scene.backgroundLayer,
+                scene.shadowLayer,
+                scene.modelLightingLayer,
+                scene.debugLayer,
+                scene.exportOverlayLayer,
+                scene.referenceBackLayer,
+                scene.worldLayer
+            ].forEach((layer) => addLayer(this.mainPass, layer));
+
+            // configure splat pass - MRT target, no clears
+            this.splatPass.init(this.splatTarget);
+            addLayer(this.splatPass, scene.splatLayer);
+
+            // configure gizmo pass - clears depth/stencil only
+            this.gizmoPass.init(this.colorTarget);
+            [
+                scene.referenceFrontLayer,
+                scene.overlayLayer,
+                scene.gizmoLayer
+            ].forEach((layer) => addLayer(this.gizmoPass, layer));
+            this.gizmoPass.setClearDepth(1);
+            this.gizmoPass.setClearStencil(0);
+
+            this.finalPass.init(null);
+
+            // assign render passes to camera
+            this.camera.renderPasses = [this.clearPass, this.mainPass, this.splatPass, this.gizmoPass, this.finalPass];
         } else {
             // resize existing render targets
-            const { workTarget } = this;
+            const { splatTarget, colorTarget, workTarget } = this;
 
-            renderTarget.resize(width, height);
+            mainTarget.resize(width, height);
             workTarget.resize(width, height);
+            colorTarget.resize(width, height);
+            splatTarget.resize(width, height);
         }
 
         if (this.modelPicker) {
@@ -740,15 +869,15 @@ class Camera extends Element {
         }
 
         if (!this.lockFraming) {
-            this.entity.camera.horizontalFov = width > height;
+            this.camera.horizontalFov = width > height;
         } else if (this.lockFovAxis !== undefined) {
-            this.entity.camera.horizontalFov = this.lockFovAxis === 'horizontal';
+            this.camera.horizontalFov = this.lockFovAxis === 'horizontal';
         } else {
             // CAMERA FRAMES有効時はデフォルトHorizontal
-            this.entity.camera.horizontalFov = true;
+            this.camera.horizontalFov = true;
         }
 
-        this.scene.events.fire('camera.resize', { width, height });
+        scene.events.fire('camera.resize', { width, height });
     }
 
     private getCameraPositionWorldFromState(out: Vec3, mode: 'orbit' | 'fpv' = this.navMode): Vec3 {
@@ -1326,36 +1455,7 @@ class Camera extends Element {
     }
 
     onPostRender() {
-        const device = this.scene.graphicsDevice as WebglGraphicsDevice;
-        const renderTarget = this.entity.camera.renderTarget;
-
-        // resolve msaa buffer
-        if (renderTarget.samples > 1) {
-            renderTarget.resolve(true, false);
-        }
-
-        // copy render target with aspect viewport offsets if needed
-        if (!this.suppressFinalBlit) {
-            const aspect = this.scene.aspectViewport;
-            const devW = device.width;
-            const devH = device.height;
-
-            const useAspect = aspect.enabled && aspect.width > 0 && aspect.height > 0;
-
-            if (useAspect) {
-                device.setViewport(aspect.offsetX, aspect.offsetY, aspect.width, aspect.height);
-                device.setScissor(aspect.offsetX, aspect.offsetY, aspect.width, aspect.height);
-            } else {
-                device.setViewport(0, 0, devW, devH);
-                device.setScissor(0, 0, devW, devH);
-            }
-
-            device.copyRenderTarget(renderTarget, null, true, false);
-
-            // restore to full backbuffer in case anything else renders afterwards
-            device.setViewport(0, 0, devW, devH);
-            device.setScissor(0, 0, devW, devH);
-        }
+        // no-op (final pass handles blit)
     }
 
     focus(options?: { focalPoint: Vec3, radius: number, speed: number }) {
@@ -1385,7 +1485,7 @@ class Camera extends Element {
         const targetSize = this.targetSize ?? this.scene.targetSize;
         const width = this.scene.aspectViewport.enabled ? this.scene.aspectViewport.width : targetSize.width;
         const height = this.scene.aspectViewport.enabled ? this.scene.aspectViewport.height : targetSize.height;
-        const aspect = (width && height) ? this.entity.camera.horizontalFov ? height / width : width / height : 1;
+        const aspect = (width && height) ? this.camera.horizontalFov ? height / width : width / height : 1;
         const fov = 2 * Math.atan(Math.tan(this.fov * math.DEG_TO_RAD * 0.5) * aspect);
         return Math.sin(fov * 0.5);
     }
@@ -1675,7 +1775,7 @@ class Camera extends Element {
                 continue;
             }
 
-            this.picker.prepareDepth(splat, this.entity);
+            this.picker.prepareDepth(splat);
             const normalizedDepth = await this.picker.readDepth(nx, ny);
 
             if (normalizedDepth !== null && normalizedDepth < closestDepth) {
@@ -1934,13 +2034,39 @@ class Camera extends Element {
     startOffscreenMode(width: number, height: number) {
         this.targetSize = { width, height };
         this.suppressFinalBlit = true;
+        if (this.finalPass) {
+            this.finalPass.enabled = false;
+        }
         this.updateLockFramingAspect();
     }
 
     endOffscreenMode() {
         this.targetSize = null;
         this.suppressFinalBlit = false;
+        if (this.finalPass) {
+            this.finalPass.enabled = true;
+        }
         this.updateLockFramingAspect();
+    }
+
+    get entity() {
+        return this.mainCamera;
+    }
+
+    get camera() {
+        return this.mainCamera.camera;
+    }
+
+    get worldTransform() {
+        return this.mainCamera.getWorldTransform();
+    }
+
+    get position() {
+        return this.mainCamera.getPosition();
+    }
+
+    get forward() {
+        return this.mainCamera.forward;
     }
 }
 

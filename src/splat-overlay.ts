@@ -145,21 +145,17 @@ class SplatOverlay extends Element {
         }
 
         const device = this.scene.graphicsDevice as WebglGraphicsDevice;
-        const devW = device.width;
-        const devH = device.height;
-        const aspect = this.scene.aspectViewport;
-        const useAspect = aspect.enabled && aspect.width > 0 && aspect.height > 0;
 
         // カメラの最終 blit と同じ矩形に合わせてバックバッファへ描画し、レターボックス時のズレを防ぐ
         // 修正: 統合レンダラーおよび CAMERA FRAMES v6 は全画面ビューポート + 非対称フラスタムで位置合わせを行うため
         // ここで aspectViewport に合わせてビューポートを絞ると座標がずれてゴースト化する。常に全画面を使用する。
         // 修正: Outlineクラスと同様に、updateBegin/End を使用してGPUステートを確実にリセットする。
         // これにより、Outline非表示時でも正しいビューポートとシザーが適用されるようになる。
-        device.setRenderTarget(this.scene.camera.entity.camera.renderTarget);
+        device.setRenderTarget(this.scene.camera.camera.renderTarget);
         device.updateBegin();
 
         // 修正: Outline非表示時に描画ステート（深度など）が不定になりズレや消失の原因となるため、
-        // Outlineクラスと同様に明示的にステートを設定して環境を統一する。
+        // Outlineクラスと同様に明示的にメインカメラと同じステートを設定して環境を統一する。
         device.setDepthState(DepthState.NODEPTH);
         device.setCullMode(CULLFACE_NONE);
         device.setBlendState(BlendState.ALPHABLEND);
@@ -175,7 +171,7 @@ class SplatOverlay extends Element {
 
         // 修正: シェーダ側の自動ユニフォーム依存を廃止し、明示的にメインカメラの行列を渡す。
         // これにより、postrender 時に他のカメラ（ピッカー等）の行列が残っている可能性やタイミングのズレを排除する。
-        const cameraComponent = this.scene.camera.entity.camera;
+        const cameraComponent = this.scene.camera.camera;
         if (!buildCameraMatrices(cameraComponent, this.cameraMatrices)) {
             this.cameraMatrices.view.copy(cameraComponent.viewMatrix);
             this.cameraMatrices.projection.copy(cameraComponent.projectionMatrix);

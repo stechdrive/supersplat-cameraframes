@@ -71,7 +71,7 @@ class InfiniteGrid extends Element {
         };
         let plane;
 
-        this.scene.camera.entity.camera.on('preRenderLayer', (layer: Layer, transparent: boolean) => {
+        this.scene.camera.camera.on('preRenderLayer', (layer: Layer, transparent: boolean) => {
             const { scene } = this;
             const overlaysEnabled = scene.camera.renderOverlays || scene.renderFlags.forceGridOverlay;
             const targetLayer = scene.renderFlags.gridLayerOverride ?? scene.debugLayer;
@@ -86,19 +86,19 @@ class InfiniteGrid extends Element {
                 // select the correctly plane in orthographic mode
                 if (camera.ortho) {
                     const cmp = (a:Vec3, b: Vec3) => 1.0 - Math.abs(a.dot(b)) < 1e-03;
-                    const z = camera.entity.getWorldTransform().getZ();
+                    const z = camera.worldTransform.getZ();
                     plane = cmp(z, Vec3.RIGHT) ? 0 : (cmp(z, Vec3.BACK) ? 2 : 1);
                 } else {
                     // default is xz plane
                     plane = 1;
                 }
 
-                const p = camera.entity.getPosition();
+                const p = camera.position;
                 view_position[0] = p.x;
                 view_position[1] = p.y;
                 view_position[2] = p.z;
 
-                const cameraComponent = camera.entity.camera;
+                const cameraComponent = camera.camera;
                 if (!buildCameraMatrices(cameraComponent, cameraMatrices)) {
                     viewProjectionMatrix.mul2(cameraComponent.projectionMatrix, cameraComponent.viewMatrix);
                 }
