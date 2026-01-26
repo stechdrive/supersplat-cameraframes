@@ -706,7 +706,7 @@ class SplatRenderSystem {
         const lockedClr = events.invoke('lockedClr');
         const cameraMode = events.invoke('camera.mode');
         const cameraOverlay = events.invoke('camera.overlay');
-        const renderOverlays = this.scene.camera.renderOverlays;
+        const outlineMode = !!events.invoke('view.outlineSelection');
 
         material.setParameter('selectedClr', [selectedClr.r, selectedClr.g, selectedClr.b, selectedClr.a]);
         material.setParameter('unselectedClr', [unselectedClr.r, unselectedClr.g, unselectedClr.b, unselectedClr.a]);
@@ -714,6 +714,9 @@ class SplatRenderSystem {
 
         material.setParameter('mode', cameraMode === 'rings' ? 1 : 0);
         material.setParameter('ringSize', (selected && cameraOverlay && cameraMode === 'rings') ? 0.04 : 0);
+        material.setParameter('outlineMode', outlineMode ? 1 : 0);
+        material.setParameter('clrOffset', [0, 0, 0]);
+        material.setParameter('clrScale', [1, 1, 1, 1]);
     }
 
     rebuild() {
@@ -880,9 +883,14 @@ class SplatRenderSystem {
         this.scene.app.assets.add(this.mergedAsset);
 
         this.mergedEntity.addComponent('gsplat', { asset: this.mergedAsset });
-        const worldLayer = this.scene.app.scene.layers.getLayerByName('World');
-        if (worldLayer) {
-            this.mergedEntity.gsplat.layers = [worldLayer.id];
+        const splatLayer = this.scene.splatLayer ?? this.scene.app.scene.layers.getLayerByName('Splat');
+        if (splatLayer) {
+            this.mergedEntity.gsplat.layers = [splatLayer.id];
+        } else {
+            const worldLayer = this.scene.app.scene.layers.getLayerByName('World');
+            if (worldLayer) {
+                this.mergedEntity.gsplat.layers = [worldLayer.id];
+            }
         }
 
         // テクスチャ再構築

@@ -96,7 +96,7 @@ class MeasureTool {
         selectToolbar.append(lengthInput);
         canvasContainer.append(selectToolbar);
 
-        const gizmo = new TranslateGizmo(createGizmoCamera(scene.camera.entity.camera), scene.gizmoLayer);
+        const gizmo = new TranslateGizmo(createGizmoCamera(scene.camera.camera), scene.gizmoLayer);
         const entity = new Entity('measureGizmoPivot');
         const transformHandler = new MeasureTransformHandler();
 
@@ -472,7 +472,7 @@ class MeasureTool {
             }
         };
 
-        const pointerup = (e: PointerEvent) => {
+        const pointerup = async (e: PointerEvent) => {
             if (e.pointerId !== activePointerId) {
                 return;
             }
@@ -514,15 +514,21 @@ class MeasureTool {
             }
 
             if (splat.measurePoints.length < 2) {
-                const result = scene.camera.intersect(pointer.cssX, pointer.cssY);
-                if (result) {
-                    mat.invert(splat.worldTransform);
-                    mat.transformPoint(result.position, p);
-                    splat.measureSelection = splat.measurePoints.length;
-                    splat.measurePoints.push(p.clone());
-                    updateVisuals();
-                    e.preventDefault();
-                    e.stopPropagation();
+                const w = scene.canvas.clientWidth;
+                const h = scene.canvas.clientHeight;
+                if (w > 0 && h > 0) {
+                    const nx = Math.max(0, Math.min(1, pointer.cssX / w));
+                    const ny = Math.max(0, Math.min(1, pointer.cssY / h));
+                    const result = await scene.camera.intersect(nx, ny);
+                    if (result) {
+                        mat.invert(splat.worldTransform);
+                        mat.transformPoint(result.position, p);
+                        splat.measureSelection = splat.measurePoints.length;
+                        splat.measurePoints.push(p.clone());
+                        updateVisuals();
+                        e.preventDefault();
+                        e.stopPropagation();
+                    }
                 }
             }
         };

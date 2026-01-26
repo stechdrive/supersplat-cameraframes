@@ -251,6 +251,7 @@ export class CameraFramesController {
         }
 
         this.applyCameraFramesVersionLabel();
+        this.events.on('app.ready', () => this.applyCameraFramesVersionLabel());
 
         // initial viewport update (forces fit & center)
         this.updateViewportFromContainer();
@@ -2308,7 +2309,7 @@ export class CameraFramesController {
                 // 無効化中は追従ロジックを停止するが状態は保持
                 this.requestRender();
                 this.emitViewportLensChanged();
-                this.applyViewportNearOverride();
+                this.applyViewportNearOverride().catch(() => {});
             }
             this.events.fire('cameraFrames.enabled', this.state.enabled);
             const nextUiTarget = this.getUiTarget();
@@ -2405,12 +2406,12 @@ export class CameraFramesController {
             setViewportNearDebounceId: (value) => {
                 this.viewportNearDebounceId = value;
             },
-            applyViewportNearOverride: () => this.applyViewportNearOverride()
+            applyViewportNearOverride: () => this.applyViewportNearOverride().catch(() => {})
         });
     }
 
-    private applyViewportNearOverride() {
-        applyViewportNearOverrideCamera({
+    private applyViewportNearOverride(): Promise<void> {
+        return applyViewportNearOverrideCamera({
             shouldApplyViewportNearOverride: () => this.shouldApplyViewportNearOverride(),
             viewportNearLastSampleTs: this.viewportNearLastSampleTs,
             setViewportNearLastSampleTs: (value) => {
@@ -2430,7 +2431,7 @@ export class CameraFramesController {
         });
     }
 
-    private computeViewportNearCandidate(): number | null {
+    private computeViewportNearCandidate(): Promise<number | null> {
         return computeViewportNearCandidateCamera({ scene: this.scene });
     }
 
@@ -3086,17 +3087,16 @@ export class CameraFramesController {
         if (!appLabel) {
             return;
         }
-        const EXISTING_CLASS = 'camera-frames-version';
-        const existing = appLabel.querySelector(`.${EXISTING_CLASS}`);
-        const text = ` | CAMERA FRAMES ${cameraFramesVersion}`;
-        if (existing) {
-            existing.textContent = text;
-            return;
+        const baseAttr = 'data-app-label-base';
+        let baseText = appLabel.getAttribute(baseAttr);
+        if (!baseText) {
+            baseText = appLabel.textContent ?? '';
+            appLabel.setAttribute(baseAttr, baseText);
         }
-        const span = document.createElement('span');
-        span.className = EXISTING_CLASS;
-        span.textContent = text;
-        appLabel.appendChild(span);
+        const nextText = `${baseText} | CAMERA FRAMES ${cameraFramesVersion}`;
+        if (appLabel.textContent !== nextText) {
+            appLabel.textContent = nextText;
+        }
     }
 
     attachPointerHandlers() {

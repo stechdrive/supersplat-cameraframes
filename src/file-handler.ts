@@ -603,10 +603,15 @@ const initFileHandler = (scene: Scene, events: Events, dropTarget: HTMLElement) 
     });
 
     events.function('scene.write', async (fileType: FileType, options: SceneExportOptions, stream?: FileSystemWritableFileStream) => {
-        events.fire('startSpinner');
+        // SOG has its own progress UI, other formats use spinner
+        const useSpinner = fileType !== 'sog';
+
+        if (useSpinner) {
+            events.fire('startSpinner');
+        }
 
         try {
-            // setTimeout so spinner has a chance to activate
+            // setTimeout so spinner/progress has a chance to activate
             await new Promise<void>((resolve) => {
                 setTimeout(resolve);
             });
@@ -635,7 +640,8 @@ const initFileHandler = (scene: Scene, events: Events, dropTarget: HTMLElement) 
                             ...serializeSettings,
                             minOpacity: 1 / 255,
                             removeInvalid: true,
-                            iterations: options.sogIterations ?? 10
+                            iterations: options.sogIterations ?? 10,
+                            events
                         };
                         await serializeSog(splats, sogSettings, writer);
                         break;
@@ -656,7 +662,9 @@ const initFileHandler = (scene: Scene, events: Events, dropTarget: HTMLElement) 
                 message: `${error.message ?? error} while saving file`
             });
         } finally {
-            events.fire('stopSpinner');
+            if (useSpinner) {
+                events.fire('stopSpinner');
+            }
         }
     });
 };

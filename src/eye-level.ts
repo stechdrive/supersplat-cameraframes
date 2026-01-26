@@ -6,6 +6,7 @@ import {
     PROJECTION_ORTHOGRAPHIC,
     SEMANTIC_POSITION,
     BlendState,
+    CameraComponent,
     DepthState,
     Layer,
     Mat4,
@@ -29,6 +30,7 @@ const resolve = (scope: ScopeSpace, values: Record<string, any>) => {
 class EyeLevel extends Element {
     shader: Shader;
     quadRender: QuadRender;
+    private preRenderLayerHandler: ((camera: CameraComponent, layer: Layer, transparent: boolean) => void) | null = null;
 
     visible = true;
 
@@ -66,8 +68,11 @@ class EyeLevel extends Element {
             viewProjection: viewProjectionMatrix
         };
 
-        this.scene.camera.entity.camera.on('preRenderLayer', (layer: Layer, transparent: boolean) => {
+        this.preRenderLayerHandler = (cameraComponent: CameraComponent, layer: Layer, transparent: boolean) => {
             const { scene } = this;
+            if (cameraComponent !== scene.camera.camera) {
+                return;
+            }
             const targetLayer = scene.renderFlags.eyeLevelLayerOverride ?? scene.gizmoLayer;
             const overlaysEnabled = scene.camera.renderOverlays || scene.renderFlags.forceEyeLevelOverlay;
             // 見やすさを優先し、デフォルトではワールド描画の後段で必ず前面に載せる
@@ -75,13 +80,12 @@ class EyeLevel extends Element {
                 return;
             }
 
-            const camera = scene.camera.entity.camera;
-            if (camera.projection === PROJECTION_ORTHOGRAPHIC) {
+            if (cameraComponent.projection === PROJECTION_ORTHOGRAPHIC) {
                 // Eye-level overlay fills the screen in orthographic projection.
                 return;
             }
-            if (!buildCameraMatrices(camera, cameraMatrices)) {
-                viewProjectionMatrix.mul2(camera.projectionMatrix, camera.viewMatrix);
+            if (!buildCameraMatrices(cameraComponent, cameraMatrices)) {
+                viewProjectionMatrix.mul2(cameraComponent.projectionMatrix, cameraComponent.viewMatrix);
             }
 
             device.setBlendState(blendState);
@@ -104,12 +108,18 @@ class EyeLevel extends Element {
             });
 
             this.quadRender.render();
-        });
+        };
+
+        this.scene.app.scene.on('prerender:layer', this.preRenderLayerHandler);
     }
 
     remove() {
         this.shader?.destroy();
         this.quadRender?.destroy();
+        if (this.preRenderLayerHandler) {
+            this.scene.app.scene.off('prerender:layer', this.preRenderLayerHandler);
+            this.preRenderLayerHandler = null;
+        }
     }
 
     serialize(serializer: Serializer): void {

@@ -7,10 +7,11 @@ import { WebgpuGraphicsDevice } from 'playcanvas';
 
 import { Column, DataTable } from './data-table';
 import { getGpuDevice } from './gpu-device';
-import { cluster1d, kmeans } from './k-means';
+import { cluster1d, kmeans, ProgressCallback } from './k-means';
 import { generateMortonIndices } from './morton-order';
 import { encodeWebP } from './webp-encoder';
 import { version } from '../../package.json';
+import { Events } from '../events';
 import { Writer } from '../serialize/writer';
 import { ZipWriter } from '../serialize/zip-writer';
 import { Splat } from '../splat';
@@ -25,6 +26,14 @@ const sigmoid = (v: number) => 1 / (1 + Math.exp(-v));
 const logTransform = (value: number) => {
     return Math.sign(value) * Math.log(Math.abs(value) + 1);
 };
+
+// Yield to the next animation frame to ensure UI renders before heavy operations
+// Uses double-RAF pattern to guarantee a paint occurs before resuming
+const yieldToRender = () => new Promise<void>((resolve) => {
+    requestAnimationFrame(() => {
+        requestAnimationFrame(() => resolve());
+    });
+});
 
 /**
  * Calculate min/max values for columns.
@@ -50,17 +59,19 @@ const calcMinMax = (dataTable: DataTable, columnNames: string[], indices: Uint32
 type SogSerializeOptions = {
     iterations: number;
     maxSHBands?: number;
+    events?: Events;
 };
 
 /**
  * Extract splat data into a DataTable format.
  */
-const extractSplatData = (
+const extractSplatData = async (
     splats: Splat[],
     getSingleSplat: (splat: Splat, index: number) => Record<string, number>,
     filter: (splat: Splat, index: number) => boolean,
-    memberNames: string[]
-): { dataTable: DataTable; count: number } => {
+    memberNames: string[],
+    onProgress?: ProgressCallback
+): Promise<{ dataTable: DataTable; count: number }> => {
     // Count total gaussians
     let totalCount = 0;
     for (const splat of splats) {
@@ -79,8 +90,9 @@ const extractSplatData = (
     const columns = memberNames.map(name => new Column(name, new Float32Array(totalCount)));
     const dataTable = new DataTable(columns);
 
-    // Extract data
+    // Extract data with progress updates
     let idx = 0;
+    let lastProgress = -1;
     for (const splat of splats) {
         for (let i = 0; i < splat.splatData.numSplats; ++i) {
             if (!filter(splat, i)) continue;
@@ -90,6 +102,14 @@ const extractSplatData = (
                 columns[j].data[idx] = data[memberNames[j]] ?? 0;
             }
             idx++;
+
+            // Report progress every 10% and yield to allow UI updates
+            const progress = Math.floor((idx / totalCount) * 10) * 10;
+            if (progress !== lastProgress) {
+                lastProgress = progress;
+                onProgress?.(progress);
+                await yieldToRender();
+            }
         }
     }
 
@@ -218,7 +238,8 @@ const writeScales = async (
     width: number,
     height: number,
     iterations: number,
-    device: WebgpuGraphicsDevice
+    device: WebgpuGraphicsDevice,
+    onProgress?: ProgressCallback
 ): Promise<{ webp: Uint8Array; codebook: number[] }> => {
     // Create a permuted table with only the indexed rows
     const scaleNames = ['scale_0', 'scale_1', 'scale_2'];
@@ -232,7 +253,7 @@ const writeScales = async (
     });
     const scaleTable = new DataTable(scaleColumns);
 
-    const scaleData = await cluster1d(scaleTable, iterations, device);
+    const scaleData = await cluster1d(scaleTable, iterations, device, onProgress);
 
     // Write labels to texture
     const data = new Uint8Array(width * height * 4);
@@ -261,7 +282,8 @@ const writeColors = async (
     width: number,
     height: number,
     iterations: number,
-    device: WebgpuGraphicsDevice
+    device: WebgpuGraphicsDevice,
+    onProgress?: ProgressCallback
 ): Promise<{ webp: Uint8Array; codebook: number[] }> => {
     // Create a permuted table with only the indexed rows
     const colorNames = ['f_dc_0', 'f_dc_1', 'f_dc_2'];
@@ -275,7 +297,7 @@ const writeColors = async (
     });
     const colorTable = new DataTable(colorColumns);
 
-    const colorData = await cluster1d(colorTable, iterations, device);
+    const colorData = await cluster1d(colorTable, iterations, device, onProgress);
 
     // Generate and store sigmoid(opacity) [0..1]
     const opacity = dataTable.getColumnByName('opacity')!.data;
@@ -312,7 +334,8 @@ const writeSH = async (
     height: number,
     shBands: number,
     iterations: number,
-    device: WebgpuGraphicsDevice
+    device: WebgpuGraphicsDevice,
+    onProgress?: ProgressCallback
 ): Promise<{ count: number; bands: number; codebook: number[]; centroidsWebp: Uint8Array; labelsWebp: Uint8Array } | null> => {
     if (shBands === 0) return null;
 
@@ -339,11 +362,15 @@ const writeSH = async (
 
     const paletteSize = Math.min(64, 2 ** Math.floor(Math.log2(indices.length / 1024))) * 1024;
 
+    // SH has two k-means passes: first for centroids (0-50%), then for codebook (50-100%)
+    const kmeansProgress = onProgress ? (p: number) => onProgress(p * 0.5) : undefined;
+    const codebookProgress = onProgress ? (p: number) => onProgress(50 + p * 0.5) : undefined;
+
     // Calculate kmeans
-    const { centroids, labels } = await kmeans(shDataTable, paletteSize, iterations, device);
+    const { centroids, labels } = await kmeans(shDataTable, paletteSize, iterations, device, kmeansProgress);
 
     // Construct a codebook for all spherical harmonic coefficients
-    const codebook = await cluster1d(centroids, iterations, device);
+    const codebook = await cluster1d(centroids, iterations, device, codebookProgress);
 
     // Write centroids
     const centroidsWidth = 64 * shCoeffs;
@@ -402,7 +429,24 @@ const serializeSog = async (
     options: SogSerializeOptions,
     writer: Writer
 ): Promise<void> => {
-    const { iterations, maxSHBands = 3 } = options;
+    const { iterations, maxSHBands = 3, events } = options;
+
+    // Progress stage tracking
+    let currentStep = 0;
+    const totalSteps = 9; // 8 mandatory + 1 optional (SH), we'll show 9 even if SH is skipped
+
+    // Helper to fire progress updates with step indicator
+    const updateProgress = (text: string, progress: number) => {
+        events?.fire('progressUpdate', { text: `Step ${currentStep} of ${totalSteps}: ${text}`, progress });
+    };
+
+    // Helper to advance to next step
+    const nextStep = (text: string) => {
+        currentStep++;
+        updateProgress(text, 0);
+    };
+
+    events?.fire('progressStart', 'Exporting SOG');
 
     // Determine which members to extract
     const baseMembers = [
@@ -416,38 +460,64 @@ const serializeSog = async (
     const shCoeffs = [0, 3, 8, 15][maxSHBands];
     const memberNames = [...baseMembers, ...shNames.slice(0, shCoeffs * 3)];
 
-    // Extract data
-    const { dataTable, count } = extractSplatData(splats, getSingleSplat, filter, memberNames);
+    nextStep('Extracting data...');
+
+    // Extract data with progress callback
+    const extractProgress = (progress: number) => updateProgress('Extracting data...', progress);
+    const { dataTable, count } = await extractSplatData(splats, getSingleSplat, filter, memberNames, extractProgress);
 
     // Calculate texture dimensions
     const width = Math.ceil(Math.sqrt(count) / 4) * 4;
     const height = Math.ceil(count / width / 4) * 4;
 
+    nextStep('Generating morton order...');
+
+    // Yield to allow progress UI to render before heavy sync operation
+    await yieldToRender();
+
     // Generate morton-ordered indices
     const indices = generateMortonIndices(dataTable);
+
+    updateProgress('Generating morton order...', 100);
+
+    nextStep('Initializing GPU...');
 
     // Get GPU device
     const gpuDevice = await getGpuDevice();
     const device = gpuDevice.device;
 
+    updateProgress('Initializing GPU...', 100);
+
     // Create zip writer
     const zipWriter = new ZipWriter(writer);
+
+    nextStep('Writing positions...');
 
     // Write means (positions)
     const means = await writeMeans(dataTable, indices, width, height);
     await zipWriter.file('means_l.webp', means.meansL);
     await zipWriter.file('means_u.webp', means.meansU);
 
+    updateProgress('Writing positions...', 100);
+
+    nextStep('Writing quaternions...');
+
     // Write quaternions
     const quatsWebp = await writeQuaternions(dataTable, indices, width, height);
     await zipWriter.file('quats.webp', quatsWebp);
 
-    // Write scales
-    const scales = await writeScales(dataTable, indices, width, height, iterations, device);
+    updateProgress('Writing quaternions...', 100);
+
+    // Write scales with progress callback
+    currentStep++;
+    const scalesProgress = (progress: number) => updateProgress('Compressing scales...', progress);
+    const scales = await writeScales(dataTable, indices, width, height, iterations, device, scalesProgress);
     await zipWriter.file('scales.webp', scales.webp);
 
-    // Write colors
-    const colors = await writeColors(dataTable, indices, width, height, iterations, device);
+    // Write colors with progress callback
+    currentStep++;
+    const colorsProgress = (progress: number) => updateProgress('Compressing colors...', progress);
+    const colors = await writeColors(dataTable, indices, width, height, iterations, device, colorsProgress);
     await zipWriter.file('sh0.webp', colors.webp);
 
     // Determine SH bands present in data
@@ -457,15 +527,19 @@ const serializeSog = async (
     })();
     const outputSHBands = Math.min(dataSHBands, maxSHBands);
 
-    // Write SH if present
+    // Write SH if present with progress callback
+    currentStep++;
+    const shProgress = (progress: number) => updateProgress('Compressing spherical harmonics...', progress);
     const shN = outputSHBands > 0 ?
-        await writeSH(dataTable, indices, width, height, outputSHBands, iterations, device) :
+        await writeSH(dataTable, indices, width, height, outputSHBands, iterations, device, shProgress) :
         null;
 
     if (shN) {
         await zipWriter.file('shN_centroids.webp', shN.centroidsWebp);
         await zipWriter.file('shN_labels.webp', shN.labelsWebp);
     }
+
+    nextStep('Finalizing...');
 
     // Construct meta.json
     const meta: Record<string, unknown> = {
@@ -506,6 +580,10 @@ const serializeSog = async (
 
     // Close zip
     await zipWriter.close();
+
+    updateProgress('Finalizing...', 100);
+
+    events?.fire('progressEnd');
 };
 
 export { serializeSog, SogSerializeOptions };

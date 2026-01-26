@@ -2,112 +2,70 @@ import {
     BLENDEQUATION_ADD,
     BLENDMODE_ONE,
     BLENDMODE_ZERO,
-    SEMANTIC_POSITION,
     BlendState,
-    Color,
-    Entity,
-    Layer,
-    Shader,
-    ShaderUtils,
-    QuadRender,
-    WebglGraphicsDevice,
-    Mat4
+    CameraComponent,
+    Layer
 } from 'playcanvas';
 
 import { Element, ElementType } from './element';
 import { vertexShader, fragmentShader } from './shaders/blit-shader';
+import { ShaderQuad, SimpleRenderPass } from './utils/simple-render-pass';
 
 class Underlay extends Element {
-    entity: Entity;
-    shader: Shader;
-    quadRender: QuadRender;
+    shaderQuad: ShaderQuad;
+    renderPass: SimpleRenderPass;
     enabled = true;
+    private preRenderLayerHandler: ((camera: CameraComponent, layer: Layer, transparent: boolean) => void) | null = null;
 
     constructor() {
         super(ElementType.other);
-
-        this.entity = new Entity('underlayCamera');
-        this.entity.addComponent('camera');
-        this.entity.camera.setShaderPass('UNDERLAY');
-        this.entity.camera.clearColor = new Color(0, 0, 0, 0);
     }
 
     add() {
         const device = this.scene.app.graphicsDevice;
 
-        this.entity.camera.layers = [this.scene.overlayLayer.id];
-        this.scene.camera.entity.addChild(this.entity);
-
-        this.shader = ShaderUtils.createShader(device, {
-            uniqueName: 'apply-underlay',
-            attributes: {
-                vertex_position: SEMANTIC_POSITION
-            },
-            vertexGLSL: vertexShader,
-            fragmentGLSL: fragmentShader
+        this.shaderQuad = new ShaderQuad(device, vertexShader, fragmentShader, 'apply-underlay');
+        this.renderPass = new SimpleRenderPass(device, this.shaderQuad, {
+            blendState: new BlendState(true,
+                BLENDEQUATION_ADD, BLENDMODE_ONE, BLENDMODE_ONE,
+                BLENDEQUATION_ADD, BLENDMODE_ZERO, BLENDMODE_ONE
+            )
         });
 
-        this.quadRender = new QuadRender(this.shader);
+        const { camera, events } = this.scene;
 
-        const blitTextureId = device.scope.resolve('blitTexture');
-        const blendState = new BlendState(true,
-            BLENDEQUATION_ADD, BLENDMODE_ONE, BLENDMODE_ONE,
-            BLENDEQUATION_ADD, BLENDMODE_ZERO, BLENDMODE_ONE
-        );
-
-        this.entity.camera.on('postRenderLayer', (layer: Layer, transparent: boolean) => {
-            if (!this.entity.enabled || layer !== this.scene.overlayLayer || !transparent) {
+        this.preRenderLayerHandler = (cameraComponent: CameraComponent, layer: Layer, transparent: boolean) => {
+            if (cameraComponent !== camera.camera) {
+                return;
+            }
+            // underlay is used when outline mode is disabled
+            if (!this.enabled || events.invoke('view.outlineSelection')) {
                 return;
             }
 
-            device.setBlendState(blendState);
+            // apply at the start of the gizmo layer
+            if (layer !== this.scene.gizmoLayer || transparent) {
+                return;
+            }
 
-            blitTextureId.setValue(this.entity.camera.renderTarget.colorBuffer);
+            this.renderPass.execute({
+                srcTexture: camera.workTarget.colorBuffer
+            });
+        };
 
-            const glDevice = device as WebglGraphicsDevice;
-            glDevice.setRenderTarget(this.scene.camera.entity.camera.renderTarget);
-            glDevice.updateBegin();
-            this.quadRender.render();
-            glDevice.updateEnd();
-        });
+        this.scene.app.scene.on('prerender:layer', this.preRenderLayerHandler);
     }
 
     remove() {
-        this.scene.camera.entity.removeChild(this.entity);
+        // event listeners are cleaned up when camera is destroyed
+        if (this.preRenderLayerHandler) {
+            this.scene.app.scene.off('prerender:layer', this.preRenderLayerHandler);
+            this.preRenderLayerHandler = null;
+        }
     }
 
     onPreRender() {
-        // copy camera properties
-        const src = this.scene.camera.entity.camera;
-        const dst = this.entity.camera;
-
-        dst.projection = src.projection;
-        dst.horizontalFov = src.horizontalFov;
-        dst.fov = src.fov;
-        dst.nearClip = src.nearClip;
-        dst.farClip = src.farClip;
-        dst.orthoHeight = src.orthoHeight;
-
-        // Custom Frustum / Projection Sync for Camera Frames
-        const customFrustum = this.scene.camera.getCustomFrustum();
-        if (customFrustum) {
-            dst.calculateProjection = (projMat: Mat4, _view?: number) => {
-                projMat.setFrustum(
-                    customFrustum.left,
-                    customFrustum.right,
-                    customFrustum.bottom,
-                    customFrustum.top,
-                    customFrustum.near,
-                    customFrustum.far
-                );
-            };
-        } else {
-            dst.calculateProjection = null;
-        }
-        (dst as any)._projMatDirty = true;
-
-        this.entity.enabled = this.enabled && !this.scene.events.invoke('view.outlineSelection');
-        this.entity.camera.renderTarget = this.scene.camera.workRenderTarget;
+        // no longer need to manage a separate camera
     }
 }
 

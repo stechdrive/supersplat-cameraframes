@@ -1,56 +1,74 @@
 import { Events } from './events';
 
-interface ShortcutOptions {
-    // for modifier keys:
-    // - true: require pressed
-    // - false: don't check (doesn't matter)
-    // - undefined (not specified): require NOT pressed
-    ctrl?: boolean;
-    shift?: boolean;
-    alt?: boolean;
+/**
+ * Modifier key requirement state.
+ * - 'required': modifier must be pressed
+ * - 'forbidden': modifier must NOT be pressed (default if unspecified)
+ * - 'optional': don't care either way
+ */
+type ModifierState = 'required' | 'forbidden' | 'optional';
 
-    // track key held state - fires on both keydown and keyup
+/**
+ * A shortcut binding definition.
+ */
+interface ShortcutBinding {
+    keys?: string[];        // list of keys
+    codes?: string[];       // list of codes
+    ctrl?: ModifierState;
+    shift?: ModifierState;
+    alt?: ModifierState;
     held?: boolean;
-
-    // use capture phase - i.e. handle the events before anyone else
-    capture?: boolean;
-
-    // either provide a function to call, or an event name to fire
-    func?: (down?: boolean) => void;
-    event?: string;
+    repeat?: boolean;       // whether to fire on keyboard repeat events (for non-held shortcuts)
+    capture?: boolean;      // whether to use capture phase for the event listener
 }
 
-const checkMod = (optionValue: boolean | undefined, eventValue: boolean) => {
-    switch (optionValue) {
-        case true: return eventValue;
-        case false: return true;
-        case undefined: return !eventValue;
+/**
+ * Options for registering a shortcut handler.
+ * Extends ShortcutBinding with event/func handler.
+ */
+interface ShortcutOptions extends ShortcutBinding {
+    event?: string;
+    func?: (down?: boolean) => void;
+}
+
+/**
+ * Check if a modifier key state matches the requirement.
+ */
+const checkMod = (requirement: ModifierState | undefined, isPressed: boolean): boolean => {
+    switch (requirement) {
+        case 'required': return isPressed;
+        case 'optional': return true;
+        case 'forbidden':
+        default: return !isPressed;
     }
 };
 
 class Shortcuts {
-    shortcuts: { keys: string[], options: ShortcutOptions }[] = [];
+    shortcuts: ShortcutOptions[] = [];
 
     constructor(events: Events) {
         const shortcuts = this.shortcuts;
 
         const handleEvent = (e: KeyboardEvent, down: boolean, capture: boolean) => {
-            // skip keys in input fields
-            if (!capture && e.target !== document.body) return;
+            // skip if focus is elsewhere (input fields, modals, etc.)
+            if (e.target !== document.body) return;
 
             const isCtrlKey = e.code.startsWith('Control');
             const isShiftKey = e.code.startsWith('Shift');
             const isAltKey = e.code.startsWith('Alt');
 
             for (let i = 0; i < shortcuts.length; i++) {
-                const shortcut  = shortcuts[i];
-                const options = shortcut.options;
+                const options = shortcuts[i];
 
                 const ctrlMatch = isCtrlKey || checkMod(options.ctrl, !!(e.ctrlKey || e.metaKey));
                 const shiftMatch = isShiftKey || checkMod(options.shift, e.shiftKey);
                 const altMatch = isAltKey || checkMod(options.alt, e.altKey);
 
-                if (shortcut.keys.includes(e.code) &&
+                // Match if key matches keys array OR code matches codes array
+                const keyMatches = (options.keys?.some(k => k.toLowerCase() === e.key.toLowerCase()) ||
+                                    options.codes?.some(c => c === e.code)) ?? false;
+
+                if (keyMatches &&
                     ((options.capture ?? false) === capture) &&
                     ctrlMatch && shiftMatch && altMatch) {
 
@@ -65,13 +83,14 @@ class Shortcuts {
                         }
                     } else {
                         // Non-held: ignore up events
-                        if (!down) return;
+                        // Also ignore repeated keydown events unless repeat is explicitly allowed
+                        if (!down || (e.repeat && !options.repeat)) return;
                     }
 
-                    if (shortcuts[i].options.event) {
-                        events.fire(shortcuts[i].options.event, down);
+                    if (options.event) {
+                        events.fire(options.event, down);
                     } else {
-                        shortcuts[i].options.func(down);
+                        options.func(down);
                     }
 
                     break;
@@ -98,11 +117,9 @@ class Shortcuts {
         }, true);
     }
 
-    register(keys: string[], options: ShortcutOptions) {
-        this.shortcuts.push({ keys, options });
+    register(options: ShortcutOptions) {
+        this.shortcuts.push(options);
     }
 }
 
-export {
-    Shortcuts
-};
+export { Shortcuts, ModifierState, ShortcutBinding };

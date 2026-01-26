@@ -1,6 +1,7 @@
 import { Button, Container, Element } from '@playcanvas/pcui';
 
 import { Events } from '../events';
+import { ShortcutManager } from '../shortcut-manager';
 import { localize } from './localization';
 import cameraFrameSelectionSvg from './svg/camera-frame-selection.svg';
 import cameraPanelSvg from './svg/camera-panel.svg';
@@ -88,13 +89,26 @@ class RightToolbar extends Container {
         this.append(new Element({ class: 'right-toolbar-separator' }));
         this.append(cameraFrameMenu);
 
-        tooltips.register(ringsModeToggle, localize('tooltip.right-toolbar.splat-mode'), 'left');
-        tooltips.register(showHideSplats, localize('tooltip.right-toolbar.show-hide'), 'left');
-        tooltips.register(cameraFrameSelection, localize('tooltip.right-toolbar.frame-selection'), 'left');
-        tooltips.register(cameraFrameMenu, localize('tooltip.right-toolbar.camera-frame'), 'left');
-        tooltips.register(cameraReset, localize('tooltip.right-toolbar.reset-camera'), 'left');
-        tooltips.register(colorPanel, localize('tooltip.right-toolbar.colors'), 'left');
-        tooltips.register(options, localize('tooltip.right-toolbar.view-options'), 'left');
+        // Helper to compose localized tooltip text with shortcut
+        const shortcutManager: ShortcutManager = events.invoke('shortcutManager');
+        const tooltip = (localeKey: string, shortcutId?: string) => {
+            const text = localize(localeKey);
+            if (shortcutId) {
+                const shortcut = shortcutManager.formatShortcut(shortcutId);
+                if (shortcut) {
+                    return `${text} ( ${shortcut} )`;
+                }
+            }
+            return text;
+        };
+
+        tooltips.register(ringsModeToggle, tooltip('tooltip.right-toolbar.splat-mode', 'camera.toggleMode'), 'left');
+        tooltips.register(showHideSplats, tooltip('tooltip.right-toolbar.show-hide', 'camera.toggleOverlay'), 'left');
+        tooltips.register(cameraFrameSelection, tooltip('tooltip.right-toolbar.frame-selection', 'camera.focus'), 'left');
+        tooltips.register(cameraFrameMenu, tooltip('tooltip.right-toolbar.camera-frame'), 'left');
+        tooltips.register(cameraReset, tooltip('tooltip.right-toolbar.reset-camera', 'camera.reset'), 'left');
+        tooltips.register(colorPanel, tooltip('tooltip.right-toolbar.colors'), 'left');
+        tooltips.register(options, tooltip('tooltip.right-toolbar.view-options'), 'left');
 
         // add event handlers
 

@@ -2,6 +2,7 @@ import {
     EVENT_POSTRENDER_LAYER,
     EVENT_PRERENDER_LAYER,
     LAYERID_DEPTH,
+    SORTMODE_CUSTOM,
     SORTMODE_NONE,
     BoundingBox,
     CameraComponent,
@@ -10,6 +11,7 @@ import {
     Mat4,
     Layer,
     GraphicsDevice,
+    MeshInstance,
     Vec3
 } from 'playcanvas';
 
@@ -32,11 +34,52 @@ import { SplatOverlay } from './splat-overlay';
 import { SplatRenderSystem } from './splat-render-system';
 import { Underlay } from './underlay';
 
+// sort meshInstances by the aabb corner furthest from the camera
+const corner = new Vec3();
+const specialSort = (instances: MeshInstance[], numInstances: number, cameraPos: Vec3, cameraDir: Vec3) => {
+    const distances = new Map<MeshInstance, number>();
+
+    for (let i = 0; i < numInstances; i++) {
+        const instance = instances[i];
+        const { aabb } = instance;
+        const { center, halfExtents } = aabb;
+
+        // loop over all 8 aabb corners and find the furthest distance along the camera view direction
+        let maxDist = -Infinity;
+        for (let cx = -1; cx <= 1; cx += 2) {
+            for (let cy = -1; cy <= 1; cy += 2) {
+                for (let cz = -1; cz <= 1; cz += 2) {
+                    corner.set(
+                        center.x + cx * halfExtents.x,
+                        center.y + cy * halfExtents.y,
+                        center.z + cz * halfExtents.z
+                    );
+                    // project camera-to-corner vector onto camera direction
+                    const dist = (corner.x - cameraPos.x) * cameraDir.x +
+                                    (corner.y - cameraPos.y) * cameraDir.y +
+                                    (corner.z - cameraPos.z) * cameraDir.z;
+                    if (dist > maxDist) {
+                        maxDist = dist;
+                    }
+                }
+            }
+        }
+
+        // store in map for reuse during sort
+        distances.set(instance, maxDist);
+    }
+
+    // sort instances back-to-front by calculated distance (furthest first)
+    instances.sort((a, b) => distances.get(b) - distances.get(a));
+};
+
 class Scene {
     events: Events;
     config: SceneConfig;
     canvas: HTMLCanvasElement;
     app: PCApp;
+    worldLayer: Layer;
+    splatLayer: Layer;
     backgroundLayer: Layer;
     shadowLayer: Layer;
     debugLayer: Layer;
@@ -162,31 +205,44 @@ class Scene {
         this.app.graphicsDevice.maxPixelRatio = window.devicePixelRatio;
 
         // configure application canvas
-        const observer = new ResizeObserver((entries: ResizeObserverEntry[]) => {
-            if (entries.length > 0) {
-                const entry = entries[0];
-                if (entry) {
-                    if (entry.devicePixelContentBoxSize) {
-                        // on non-safari browsers, we are given the pixel-perfect canvas size
-                        this.canvasResize = {
-                            width: entry.devicePixelContentBoxSize[0].inlineSize,
-                            height: entry.devicePixelContentBoxSize[0].blockSize
-                        };
-                    } else if (entry.contentBoxSize.length > 0) {
-                        // on safari browsers we must calculate pixel size from CSS size ourselves
-                        // and hope the browser performs the same calculation.
-                        const pixelRatio = window.devicePixelRatio;
-                        this.canvasResize = {
-                            width: Math.ceil(entry.contentBoxSize[0].inlineSize * pixelRatio),
-                            height: Math.ceil(entry.contentBoxSize[0].blockSize * pixelRatio)
-                        };
-                    }
-                }
-                this.forceRender = true;
+        const observedTarget = window.document.getElementById('canvas-container') ?? canvas;
+        const updateCanvasResize = (entry?: ResizeObserverEntry | null) => {
+            if (entry?.devicePixelContentBoxSize) {
+                // on non-safari browsers, we are given the pixel-perfect canvas size
+                this.canvasResize = {
+                    width: entry.devicePixelContentBoxSize[0].inlineSize,
+                    height: entry.devicePixelContentBoxSize[0].blockSize
+                };
+            } else if (entry?.contentBoxSize?.length > 0) {
+                // on safari browsers we must calculate pixel size from CSS size ourselves
+                // and hope the browser performs the same calculation.
+                const pixelRatio = window.devicePixelRatio || 1;
+                this.canvasResize = {
+                    width: Math.ceil(entry.contentBoxSize[0].inlineSize * pixelRatio),
+                    height: Math.ceil(entry.contentBoxSize[0].blockSize * pixelRatio)
+                };
+            } else {
+                const rect = observedTarget.getBoundingClientRect();
+                const pixelRatio = window.devicePixelRatio || 1;
+                this.canvasResize = {
+                    width: Math.ceil(rect.width * pixelRatio),
+                    height: Math.ceil(rect.height * pixelRatio)
+                };
             }
-        });
+            this.forceRender = true;
+        };
 
-        observer.observe(window.document.getElementById('canvas-container'));
+        if (typeof ResizeObserver !== 'undefined') {
+            const observer = new ResizeObserver((entries: ResizeObserverEntry[]) => {
+                if (entries.length > 0) {
+                    updateCanvasResize(entries[0]);
+                }
+            });
+            observer.observe(observedTarget);
+        } else {
+            updateCanvasResize();
+            window.addEventListener('resize', () => updateCanvasResize());
+        }
 
         // configure depth layers to handle dynamic refraction
         const depthLayer = this.app.scene.layers.getLayerById(LAYERID_DEPTH);
@@ -211,6 +267,9 @@ class Scene {
         this.app.scene.on(EVENT_POSTRENDER_LAYER, (camera: CameraComponent, layer: Layer, transparent: boolean) => {
             camera.fire('postRenderLayer', layer, transparent);
         });
+
+        // get the world layer
+        this.worldLayer = this.app.scene.layers.getLayerByName('World');
 
         // background layer
         this.backgroundLayer = new Layer({
@@ -257,6 +316,14 @@ class Scene {
             transparentSortMode: SORTMODE_NONE
         });
 
+        // splat layer - dedicated layer for splat rendering with MRT
+        this.splatLayer = new Layer({
+            name: 'Splat',
+            opaqueSortMode: SORTMODE_CUSTOM,
+            transparentSortMode: SORTMODE_CUSTOM
+        });
+        this.splatLayer.customCalculateSortValues = specialSort;
+
         // gizmo layer
         this.gizmoLayer = new Layer({
             name: 'Gizmo',
@@ -265,7 +332,7 @@ class Scene {
             transparentSortMode: SORTMODE_NONE
         });
 
-        const worldLayer = this.app.scene.layers.getLayerByName('World');
+        const worldLayer = this.worldLayer;
         this.insertLayerBefore(this.backgroundLayer, worldLayer);
         this.insertLayerBefore(this.shadowLayer, worldLayer);
         this.insertLayerBefore(this.modelLightingLayer, worldLayer);
@@ -273,7 +340,8 @@ class Scene {
         this.insertLayerBefore(this.exportOverlayLayer, worldLayer);
         // NOTE: Overlay/Gizmo は World(Transparent=gsplat) の後ろに来る必要がある。
         // Gizmo(clearDepthBuffer) が World の透明パス直前に入ると、GLB の深度が消えて見えなくなる。
-        this.insertLayerAfter(this.overlayLayer, worldLayer);
+        this.insertLayerAfter(this.splatLayer, worldLayer);
+        this.insertLayerAfter(this.overlayLayer, this.splatLayer);
         this.insertLayerAfter(this.gizmoLayer, this.overlayLayer);
 
         // Ambient fallback (環境マップ未設定時の視認性確保)
@@ -913,7 +981,7 @@ class Scene {
 
         this.forEachElement(e => e.onPreRender());
 
-        this.events.fire('prerender', this.camera.entity.getWorldTransform());
+        this.events.fire('prerender', this.camera.worldTransform);
 
         // debug - display scene bound
         if (this.config.debug.showBound) {

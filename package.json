@@ -1,7 +1,7 @@
 {
     "name": "supersplat-cameraframes",
-    "version": "2.17.0",
-    "cameraFramesVersion": "v2.17.0",
+    "version": "2.18.1",
+    "cameraFramesVersion": "v2.18.0",
     "author": "stechdrive",
     "contributors": [
         "PlayCanvas <support@playcanvas.com>"
@@ -29,7 +29,7 @@
     "devDependencies": {
         "@playcanvas/eslint-config": "2.1.0",
         "@playcanvas/pcui": "5.5.0",
-        "@playcanvas/supersplat-viewer": "1.10.3",
+        "@playcanvas/supersplat-viewer": "1.11.0",
         "@rollup/plugin-alias": "6.0.0",
         "@rollup/plugin-commonjs": "^29.0.0",
         "@rollup/plugin-image": "3.0.3",
@@ -53,8 +53,8 @@
         "i18next-browser-languagedetector": "8.2.0",
         "i18next-http-backend": "3.0.2",
         "jszip": "3.10.1",
-        "mediabunny": "1.27.4",
-        "playcanvas": "2.14.4",
+        "mediabunny": "1.27.6",
+        "playcanvas": "2.15.1",
         "postcss": "8.5.6",
         "rollup": "4.55.1",
         "rollup-plugin-scss": "4.0.1",

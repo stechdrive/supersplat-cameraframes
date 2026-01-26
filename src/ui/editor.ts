@@ -3,6 +3,7 @@ import { Mat4, path, Vec3 } from 'playcanvas';
 
 import { DataPanel } from './data-panel';
 import { Events } from '../events';
+import { AboutPopup } from './about-popup';
 import { BottomToolbar } from './bottom-toolbar';
 import { CameraFramesHelpPanel } from './camera-frames-help-panel';
 import { CameraFramesPanel } from './camera-frames-panel';
@@ -178,7 +179,7 @@ class EditorUI {
         const popup = new Popup(tooltips);
 
         // shortcuts popup
-        const shortcutsPopup = new ShortcutsPopup();
+        const shortcutsPopup = new ShortcutsPopup(events);
 
         // export popup
         const exportPopup = new ExportPopup(events);
@@ -194,17 +195,19 @@ class EditorUI {
 
         // update banner
         const updateBanner = new UpdateBanner();
+        const aboutPopup = new AboutPopup();
 
         topContainer.append(popup);
         topContainer.append(exportPopup);
         topContainer.append(publishSettingsDialog);
         topContainer.append(imageSettingsDialog);
         topContainer.append(videoSettingsDialog);
+        topContainer.append(shortcutsPopup);
+        topContainer.append(aboutPopup);
         appContainer.append(editorContainer);
         appContainer.append(topContainer);
         appContainer.append(updateBanner);
         appContainer.append(tooltipsContainer);
-        appContainer.append(shortcutsPopup);
 
         this.appContainer = appContainer;
         this.topContainer = topContainer;
@@ -337,12 +340,8 @@ class EditorUI {
             updateBanner.hide();
         });
 
-        events.function('show.about', () => {
-            return this.popup.show({
-                type: 'info',
-                header: 'About',
-                message: `SUPERSPLAT v${version}`
-            });
+        events.on('show.about', () => {
+            aboutPopup.hidden = false;
         });
 
         events.function('showPopup', (options: ShowOptions) => {

@@ -194,14 +194,14 @@ type ScheduleViewportNearOverrideParams = {
     shouldApplyViewportNearOverride: () => boolean;
     viewportNearDebounceId: number | null;
     setViewportNearDebounceId: (value: number | null) => void;
-    applyViewportNearOverride: () => void;
+    applyViewportNearOverride: () => Promise<void>;
 };
 
 type ApplyViewportNearOverrideParams = {
     shouldApplyViewportNearOverride: () => boolean;
     viewportNearLastSampleTs: number;
     setViewportNearLastSampleTs: (value: number) => void;
-    computeViewportNearCandidate: () => number | null;
+    computeViewportNearCandidate: () => Promise<number | null>;
     viewportNearOverride: number | null;
     setViewportNearOverride: (value: number | null) => void;
     viewportNearOverrideActive: boolean;
@@ -979,12 +979,12 @@ export const scheduleViewportNearOverride = ({
     }
     const debounceId = window.setTimeout(() => {
         setViewportNearDebounceId(null);
-        applyViewportNearOverride();
+        applyViewportNearOverride().catch(() => {});
     }, delayMs);
     setViewportNearDebounceId(debounceId);
 };
 
-export const applyViewportNearOverride = ({
+export const applyViewportNearOverride = async ({
     shouldApplyViewportNearOverride,
     viewportNearLastSampleTs,
     setViewportNearLastSampleTs,
@@ -1005,7 +1005,10 @@ export const applyViewportNearOverride = ({
     }
     setViewportNearLastSampleTs(now);
 
-    const candidate = computeViewportNearCandidate();
+    const candidate = await computeViewportNearCandidate();
+    if (!shouldApplyViewportNearOverride()) {
+        return;
+    }
     if (candidate === null) {
         if (viewportNearOverrideActive) {
             clearViewportNearOverride();
@@ -1026,7 +1029,7 @@ export const applyViewportNearOverride = ({
     events.fire('camera.setNearOverride', candidate, { transient: true });
 };
 
-export const computeViewportNearCandidate = ({ scene }: ComputeViewportNearCandidateParams): number | null => {
+export const computeViewportNearCandidate = async ({ scene }: ComputeViewportNearCandidateParams): Promise<number | null> => {
     const canvas = scene?.canvas;
     const targetSize = scene?.targetSize;
     if (!canvas || !targetSize || targetSize.width <= 0 || targetSize.height <= 0) {
@@ -1058,7 +1061,9 @@ export const computeViewportNearCandidate = ({ scene }: ComputeViewportNearCandi
     for (const sample of samples) {
         const x = clamp(sample.x, 0, w - 1);
         const y = clamp(sample.y, 0, h - 1);
-        const hit = scene.camera.intersect(x, y);
+        const nx = clamp(x / w, 0, 1);
+        const ny = clamp(y / h, 0, 1);
+        const hit = await scene.camera.intersect(nx, ny);
         const distance = hit?.distance;
         if (typeof distance !== 'number' || !isFinite(distance) || distance <= 0) {
             continue;
