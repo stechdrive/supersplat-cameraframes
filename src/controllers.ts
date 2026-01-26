@@ -119,12 +119,12 @@ class PointerController {
             const nx = rectW > 0 ? event.offsetX / rectW : 0;
             const ny = rectH > 0 ? event.offsetY / rectH : 0;
 
-            void (async () => {
+            (async () => {
                 const hit = await camera.intersect(nx, ny);
                 if (hit) {
                     pivotPoint.copy(hit.position);
                 }
-            })();
+            })().catch(() => {});
         };
 
         // mouse state

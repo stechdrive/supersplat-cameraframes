@@ -37,8 +37,8 @@ import { buildCameraMatrices, type CameraMatrices } from './camera-matrices';
 import { MIN_NEAR_CLIP } from './clip-constants';
 import { PointerController } from './controllers';
 import { Element, ElementType } from './element';
-import { Picker } from './picker';
 import { Model } from './model';
+import { Picker } from './picker';
 import { Serializer } from './serializer';
 import { vertexShader, fragmentShader } from './shaders/blit-shader';
 import { Splat } from './splat';
@@ -834,7 +834,7 @@ class Camera extends Element {
                 scene.exportOverlayLayer,
                 scene.referenceBackLayer,
                 scene.worldLayer
-            ].forEach((layer) => addLayer(this.mainPass, layer));
+            ].forEach(layer => addLayer(this.mainPass, layer));
 
             // configure splat pass - MRT target, no clears
             this.splatPass.init(this.splatTarget);
@@ -846,7 +846,7 @@ class Camera extends Element {
                 scene.referenceFrontLayer,
                 scene.overlayLayer,
                 scene.gizmoLayer
-            ].forEach((layer) => addLayer(this.gizmoPass, layer));
+            ].forEach(layer => addLayer(this.gizmoPass, layer));
             this.gizmoPass.setClearDepth(1);
             this.gizmoPass.setClearStencil(0);
 
@@ -1585,7 +1585,7 @@ class Camera extends Element {
                 const baseInvalidAtSwitch = baseInvalid;
 
                 if (allowPick) {
-                    void (async () => {
+                    (async () => {
                         const candidate = await this.pickForwardHit();
                         if (!candidate) {
                             return;
@@ -1614,7 +1614,7 @@ class Camera extends Element {
                             this.lastOrbitDistance = nextDistNorm;
                             this.lastOrbitPivot.copy(pivot);
                         }
-                    })();
+                    })().catch(() => {});
                 }
 
                 if (baseInvalid || worldDist > absThreshold) {

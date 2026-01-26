@@ -979,7 +979,7 @@ export const scheduleViewportNearOverride = ({
     }
     const debounceId = window.setTimeout(() => {
         setViewportNearDebounceId(null);
-        void applyViewportNearOverride();
+        applyViewportNearOverride().catch(() => {});
     }, delayMs);
     setViewportNearDebounceId(debounceId);
 };

@@ -2308,7 +2308,7 @@ export class CameraFramesController {
                 // 無効化中は追従ロジックを停止するが状態は保持
                 this.requestRender();
                 this.emitViewportLensChanged();
-                void this.applyViewportNearOverride();
+                this.applyViewportNearOverride().catch(() => {});
             }
             this.events.fire('cameraFrames.enabled', this.state.enabled);
             const nextUiTarget = this.getUiTarget();
@@ -2405,7 +2405,7 @@ export class CameraFramesController {
             setViewportNearDebounceId: (value) => {
                 this.viewportNearDebounceId = value;
             },
-            applyViewportNearOverride: () => void this.applyViewportNearOverride()
+            applyViewportNearOverride: () => this.applyViewportNearOverride().catch(() => {})
         });
     }
 
