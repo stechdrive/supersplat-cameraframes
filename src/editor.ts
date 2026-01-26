@@ -926,7 +926,7 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
             events.fire('camera.setOverlay', !!docView.cameraOverlay);
         }
         events.fire('view.setOutlineSelection', docView.outlineSelection);
-        events.fire('grid.setVisible', docView.showGrid);
+        events.fire('grid.setVisible', docView.hasOwnProperty('showGrid') ? docView.showGrid : scene.config.show.grid);
         events.fire('eyeLevel.setVisible', docView.hasOwnProperty('showEyeLevel') ? docView.showEyeLevel : scene.config.show.eyeLevel);
         events.fire('camera.setBound', docView.showBound);
         events.fire('camera.setFlySpeed', docView.flySpeed);

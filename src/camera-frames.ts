@@ -251,6 +251,7 @@ export class CameraFramesController {
         }
 
         this.applyCameraFramesVersionLabel();
+        this.events.on('app.ready', () => this.applyCameraFramesVersionLabel());
 
         // initial viewport update (forces fit & center)
         this.updateViewportFromContainer();
