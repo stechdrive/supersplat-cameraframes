@@ -54,6 +54,97 @@ const half2Float = (h: number): number => {
     return float32[0];
 };
 
+// Internal picker pass to avoid relying on non-exported engine APIs.
+class RenderPassPicker extends RenderPass {
+    private renderer: any;
+    private viewBindGroups: any[] = [];
+    private emptyWorldClusters: any = null;
+    private camera: any = null;
+    private scene: any = null;
+    private layers: any[] | null = null;
+    private mapping: Map<number, any> | null = null;
+    private depth = false;
+    blendState: BlendState = BlendState.NOBLEND;
+
+    constructor(device: GraphicsDevice, renderer: any) {
+        super(device);
+        this.renderer = renderer;
+    }
+
+    destroy() {
+        this.viewBindGroups.forEach((bg) => {
+            bg.defaultUniformBuffer.destroy();
+            bg.destroy();
+        });
+        this.viewBindGroups.length = 0;
+    }
+
+    update(camera: any, scene: any, layers: any[] | null, mapping: Map<number, any>, depth: boolean) {
+        this.camera = camera;
+        this.scene = scene;
+        this.layers = layers;
+        this.mapping = mapping;
+        this.depth = depth;
+        if (scene.clusteredLightingEnabled) {
+            this.emptyWorldClusters = this.renderer.worldClustersAllocator.empty;
+        }
+    }
+
+    execute() {
+        const device = this.device;
+        const { renderer, camera, scene, layers, mapping, renderTarget } = this;
+        if (!camera || !scene || !mapping) {
+            return;
+        }
+
+        const srcLayers = scene.layers.layerList;
+        const subLayerEnabled = scene.layers.subLayerEnabled;
+        const isTransparent = scene.layers.subLayerList;
+        const tempMeshInstances: any[] = [];
+        const lights: any = [[], [], []];
+
+        for (let i = 0; i < srcLayers.length; i++) {
+            const srcLayer = srcLayers[i];
+            if (layers && layers.indexOf(srcLayer) < 0) {
+                continue;
+            }
+            if (srcLayer.enabled && subLayerEnabled[i]) {
+                if (srcLayer.camerasSet.has(camera.camera)) {
+                    const transparent = isTransparent[i];
+                    if ((srcLayer as any)._clearDepthBuffer) {
+                        renderer.clear(camera.camera, false, true, false);
+                    }
+                    const meshInstances = srcLayer.meshInstances;
+                    for (let j = 0; j < meshInstances.length; j++) {
+                        const meshInstance = meshInstances[j];
+                        if (meshInstance.pick && meshInstance.transparent === transparent) {
+                            tempMeshInstances.push(meshInstance);
+                            mapping.set(meshInstance.id, meshInstance);
+                        }
+                    }
+                    if (tempMeshInstances.length > 0) {
+                        const clusteredLightingEnabled = scene.clusteredLightingEnabled;
+                        if (clusteredLightingEnabled) {
+                            const lightClusters = this.emptyWorldClusters;
+                            lightClusters.activate();
+                        }
+                        renderer.setCameraUniforms(camera.camera, renderTarget);
+                        if (device.supportsUniformBuffers) {
+                            renderer.initViewBindGroupFormat(clusteredLightingEnabled);
+                            renderer.setupViewUniformBuffers(this.viewBindGroups, renderer.viewUniformFormat, renderer.viewBindGroupFormat, null);
+                        }
+                        const shaderPass = this.depth ? SHADER_DEPTH_PICK : SHADER_PICK;
+                        renderer.renderForward(camera.camera, renderTarget, tempMeshInstances, lights, shaderPass, () => {
+                            device.setBlendState(this.blendState ?? BlendState.NOBLEND);
+                        });
+                        tempMeshInstances.length = 0;
+                    }
+                }
+            }
+        }
+    }
+}
+
 class Picker {
     private device: GraphicsDevice;
     private scene: Scene;
@@ -247,94 +338,3 @@ class Picker {
 }
 
 export { Picker };
-
-// Internal picker pass to avoid relying on non-exported engine APIs.
-class RenderPassPicker extends RenderPass {
-    private renderer: any;
-    private viewBindGroups: any[] = [];
-    private emptyWorldClusters: any = null;
-    private camera: any = null;
-    private scene: any = null;
-    private layers: any[] | null = null;
-    private mapping: Map<number, any> | null = null;
-    private depth = false;
-    blendState: BlendState = BlendState.NOBLEND;
-
-    constructor(device: GraphicsDevice, renderer: any) {
-        super(device);
-        this.renderer = renderer;
-    }
-
-    destroy() {
-        this.viewBindGroups.forEach((bg) => {
-            bg.defaultUniformBuffer.destroy();
-            bg.destroy();
-        });
-        this.viewBindGroups.length = 0;
-    }
-
-    update(camera: any, scene: any, layers: any[] | null, mapping: Map<number, any>, depth: boolean) {
-        this.camera = camera;
-        this.scene = scene;
-        this.layers = layers;
-        this.mapping = mapping;
-        this.depth = depth;
-        if (scene.clusteredLightingEnabled) {
-            this.emptyWorldClusters = this.renderer.worldClustersAllocator.empty;
-        }
-    }
-
-    execute() {
-        const device = this.device;
-        const { renderer, camera, scene, layers, mapping, renderTarget } = this;
-        if (!camera || !scene || !mapping) {
-            return;
-        }
-
-        const srcLayers = scene.layers.layerList;
-        const subLayerEnabled = scene.layers.subLayerEnabled;
-        const isTransparent = scene.layers.subLayerList;
-        const tempMeshInstances: any[] = [];
-        const lights: any = [[], [], []];
-
-        for (let i = 0; i < srcLayers.length; i++) {
-            const srcLayer = srcLayers[i];
-            if (layers && layers.indexOf(srcLayer) < 0) {
-                continue;
-            }
-            if (srcLayer.enabled && subLayerEnabled[i]) {
-                if (srcLayer.camerasSet.has(camera.camera)) {
-                    const transparent = isTransparent[i];
-                    if ((srcLayer as any)._clearDepthBuffer) {
-                        renderer.clear(camera.camera, false, true, false);
-                    }
-                    const meshInstances = srcLayer.meshInstances;
-                    for (let j = 0; j < meshInstances.length; j++) {
-                        const meshInstance = meshInstances[j];
-                        if (meshInstance.pick && meshInstance.transparent === transparent) {
-                            tempMeshInstances.push(meshInstance);
-                            mapping.set(meshInstance.id, meshInstance);
-                        }
-                    }
-                    if (tempMeshInstances.length > 0) {
-                        const clusteredLightingEnabled = scene.clusteredLightingEnabled;
-                        if (clusteredLightingEnabled) {
-                            const lightClusters = this.emptyWorldClusters;
-                            lightClusters.activate();
-                        }
-                        renderer.setCameraUniforms(camera.camera, renderTarget);
-                        if (device.supportsUniformBuffers) {
-                            renderer.initViewBindGroupFormat(clusteredLightingEnabled);
-                            renderer.setupViewUniformBuffers(this.viewBindGroups, renderer.viewUniformFormat, renderer.viewBindGroupFormat, null);
-                        }
-                        const shaderPass = this.depth ? SHADER_DEPTH_PICK : SHADER_PICK;
-                        renderer.renderForward(camera.camera, renderTarget, tempMeshInstances, lights, shaderPass, () => {
-                            device.setBlendState(this.blendState ?? BlendState.NOBLEND);
-                        });
-                        tempMeshInstances.length = 0;
-                    }
-                }
-            }
-        }
-    }
-}
