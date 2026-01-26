@@ -109,14 +109,22 @@ class PointerController {
         };
 
         const setPivotPoint = (event: PointerEvent) => {
-            const hit = camera.intersect(event.offsetX, event.offsetY);
-            if (hit) {
-                pivotPoint.copy(hit.position);
-                return;
-            }
+            // fallback pivot if async pick is not yet available
             pivotPoint.copy(camera.entity.getPosition());
             pivotForward.copy(camera.entity.forward).mulScalar(camera.sceneRadius * 2);
             pivotPoint.add(pivotForward);
+
+            const rectW = target.clientWidth || 1;
+            const rectH = target.clientHeight || 1;
+            const nx = rectW > 0 ? event.offsetX / rectW : 0;
+            const ny = rectH > 0 ? event.offsetY / rectH : 0;
+
+            void (async () => {
+                const hit = await camera.intersect(nx, ny);
+                if (hit) {
+                    pivotPoint.copy(hit.position);
+                }
+            })();
         };
 
         // mouse state
@@ -403,7 +411,9 @@ class PointerController {
                     camera.scene.events.fire('camera.setControlMode', 'orbit');
                 }
                 if (!isFpvNav()) {
-                    camera.pickFocalPoint(event.offsetX, event.offsetY);
+                    const nx = event.offsetX / target.clientWidth;
+                    const ny = event.offsetY / target.clientHeight;
+                    camera.pickFocalPoint(nx, ny);
                 }
             }
         };

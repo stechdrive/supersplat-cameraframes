@@ -2308,7 +2308,7 @@ export class CameraFramesController {
                 // 無効化中は追従ロジックを停止するが状態は保持
                 this.requestRender();
                 this.emitViewportLensChanged();
-                this.applyViewportNearOverride();
+                void this.applyViewportNearOverride();
             }
             this.events.fire('cameraFrames.enabled', this.state.enabled);
             const nextUiTarget = this.getUiTarget();
@@ -2405,12 +2405,12 @@ export class CameraFramesController {
             setViewportNearDebounceId: (value) => {
                 this.viewportNearDebounceId = value;
             },
-            applyViewportNearOverride: () => this.applyViewportNearOverride()
+            applyViewportNearOverride: () => void this.applyViewportNearOverride()
         });
     }
 
-    private applyViewportNearOverride() {
-        applyViewportNearOverrideCamera({
+    private applyViewportNearOverride(): Promise<void> {
+        return applyViewportNearOverrideCamera({
             shouldApplyViewportNearOverride: () => this.shouldApplyViewportNearOverride(),
             viewportNearLastSampleTs: this.viewportNearLastSampleTs,
             setViewportNearLastSampleTs: (value) => {
@@ -2430,7 +2430,7 @@ export class CameraFramesController {
         });
     }
 
-    private computeViewportNearCandidate(): number | null {
+    private computeViewportNearCandidate(): Promise<number | null> {
         return computeViewportNearCandidateCamera({ scene: this.scene });
     }
 

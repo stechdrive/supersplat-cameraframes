@@ -78,7 +78,6 @@
     "panel.view-options.show-eye-level": "Show Eye Level",
     "panel.view-options.show-bound": "Show Bound",
     "panel.view-options.fly-speed": "Fly Speed",
-    "panel.view-options.high-precision": "High Precision Rendering",
     "panel.view-options.tonemapping": "Tonemapping",
     "panel.view-options.tonemapping.none": "None",
     "panel.view-options.tonemapping.linear": "Linear",

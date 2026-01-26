@@ -107,7 +107,7 @@ class Underlay extends Element {
         (dst as any)._projMatDirty = true;
 
         this.entity.enabled = this.enabled && !this.scene.events.invoke('view.outlineSelection');
-        this.entity.camera.renderTarget = this.scene.camera.workRenderTarget;
+        this.entity.camera.renderTarget = this.scene.camera.workTarget;
     }
 }
 

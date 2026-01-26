@@ -70,7 +70,6 @@
     "panel.view-options.show-eye-level": "Augenhöhe anzeigen",
     "panel.view-options.show-bound": "Objektbox anzeigen",
     "panel.view-options.fly-speed": "Kamera Geschwindigkeit",
-    "panel.view-options.high-precision": "Rendering in hoher Präzision",
     "panel.view-options.tonemapping": "Tonemapping",
     "panel.view-options.tonemapping.none": "Keins",
     "panel.view-options.tonemapping.linear": "Linear",

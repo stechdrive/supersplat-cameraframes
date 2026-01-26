@@ -28,8 +28,7 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
     // get the list of active splats (currently limited to just a single one)
     const activeSplats = () => {
         const selected = events.invoke('selection') as Element;
-        const selectionSize = events.invoke('selection.size') as number;
-        if (selectionSize !== 1 || !(selected instanceof Splat)) {
+        if (!(selected instanceof Splat)) {
             return [];
         }
         return selected.visible ? [selected] : [];
@@ -112,10 +111,6 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
     });
 
     events.on('camera.bound', () => {
-        scene.forceRender = true;
-    });
-
-    events.on('camera.highPrecision', () => {
         scene.forceRender = true;
     });
 
@@ -222,25 +217,6 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
 
     events.on('camera.toggleBound', () => {
         setBoundVisible(!events.invoke('camera.bound'));
-    });
-
-    // camera.highPrecision
-
-    let highPrecision = scene.config.camera.highPrecision;
-
-    const sethighPrecision = (enabled: boolean) => {
-        if (enabled !== highPrecision) {
-            highPrecision = enabled;
-            events.fire('camera.highPrecision', highPrecision);
-        }
-    };
-
-    events.function('camera.highPrecision', () => {
-        return highPrecision;
-    });
-
-    events.on('camera.sethighPrecision', (value: boolean) => {
-        sethighPrecision(value);
     });
 
     // camera.focus
@@ -361,7 +337,7 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
         });
     });
 
-    events.on('select.rect', (op: 'add'|'remove'|'set', rect: any) => {
+    events.on('select.rect', async (op: 'add'|'remove'|'set', rect: any) => {
         const mode = events.invoke('camera.mode');
         if (!rect?.start || !rect?.end) {
             return;
@@ -383,31 +359,14 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
             return;
         }
 
-        activeSplats().forEach((splat) => {
+        for (const splat of activeSplats()) {
             if (mode === 'centers') {
                 intersectCenters(splat, op, {
                     rect: { x1: minX, y1: minY, x2: maxX, y2: maxY }
                 });
             } else if (mode === 'rings') {
-                const { width, height } = scene.targetSize;
-                if (!(width > 0 && height > 0)) {
-                    return;
-                }
-                const px = Math.floor(minX * width);
-                const py = Math.floor(minY * height);
-                const pw = Math.floor(normW * width);
-                const ph = Math.floor(normH * height);
-                if (pw <= 0 || ph <= 0) {
-                    return;
-                }
-
                 scene.camera.pickPrep(splat, op);
-                const pick = scene.camera.pickRect(
-                    px,
-                    py,
-                    pw,
-                    ph
-                );
+                const pick = await scene.camera.pickRect(minX, minY, normW, normH);
 
                 const selected = new Set<number>(pick);
                 const filter = (i: number) => {
@@ -416,15 +375,15 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
 
                 events.fire('edit.add', new SelectOp(splat, op, filter));
             }
-        });
+        }
     });
 
     let maskTexture: Texture = null;
 
-    events.on('select.byMask', (op: 'add'|'remove'|'set', canvas: HTMLCanvasElement, context: CanvasRenderingContext2D) => {
+    events.on('select.byMask', async (op: 'add'|'remove'|'set', canvas: HTMLCanvasElement, context: CanvasRenderingContext2D) => {
         const mode = events.invoke('camera.mode');
 
-        activeSplats().forEach((splat) => {
+        for (const splat of activeSplats()) {
             if (mode === 'centers') {
                 // create mask texture
                 if (!maskTexture || maskTexture.width !== canvas.width || maskTexture.height !== canvas.height) {
@@ -464,29 +423,30 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
                     return;
                 }
 
+                // Convert mask bounds to normalized coordinates
+                const nx0 = mx0 / mask.width;
+                const ny0 = my0 / mask.height;
+                const nx1 = (mx1 + 1) / mask.width;
+                const ny1 = (my1 + 1) / mask.height;
+                const nw = nx1 - nx0;
+                const nh = ny1 - ny0;
+
+                scene.camera.pickPrep(splat, op);
+                const pick = await scene.camera.pickRect(nx0, ny0, nw, nh);
+
+                // Calculate actual pixel dimensions for iteration
                 const { width, height } = scene.targetSize;
                 if (!(width > 0 && height > 0)) {
                     return;
                 }
-                const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
-                const px0 = clamp(Math.floor(mx0 / mask.width * width), 0, width - 1);
-                const py0 = clamp(Math.floor(my0 / mask.height * height), 0, height - 1);
-                const px1 = clamp(Math.floor(mx1 / mask.width * width), 0, width - 1);
-                const py1 = clamp(Math.floor(my1 / mask.height * height), 0, height - 1);
-                const pw = px1 - px0 + 1;
-                const ph = py1 - py0 + 1;
-                if (pw <= 0 || ph <= 0) {
-                    return;
-                }
-
-                scene.camera.pickPrep(splat, op);
-                const pick = scene.camera.pickRect(px0, py0, pw, ph);
+                const pw = Math.max(1, Math.floor(nw * width));
+                const ph = Math.max(1, Math.floor(nh * height));
 
                 const selected = new Set<number>();
                 for (let y = 0; y < ph; ++y) {
                     for (let x = 0; x < pw; ++x) {
-                        const mx = Math.floor((px0 + x) / width * mask.width);
-                        const my = Math.floor((py0 + y) / height * mask.height);
+                        const mx = Math.floor((nx0 + x / width) * mask.width);
+                        const my = Math.floor((ny0 + y / height) * mask.height);
                         if (mask.data[(my * mask.width + mx) * 4] === 255) {
                             selected.add(pick[(ph - y) * pw + x]);
                         }
@@ -499,10 +459,10 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
 
                 events.fire('edit.add', new SelectOp(splat, op, filter));
             }
-        });
+        }
     });
 
-    events.on('select.point', (op: 'add'|'remove'|'set', point: { x: number, y: number }) => {
+    events.on('select.point', async (op: 'add'|'remove'|'set', point: { x: number, y: number }) => {
         const { width, height } = scene.targetSize;
         const mode = events.invoke('camera.mode');
         if (!(width > 0 && height > 0)) {
@@ -514,7 +474,7 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
             return;
         }
 
-        activeSplats().forEach((splat) => {
+        for (const splat of activeSplats()) {
             const splatData = splat.splatData;
 
             if (mode === 'centers') {
@@ -542,11 +502,14 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
             } else if (mode === 'rings') {
                 scene.camera.pickPrep(splat, op);
 
-                const pickId = scene.camera.pickRect(
-                    Math.floor(px * width),
-                    Math.floor(py * height),
-                    1, 1
-                )[0];
+                // Use normalized coordinates with minimal size for single pixel pick
+                const pickResult = await scene.camera.pickRect(
+                    px,
+                    py,
+                    1 / width,
+                    1 / height
+                );
+                const pickId = pickResult[0];
 
                 const filter = (i: number) => {
                     return i === pickId;
@@ -554,7 +517,7 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
 
                 events.fire('edit.add', new SelectOp(splat, op, filter));
             }
-        });
+        }
     });
 
     // Eyedropper selection with SelectOp so undo/redo and selection state updates remain consistent.
@@ -562,7 +525,7 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
     // TO DO:
     // -  alternative distance metrics such as HSV.
     // -  alternative UI for threshold, two handles for min/max?
-    events.on('select.colorMatch', (op: 'add'|'remove'|'set', point: { x: number, y: number }, threshold = 0) => {
+    events.on('select.colorMatch', async (op: 'add'|'remove'|'set', point: { x: number, y: number }, threshold = 0) => {
         const splats = activeSplats();
         const targetSize = scene.targetSize;
         if (!splats.length || !targetSize || !point) {
@@ -577,16 +540,18 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
             return;
         }
 
-        const px = Math.max(0, Math.min(width - 1, Math.floor(point.x * width)));
-        const py = Math.max(0, Math.min(height - 1, Math.floor(point.y * height)));
+        // Clamp normalized coordinates to valid range
+        const nx = Math.max(0, Math.min(1, point.x));
+        const ny = Math.max(0, Math.min(1, point.y));
         const colorThreshold = Math.min(1, Math.max(0, Number.isFinite(threshold) ? threshold : 0));
 
-        splats.forEach((splat) => {
+        for (const splat of splats) {
             scene.camera.pickPrep(splat, 'set');
-            const pickBuffer = scene.camera.pickRect(px, py, 1, 1);
+            // Use normalized coordinates with minimal size for single pixel pick
+            const pickBuffer = await scene.camera.pickRect(nx, ny, 1 / width, 1 / height);
             const pickId = pickBuffer?.[0];
-            if (pickId === undefined || pickId === -1) {
-                return;
+            if (pickId === undefined || pickId === 0xffffffff) {
+                continue;
             }
 
             const reds = splat.splatData.getProp('f_dc_0') as Float32Array;
@@ -594,7 +559,7 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
             const blues = splat.splatData.getProp('f_dc_2') as Float32Array;
             // validate pickId and color channels exist
             if (!reds || !greens || !blues || pickId < 0 || pickId >= reds.length) {
-                return;
+                continue;
             }
             // decode color channels for the reference pixel
             const reference = [
@@ -613,7 +578,7 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
             };
 
             events.fire('edit.add', new SelectOp(splat, op, filter));
-        });
+        }
     });
 
     events.on('select.hide', () => {
