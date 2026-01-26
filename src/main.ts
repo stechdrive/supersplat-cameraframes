@@ -312,11 +312,6 @@ const main = async () => {
 
     registerEditorEvents(events, editHistory, scene);
     registerSelectionEvents(events, scene);
-    registerTimelineEvents(events);
-    registerCameraPosesEvents(events);
-    registerTransformHandlerEvents(events);
-    registerPlySequenceEvents(events);
-    registerPublishEvents(events);
     const cameraFramesController = registerCameraFrames(events, scene, editorUI.canvasContainer.dom);
     const cameraFramesHistory = new CameraFramesHistory(
         events,
