@@ -492,7 +492,7 @@ class Camera extends Element {
                 }
             });
 
-        const target = document.getElementById('canvas-container');
+        const target = document.getElementById('canvas-container') ?? scene.canvas;
         this.controller = new PointerController(this, target);
 
         // lock framing control (CAMERA FRAMES)

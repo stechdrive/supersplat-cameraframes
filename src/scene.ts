@@ -205,31 +205,44 @@ class Scene {
         this.app.graphicsDevice.maxPixelRatio = window.devicePixelRatio;
 
         // configure application canvas
-        const observer = new ResizeObserver((entries: ResizeObserverEntry[]) => {
-            if (entries.length > 0) {
-                const entry = entries[0];
-                if (entry) {
-                    if (entry.devicePixelContentBoxSize) {
-                        // on non-safari browsers, we are given the pixel-perfect canvas size
-                        this.canvasResize = {
-                            width: entry.devicePixelContentBoxSize[0].inlineSize,
-                            height: entry.devicePixelContentBoxSize[0].blockSize
-                        };
-                    } else if (entry.contentBoxSize.length > 0) {
-                        // on safari browsers we must calculate pixel size from CSS size ourselves
-                        // and hope the browser performs the same calculation.
-                        const pixelRatio = window.devicePixelRatio;
-                        this.canvasResize = {
-                            width: Math.ceil(entry.contentBoxSize[0].inlineSize * pixelRatio),
-                            height: Math.ceil(entry.contentBoxSize[0].blockSize * pixelRatio)
-                        };
-                    }
-                }
-                this.forceRender = true;
+        const observedTarget = window.document.getElementById('canvas-container') ?? canvas;
+        const updateCanvasResize = (entry?: ResizeObserverEntry | null) => {
+            if (entry?.devicePixelContentBoxSize) {
+                // on non-safari browsers, we are given the pixel-perfect canvas size
+                this.canvasResize = {
+                    width: entry.devicePixelContentBoxSize[0].inlineSize,
+                    height: entry.devicePixelContentBoxSize[0].blockSize
+                };
+            } else if (entry?.contentBoxSize?.length > 0) {
+                // on safari browsers we must calculate pixel size from CSS size ourselves
+                // and hope the browser performs the same calculation.
+                const pixelRatio = window.devicePixelRatio || 1;
+                this.canvasResize = {
+                    width: Math.ceil(entry.contentBoxSize[0].inlineSize * pixelRatio),
+                    height: Math.ceil(entry.contentBoxSize[0].blockSize * pixelRatio)
+                };
+            } else {
+                const rect = observedTarget.getBoundingClientRect();
+                const pixelRatio = window.devicePixelRatio || 1;
+                this.canvasResize = {
+                    width: Math.ceil(rect.width * pixelRatio),
+                    height: Math.ceil(rect.height * pixelRatio)
+                };
             }
-        });
+            this.forceRender = true;
+        };
 
-        observer.observe(window.document.getElementById('canvas-container'));
+        if (typeof ResizeObserver !== 'undefined') {
+            const observer = new ResizeObserver((entries: ResizeObserverEntry[]) => {
+                if (entries.length > 0) {
+                    updateCanvasResize(entries[0]);
+                }
+            });
+            observer.observe(observedTarget);
+        } else {
+            updateCanvasResize();
+            window.addEventListener('resize', () => updateCanvasResize());
+        }
 
         // configure depth layers to handle dynamic refraction
         const depthLayer = this.app.scene.layers.getLayerById(LAYERID_DEPTH);
