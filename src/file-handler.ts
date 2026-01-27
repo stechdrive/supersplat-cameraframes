@@ -259,7 +259,7 @@ const initFileHandler = (scene: Scene, events: Events, dropTarget: HTMLElement) 
                 url: file.url,
                 animationFrame
             });
-            scene.add(model);
+            await scene.add(model);
             return model;
         } catch (error) {
             await showLoadError(error.message ?? error, file.filename);
@@ -290,7 +290,7 @@ const initFileHandler = (scene: Scene, events: Events, dropTarget: HTMLElement) 
 
         urls.forEach(url => URL.revokeObjectURL(url));
 
-        scene.add(model);
+        await scene.add(model);
 
         return model;
     };
@@ -324,7 +324,7 @@ const initFileHandler = (scene: Scene, events: Events, dropTarget: HTMLElement) 
                 mapFile
             });
 
-            scene.add(model);
+            await scene.add(model);
 
             return model;
         } catch (error) {
