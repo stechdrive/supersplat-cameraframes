@@ -1,3 +1,4 @@
+import { MemoryFileSystem } from '@playcanvas/splat-transform';
 import { Color, Mat4, path, Texture, Vec3, Vec4 } from 'playcanvas';
 
 import { EditHistory } from './edit-history';
@@ -5,7 +6,6 @@ import { SelectAllOp, SelectNoneOp, SelectInvertOp, SelectOp, HideSelectionOp, U
 import { Element } from './element';
 import { Events } from './events';
 import { Scene } from './scene';
-import { BufferWriter } from './serialize/writer';
 import { Splat } from './splat';
 import { serializePly } from './splat-serialize';
 
@@ -586,20 +586,20 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
     const performSelectionFunc = async (func: 'duplicate' | 'separate') => {
         const splats = selectedSplats();
 
-        const writer = new BufferWriter();
+        const memFs = new MemoryFileSystem();
 
         await serializePly(splats, {
             maxSHBands: 3,
             selected: true
-        }, writer);
+        }, memFs);
 
-        const buffers = writer.close();
+        const data = memFs.results.get('output.ply');
 
-        if (buffers) {
+        if (data) {
             const splat = splats[0];
 
             // wrap PLY in a blob and load it
-            const blob = new Blob(buffers as unknown as ArrayBuffer[], { type: 'application/octet-stream' });
+            const blob = new Blob([data.buffer as ArrayBuffer], { type: 'application/octet-stream' });
             const url = URL.createObjectURL(blob);
             const filename = `${removeExtension(splat.filename)}.ply`;
             const copy = await scene.assetLoader.load({ url, filename });

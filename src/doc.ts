@@ -1,12 +1,13 @@
+import { ZipFileSystem } from '@playcanvas/splat-transform';
+
 import { ElementType } from './element';
 import { Events } from './events';
 import { Model } from './model';
 import { recentFiles } from './recent-files';
 import { normalizeReferenceImageFilename } from './reference-image-filename';
 import { Scene } from './scene';
-import { DownloadWriter, FileStreamWriter } from './serialize/writer';
+import { BrowserFileSystem } from './serialize/browser-file-system';
 import { ZipReader } from './serialize/zip-reader';
-import { ZipWriter } from './serialize/zip-writer';
 import { Splat } from './splat';
 import { serializePly } from './splat-serialize';
 import { Transform } from './transform';
@@ -306,8 +307,8 @@ const registerDocEvents = (scene: Scene, events: Events) => {
         throw new Error(`Model source not available for '${model.name}'`);
     };
 
-    const writeBlobToZip = async (zipWriter: ZipWriter, filename: string, source: Blob | ReadableStream<Uint8Array>) => {
-        await zipWriter.start(filename);
+    const writeBlobToZip = async (zipFs: ZipFileSystem, filename: string, source: Blob | ReadableStream<Uint8Array>) => {
+        const writer = await zipFs.createWriter(filename);
         const reader = (source instanceof Blob ? source.stream() : source).getReader();
         while (true) {
             const { value, done } = await reader.read();
@@ -315,9 +316,10 @@ const registerDocEvents = (scene: Scene, events: Events) => {
                 break;
             }
             if (value) {
-                await zipWriter.write(value);
+                await writer.write(value);
             }
         }
+        await writer.close();
     };
 
     const saveDocument = async (options: { stream?: FileSystemWritableFileStream, filename?: string }): Promise<boolean> => {
@@ -380,26 +382,31 @@ const registerDocEvents = (scene: Scene, events: Events) => {
                 keepColorTint: true
             };
 
-            const writer = options.stream ? new FileStreamWriter(options.stream) : new DownloadWriter(options.filename);
-            const zipWriter = new ZipWriter(writer, { zip64: useZip64 });
+            // Create browser filesystem and zip filesystem
+            const browserFs = new BrowserFileSystem(options.filename, options.stream);
+            const browserWriter = await browserFs.createWriter(options.filename);
+            const zipFs = new ZipFileSystem(browserWriter);
 
-            await zipWriter.file('document.json', JSON.stringify(document));
+            // Write document.json
+            const docWriter = await zipFs.createWriter('document.json');
+            await docWriter.write(new TextEncoder().encode(JSON.stringify(document)));
+            await docWriter.close();
+
+            // Write each splat as PLY
             for (let i = 0; i < splats.length; ++i) {
-                await zipWriter.start(`splat_${i}.ply`);
-                await serializePly([splats[i]], serializeSettings, zipWriter);
+                await serializePly([splats[i]], serializeSettings, zipFs, `splat_${i}.ply`);
             }
             for (let i = 0; i < models.length; ++i) {
                 const blob = await getModelBlob(models[i]);
-                await writeBlobToZip(zipWriter, modelDocs[i].filename, blob);
+                await writeBlobToZip(zipFs, modelDocs[i].filename, blob);
             }
             for (const asset of referenceImagesAssets) {
                 if (!asset?.blob || typeof asset?.path !== 'string' || !asset.path) {
                     continue;
                 }
-                await writeBlobToZip(zipWriter, asset.path, asset.blob);
+                await writeBlobToZip(zipFs, asset.path, asset.blob);
             }
-            await zipWriter.close();
-            await writer.close();
+            await zipFs.close();
             return true;
         } catch (error) {
             await events.invoke('showPopup', {
