@@ -1,5 +1,5 @@
-// ZipReader: ランダムアクセス可能な ZIP リーダー (ZIP64/ストリーミング対応)
-// Central Directory を解析し、個別ファイルを ReadableStream/Blob/Text として取得する。
+// ZipReader: random-access ZIP reader (ZIP64/streaming).
+// Parses the Central Directory and exposes entries as ReadableStream/Blob/Text.
 
 type ZipEntry = {
     filename: string;

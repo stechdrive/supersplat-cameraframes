@@ -12,7 +12,6 @@ const versionedAssets = [
     './index.html',
     './index.js',
     './index.css',
-    './jszip.js',
     './manifest.json'
 ].map(path => withVersion(path));
 

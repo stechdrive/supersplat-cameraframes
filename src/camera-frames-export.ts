@@ -4,7 +4,7 @@ import type { Model } from './model';
 import type { PngCompressor } from './png-compressor';
 import { exportPsd, type PsdOverlayLayer } from './psd-export';
 import type { Scene } from './scene';
-import { Crc } from './serialize/crc';
+import { Crc } from './utils/crc';
 import { localize } from './ui/localization';
 
 type ApplyCameraPose = (pose: CameraPoseSnapshot, options: { silent: boolean; allowOrtho: boolean; }) => void;

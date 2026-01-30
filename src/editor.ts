@@ -5,6 +5,7 @@ import { EditHistory } from './edit-history';
 import { SelectAllOp, SelectNoneOp, SelectInvertOp, SelectOp, HideSelectionOp, UnhideAllOp, DeleteSelectionOp, ResetOp, MultiOp, AddSplatOp } from './edit-ops';
 import { Element } from './element';
 import { Events } from './events';
+import { MappedReadFileSystem } from './io';
 import { Scene } from './scene';
 import { Splat } from './splat';
 import { serializePly } from './splat-serialize';
@@ -600,11 +601,11 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
 
             // wrap PLY in a blob and load it
             const blob = new Blob([data.buffer as ArrayBuffer], { type: 'application/octet-stream' });
-            const url = URL.createObjectURL(blob);
             const filename = `${removeExtension(splat.filename)}.ply`;
-            const copy = await scene.assetLoader.load({ url, filename });
+            const fileSystem = new MappedReadFileSystem();
+            fileSystem.addFile(filename, blob);
+            const copy = await scene.assetLoader.load(filename, fileSystem);
             if (!(copy instanceof Splat)) {
-                URL.revokeObjectURL(url);
                 throw new Error('Duplicate/separate supports splats only');
             }
 
@@ -616,8 +617,6 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
             } else {
                 editHistory.add(new AddSplatOp(scene, copy));
             }
-
-            URL.revokeObjectURL(url);
         }
     };
 
@@ -634,21 +633,6 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
         activeSplats().forEach((splat) => {
             editHistory.add(new ResetOp(splat));
         });
-    });
-
-    const setAllData = (value: boolean) => {
-        if (value !== scene.assetLoader.loadAllData) {
-            scene.assetLoader.loadAllData = value;
-            events.fire('allData', scene.assetLoader.loadAllData);
-        }
-    };
-
-    events.function('allData', () => {
-        return scene.assetLoader.loadAllData;
-    });
-
-    events.on('toggleAllData', (value: boolean) => {
-        setAllData(!events.invoke('allData'));
     });
 
     // camera mode (visual: centers/rings)
