@@ -361,6 +361,28 @@ class SplatRenderSystem {
         this.markSorterCentersDirty();
     }
 
+    private seedInstance(instance: any, totalSplats: number) {
+        const instanceSize = (GSplatResource as any).instanceSize ?? 128;
+        const count = Math.max(0, totalSplats);
+
+        // Ensure the mesh renders even before the sorter posts its first update.
+        instance.meshInstance.instancingCount = Math.ceil(count / instanceSize);
+        instance.material?.setParameter('numSplats', count);
+
+        const orderTexture = (instance as any).orderTexture;
+        if (orderTexture) {
+            const orderData = orderTexture.lock() as Uint32Array;
+            for (let i = 0; i < orderData.length; i++) {
+                orderData[i] = i;
+            }
+            orderTexture.unlock();
+        }
+
+        if (instance.sorter) {
+            instance.sort(this.scene.camera.entity);
+        }
+    }
+
     waitForSorter() {
         const instance = this.mergedEntity.gsplat?.instance;
         if (!instance?.sorter) {
@@ -1025,6 +1047,7 @@ class SplatRenderSystem {
         const instance = this.mergedEntity.gsplat.instance;
         if (instance) {
             instance.meshInstance.cull = false;
+            this.seedInstance(instance, totalSplats);
 
             // Update sorter centers asynchronously (GPU readback).
             const centersToken = this.centersUpdateToken;
