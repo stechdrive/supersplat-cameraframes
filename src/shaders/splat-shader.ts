@@ -91,6 +91,11 @@ void main(void) {
     vec3 modelCenter = readCenter(source);
 
     SplatCenter center;
+    center.modelCenterOriginal = modelCenter;
+    modifyCenter(modelCenter);
+    modifySplatCenter(modelCenter);
+    center.modelCenterModified = modelCenter;
+
     if (!initCenter(source, modelCenter, center)) {
         gl_Position = discardVec;
         return;
@@ -253,6 +258,7 @@ void main(void) {
 const gsplatCenter = /* glsl*/`
 uniform mat4 matrix_model;
 uniform mat4 matrix_view;
+uniform vec4 camera_params;             // 1 / far, far, near, isOrtho
 uniform mat4 matrix_projection;
 
 uniform highp usampler2D splatTransform;        // per-splat index into transform palette
@@ -283,13 +289,18 @@ bool initCenter(SplatSource source, vec3 modelCenter, out SplatCenter center) {
     mat4 modelView = matrix_view * applyPaletteTransform(source);
     vec4 centerView = modelView * vec4(modelCenter, 1.0);
 
-    // early out if splat is behind the camera
-    if (centerView.z > 0.0) {
+    // early out if splat is behind the camera (perspective only)
+    if (camera_params.w != 1.0 && centerView.z > 0.0) {
         return false;
     }
 
     // 非対称フラスタムを含む射影行列をそのまま適用し、FOV 推定などで再計算しない。
     vec4 centerProj = matrix_projection * centerView;
+    #if WEBGPU
+        centerProj.z = clamp(centerProj.z, 0.0, abs(centerProj.w));
+    #else
+        centerProj.z = clamp(centerProj.z, -abs(centerProj.w), abs(centerProj.w));
+    #endif
 
     center.view = centerView.xyz / centerView.w;
     center.proj = centerProj;
