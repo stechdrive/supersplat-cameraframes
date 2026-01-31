@@ -2,7 +2,7 @@ import { ZipFileSystem, ZipReadFileSystem } from '@playcanvas/splat-transform';
 
 import { ElementType } from './element';
 import { Events } from './events';
-import { BrowserFileSystem, BlobReadSource } from './io';
+import { BrowserFileSystem, BlobReadSource, MappedReadFileSystem } from './io';
 import { Model } from './model';
 import { recentFiles } from './recent-files';
 import { normalizeReferenceImageFilename } from './reference-image-filename';
@@ -161,12 +161,43 @@ const registerDocEvents = (scene: Scene, events: Events) => {
             }
 
             // stage assets before mutating current scene
+            const loadSplatFromZip = async (filename: string) => {
+                try {
+                    const splat = await scene.assetLoader.load(filename, zipFs);
+                    if (!(splat instanceof Splat)) {
+                        throw new Error('document contains a non-splat asset');
+                    }
+                    if (splat.numSplats === 0) {
+                        throw new Error('loaded splat has no points');
+                    }
+                    return splat;
+                } catch (error) {
+                    try {
+                        const blob = await readZipBlob(filename);
+                        const fallbackFs = new MappedReadFileSystem();
+                        fallbackFs.addFile(filename, blob);
+                        const splat = await scene.assetLoader.load(filename, fallbackFs, false, blob);
+                        if (!(splat instanceof Splat)) {
+                            throw new Error('document contains a non-splat asset');
+                        }
+                        if (splat.numSplats === 0) {
+                            throw new Error('loaded splat has no points');
+                        }
+                        return splat;
+                    } catch (fallbackError) {
+                        const primaryMessage = error instanceof Error ? error.message : `${error}`;
+                        const fallbackMessage = fallbackError instanceof Error ? fallbackError.message : `${fallbackError}`;
+                        throw new Error(`Failed to load splat '${filename}': ${primaryMessage}. Fallback failed: ${fallbackMessage}`);
+                    }
+                }
+            };
+
             const stagedSplats: { splat: Splat, settings: any }[] = [];
             for (let i = 0; i < document.splats.length; ++i) {
                 const filename = `splat_${i}.ply`;
                 const splatSettings = document.splats[i];
 
-                const splat = await scene.assetLoader.load(filename, zipFs);
+                const splat = await loadSplatFromZip(filename);
                 stagedSplats.push({ splat, settings: splatSettings });
             }
 
