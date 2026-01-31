@@ -133,7 +133,7 @@ const registerDocEvents = (scene: Scene, events: Events) => {
             const source = await zipFs.createSource(path);
             try {
                 const data = await source.read().readAll();
-                return new Blob([data]);
+                return new Blob([new Uint8Array(data)]);
             } finally {
                 source.close();
             }
