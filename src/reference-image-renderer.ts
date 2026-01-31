@@ -111,7 +111,6 @@ class ReferenceImageRenderer extends Element {
             if (backLayer && layer === backLayer) {
                 this.drawnBack = true;
                 this.draw('back');
-                return;
             }
         };
 

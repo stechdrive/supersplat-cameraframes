@@ -1,7 +1,7 @@
 let cachedAvailability: boolean | null = null;
 let pendingAvailability: Promise<boolean> | null = null;
 
-const canUseWebGPU = async (): Promise<boolean> => {
+const canUseWebGPU = (): Promise<boolean> => {
     if (cachedAvailability !== null) {
         return cachedAvailability;
     }
