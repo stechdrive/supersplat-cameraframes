@@ -5,7 +5,6 @@ class EditHistory {
     history: EditOp[] = [];
     cursor = 0;
     events: Events;
-    maxLength = 100;
 
     constructor(events: Events) {
         this.events = events;
@@ -33,7 +32,6 @@ class EditHistory {
         }
         this.history.push(editOp);
         await this.redo(suppressOp);
-        this.trimOverflow();
     }
 
     canUndo() {
@@ -71,16 +69,6 @@ class EditHistory {
         });
         this.history = [];
         this.cursor = 0;
-    }
-
-    private trimOverflow() {
-        if (this.history.length <= this.maxLength) {
-            return;
-        }
-        const overflow = this.history.length - this.maxLength;
-        const removed = this.history.splice(0, overflow);
-        removed.forEach(op => op.destroy?.());
-        this.cursor = Math.max(0, this.cursor - overflow);
     }
 }
 
