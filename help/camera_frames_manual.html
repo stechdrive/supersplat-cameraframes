@@ -149,7 +149,7 @@
     <p style="text-align: left; font-size: 1.1em; color: #5a5a5a;">
       CAMERA FRAMES は、A4相当の<span class="keyword">基準用紙</span>の上に複数の<span
         class="keyword">撮影フレーム</span>をレイアウトし、構図（カメラの位置・向き・画角）を調整して、LO用紙テンプレとぴったり合う画像を書き出すためのツールです。Webブラウザで動作します。本マニュアルは
-      CAMERA FRAMES <span class="keyword">v2.17.0</span> に対応しています。
+      CAMERA FRAMES <span class="keyword">v2.18.0</span> に対応しています。
       <br>URL: <a href="https://stechdrive.github.io/supersplat-cameraframes/"
         target="_blank">https://stechdrive.github.io/supersplat-cameraframes/</a>
     </p>
@@ -164,7 +164,7 @@
 
     <h2>はじめに（基本の流れ）</h2>
     <ul class="operation-list">
-      <li><span class="keyword">3Dデータ</span>（.ply/.splat/.sog など）や <span
+      <li><span class="keyword">3Dデータ</span>（.ply/.splat/.sog/.lcc など）や <span
           class="keyword">3Dモデル</span>（.glb）を読み込みます。</li>
       <li><span class="control">大判指定</span>で基準用紙のサイズ（幅/高さ）と基準点を決めます。</li>
       <li><span class="control">フレーム一覧</span>で撮影フレームを追加し、ビューポート上で位置・回転・拡縮を調整します。</li>
@@ -312,7 +312,7 @@
       <li><span class="control">下絵（Reference Image）</span>: 各カメラに紐づく下絵セットを行内のセレクトで切り替えます。カメラ追加時は共通の<span class="control">(blank)</span>にリンクされ、下絵を初めて読み込むと<span class="control">読み込んだ最初のファイル名</span>で新規セットが作成されて自動で切り替わります。</li>
       <li><span class="control">書き出し（.sscam）</span>: ヘッダーの<span class="control">エクスポートアイコン</span>で、カメラリストをファイルに保存します。</li>
       <li><span class="control">読み込み（.sscam）</span>: ヘッダーの<span class="control">インポートアイコン</span>で、カメラリストを読み込み、現在のリストを置き換えます（必要ならUndoで戻せます）。</li>
-      <li><span class="keyword">注意</span>: <span class="control">.sscam</span>には、読み込んでいる<span class="keyword">ロケ地データ（.ply/.splat）や3Dモデル（.glb）</span>は保存されません。アセットの差し替え・移動/回転/スケールなどを行うと、同じカメラでも画が合わない場合があります。構図を固定したい場合は、アセット側を変えないか、編集後に再度<span
+      <li><span class="keyword">注意</span>: <span class="control">.sscam</span>には、読み込んでいる<span class="keyword">ロケ地データ（.ply/.splat/.sog/.lcc など）や3Dモデル（.glb）</span>は保存されません。アセットの差し替え・移動/回転/スケールなどを行うと、同じカメラでも画が合わない場合があります。構図を固定したい場合は、アセット側を変えないか、編集後に再度<span
           class="control">書き出し</span>してください（シーン全体の保存は<span class="keyword">.ssproj</span>を利用します）。</li>
     </ul>
 
@@ -367,13 +367,13 @@
 
     <h3>1-7. シーンマネージャー（ロケ地データ/3Dモデルの表示・移動）</h3>
     <p style="text-align: left; font-size: 1.0em; color: #5a5a5a;">
-      既存のPLYなどのロケ地データや、読み込んだGLBモデルは<span class="control">シーンマネージャー</span>で管理できます。表示の切り替えや、位置・回転・拡縮の調整を行いたい場合は次の手順で操作します。
+      既存のPLY/SOG/LCCなどのロケ地データや、読み込んだGLBモデルは<span class="control">シーンマネージャー</span>で管理できます。表示の切り替えや、位置・回転・拡縮の調整を行いたい場合は次の手順で操作します。
     </p>
     <ul class="operation-list">
       <li><span class="control">メニューを展開</span>: 画面左上の<span class="control">「＞」</span>をクリックして折りたたみを解除します（<span
           class="control">シーンマネージャー</span>と画面下部の<span class="control">ツールバー</span>が表示されます）。</li>
       <li><span class="control">オブジェクトを選択</span>: <span class="control">シーンマネージャー</span>の一覧から、操作したい<span
-          class="keyword">ロケ地データ（.ply/.splat など）</span>や<span class="keyword">3Dモデル（.glb）</span>の名前をクリックします。</li>
+          class="keyword">ロケ地データ（.ply/.splat/.sog/.lcc など）</span>や<span class="keyword">3Dモデル（.glb）</span>の名前をクリックします。</li>
       <li><span class="control">複数選択</span>: <span class="control">Ctrl/Cmd</span>+クリックで追加/解除、<span
           class="control">Shift</span>+クリックで同じリスト内の範囲選択ができます。最後にクリックした項目がアクティブになります。</li>
       <li><span class="control">表示/非表示</span>: 一覧の<span class="control">目アイコン</span>をクリックして切り替えます。</li>

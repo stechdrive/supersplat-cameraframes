@@ -1,5 +1,5 @@
 const buildInfo = {
-    version: 'v2.17.0-1768116330'
+    version: 'v2.19.0-1769860439'
 };
 
 const cacheName = `superSplat-cFrames-${buildInfo.version}`;
@@ -10,7 +10,6 @@ const versionedAssets = [
     './index.html',
     './index.js',
     './index.css',
-    './jszip.js',
     './manifest.json'
 ].map(path => withVersion(path));
 const staticAssets = [

@@ -3291,6 +3291,209 @@
   background-color: #f60;
 }
 
+#shortcuts-popup {
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.25);
+  pointer-events: all;
+}
+#shortcuts-popup #dialog {
+  position: absolute;
+  width: 440px;
+  max-height: 80vh;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 8px;
+  background-color: #333;
+  filter: drop-shadow(5px 5px 10px rgba(0, 0, 0, 0.8));
+  will-change: transform;
+}
+#shortcuts-popup #dialog #header {
+  height: 32px;
+  min-height: 32px;
+  line-height: 32px;
+  margin: 0px;
+  padding: 0px 12px;
+  font-weight: bold;
+  color: #fff;
+  background-color: #202020;
+  text-transform: uppercase;
+}
+#shortcuts-popup #dialog #content {
+  padding: 12px;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+#shortcuts-popup .shortcut-header {
+  margin: 8px 0 4px 0;
+  padding: 6px 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+#shortcuts-popup .shortcut-header:first-child {
+  margin-top: 0;
+}
+#shortcuts-popup .shortcut-header .shortcut-header-label {
+  margin: 0;
+  font-weight: 600;
+  font-size: 10px;
+  color: #f60;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+}
+#shortcuts-popup .shortcut-entry {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  padding: 6px 8px;
+  border-radius: 4px;
+}
+#shortcuts-popup .shortcut-entry:hover {
+  background-color: rgba(255, 255, 255, 0.04);
+}
+#shortcuts-popup .shortcut-key {
+  min-width: 140px;
+  margin: 0;
+  padding: 4px 8px;
+  background-color: #202020;
+  border-radius: 4px;
+  font-family: "SF Mono", "Monaco", "Inconsolata", "Roboto Mono", "Consolas", monospace;
+  font-size: 11px;
+  font-weight: 500;
+  color: #fff;
+  text-align: center;
+  white-space: nowrap;
+}
+#shortcuts-popup .shortcut-action {
+  flex-grow: 1;
+  margin: 0 0 0 12px;
+  color: #aaa;
+  font-size: 12px;
+  font-weight: 400;
+}
+
+#about-popup {
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.25);
+  pointer-events: all;
+}
+#about-popup #about-dialog {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  min-width: 320px;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 8px;
+  background-color: #333;
+  filter: drop-shadow(5px 5px 10px rgba(0, 0, 0, 0.8));
+  will-change: transform;
+}
+#about-popup #about-header {
+  height: 32px;
+  line-height: 32px;
+  margin: 0;
+  padding: 0 8px;
+  font-weight: bold;
+  color: #fff;
+  background-color: #202020;
+  text-transform: uppercase;
+}
+#about-popup #about-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 20px;
+  gap: 12px;
+}
+#about-popup #about-logo {
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+}
+#about-popup #about-logo:hover {
+  opacity: 0.8;
+}
+#about-popup #about-logo svg {
+  display: block;
+}
+#about-popup #about-app-info {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+}
+#about-popup #about-app-info:hover {
+  opacity: 0.8;
+}
+#about-popup #about-app-name {
+  margin: 0;
+  font-family: "Proxima Nova Bold", "Helvetica Neue", Arial, Helvetica, sans-serif;
+  font-size: 18px;
+  font-weight: 700;
+  color: #fff;
+}
+#about-popup #about-app-version {
+  margin: 0;
+  font-family: "SF Mono", "Monaco", "Inconsolata", "Roboto Mono", "Consolas", monospace;
+  font-size: 12px;
+  font-weight: 500;
+  color: #f60;
+}
+#about-popup #about-deps {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  margin-top: 16px;
+}
+#about-popup .about-dep-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  padding: 6px 10px;
+  border-radius: 4px;
+  background-color: rgba(0, 0, 0, 0.2);
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+#about-popup .about-dep-row:hover {
+  background-color: rgba(246, 102, 44, 0.15);
+}
+#about-popup .about-dep-row:hover .about-dep-name {
+  color: #f60;
+}
+#about-popup .about-dep-name {
+  min-width: 80px;
+  margin: 0;
+  font-size: 11px;
+  font-weight: 500;
+  color: #aaa;
+  transition: color 0.15s ease;
+}
+#about-popup .about-dep-version {
+  margin: 0;
+  font-family: "SF Mono", "Monaco", "Inconsolata", "Roboto Mono", "Consolas", monospace;
+  font-size: 11px;
+  font-weight: 500;
+  color: #fff;
+}
+#about-popup .about-dep-revision {
+  margin: 0 0 0 6px;
+  font-family: "SF Mono", "Monaco", "Inconsolata", "Roboto Mono", "Consolas", monospace;
+  font-size: 10px;
+  font-weight: 400;
+  color: #aaa;
+  opacity: 0.7;
+}
+
 #timeline-panel {
   flex-direction: column;
 }
@@ -4596,24 +4799,6 @@ body {
   padding: 6px;
   color: #aaa !important;
   font-size: 14px;
-}
-
-#shortcuts-panel {
-  background-color: #282828;
-}
-
-#shortcuts-container {
-  margin: 10px;
-}
-
-.shortcut-key {
-  width: 80px;
-  text-align: right;
-}
-
-.shortcut-header {
-  background-color: #202020;
-  text-transform: uppercase;
 }
 
 #app-label {
