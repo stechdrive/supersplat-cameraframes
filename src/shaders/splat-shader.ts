@@ -294,13 +294,11 @@ bool initCenter(SplatSource source, vec3 modelCenter, out SplatCenter center) {
         return false;
     }
 
-    // Enforce near/far clipping for splats (matches mesh behavior).
+    // Enforce near clipping for splats (matches mesh behavior for camera-near).
     // camera_params = (1 / far, far, near, isOrtho)
-    if (camera_params.y > camera_params.z) {
-        float dist = -centerView.z;
-        if (dist < camera_params.z || dist > camera_params.y) {
-            return false;
-        }
+    float dist = -centerView.z;
+    if (dist < camera_params.z) {
+        return false;
     }
 
     // 非対称フラスタムを含む射影行列をそのまま適用し、FOV 推定などで再計算しない。
