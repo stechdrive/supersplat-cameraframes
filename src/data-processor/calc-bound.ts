@@ -5,6 +5,7 @@ import {
     drawQuadWithShader,
     BoundingBox,
     GraphicsDevice,
+    Mat4,
     RenderTarget,
     ScopeSpace,
     Shader,
@@ -19,6 +20,7 @@ import { vertexShader, fragmentShader } from '../shaders/bound-shader';
 
 const v1 = new Vec3();
 const v2 = new Vec3();
+const invWorld = new Mat4();
 
 const resolve = (scope: ScopeSpace, values: any) => {
     for (const key in values) {
@@ -131,6 +133,11 @@ class CalcBound {
 
         const resources = this.getResources();
 
+        invWorld.copy(ctx.splat.entity.getWorldTransform());
+        if (!invWorld.invert()) {
+            invWorld.setIdentity();
+        }
+
         resolve(scope, {
             transformA,
             splatTransform,
@@ -139,7 +146,8 @@ class CalcBound {
             splatOffset: ctx.offset,
             splatCount: numSplats,
             globalSplatParams: [transformA.width, transformA.width * transformA.height],
-            mode: onlySelected ? 0 : 1
+            mode: onlySelected ? 0 : 1,
+            matrix_invModel: invWorld.data
         });
 
         device.setBlendState(BlendState.NOBLEND);

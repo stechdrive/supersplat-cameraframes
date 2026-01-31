@@ -14,6 +14,7 @@ const fragmentShader = /* glsl */ `
     uniform highp uint splatOffset;
     uniform highp uint splatCount;
     uniform highp uint mode;                            // 0: selected, 1: visible
+    uniform mat4 matrix_invModel;                      // inverse world matrix
 
     // Custom infinity check that transpiles correctly to WGSL
     bvec3 isInf(vec3 v) {
@@ -59,6 +60,8 @@ const fragmentShader = /* glsl */ `
 
                 center = vec4(center, 1.0) * t;
             }
+
+            center = (matrix_invModel * vec4(center, 1.0)).xyz;
 
             boundMin = min(boundMin, mix(center, boundMin, isInf(center)));
             boundMax = max(boundMax, mix(center, boundMax, isInf(center)));

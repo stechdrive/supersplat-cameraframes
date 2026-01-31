@@ -323,7 +323,7 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
     };
 
     events.on('select.bySphere', async (op: 'add'|'remove'|'set', sphere: number[]) => {
-        for (const splat of selectedSplats()) {
+        for (const splat of activeSplats()) {
             await intersectCenters(splat, op, {
                 sphere: { x: sphere[0], y: sphere[1], z: sphere[2], radius: sphere[3] }
             });
@@ -331,7 +331,7 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
     });
 
     events.on('select.byBox', async (op: 'add'|'remove'|'set', box: number[]) => {
-        for (const splat of selectedSplats()) {
+        for (const splat of activeSplats()) {
             await intersectCenters(splat, op, {
                 box: { x: box[0], y: box[1], z: box[2], lenx: box[3], leny: box[4], lenz: box[5] }
             });
