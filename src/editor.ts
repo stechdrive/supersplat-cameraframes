@@ -340,7 +340,7 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
 
     events.function('select.rect', async (op: 'add'|'remove'|'set', rect: any) => {
         const mode = events.invoke('camera.mode');
-        for (const splat of selectedSplats()) {
+        for (const splat of activeSplats()) {
             if (mode === 'centers') {
                 await intersectCenters(splat, op, {
                     rect: { x1: rect.start.x, y1: rect.start.y, x2: rect.end.x, y2: rect.end.y }
@@ -455,7 +455,7 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
             return;
         }
 
-        for (const splat of selectedSplats()) {
+        for (const splat of activeSplats()) {
             const splatData = splat.splatData;
 
             if (mode === 'centers') {
@@ -507,7 +507,7 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
     // -  alternative distance metrics such as HSV.
     // -  alternative UI for threshold, two handles for min/max?
     events.function('select.colorMatch', async (op: 'add'|'remove'|'set', point: { x: number, y: number }, threshold = 0) => {
-        const splats = selectedSplats();
+        const splats = activeSplats();
         const targetSize = scene.targetSize;
         if (!splats.length || !targetSize || !point) {
             return;
