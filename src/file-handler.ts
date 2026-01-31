@@ -8,6 +8,7 @@ import { Scene } from './scene';
 import { Splat } from './splat';
 import { serializePly, serializePlyCompressed, SerializeSettings, serializeSog, serializeSplat, serializeViewer, SogSettings, ViewerExportSettings } from './splat-serialize';
 import { localize } from './ui/localization';
+import { canUseWebGPU } from './webgpu';
 
 // ts compiler and vscode find this type, but eslint does not
 type FilePickerAcceptType = unknown;
@@ -555,6 +556,13 @@ const initFileHandler = (scene: Scene, events: Events, dropTarget: HTMLElement) 
     });
 
     events.function('scene.export', async (exportType: ExportType) => {
+        if (exportType === 'sog' || exportType === 'viewer') {
+            const webGpuAvailable = await canUseWebGPU();
+            if (!webGpuAvailable) {
+                return;
+            }
+        }
+
         const splats = getSplats();
 
         const hasFilePicker = !!window.showSaveFilePicker;

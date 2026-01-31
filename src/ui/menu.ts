@@ -3,6 +3,7 @@ import { Container, Element, Label } from '@playcanvas/pcui';
 import { Events } from '../events';
 import { recentFiles } from '../recent-files';
 import { ShortcutManager } from '../shortcut-manager';
+import { canUseWebGPU } from '../webgpu';
 import { localize } from './localization';
 import { MenuPanel, MenuItem } from './menu-panel';
 import arrowSvg from './svg/arrow.svg';
@@ -122,6 +123,12 @@ class Menu extends Container {
 
         // Get the shortcut manager for displaying keyboard shortcuts
         const shortcutManager: ShortcutManager = events.invoke('shortcutManager');
+        const canExportWebGpuFormats = async () => {
+            if (events.invoke('scene.empty')) {
+                return false;
+            }
+            return await canUseWebGPU();
+        };
 
         const exportMenuPanel = new MenuPanel([{
             text: localize('menu.file.export.ply'),
@@ -136,14 +143,14 @@ class Menu extends Container {
         }, {
             text: localize('menu.file.export.sog'),
             icon: createSvg(sceneExport),
-            isEnabled: () => !events.invoke('scene.empty'),
+            isEnabled: canExportWebGpuFormats,
             onSelect: () => events.invoke('scene.export', 'sog')
         }, {
             // separator
         }, {
             text: localize('menu.file.export.viewer', { ellipsis: true }),
             icon: createSvg(sceneExport),
-            isEnabled: () => !events.invoke('scene.empty'),
+            isEnabled: canExportWebGpuFormats,
             onSelect: () => events.invoke('scene.export', 'viewer')
         }]);
 
