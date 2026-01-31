@@ -315,7 +315,7 @@ class SplatRenderSystem {
         if (dirty) {
             const boundingBox = entry;
             const onlySelected = mode === 'selected';
-            void this.scene.dataProcessor.calcBound(this.getProcessorContext(splat), boundingBox, onlySelected);
+            this.scene.dataProcessor.calcBound(this.getProcessorContext(splat), boundingBox, onlySelected).catch(() => {});
             if (mode === 'selected') {
                 cache.selectionDirty = false;
             } else {
@@ -326,10 +326,10 @@ class SplatRenderSystem {
         return entry;
     }
 
-    async calcPositions(splat: Splat) {
+    calcPositions(splat: Splat) {
         const count = this.counts.get(splat) ?? 0;
         if (count === 0) {
-            return new Float32Array(0);
+            return Promise.resolve(new Float32Array(0));
         }
         return this.scene.dataProcessor.calcPositions(this.getProcessorContext(splat));
     }
@@ -1028,7 +1028,7 @@ class SplatRenderSystem {
 
             // Update sorter centers asynchronously (GPU readback).
             const centersToken = this.centersUpdateToken;
-            void this.updateSorterCenters([...activeSources], totalSplats, instance, centersToken);
+            this.updateSorterCenters([...activeSources], totalSplats, instance, centersToken).catch(() => {});
         }
 
         this.ensureSorterUpdatedHandler();

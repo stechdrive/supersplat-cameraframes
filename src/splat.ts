@@ -191,7 +191,7 @@ class Splat extends Element {
     updatePositionsPartial(selectedCount: number) {
         const data = this.splatData;
         if (selectedCount > Math.min(20000, data.numSplats * 0.05)) {
-            void this.updatePositions();
+            this.updatePositions().catch(() => {});
             return;
         }
 
@@ -252,7 +252,7 @@ class Splat extends Element {
 
         const data = this.splatData;
         if (indices.length > Math.min(20000, data.numSplats * 0.05)) {
-            void this.updatePositions();
+            this.updatePositions().catch(() => {});
             return;
         }
 
@@ -478,7 +478,7 @@ class Splat extends Element {
             }
         }
 
-        void this.updateState(State.hidden);
+        this.updateState(State.hidden).catch(() => {});
         const renderSystem = this.scene.renderSystem;
         const needsImmediateRebuild = next && !renderSystem.isSplatActive(this);
         if (!next || needsImmediateRebuild) {

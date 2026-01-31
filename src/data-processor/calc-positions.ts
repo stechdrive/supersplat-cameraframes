@@ -12,8 +12,8 @@ import {
     BlendState
 } from 'playcanvas';
 
-import { vertexShader, fragmentShader } from '../shaders/position-shader';
 import type { ProcessorContext } from './types';
+import { vertexShader, fragmentShader } from '../shaders/position-shader';
 
 const resolve = (scope: ScopeSpace, values: any) => {
     for (const key in values) {

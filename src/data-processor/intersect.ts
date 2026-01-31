@@ -14,8 +14,8 @@ import {
 } from 'playcanvas';
 
 import { buildCameraMatrices, type CameraMatrices } from '../camera-matrices';
-import { vertexShader, fragmentShader } from '../shaders/intersection-shader';
 import type { ProcessorContext } from './types';
+import { vertexShader, fragmentShader } from '../shaders/intersection-shader';
 
 type MaskOptions = {
     mask: Texture;

@@ -14,8 +14,8 @@ import {
     BlendState
 } from 'playcanvas';
 
-import { vertexShader, fragmentShader } from '../shaders/bound-shader';
 import type { ProcessorContext } from './types';
+import { vertexShader, fragmentShader } from '../shaders/bound-shader';
 
 const v1 = new Vec3();
 const v2 = new Vec3();
