@@ -14,6 +14,12 @@ const fragmentShader = /* glsl */ `
     uniform highp uint splatOffset;
     uniform highp uint splatCount;
     uniform highp uint mode;                            // 0: selected, 1: visible
+    uniform mat4 matrix_invModel;                      // inverse world matrix
+
+    // Custom infinity check that transpiles correctly to WGSL
+    bvec3 isInf(vec3 v) {
+        return greaterThan(abs(v), vec3(1e30));
+    }
 
     // calculate min and max for a single column of splats
     void main(void) {
@@ -55,8 +61,10 @@ const fragmentShader = /* glsl */ `
                 center = vec4(center, 1.0) * t;
             }
 
-            boundMin = min(boundMin, mix(center, boundMin, isinf(center)));
-            boundMax = max(boundMax, mix(center, boundMax, isinf(center)));
+            center = (matrix_invModel * vec4(center, 1.0)).xyz;
+
+            boundMin = min(boundMin, mix(center, boundMin, isInf(center)));
+            boundMax = max(boundMax, mix(center, boundMax, isInf(center)));
         }
 
         pcFragColor0 = vec4(boundMin, 0.0);

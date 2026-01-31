@@ -1,3 +1,4 @@
+import { WebPCodec } from '@playcanvas/splat-transform';
 import { Color, createGraphicsDevice } from 'playcanvas';
 
 import { registerCameraFrames } from './camera-frames';
@@ -159,6 +160,9 @@ const main = async () => {
 
     // init localization
     await localizeInit();
+
+    // Configure WebP WASM for SOG format (used for both reading and writing)
+    WebPCodec.wasmUrl = new URL('static/lib/webp/webp.wasm', document.baseURI).toString();
 
     // register events that only need the events object (before UI is created)
     registerTimelineEvents(events);

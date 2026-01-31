@@ -1,18 +1,16 @@
-const crc32_table = (() => {
-    const tbl = [];
-    let c;
+const crc32Table = (() => {
+    const table: number[] = [];
     for (let n = 0; n < 256; n++) {
-        c = n;
+        let c = n;
         for (let k = 0; k < 8; k++) {
-            c = ((c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1));
+            c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
         }
-        tbl[n] = c;
+        table[n] = c;
     }
-    return tbl;
+    return table;
 })();
 
 class Crc {
-    reset: () => void;
     update: (data: Uint8Array) => void;
     value: () => number;
 
@@ -20,7 +18,7 @@ class Crc {
         let bits = -1;
         this.update = (data: Uint8Array) => {
             for (let i = 0; i < data.length; i++) {
-                bits = (bits >>> 8) ^ crc32_table[(bits ^ data[i]) & 0xFF];
+                bits = (bits >>> 8) ^ crc32Table[(bits ^ data[i]) & 0xFF];
             }
         };
         this.value = () => (bits ^ (-1)) >>> 0;

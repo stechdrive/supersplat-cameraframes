@@ -96,17 +96,23 @@ class ReferenceImageRenderer extends Element {
             if (transparent || this.drawnBack) {
                 return;
             }
-            if (this.params.back.length === 0 || !this.referenceBackLayer?.enabled) {
+            const backLayer = this.referenceBackLayer;
+            if (this.params.back.length === 0 || (backLayer && !backLayer.enabled)) {
                 return;
             }
             const scene = this.scene;
             const isEarlyLayer = layer === scene.backgroundLayer || layer === scene.shadowLayer || layer === scene.modelLightingLayer;
             const isWorldFallback = !!this.worldLayer && layer === this.worldLayer;
-            if (!isEarlyLayer && !isWorldFallback) {
+            if (isEarlyLayer || isWorldFallback) {
+                this.drawnBack = true;
+                this.draw('back');
                 return;
             }
-            this.drawnBack = true;
-            this.draw('back');
+            if (backLayer && layer === backLayer) {
+                this.drawnBack = true;
+                this.draw('back');
+                return;
+            }
         };
 
         this.mainCameraHandlers.postRenderLayer = (camera: CameraComponent, layer: Layer, transparent: boolean) => {
@@ -116,7 +122,16 @@ class ReferenceImageRenderer extends Element {
             if (!transparent || this.drawnFront) {
                 return;
             }
-            if (this.params.front.length === 0 || !this.referenceFrontLayer?.enabled) {
+            const frontLayer = this.referenceFrontLayer;
+            if (this.params.front.length === 0 || (frontLayer && !frontLayer.enabled)) {
+                return;
+            }
+            if (frontLayer) {
+                if (layer !== frontLayer) {
+                    return;
+                }
+                this.drawnFront = true;
+                this.draw('front');
                 return;
             }
             if (!this.worldLayer || layer !== this.worldLayer) {

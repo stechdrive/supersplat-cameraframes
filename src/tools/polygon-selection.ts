@@ -37,7 +37,7 @@ class PolygonSelection {
             polyline.setAttribute('stroke', isClosed() ? '#fa6' : '#f60');
         };
 
-        const commitSelection = (e: PointerEvent) => {
+        const commitSelection = async (e: PointerEvent) => {
             // initialize canvas
             if (canvas.width !== parent.clientWidth || canvas.height !== parent.clientHeight) {
                 canvas.width = parent.clientWidth;
@@ -62,13 +62,15 @@ class PolygonSelection {
             context.closePath();
             context.fill();
 
-            events.fire(
+            // wait for selection to complete
+            await events.invoke(
                 'select.byMask',
                 op,
                 canvas,
                 context
             );
 
+            // clear polygon after selection completes
             points = [];
             paint();
         };
@@ -88,25 +90,25 @@ class PolygonSelection {
             }
         };
 
-        const pointerup = (e: PointerEvent) => {
+        const pointerup = async (e: PointerEvent) => {
             if (e.pointerType === 'mouse' ? e.button === 0 : e.isPrimary) {
                 e.preventDefault();
                 e.stopPropagation();
 
                 if (isClosed()) {
-                    commitSelection(e);
+                    await commitSelection(e);
                 } else if (points.length === 0 || dist(points[points.length - 1], currentPoint) > 0) {
                     points.push(currentPoint);
                 }
             }
         };
 
-        const dblclick = (e: PointerEvent) => {
+        const dblclick = async (e: PointerEvent) => {
             e.preventDefault();
             e.stopPropagation();
 
             if (points.length > 2) {
-                commitSelection(e);
+                await commitSelection(e);
             }
         };
 

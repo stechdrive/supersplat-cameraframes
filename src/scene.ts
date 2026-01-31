@@ -354,7 +354,7 @@ class Scene {
         events.on('edit.apply', this.onEditApplied, this);
 
         this.dataProcessor = new DataProcessor(this.app.graphicsDevice);
-        this.assetLoader = new AssetLoader(this.app, events, this.app.graphicsDevice.maxAnisotropy);
+        this.assetLoader = new AssetLoader(this.app, events);
 
         // create root entities
         this.contentRoot = new Entity('contentRoot');
@@ -795,11 +795,11 @@ class Scene {
     }
 
     // add a scene element
-    add(element: Element) {
+    async add(element: Element) {
         if (!element.scene) {
             // add the new element
             element.scene = this;
-            element.add();
+            await element.add();
             this.elements.push(element);
 
             // notify all elements of scene addition

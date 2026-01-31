@@ -1,12 +1,12 @@
+import { ZipFileSystem, ZipReadFileSystem } from '@playcanvas/splat-transform';
+
 import { ElementType } from './element';
 import { Events } from './events';
+import { BrowserFileSystem, BlobReadSource, MappedReadFileSystem } from './io';
 import { Model } from './model';
 import { recentFiles } from './recent-files';
 import { normalizeReferenceImageFilename } from './reference-image-filename';
 import { Scene } from './scene';
-import { DownloadWriter, FileStreamWriter } from './serialize/writer';
-import { ZipReader } from './serialize/zip-reader';
-import { ZipWriter } from './serialize/zip-writer';
 import { Splat } from './splat';
 import { serializePly } from './splat-serialize';
 import { Transform } from './transform';
@@ -16,7 +16,7 @@ import { formatInteger, localize } from './ui/localization';
 // `document.json.version` as 0 to maximize the chance that upstream can load it.
 const DOC_VERSION = 4;
 const SUPPORTED_DOC_VERSIONS = new Set([0, 1, 2, 3, 4]);
-const ZIP64_MARGIN_BYTES = 1800n * 1024n * 1024n;   // 約1.8GB (GiB基準)
+const ZIP64_MARGIN_BYTES = 1800n * 1024n * 1024n;   // ~1.8 GiB safety margin
 const ZIP32_LIMIT = 0xffffffffn;
 const ZIP_ENTRY_OVERHEAD = 256n;
 
@@ -71,7 +71,7 @@ const estimateSplatPlySize = (splat: Splat) => {
     const props = element.properties.filter((p: any) => p.storage && !internalProps.has(p.name));
     const perPointBytes = props.reduce((sum: bigint, p: any) => sum + BigInt(p.byteSize ?? 4), 0n);
     const gaussianCount = BigInt(Math.max(0, splat.numSplats - splat.numDeleted));
-    // ヘッダは数百バイト程度なので簡易的に上乗せ
+    // Add a small header estimate (a few hundred bytes).
     const headerBytes = 256n + BigInt(props.length * 32);
     return headerBytes + perPointBytes * gaussianCount;
 };
@@ -124,14 +124,30 @@ const registerDocEvents = (scene: Scene, events: Events) => {
     // load the document from the given file
     const loadDocument = async (file: Blob | ArrayBuffer) => {
         events.fire('startSpinner');
-        try {
-            const zip = await ZipReader.from(file);
 
-            const documentText = await zip.text('document.json');
+        const blob = (file instanceof Blob) ? file : new Blob([file]);
+        const blobSource = new BlobReadSource(blob);
+        const zipFs = new ZipReadFileSystem(blobSource);
+
+        const readZipBlob = async (path: string) => {
+            const source = await zipFs.createSource(path);
+            try {
+                const data = await source.read().readAll();
+                return new Blob([new Uint8Array(data)]);
+            } finally {
+                source.close();
+            }
+        };
+
+        try {
+            // read document.json via streaming (only reads what's needed)
+            const docSource = await zipFs.createSource('document.json');
+            const docData = await docSource.read().readAll();
+            docSource.close();
             let document: any;
             try {
-                document = JSON.parse(documentText);
-            } catch (parseError) {
+                document = JSON.parse(new TextDecoder().decode(docData));
+            } catch {
                 throw new Error('document.json is not valid JSON');
             }
 
@@ -145,20 +161,44 @@ const registerDocEvents = (scene: Scene, events: Events) => {
             }
 
             // stage assets before mutating current scene
+            const loadSplatFromZip = async (filename: string) => {
+                try {
+                    const splat = await scene.assetLoader.load(filename, zipFs);
+                    if (!(splat instanceof Splat)) {
+                        throw new Error('document contains a non-splat asset');
+                    }
+                    if (splat.numSplats === 0) {
+                        throw new Error('loaded splat has no points');
+                    }
+                    return splat;
+                } catch (error) {
+                    try {
+                        const blob = await readZipBlob(filename);
+                        const fallbackFs = new MappedReadFileSystem();
+                        fallbackFs.addFile(filename, blob);
+                        const splat = await scene.assetLoader.load(filename, fallbackFs, false, blob);
+                        if (!(splat instanceof Splat)) {
+                            throw new Error('document contains a non-splat asset');
+                        }
+                        if (splat.numSplats === 0) {
+                            throw new Error('loaded splat has no points');
+                        }
+                        return splat;
+                    } catch (fallbackError) {
+                        const primaryMessage = error instanceof Error ? error.message : `${error}`;
+                        const fallbackMessage = fallbackError instanceof Error ? fallbackError.message : `${fallbackError}`;
+                        throw new Error(`Failed to load splat '${filename}': ${primaryMessage}. Fallback failed: ${fallbackMessage}`);
+                    }
+                }
+            };
+
             const stagedSplats: { splat: Splat, settings: any }[] = [];
             for (let i = 0; i < document.splats.length; ++i) {
                 const filename = `splat_${i}.ply`;
                 const splatSettings = document.splats[i];
 
-                const contents = await zip.blob(filename);
-                const loaded = await scene.assetLoader.load({
-                    filename,
-                    contents
-                });
-                if (!(loaded instanceof Splat)) {
-                    throw new Error('document contains a non-splat asset');
-                }
-                stagedSplats.push({ splat: loaded as Splat, settings: splatSettings });
+                const splat = await loadSplatFromZip(filename);
+                stagedSplats.push({ splat, settings: splatSettings });
             }
 
             const stagedModels: { model: Model, settings: any }[] = [];
@@ -166,11 +206,8 @@ const registerDocEvents = (scene: Scene, events: Events) => {
             for (let i = 0; i < modelDocs.length; ++i) {
                 const modelDoc = modelDocs[i] ?? {};
                 const modelPath = typeof modelDoc.filename === 'string' ? modelDoc.filename : `models/model_${i}.glb`;
-                const contents = await zip.blob(modelPath);
-                const loaded = await scene.assetLoader.load({
-                    filename: modelPath.split('/').pop() ?? modelPath,
-                    contents
-                });
+                const contents = await readZipBlob(modelPath);
+                const loaded = await scene.assetLoader.loadModel(modelPath.split('/').pop() ?? modelPath, contents);
                 if (!(loaded instanceof Model)) {
                     throw new Error('document contains a non-model asset');
                 }
@@ -181,14 +218,14 @@ const registerDocEvents = (scene: Scene, events: Events) => {
             resetScene();
 
             scene.renderSystem.freeze();
-            stagedModels.forEach(({ model, settings }) => {
-                scene.add(model);
+            for (const { model, settings } of stagedModels) {
+                await scene.add(model);
                 model.docDeserialize(settings ?? {});
-            });
-            stagedSplats.forEach(({ splat, settings }) => {
-                scene.add(splat);
+            }
+            for (const { splat, settings } of stagedSplats) {
+                await scene.add(splat);
                 splat.docDeserialize(settings ?? {});
-            });
+            }
             scene.renderSystem.unfreeze();
 
             // FIXME: trigger scene bound calc in a better way
@@ -215,7 +252,7 @@ const registerDocEvents = (scene: Scene, events: Events) => {
                     const safeName = normalizeReferenceImageFilename(filename);
                     const refPath = `reference-images/assets/${assetId}/${safeName}`;
                     try {
-                        referenceBlobs.set(refPath, await zip.blob(refPath));
+                        referenceBlobs.set(refPath, await readZipBlob(refPath));
                     } catch (error) {
                         console.warn(`reference image missing: ${refPath}`, error);
                     }
@@ -230,7 +267,7 @@ const registerDocEvents = (scene: Scene, events: Events) => {
                     }
                     const refPath = `reference-images/${id}/${filename}`;
                     try {
-                        referenceBlobs.set(refPath, await zip.blob(refPath));
+                        referenceBlobs.set(refPath, await readZipBlob(refPath));
                     } catch (error) {
                         console.warn(`reference image missing: ${refPath}`, error);
                     }
@@ -238,7 +275,7 @@ const registerDocEvents = (scene: Scene, events: Events) => {
             } else if (referenceDocState?.source?.filename) {
                 const refPath = `reference-image/${referenceDocState.source.filename}`;
                 try {
-                    referenceBlobs.set(refPath, await zip.blob(refPath));
+                    referenceBlobs.set(refPath, await readZipBlob(refPath));
                 } catch (error) {
                     console.warn(`reference image missing: ${refPath}`, error);
                 }
@@ -275,6 +312,8 @@ const registerDocEvents = (scene: Scene, events: Events) => {
                 message: `'${error.message ?? error}'`
             });
         } finally {
+            // Clean up resources
+            zipFs.close();
             events.fire('stopSpinner');
         }
     };
@@ -306,8 +345,8 @@ const registerDocEvents = (scene: Scene, events: Events) => {
         throw new Error(`Model source not available for '${model.name}'`);
     };
 
-    const writeBlobToZip = async (zipWriter: ZipWriter, filename: string, source: Blob | ReadableStream<Uint8Array>) => {
-        await zipWriter.start(filename);
+    const writeBlobToZip = async (zipFs: ZipFileSystem, filename: string, source: Blob | ReadableStream<Uint8Array>) => {
+        const writer = await zipFs.createWriter(filename);
         const reader = (source instanceof Blob ? source.stream() : source).getReader();
         while (true) {
             const { value, done } = await reader.read();
@@ -315,9 +354,10 @@ const registerDocEvents = (scene: Scene, events: Events) => {
                 break;
             }
             if (value) {
-                await zipWriter.write(value);
+                await writer.write(value);
             }
         }
+        await writer.close();
     };
 
     const saveDocument = async (options: { stream?: FileSystemWritableFileStream, filename?: string }): Promise<boolean> => {
@@ -356,7 +396,7 @@ const registerDocEvents = (scene: Scene, events: Events) => {
                 lighting: scene.docSerializeLighting()
             });
 
-            // 予測用のペイロードを使って ZIP64 が必要か判定
+            // Use a provisional payload to decide if ZIP64 is needed.
             const provisionalDoc = createDocumentPayload(true);
             const estimate = estimateDocumentSize(provisionalDoc, splats, models, model => scene.assetLoader.getSourceBlob(model), referenceImagesBytes, referenceImagesEntryCount);
             const useZip64 = estimate.total >= ZIP64_MARGIN_BYTES || estimate.total > ZIP32_LIMIT;
@@ -380,26 +420,31 @@ const registerDocEvents = (scene: Scene, events: Events) => {
                 keepColorTint: true
             };
 
-            const writer = options.stream ? new FileStreamWriter(options.stream) : new DownloadWriter(options.filename);
-            const zipWriter = new ZipWriter(writer, { zip64: useZip64 });
+            // Create browser filesystem and zip filesystem
+            const browserFs = new BrowserFileSystem(options.filename, options.stream);
+            const browserWriter = await browserFs.createWriter(options.filename);
+            const zipFs = new ZipFileSystem(browserWriter);
 
-            await zipWriter.file('document.json', JSON.stringify(document));
+            // Write document.json
+            const docWriter = await zipFs.createWriter('document.json');
+            await docWriter.write(new TextEncoder().encode(JSON.stringify(document)));
+            await docWriter.close();
+
+            // Write each splat as PLY
             for (let i = 0; i < splats.length; ++i) {
-                await zipWriter.start(`splat_${i}.ply`);
-                await serializePly([splats[i]], serializeSettings, zipWriter);
+                await serializePly([splats[i]], serializeSettings, zipFs, `splat_${i}.ply`);
             }
             for (let i = 0; i < models.length; ++i) {
                 const blob = await getModelBlob(models[i]);
-                await writeBlobToZip(zipWriter, modelDocs[i].filename, blob);
+                await writeBlobToZip(zipFs, modelDocs[i].filename, blob);
             }
             for (const asset of referenceImagesAssets) {
                 if (!asset?.blob || typeof asset?.path !== 'string' || !asset.path) {
                     continue;
                 }
-                await writeBlobToZip(zipWriter, asset.path, asset.blob);
+                await writeBlobToZip(zipFs, asset.path, asset.blob);
             }
-            await zipWriter.close();
-            await writer.close();
+            await zipFs.close();
             return true;
         } catch (error) {
             await events.invoke('showPopup', {

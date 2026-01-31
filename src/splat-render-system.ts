@@ -68,6 +68,7 @@ class SplatRenderSystem {
     private pivotActive = false;
     private visibilityRebuildDebounceMs = 400;
     private sorterCentersDirty = false;
+    private centersUpdateToken = 0;
     private sorterMapping: Uint32Array | null = null;
     private sorterUpdatedHandle: { off: () => void } | null = null;
     private sorterUpdatedSorter: unknown | null = null;
@@ -314,7 +315,7 @@ class SplatRenderSystem {
         if (dirty) {
             const boundingBox = entry;
             const onlySelected = mode === 'selected';
-            this.scene.dataProcessor.calcBound(this.getProcessorContext(splat), boundingBox, onlySelected);
+            this.scene.dataProcessor.calcBound(this.getProcessorContext(splat), boundingBox, onlySelected).catch(() => {});
             if (mode === 'selected') {
                 cache.selectionDirty = false;
             } else {
@@ -328,9 +329,58 @@ class SplatRenderSystem {
     calcPositions(splat: Splat) {
         const count = this.counts.get(splat) ?? 0;
         if (count === 0) {
-            return new Float32Array(0);
+            return Promise.resolve(new Float32Array(0));
         }
         return this.scene.dataProcessor.calcPositions(this.getProcessorContext(splat));
+    }
+
+    private async updateSorterCenters(activeSources: Splat[], totalSplats: number, instance: any, token: number) {
+        const centers = new Float32Array(totalSplats * 3);
+        for (const splat of activeSources) {
+            const offset = this.offsets.get(splat) ?? 0;
+            const count = this.counts.get(splat) ?? 0;
+            const positions = await this.calcPositions(splat);
+            for (let i = 0; i < count; i++) {
+                centers[(offset + i) * 3 + 0] = positions[i * 4 + 0];
+                centers[(offset + i) * 3 + 1] = positions[i * 4 + 1];
+                centers[(offset + i) * 3 + 2] = positions[i * 4 + 2];
+            }
+        }
+
+        if (token !== this.centersUpdateToken) {
+            return;
+        }
+        if (this.mergedEntity.gsplat?.instance !== instance) {
+            return;
+        }
+
+        (instance as any).centers = centers;
+        if (instance.sorter) {
+            (instance.sorter as any).centers = centers;
+        }
+        this.markSorterCentersDirty();
+    }
+
+    private seedInstance(instance: any, totalSplats: number) {
+        const instanceSize = (GSplatResource as any).instanceSize ?? 128;
+        const count = Math.max(0, totalSplats);
+
+        // Ensure the mesh renders even before the sorter posts its first update.
+        instance.meshInstance.instancingCount = Math.ceil(count / instanceSize);
+        instance.material?.setParameter('numSplats', count);
+
+        const orderTexture = (instance as any).orderTexture;
+        if (orderTexture) {
+            const orderData = orderTexture.lock() as Uint32Array;
+            for (let i = 0; i < orderData.length; i++) {
+                orderData[i] = i;
+            }
+            orderTexture.unlock();
+        }
+
+        if (instance.sorter) {
+            instance.sort(this.scene.camera.entity);
+        }
     }
 
     waitForSorter() {
@@ -721,6 +771,7 @@ class SplatRenderSystem {
 
     rebuild() {
         this.destroyMerged();
+        this.centersUpdateToken++;
 
         const activeSources = this.sources.filter(splat => splat.visible);
         if (activeSources.length === 0) {
@@ -996,25 +1047,11 @@ class SplatRenderSystem {
         const instance = this.mergedEntity.gsplat.instance;
         if (instance) {
             instance.meshInstance.cull = false;
+            this.seedInstance(instance, totalSplats);
 
-            // ソーターの中心座標を更新 (World Spaceでのソート用)
-            // GSplatDataはLocal Space (0,0,0) のデータしか持たないため、
-            // ShaderでTransformPaletteを使って動かす前の座標でソートされてしまうのを防ぐ
-            const centers = new Float32Array(totalSplats * 3);
-            activeSources.forEach((splat) => {
-                const offset = this.offsets.get(splat) ?? 0;
-                const count = this.counts.get(splat) ?? 0;
-                const positions = this.calcPositions(splat);
-                for (let i = 0; i < count; i++) {
-                    centers[(offset + i) * 3 + 0] = positions[i * 4 + 0];
-                    centers[(offset + i) * 3 + 1] = positions[i * 4 + 1];
-                    centers[(offset + i) * 3 + 2] = positions[i * 4 + 2];
-                }
-            });
-            (instance as any).centers = centers;
-            if (instance.sorter) {
-                (instance.sorter as any).centers = centers;
-            }
+            // Update sorter centers asynchronously (GPU readback).
+            const centersToken = this.centersUpdateToken;
+            this.updateSorterCenters([...activeSources], totalSplats, instance, centersToken).catch(() => {});
         }
 
         this.ensureSorterUpdatedHandler();

@@ -237,7 +237,7 @@ class MultiEntityTransformHandler implements TransformHandler {
             this.events.fire('edit.add', new MultiOp([...ops, this.pop]));
             this.entries.forEach((entry) => {
                 if (entry.target instanceof Splat && !entry.op.oldt.equals(entry.op.newt)) {
-                    entry.target.updatePositions();
+                    entry.target.updatePositions().catch(() => {});
                 }
             });
         }

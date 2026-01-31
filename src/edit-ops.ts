@@ -10,8 +10,8 @@ import { Transform } from './transform';
 
 interface EditOp {
     name: string;
-    do(): void;
-    undo(): void;
+    do(): void | Promise<void>;
+    undo(): void | Promise<void>;
     destroy?(): void;
 }
 
@@ -61,24 +61,24 @@ class StateOp {
         this.updateFlags = updateFlags;
     }
 
-    do() {
+    async do() {
         const splatData = this.splat.splatData;
         const state = splatData.getProp('state') as Uint8Array;
         for (let i = 0; i < this.indices.length; ++i) {
             const idx = this.indices[i];
             state[idx] = this.doIt(state[idx]);
         }
-        this.splat.updateState(this.updateFlags);
+        await this.splat.updateState(this.updateFlags);
     }
 
-    undo() {
+    async undo() {
         const splatData = this.splat.splatData;
         const state = splatData.getProp('state') as Uint8Array;
         for (let i = 0; i < this.indices.length; ++i) {
             const idx = this.indices[i];
             state[idx] = this.undoIt(state[idx]);
         }
-        this.splat.updateState(this.updateFlags);
+        await this.splat.updateState(this.updateFlags);
     }
 
     destroy() {
@@ -247,7 +247,7 @@ class SplatsTransformOp {
         this.indices = options.indices;
     }
 
-    do() {
+    async do() {
         const { splat, transform, paletteMap } = this;
         const indices = splat.splatData.getProp('transform') as Uint16Array;
         const selectedIndices = this.indices;
@@ -270,13 +270,10 @@ class SplatsTransformOp {
         });
         transformPalette.endUpdate();
 
-        splat.scene.renderSystem.updateTransform(splat, true);
-        splat.scene.renderSystem.updateTransformIndices(splat, indices);
-        splat.makeSelectionBoundDirty();
-        splat.updatePositionsForIndices(this.indices);
+        await splat.updatePositions();
     }
 
-    undo() {
+    async undo() {
         const { splat, paletteMap } = this;
         const indices = splat.splatData.getProp('transform') as Uint16Array;
         const selectedIndices = this.indices;
@@ -295,10 +292,7 @@ class SplatsTransformOp {
 
         splat.transformPalette.free(paletteMap.size);
 
-        splat.scene.renderSystem.updateTransform(splat, true);
-        splat.scene.renderSystem.updateTransformIndices(splat, indices);
-        splat.makeSelectionBoundDirty();
-        splat.updatePositionsForIndices(this.indices);
+        await splat.updatePositions();
     }
 
     destroy() {
@@ -462,12 +456,16 @@ class MultiOp {
         this.ops = ops;
     }
 
-    do() {
-        this.ops.forEach(op => op.do());
+    async do() {
+        for (const op of this.ops) {
+            await op.do();
+        }
     }
 
-    undo() {
-        this.ops.forEach(op => op.undo());
+    async undo() {
+        for (const op of this.ops) {
+            await op.undo();
+        }
     }
 }
 
@@ -481,8 +479,8 @@ class AddSplatOp {
         this.splat = splat;
     }
 
-    do() {
-        this.scene.add(this.splat);
+    async do() {
+        await this.scene.add(this.splat);
     }
 
     undo() {

@@ -1,11 +1,12 @@
+import { MemoryFileSystem } from '@playcanvas/splat-transform';
 import { Color, Mat4, path, Texture, Vec3, Vec4 } from 'playcanvas';
 
 import { EditHistory } from './edit-history';
 import { SelectAllOp, SelectNoneOp, SelectInvertOp, SelectOp, HideSelectionOp, UnhideAllOp, DeleteSelectionOp, ResetOp, MultiOp, AddSplatOp } from './edit-ops';
 import { Element } from './element';
 import { Events } from './events';
+import { MappedReadFileSystem } from './io';
 import { Scene } from './scene';
-import { BufferWriter } from './serialize/writer';
 import { Splat } from './splat';
 import { serializePly } from './splat-serialize';
 
@@ -224,8 +225,10 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
     events.on('camera.focus', () => {
         const splat = activeSplats()[0];
         if (splat) {
-
-            const bound = splat.numSelected > 0 ? splat.selectionBound : splat.localBound;
+            // use current bounds (caller should have awaited the operation that changed data)
+            const bound = splat.numSelected > 0 ?
+                splat.selectionBound :
+                splat.localBound;
             vec.copy(bound.center);
 
             const worldTransform = splat.worldTransform;
@@ -313,60 +316,43 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
         });
     });
 
-    const clamp01 = (value: number) => Math.max(0, Math.min(1, value));
-
-    const intersectCenters = (splat: Splat, op: 'add'|'remove'|'set', options: any) => {
-        const data = scene.dataProcessor.intersect(options, scene.renderSystem.getProcessorContext(splat));
+    const intersectCenters = async (splat: Splat, op: 'add'|'remove'|'set', options: any) => {
+        const data = await scene.dataProcessor.intersect(options, splat);
         const filter = (i: number) => data[i] === 255;
         events.fire('edit.add', new SelectOp(splat, op, filter));
     };
 
-    events.on('select.bySphere', (op: 'add'|'remove'|'set', sphere: number[]) => {
-        activeSplats().forEach((splat) => {
-            intersectCenters(splat, op, {
+    events.on('select.bySphere', async (op: 'add'|'remove'|'set', sphere: number[]) => {
+        for (const splat of activeSplats()) {
+            await intersectCenters(splat, op, {
                 sphere: { x: sphere[0], y: sphere[1], z: sphere[2], radius: sphere[3] }
             });
-        });
+        }
     });
 
-    events.on('select.byBox', (op: 'add'|'remove'|'set', box: number[]) => {
-        activeSplats().forEach((splat) => {
-            intersectCenters(splat, op, {
+    events.on('select.byBox', async (op: 'add'|'remove'|'set', box: number[]) => {
+        for (const splat of activeSplats()) {
+            await intersectCenters(splat, op, {
                 box: { x: box[0], y: box[1], z: box[2], lenx: box[3], leny: box[4], lenz: box[5] }
             });
-        });
+        }
     });
 
-    events.on('select.rect', async (op: 'add'|'remove'|'set', rect: any) => {
+    events.function('select.rect', async (op: 'add'|'remove'|'set', rect: any) => {
         const mode = events.invoke('camera.mode');
-        if (!rect?.start || !rect?.end) {
-            return;
-        }
-        const startX = clamp01(rect.start.x);
-        const startY = clamp01(rect.start.y);
-        const endX = clamp01(rect.end.x);
-        const endY = clamp01(rect.end.y);
-        const minX = Math.min(startX, endX);
-        const minY = Math.min(startY, endY);
-        const maxX = Math.max(startX, endX);
-        const maxY = Math.max(startY, endY);
-        const normW = maxX - minX;
-        const normH = maxY - minY;
-        if (normW <= 0 || normH <= 0) {
-            return;
-        }
-        if (mode === 'rings' && scene.camera.targetSize) {
-            return;
-        }
-
         for (const splat of activeSplats()) {
             if (mode === 'centers') {
-                intersectCenters(splat, op, {
-                    rect: { x1: minX, y1: minY, x2: maxX, y2: maxY }
+                await intersectCenters(splat, op, {
+                    rect: { x1: rect.start.x, y1: rect.start.y, x2: rect.end.x, y2: rect.end.y }
                 });
             } else if (mode === 'rings') {
                 scene.camera.pickPrep(splat, op);
-                const pick = await scene.camera.pickRect(minX, minY, normW, normH);
+                const pick = await scene.camera.pickRect(
+                    rect.start.x,
+                    rect.start.y,
+                    rect.end.x - rect.start.x,
+                    rect.end.y - rect.start.y
+                );
 
                 const selected = new Set<number>(pick);
                 const filter = (i: number) => {
@@ -380,7 +366,7 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
 
     let maskTexture: Texture = null;
 
-    events.on('select.byMask', async (op: 'add'|'remove'|'set', canvas: HTMLCanvasElement, context: CanvasRenderingContext2D) => {
+    events.function('select.byMask', async (op: 'add'|'remove'|'set', canvas: HTMLCanvasElement, context: CanvasRenderingContext2D) => {
         const mode = events.invoke('camera.mode');
 
         for (const splat of activeSplats()) {
@@ -394,7 +380,7 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
                 }
                 maskTexture.setSource(canvas);
 
-                intersectCenters(splat, op, {
+                await intersectCenters(splat, op, {
                     mask: maskTexture
                 });
             } else if (mode === 'rings') {
@@ -462,15 +448,10 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
         }
     });
 
-    events.on('select.point', async (op: 'add'|'remove'|'set', point: { x: number, y: number }) => {
+    events.function('select.point', async (op: 'add'|'remove'|'set', point: { x: number, y: number }) => {
         const { width, height } = scene.targetSize;
         const mode = events.invoke('camera.mode');
         if (!(width > 0 && height > 0)) {
-            return;
-        }
-        const px = clamp01(point?.x ?? 0);
-        const py = clamp01(point?.y ?? 0);
-        if (mode === 'rings' && scene.camera.targetSize) {
             return;
         }
 
@@ -484,8 +465,8 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
 
                 const splatSize = events.invoke('camera.splatSize');
                 const camera = scene.camera.camera;
-                const sx = px * width;
-                const sy = py * height;
+                const sx = point.x * width;
+                const sy = point.y * height;
 
                 // calculate final matrix
                 mat.mul2(camera.camera._viewProjMat, splat.worldTransform);
@@ -504,8 +485,8 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
 
                 // Use normalized coordinates with minimal size for single pixel pick
                 const pickResult = await scene.camera.pickRect(
-                    px,
-                    py,
+                    point.x,
+                    point.y,
                     1 / width,
                     1 / height
                 );
@@ -525,7 +506,7 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
     // TO DO:
     // -  alternative distance metrics such as HSV.
     // -  alternative UI for threshold, two handles for min/max?
-    events.on('select.colorMatch', async (op: 'add'|'remove'|'set', point: { x: number, y: number }, threshold = 0) => {
+    events.function('select.colorMatch', async (op: 'add'|'remove'|'set', point: { x: number, y: number }, threshold = 0) => {
         const splats = activeSplats();
         const targetSize = scene.targetSize;
         if (!splats.length || !targetSize || !point) {
@@ -606,25 +587,25 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
     const performSelectionFunc = async (func: 'duplicate' | 'separate') => {
         const splats = selectedSplats();
 
-        const writer = new BufferWriter();
+        const memFs = new MemoryFileSystem();
 
         await serializePly(splats, {
             maxSHBands: 3,
             selected: true
-        }, writer);
+        }, memFs);
 
-        const buffers = writer.close();
+        const data = memFs.results.get('output.ply');
 
-        if (buffers) {
+        if (data) {
             const splat = splats[0];
 
             // wrap PLY in a blob and load it
-            const blob = new Blob(buffers as unknown as ArrayBuffer[], { type: 'application/octet-stream' });
-            const url = URL.createObjectURL(blob);
+            const blob = new Blob([data.buffer as ArrayBuffer], { type: 'application/octet-stream' });
             const filename = `${removeExtension(splat.filename)}.ply`;
-            const copy = await scene.assetLoader.load({ url, filename });
+            const fileSystem = new MappedReadFileSystem();
+            fileSystem.addFile(filename, blob);
+            const copy = await scene.assetLoader.load(filename, fileSystem);
             if (!(copy instanceof Splat)) {
-                URL.revokeObjectURL(url);
                 throw new Error('Duplicate/separate supports splats only');
             }
 
@@ -636,8 +617,6 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
             } else {
                 editHistory.add(new AddSplatOp(scene, copy));
             }
-
-            URL.revokeObjectURL(url);
         }
     };
 
@@ -654,21 +633,6 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
         activeSplats().forEach((splat) => {
             editHistory.add(new ResetOp(splat));
         });
-    });
-
-    const setAllData = (value: boolean) => {
-        if (value !== scene.assetLoader.loadAllData) {
-            scene.assetLoader.loadAllData = value;
-            events.fire('allData', scene.assetLoader.loadAllData);
-        }
-    };
-
-    events.function('allData', () => {
-        return scene.assetLoader.loadAllData;
-    });
-
-    events.on('toggleAllData', (value: boolean) => {
-        setAllData(!events.invoke('allData'));
     });
 
     // camera mode (visual: centers/rings)
