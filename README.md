@@ -46,7 +46,7 @@ Camera Framesは、**日本のアニメーション制作における「レイ�
 
 SuperSplat is a free and open source tool for inspecting, editing, optimizing and publishing 3D Gaussian Splats. It is built on web technologies and runs in the browser, so there's nothing to download or install.
 
-A live version of this tool is available at: https://superspl.at/editor
+A live version of this tool is available at: https://stechdrive.github.io/supersplat-cameraframes/
 
 
 ![image](https://github.com/user-attachments/assets/b6cbb5cc-d3cc-4385-8c71-ab2807fd4fba)
@@ -60,8 +60,8 @@ To initialize a local development environment for SuperSplat, ensure you have [N
 1. Clone the repository:
 
    ```sh
-   git clone https://github.com/playcanvas/supersplat.git
-   cd supersplat
+   git clone https://github.com/stechdrive/supersplat-cameraframes.git
+   cd supersplat-cameraframes
    ```
 
 2. Install dependencies:
