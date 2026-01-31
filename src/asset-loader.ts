@@ -1,5 +1,5 @@
-import { getInputFormat, ReadFileSystem } from '@playcanvas/splat-transform';
-import { AppBase, Asset, GSplatResource, Vec3 } from 'playcanvas';
+import { ReadFileSystem } from '@playcanvas/splat-transform';
+import { AppBase, Asset, BoundingBox, GSplatResource, Vec3 } from 'playcanvas';
 
 import { Events } from './events';
 import { loadGSplatData, validateGSplatData } from './io';
@@ -37,6 +37,46 @@ class AssetLoader {
         return this.sourceBlobs.get(assetCandidate) ?? (assetCandidate as any).__sourceBlob ?? null;
     }
 
+    private async readBlob(filename: string, fileSystem: ReadFileSystem): Promise<Blob | null> {
+        try {
+            const source = await fileSystem.createSource(filename);
+            try {
+                const data = await source.read().readAll();
+                return new Blob([new Uint8Array(data)]);
+            } finally {
+                source.close();
+            }
+        } catch {
+            return null;
+        }
+    }
+
+    private async loadLegacyGsplat(filename: string, blob: Blob): Promise<Splat> {
+        const assetUrl = URL.createObjectURL(blob);
+        const asset = new Asset(filename, 'gsplat', {
+            url: assetUrl,
+            filename
+        }, {
+            decompress: true,
+            reorder: true
+        });
+        this.setSourceBlob(asset, blob);
+        this.app.assets.add(asset);
+
+        try {
+            await new Promise<void>((resolve, reject) => {
+                asset.once('load', () => resolve());
+                asset.once('error', (err: Error) => reject(err));
+                this.app.assets.load(asset);
+            });
+        } finally {
+            URL.revokeObjectURL(assetUrl);
+        }
+
+        const orientation = defaultOrientation;
+        return new Splat(asset, orientation);
+    }
+
     private async loadContainer(filename: string, blob?: Blob | null, url?: string) {
         const sourceBlob = blob ?? null;
         const assetUrl = sourceBlob ? URL.createObjectURL(sourceBlob) : (url ?? filename);
@@ -66,17 +106,44 @@ class AssetLoader {
             this.events.fire('startSpinner');
         }
 
+        const lowerFilename = filename.toLowerCase();
+
         try {
-            const gsplatData = await loadGSplatData(filename, fileSystem);
-            validateGSplatData(gsplatData);
+            try {
+                const gsplatData = await loadGSplatData(filename, fileSystem);
+                validateGSplatData(gsplatData);
 
-            const asset = new Asset(filename, 'gsplat', { url: `local-asset-${Date.now()}`, filename });
-            this.app.assets.add(asset);
-            asset.resource = new GSplatResource(this.app.graphicsDevice, gsplatData);
-            this.setSourceBlob(asset, sourceBlob ?? null);
+                const bounds = new BoundingBox();
+                if (!gsplatData.calcAabb(bounds)) {
+                    throw new Error('Loaded splat has invalid bounds');
+                }
 
-            const orientation = getInputFormat(filename.toLowerCase()) === 'lcc' ? lccOrientation : defaultOrientation;
-            return new Splat(asset, orientation);
+                const asset = new Asset(filename, 'gsplat', { url: `local-asset-${Date.now()}`, filename });
+                this.app.assets.add(asset);
+                asset.resource = new GSplatResource(this.app.graphicsDevice, gsplatData);
+                this.setSourceBlob(asset, sourceBlob ?? null);
+
+                const orientation = lowerFilename.endsWith('.lcc') ? lccOrientation : defaultOrientation;
+                return new Splat(asset, orientation);
+            } catch (error) {
+                const canFallback = lowerFilename.endsWith('.ply') || lowerFilename.endsWith('.sog');
+                if (!canFallback) {
+                    throw error;
+                }
+
+                const blob = sourceBlob ?? await this.readBlob(filename, fileSystem);
+                if (!blob) {
+                    throw error;
+                }
+
+                try {
+                    return await this.loadLegacyGsplat(filename, blob);
+                } catch (fallbackError) {
+                    const primaryMessage = error instanceof Error ? error.message : `${error}`;
+                    const fallbackMessage = fallbackError instanceof Error ? fallbackError.message : `${fallbackError}`;
+                    throw new Error(`Failed to load '${filename}' with splat-transform: ${primaryMessage}. Legacy loader failed: ${fallbackMessage}`);
+                }
+            }
         } finally {
             if (!animationFrame) {
                 this.events.fire('stopSpinner');

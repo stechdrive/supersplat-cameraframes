@@ -78,10 +78,11 @@ const dataTableToGSplatData = (dataTable: DataTable): GSplatData => {
  * @param fileSystem - The file system to read from
  */
 const loadGSplatData = async (filename: string, fileSystem: ReadFileSystem): Promise<GSplatData> => {
-    const inputFormat = getInputFormat(filename);
+    const lowerFilename = filename.toLowerCase();
+    const inputFormat = lowerFilename.endsWith('meta.json') ? 'sog' : getInputFormat(filename);
 
     // Handle bundled SOG (.sog extension) - wrap with ZipReadFileSystem
-    if (inputFormat === 'sog' && filename.toLowerCase().endsWith('.sog')) {
+    if (inputFormat === 'sog' && lowerFilename.endsWith('.sog')) {
         const source = await fileSystem.createSource(filename);
         const zipFs = new ZipReadFileSystem(source);
         try {
