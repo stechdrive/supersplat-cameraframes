@@ -3,12 +3,12 @@ let pendingAvailability: Promise<boolean> | null = null;
 
 const canUseWebGPU = (): Promise<boolean> => {
     if (cachedAvailability !== null) {
-        return cachedAvailability;
+        return Promise.resolve(cachedAvailability);
     }
 
     if (!navigator.gpu?.requestAdapter) {
         cachedAvailability = false;
-        return cachedAvailability;
+        return Promise.resolve(cachedAvailability);
     }
 
     if (!pendingAvailability) {
