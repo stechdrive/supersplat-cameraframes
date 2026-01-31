@@ -398,7 +398,7 @@ const initFileHandler = (scene: Scene, events: Events, dropTarget: HTMLElement) 
             const ssprojIndex = ssprojIndexes[0] ?? -1;
             if (ssprojIndex >= 0) {
                 const ssproj = files[ssprojIndex];
-                await events.invoke('doc.load', ssproj.contents ?? (await fetch(ssproj.url)).arrayBuffer(), ssproj.handle);
+                await events.invoke('doc.load', ssproj.contents ?? (await (await fetch(ssproj.url)).arrayBuffer()), ssproj.handle);
                 if (ssprojIndexes.length > 1) {
                     console.warn(`Multiple .ssproj files dropped; loaded '${ssproj.filename}' and skipped ${ssprojIndexes.length - 1} additional document(s).`);
                 }
@@ -422,7 +422,7 @@ const initFileHandler = (scene: Scene, events: Events, dropTarget: HTMLElement) 
 
                 if (filename.endsWith('.ssproj')) {
                     // load ssproj document
-                    await events.invoke('doc.load', files[i].contents ?? (await fetch(files[i].url)).arrayBuffer(), files[i].handle);
+                    await events.invoke('doc.load', files[i].contents ?? (await (await fetch(files[i].url)).arrayBuffer()), files[i].handle);
                 } else if (['.ply', '.splat', '.sog', '.glb'].some(ext => filename.endsWith(ext))) {
                     // load gaussian splat model or mesh
                     result.push(await importFile(files[i], animationFrame));

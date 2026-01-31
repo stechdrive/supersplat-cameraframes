@@ -320,7 +320,7 @@ const registerDocEvents = (scene: Scene, events: Events) => {
         }
     };
 
-    const saveDocument = async (options: { stream?: FileSystemWritableFileStream, filename?: string }) => {
+    const saveDocument = async (options: { stream?: FileSystemWritableFileStream, filename?: string }): Promise<boolean> => {
         events.fire('startSpinner');
 
         try {
@@ -368,7 +368,7 @@ const registerDocEvents = (scene: Scene, events: Events) => {
                     header: localize('doc.save-failed'),
                     message: 'この環境では大容量プロジェクトの保存に対応していません。File System Access API 対応ブラウザで保存してください。'
                 });
-                return;
+                return false;
             }
 
             const serializeSettings = {
@@ -400,12 +400,14 @@ const registerDocEvents = (scene: Scene, events: Events) => {
             }
             await zipWriter.close();
             await writer.close();
+            return true;
         } catch (error) {
             await events.invoke('showPopup', {
                 type: 'error',
                 header: localize('doc.save-failed'),
                 message: `'${error.message ?? error}'`
             });
+            return false;
         } finally {
             events.fire('stopSpinner');
         }
@@ -514,10 +516,12 @@ const registerDocEvents = (scene: Scene, events: Events) => {
     events.function('doc.save', async () => {
         if (documentFileHandle) {
             try {
-                await saveDocument({
+                const saved = await saveDocument({
                     stream: await documentFileHandle.createWritable()
                 });
-                events.fire('doc.saved');
+                if (saved) {
+                    events.fire('doc.saved');
+                }
             } catch (error) {
                 if (error.name !== 'AbortError' && error.name !== 'NotAllowedError') {
                     console.error(error);
@@ -536,7 +540,10 @@ const registerDocEvents = (scene: Scene, events: Events) => {
                     types: SuperFileType,
                     suggestedName: 'scene.ssproj'
                 });
-                await saveDocument({ stream: await handle.createWritable() });
+                const saved = await saveDocument({ stream: await handle.createWritable() });
+                if (!saved) {
+                    return;
+                }
                 documentFileHandle = handle;
                 events.fire('doc.setName', handle.name);
                 events.fire('doc.saved');
@@ -547,10 +554,12 @@ const registerDocEvents = (scene: Scene, events: Events) => {
                 }
             }
         } else {
-            await saveDocument({
+            const saved = await saveDocument({
                 filename: 'scene.ssproj'
             });
-            events.fire('doc.saved');
+            if (saved) {
+                events.fire('doc.saved');
+            }
         }
     });
 
