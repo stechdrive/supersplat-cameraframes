@@ -3,7 +3,7 @@ import { Color, Mat4, path, Texture, Vec3, Vec4 } from 'playcanvas';
 
 import { EditHistory } from './edit-history';
 import { SelectAllOp, SelectNoneOp, SelectInvertOp, SelectOp, HideSelectionOp, UnhideAllOp, DeleteSelectionOp, ResetOp, MultiOp, AddSplatOp } from './edit-ops';
-import { Element } from './element';
+import { Element, ElementType } from './element';
 import { Events } from './events';
 import { MappedReadFileSystem } from './io';
 import { Scene } from './scene';
@@ -68,6 +68,13 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
         lastExportCursor = 0;
     });
 
+    // When a splat is removed from the scene, remove all edit operations that reference it
+    events.on('scene.elementRemoved', (element: Element) => {
+        if (element.type === ElementType.splat) {
+            editHistory.removeForSplat(element as Splat);
+        }
+    });
+
     events.function('scene.dirty', () => {
         return editHistory.cursor !== lastExportCursor;
     });
@@ -76,9 +83,7 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
         lastExportCursor = editHistory.cursor;
     });
 
-    events.on('camera.mode', () => {
-        scene.forceRender = true;
-    });
+    // force render on some events
 
     // set camera position (world space)
     events.on('camera.setPosition', (pos: { x: number, y: number, z: number }) => {
@@ -88,10 +93,6 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
         scene.camera.setPositionWorld(new Vec3(x, y, z));
     });
 
-    events.on('camera.overlay', () => {
-        scene.forceRender = true;
-    });
-
     // camera.navMode (orbit / fpv)
     events.function('camera.navMode', () => scene.camera.navMode ?? 'orbit');
     events.on('camera.toggleNavMode', () => {
@@ -99,28 +100,14 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
         events.fire('camera.setNavMode', current === 'orbit' ? 'fpv' : 'orbit');
     });
 
-    events.on('camera.splatSize', () => {
-        scene.forceRender = true;
-    });
-
-    events.on('view.outlineSelection', () => {
-        scene.forceRender = true;
-    });
-
-    events.on('view.bands', (bands: number) => {
-        scene.forceRender = true;
-    });
-
-    events.on('camera.bound', () => {
-        scene.forceRender = true;
-    });
-
-    events.on('selection.changed', () => {
-        scene.forceRender = true;
-    });
-
-    events.on('tool.coordSpace', () => {
-        scene.forceRender = true;
+    [
+        'camera.mode', 'camera.overlay', 'camera.splatSize', 'view.outlineSelection',
+        'view.centersUseGaussianColor', 'view.bands', 'camera.bound', 'selection.changed',
+        'tool.coordSpace'
+    ].forEach((eventName) => {
+        events.on(eventName, () => {
+            scene.forceRender = true;
+        });
     });
 
     // grid.visible
@@ -839,6 +826,14 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
 
     events.on('view.setBands', (value: number) => {
         setViewBands(value);
+    });
+
+    // centers gaussian color toggle
+    let centersUseGaussianColor = false;
+    events.function('view.centersUseGaussianColor', () => centersUseGaussianColor);
+    events.on('view.setCentersUseGaussianColor', (value: boolean) => {
+        centersUseGaussianColor = value;
+        events.fire('view.centersUseGaussianColor', value);
     });
 
     events.function('camera.getPose', () => {

@@ -1,13 +1,13 @@
 import {
     math,
     ADDRESS_CLAMP_TO_EDGE,
+    ASPECT_MANUAL,
     FILTER_NEAREST,
     PIXELFORMAT_RGBA8,
     PIXELFORMAT_RGBA16F,
     PIXELFORMAT_DEPTH,
     PROJECTION_ORTHOGRAPHIC,
     PROJECTION_PERSPECTIVE,
-    TONEMAP_NONE,
     TONEMAP_ACES,
     TONEMAP_ACES2,
     TONEMAP_FILMIC,
@@ -237,7 +237,6 @@ class Camera extends Element {
     // tonemapping
     set tonemapping(value: string) {
         const mapping: Record<string, number> = {
-            none: TONEMAP_NONE,
             linear: TONEMAP_LINEAR,
             neutral: TONEMAP_NEUTRAL,
             aces: TONEMAP_ACES,
@@ -256,7 +255,6 @@ class Camera extends Element {
 
     get tonemapping() {
         switch (this.camera.toneMapping) {
-            case TONEMAP_NONE: return 'none';
             case TONEMAP_LINEAR: return 'linear';
             case TONEMAP_NEUTRAL: return 'neutral';
             case TONEMAP_ACES: return 'aces';
@@ -264,7 +262,7 @@ class Camera extends Element {
             case TONEMAP_FILMIC: return 'filmic';
             case TONEMAP_HEJL: return 'hejl';
         }
-        return 'none';
+        return 'linear';
     }
 
     // near clip
@@ -472,6 +470,9 @@ class Camera extends Element {
         if (debugRender) {
             this.entity.camera.setShaderPass(`debug_${debugRender}`);
         }
+
+        // use manual aspect ratio mode so we can set it based on targetSize
+        camera.aspectRatioMode = ASPECT_MANUAL;
 
         // create render passes
         const device = scene.graphicsDevice;
@@ -875,13 +876,13 @@ class Camera extends Element {
 
         if (!this.lockFraming) {
             this.camera.horizontalFov = width > height;
+            this.camera.aspectRatio = width / height;
         } else if (this.lockFovAxis !== undefined) {
             this.camera.horizontalFov = this.lockFovAxis === 'horizontal';
         } else {
             // CAMERA FRAMES有効時はデフォルトHorizontal
             this.camera.horizontalFov = true;
         }
-
         scene.events.fire('camera.resize', { width, height });
     }
 
@@ -2043,6 +2044,8 @@ class Camera extends Element {
             this.finalPass.enabled = false;
         }
         this.updateLockFramingAspect();
+        this.rebuildRenderTargets();
+        this.onUpdate(0);
     }
 
     endOffscreenMode() {
@@ -2052,6 +2055,8 @@ class Camera extends Element {
             this.finalPass.enabled = true;
         }
         this.updateLockFramingAspect();
+        this.rebuildRenderTargets();
+        this.onUpdate(0);
     }
 
     get entity() {

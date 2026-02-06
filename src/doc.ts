@@ -163,7 +163,8 @@ const registerDocEvents = (scene: Scene, events: Events) => {
             // stage assets before mutating current scene
             const loadSplatFromZip = async (filename: string) => {
                 try {
-                    const splat = await scene.assetLoader.load(filename, zipFs);
+                    // ssproj内のPLYはmorton順で保存されているため再ソートしない
+                    const splat = await scene.assetLoader.load(filename, zipFs, false, true);
                     if (!(splat instanceof Splat)) {
                         throw new Error('document contains a non-splat asset');
                     }
@@ -176,7 +177,7 @@ const registerDocEvents = (scene: Scene, events: Events) => {
                         const blob = await readZipBlob(filename);
                         const fallbackFs = new MappedReadFileSystem();
                         fallbackFs.addFile(filename, blob);
-                        const splat = await scene.assetLoader.load(filename, fallbackFs, false, blob);
+                        const splat = await scene.assetLoader.load(filename, fallbackFs, false, blob, true);
                         if (!(splat instanceof Splat)) {
                             throw new Error('document contains a non-splat asset');
                         }
@@ -196,7 +197,6 @@ const registerDocEvents = (scene: Scene, events: Events) => {
             for (let i = 0; i < document.splats.length; ++i) {
                 const filename = `splat_${i}.ply`;
                 const splatSettings = document.splats[i];
-
                 const splat = await loadSplatFromZip(filename);
                 stagedSplats.push({ splat, settings: splatSettings });
             }
