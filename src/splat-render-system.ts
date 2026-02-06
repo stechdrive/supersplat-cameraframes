@@ -946,8 +946,9 @@ class SplatRenderSystem {
 
         // テクスチャ再構築
         // GSplatResourceと同じテクスチャサイズを使用する必要がある (UV計算の一貫性のため)
-        const frameWidth = this.mergedResource.transformATexture?.width ?? 2048;
-        const frameHeight = this.mergedResource.transformATexture?.height ?? 2048;
+        const mergedTransformATexture = (this.mergedResource as any).transformATexture as Texture | undefined;
+        const frameWidth = mergedTransformATexture?.width ?? 2048;
+        const frameHeight = mergedTransformATexture?.height ?? 2048;
 
         const width = frameWidth;
         const height = frameHeight;

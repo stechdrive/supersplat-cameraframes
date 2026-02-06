@@ -19,6 +19,7 @@ import {
     Entity,
     Layer,
     Mat4,
+    MeshInstance,
     Picker as ModelPicker,
     Plane,
     Quat,
@@ -1821,6 +1822,9 @@ class Camera extends Element {
         const selection = this.modelPicker.getSelection(ix, iy);
         for (let i = 0; i < selection.length; ++i) {
             const mesh = selection[i];
+            if (!(mesh instanceof MeshInstance)) {
+                continue;
+            }
             const model = scene.events.invoke('mesh.fromGraphNode', mesh.node) as Model;
             if (model) {
                 if (!this.getRay(screenX, screenY, ray)) {

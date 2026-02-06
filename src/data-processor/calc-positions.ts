@@ -88,7 +88,7 @@ class CalcPositions {
         }
 
         const merged = ctx.splat.scene.renderSystem.mergedResource;
-        const transformA = merged?.transformATexture;
+        const transformA = (merged as any)?.transformATexture as Texture | undefined;
         const splatTransform = ctx.transformTexture;
         const transformPalette = ctx.transformPalette;
 
