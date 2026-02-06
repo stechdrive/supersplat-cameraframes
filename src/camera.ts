@@ -344,7 +344,12 @@ class Camera extends Element {
 
         if (!this.lockFraming) {
             this.lockedAspectRatio = null;
-            cam.aspectRatio = 0;
+            const size = this.targetSize ?? this.scene?.targetSize;
+            if (size && size.width > 0 && size.height > 0) {
+                cam.aspectRatio = size.width / size.height;
+            } else if (!(typeof cam.aspectRatio === 'number' && isFinite(cam.aspectRatio) && cam.aspectRatio > 0)) {
+                cam.aspectRatio = 1;
+            }
             return;
         }
 
