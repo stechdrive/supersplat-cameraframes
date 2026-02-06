@@ -1126,6 +1126,18 @@ class Camera extends Element {
             near = far / (1024 * 16);
         }
 
+        const dynamicPerspective = !this.ortho && this.targetSize === null;
+        let hasSplats = false;
+        if (dynamicPerspective) {
+            hasSplats = this.scene.getElementsByType(ElementType.splat).length > 0;
+            if (this.nearOverride === null && this.customFrustum === null && !hasSplats) {
+                const nearCap = this.computeNoSplatNearCap(cameraPosition, forwardVec);
+                if (typeof nearCap === 'number' && isFinite(nearCap) && nearCap > 1e-6) {
+                    near = Math.min(near, nearCap);
+                }
+            }
+        }
+
         if (this.nearOverride !== null) {
             // ユーザー指定の near を優先し、必要なら far を延長して成立させる
             const desiredNear = Math.max(MIN_NEAR_CLIP, this.nearOverride);
@@ -1133,15 +1145,9 @@ class Camera extends Element {
                 far = desiredNear * 2;
             }
             near = desiredNear;
-        } else if (!this.ortho && this.targetSize === null) {
-            const hasSplats = this.scene.getElementsByType(ElementType.splat).length > 0;
-            if (this.customFrustum === null && !hasSplats) {
-                const nearCap = this.computeNoSplatNearCap(cameraPosition, forwardVec);
-                if (typeof nearCap === 'number' && isFinite(nearCap) && nearCap > 1e-6) {
-                    near = Math.min(near, nearCap);
-                }
-            }
+        }
 
+        if (dynamicPerspective) {
             const farMin = this.computeFarMin(cameraPosition, forwardVec, dist, boundRadius, hasSplats);
             if (typeof farMin === 'number' && isFinite(farMin) && farMin > 0) {
                 far = Math.max(far, farMin);
