@@ -79,6 +79,8 @@ const quatOrbitPitch = new Quat();
 // modulo dealing with negative numbers
 const mod = (n: number, m: number) => ((n % m) + m) % m;
 const MAX_ORTHO_DEPTH_RATIO = 8192;
+const GRID_FADE_END_DISTANCE = 1000;
+const GRID_FAR_CLIP_MARGIN = 50;
 const unprojectNdc = (out: Vec3, invViewProj: Mat4, x: number, y: number, z: number) => {
     cameraClip.set(x, y, z, 1);
     invViewProj.transformVec4(cameraClip, cameraWorld4);
@@ -1131,18 +1133,16 @@ class Camera extends Element {
                 far = desiredNear * 2;
             }
             near = desiredNear;
-        } else if (
-            !this.ortho &&
-            this.customFrustum === null &&
-            this.targetSize === null &&
-            this.scene.getElementsByType(ElementType.splat).length === 0
-        ) {
-            const nearCap = this.computeNoSplatNearCap(cameraPosition, forwardVec);
-            if (typeof nearCap === 'number' && isFinite(nearCap) && nearCap > 1e-6) {
-                near = Math.min(near, nearCap);
+        } else if (!this.ortho && this.targetSize === null) {
+            const hasSplats = this.scene.getElementsByType(ElementType.splat).length > 0;
+            if (this.customFrustum === null && !hasSplats) {
+                const nearCap = this.computeNoSplatNearCap(cameraPosition, forwardVec);
+                if (typeof nearCap === 'number' && isFinite(nearCap) && nearCap > 1e-6) {
+                    near = Math.min(near, nearCap);
+                }
             }
 
-            const farMin = this.computeNoSplatFarMin(cameraPosition, forwardVec, dist, boundRadius);
+            const farMin = this.computeFarMin(cameraPosition, forwardVec, dist, boundRadius, hasSplats);
             if (typeof farMin === 'number' && isFinite(farMin) && farMin > 0) {
                 far = Math.max(far, farMin);
             }
@@ -1244,20 +1244,35 @@ class Camera extends Element {
         return cap;
     }
 
-    private computeNoSplatFarMin(cameraPosition: Vec3, forwardVec: Vec3, dist: number, boundRadius: number): number | null {
+    private computeGridFarMin(): number | null {
+        const overlaysEnabled = this.renderOverlays || this.scene.renderFlags.forceGridOverlay;
+        if (!overlaysEnabled) {
+            return null;
+        }
+        return GRID_FADE_END_DISTANCE + GRID_FAR_CLIP_MARGIN;
+    }
+
+    private computeFarMin(cameraPosition: Vec3, forwardVec: Vec3, dist: number, boundRadius: number, hasSplats: boolean): number | null {
         const candidates: number[] = [];
 
-        const dMain = this.computeMainCameraDepth(cameraPosition, forwardVec);
-        if (typeof dMain === 'number') {
-            const frustumMargin = 5;
-            candidates.push(dMain + frustumMargin);
+        const gridFarMin = this.computeGridFarMin();
+        if (typeof gridFarMin === 'number' && isFinite(gridFarMin) && gridFarMin > 0) {
+            candidates.push(gridFarMin);
         }
 
-        if (dist <= 0) {
-            vec.sub2(this.scene.bound.center, cameraPosition);
-            const farMinBound = vec.length() + boundRadius;
-            if (isFinite(farMinBound) && farMinBound > 0) {
-                candidates.push(farMinBound);
+        if (!hasSplats) {
+            const dMain = this.computeMainCameraDepth(cameraPosition, forwardVec);
+            if (typeof dMain === 'number') {
+                const frustumMargin = 5;
+                candidates.push(dMain + frustumMargin);
+            }
+
+            if (dist <= 0) {
+                vec.sub2(this.scene.bound.center, cameraPosition);
+                const farMinBound = vec.length() + boundRadius;
+                if (isFinite(farMinBound) && farMinBound > 0) {
+                    candidates.push(farMinBound);
+                }
             }
         }
 
