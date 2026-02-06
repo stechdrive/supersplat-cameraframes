@@ -13,8 +13,7 @@ import {
     BlendState,
     DepthState,
     CULLFACE_NONE,
-    Mat4,
-    Texture
+    Mat4
 } from 'playcanvas';
 
 import { buildCameraMatrices, type CameraMatrices } from './camera-matrices';
@@ -66,7 +65,7 @@ class SplatOverlay extends Element {
                 meshInstance.node = null;
                 return;
             }
-            const transformATexture = (renderSystem.mergedResource as any).transformATexture as Texture | undefined;
+            const transformATexture = renderSystem.mergedResource.getTexture('transformA');
             if (!transformATexture) {
                 meshInstance.node = null;
                 return;

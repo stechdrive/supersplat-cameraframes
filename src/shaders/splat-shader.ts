@@ -38,9 +38,9 @@ void main(void) {
         return;
     }
 
-    // Calculate Custom UVs for our Parameters (independent of engine's transformA layout)
-    // Use source.id (after splatOrder remap) so sorting does not desync params/state.
-    uint gaussId = source.id;
+    // Calculate custom UVs for our parameters (independent of engine's transformA layout)
+    // Use splat.index (after splatOrder remap) so sorting does not desync params/state.
+    uint gaussId = splat.index;
     uint paramWidth = splatParamsDim.x;
     ivec2 customUV = ivec2(int(gaussId % paramWidth), int(gaussId / paramWidth));
 
@@ -88,15 +88,14 @@ void main(void) {
     #endif
 
     // get center
-    vec3 modelCenter = readCenter(source);
+    vec3 modelCenter = getCenter();
 
     SplatCenter center;
     center.modelCenterOriginal = modelCenter;
-    modifyCenter(modelCenter);
     modifySplatCenter(modelCenter);
     center.modelCenterModified = modelCenter;
 
-    if (!initCenter(source, modelCenter, center)) {
+    if (!initCenter(modelCenter, center)) {
         gl_Position = discardVec;
         return;
     }
@@ -107,7 +106,7 @@ void main(void) {
         return;
     }
 
-    gl_Position = center.proj + vec4(corner.offset, 0.0, 0.0);
+    gl_Position = center.proj + vec4(corner.offset, 0.0);
 
     // store texture coord and locked state
     texCoord_flags = vec4(
@@ -121,17 +120,17 @@ void main(void) {
             // depth estimation mode: compute normalized depth in vertex shader
             float linearDepth = -center.view.z;
             float normalizedDepth = (linearDepth - camera_params.z) / (camera_params.y - camera_params.z);
-            vec4 clr = readColor(source);
+            vec4 clr = getColor();
             color = vec4(normalizedDepth, 0.0, 0.0, 1.0) * clr.a;
         } else {
             // pick id
-            uvec4 bits = (uvec4(source.id) >> uvec4(0u, 8u, 16u, 24u)) & uvec4(255u);
+            uvec4 bits = (uvec4(splat.index) >> uvec4(0u, 8u, 16u, 24u)) & uvec4(255u);
             color = vec4(bits) / 255.0;
         }
     // handle splat color
     #elif FORWARD_PASS
         // read color
-        color = readColor(source);
+        color = getColor();
 
         // evaluate spherical harmonics
         #if SH_BANDS > 0
@@ -141,7 +140,7 @@ void main(void) {
             // read sh coefficients
             vec3 sh[SH_COEFFS];
             float scale;
-            readSHData(source, sh, scale);
+            readSHData(sh, scale);
 
             // evaluate
             color.xyz += evalSH(sh, dir) * scale;
@@ -256,17 +255,12 @@ void main(void) {
 `;
 
 const gsplatCenter = /* glsl*/`
-uniform mat4 matrix_model;
-uniform mat4 matrix_view;
-uniform vec4 camera_params;             // 1 / far, far, near, isOrtho
-uniform mat4 matrix_projection;
-
 uniform highp usampler2D splatTransform;        // per-splat index into transform palette
 uniform sampler2D transformPalette;             // palette of transform matrices
 
 // transformPalette はワールド行列前提。matrix_model は恒等として扱い、二重適用を防ぐ。
-mat4 applyPaletteTransform(SplatSource source) {
-    uint transformIndex = texelFetch(splatTransform, source.uv, 0).r;
+mat4 applyPaletteTransform() {
+    uint transformIndex = texelFetch(splatTransform, splat.uv, 0).r;
     if (transformIndex == 0u) {
         return mat4(1.0);
     }
@@ -284,34 +278,44 @@ mat4 applyPaletteTransform(SplatSource source) {
     return transpose(t);
 }
 
+uniform mat4 matrix_model;
+uniform mat4 matrix_view;
+#ifndef GSPLAT_CENTER_NOPROJ
+    uniform vec4 camera_params;             // 1 / far, far, near, isOrtho
+    uniform mat4 matrix_projection;
+#endif
+
 // project the model space gaussian center to view and clip space
-bool initCenter(SplatSource source, vec3 modelCenter, out SplatCenter center) {
-    mat4 modelView = matrix_view * applyPaletteTransform(source);
+bool initCenter(vec3 modelCenter, inout SplatCenter center) {
+    mat4 modelView = matrix_view * applyPaletteTransform();
     vec4 centerView = modelView * vec4(modelCenter, 1.0);
 
-    // early out if splat is behind the camera (perspective only)
-    if (camera_params.w != 1.0 && centerView.z > 0.0) {
-        return false;
-    }
+    #ifndef GSPLAT_CENTER_NOPROJ
+        // early out if splat is behind the camera (perspective only)
+        if (camera_params.w != 1.0 && centerView.z > 0.0) {
+            return false;
+        }
 
-    // Enforce near clipping for splats (matches mesh behavior for camera-near).
-    // camera_params = (1 / far, far, near, isOrtho)
-    float dist = -centerView.z;
-    if (dist < camera_params.z) {
-        return false;
-    }
+        // Enforce near clipping for splats (matches mesh behavior for camera-near).
+        // camera_params = (1 / far, far, near, isOrtho)
+        float dist = -centerView.z;
+        if (dist < camera_params.z) {
+            return false;
+        }
 
-    // 非対称フラスタムを含む射影行列をそのまま適用し、FOV 推定などで再計算しない。
-    vec4 centerProj = matrix_projection * centerView;
-    #if WEBGPU
-        centerProj.z = clamp(centerProj.z, 0.0, abs(centerProj.w));
-    #else
-        centerProj.z = clamp(centerProj.z, -abs(centerProj.w), abs(centerProj.w));
+        // 非対称フラスタムを含む射影行列をそのまま適用し、FOV 推定などで再計算しない。
+        vec4 centerProj = matrix_projection * centerView;
+        #if WEBGPU
+            centerProj.z = clamp(centerProj.z, 0.0, abs(centerProj.w));
+        #else
+            centerProj.z = clamp(centerProj.z, -abs(centerProj.w), abs(centerProj.w));
+        #endif
+
+        center.proj = centerProj;
+        center.projMat00 = matrix_projection[0][0];
     #endif
 
     center.view = centerView.xyz / centerView.w;
-    center.proj = centerProj;
-    center.projMat00 = matrix_projection[0][0];
     center.modelView = modelView;
     return true;
 }
