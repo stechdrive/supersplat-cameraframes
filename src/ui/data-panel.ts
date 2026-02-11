@@ -1,11 +1,11 @@
-import { BooleanInput, Container, Label, Panel, SelectInput } from '@playcanvas/pcui';
+import { BooleanInput, Container, Label } from '@playcanvas/pcui';
 
 import { Events } from '../events';
 import { Splat } from '../splat';
+import { State } from '../splat-state';
 import { rgb2hsv } from './color';
 import { Histogram } from './histogram';
-import { State } from '../splat-state';
-import { localize, formatInteger } from './localization';
+import { localize } from './localization';
 
 const SH_C0 = 0.28209479177387814;
 
@@ -28,66 +28,55 @@ const selectable = (state: number) => (state & blockedMask) === 0;
 const selectedActive = (state: number) => (state & State.selected) !== 0 && selectable(state);
 const visibleActive = (state: number) => (state & (State.deleted | State.hidden)) === 0;
 
-// build a separator label
-const sepLabel = (labelText: string) => {
-    const container = new Container({
-        class: 'control-parent',
-        id: 'sep-container'
-    });
-
-    container.class.add('sep-container');
-
-    const label = new Label({
-        class: 'control-element-expand',
-        text: labelText
-    });
-
-    container.append(label);
-
-    return container;
-};
-
-// build a data label
-const dataLabel = (parent: Container, labelText: string) => {
-    const container = new Container({
-        class: 'control-parent'
-    });
-
-    const label = new Label({
-        class: 'control-label',
-        text: labelText
-    });
-
-    const value = new Label({
-        class: 'control-element-expand'
-    });
-
-    container.append(label);
-    container.append(value);
-
-    parent.append(container);
-
-    return value;
-};
-
-class DataPanel extends Panel {
+class DataPanel extends Container {
     constructor(events: Events, args = { }) {
         args = {
             ...args,
-            headerText: localize('panel.splat-data').toUpperCase(),
             id: 'data-panel',
-            resizable: 'top',
-            resizeMax: 1000,
-            collapsed: true,
-            collapsible: true,
-            collapseHorizontally: false,
+            hidden: true,
             flex: true,
             flexDirection: 'row'
         };
 
         super(args);
 
-        // build the data controls
+        // resize handle
+        const resizeHandle = document.createElement('div');
+        resizeHandle.id = 'data-panel-resize-handle';
+        this.dom.appendChild(resizeHandle);
+
+        let resizing = false;
+        let startY = 0;
+        let startHeight = 0;
+
+        resizeHandle.addEventListener('pointerdown', (event: PointerEvent) => {
+            if (event.isPrimary) {
+                resizing = true;
+                startY = event.clientY;
+                startHeight = this.dom.offsetHeight;
+                resizeHandle.setPointerCapture(event.pointerId);
+                event.preventDefault();
+            }
+        });
+
+        resizeHandle.addEventListener('pointermove', (event: PointerEvent) => {
+            if (resizing) {
+                const delta = startY - event.clientY;
+                const newHeight = Math.max(120, Math.min(1000, startHeight + delta));
+                this.dom.style.height = `${newHeight}px`;
+            }
+        });
+
+        resizeHandle.addEventListener('pointerup', (event: PointerEvent) => {
+            if (resizing && event.isPrimary) {
+                resizeHandle.releasePointerCapture(event.pointerId);
+            }
+        });
+
+        resizeHandle.addEventListener('lostpointercapture', () => {
+            resizing = false;
+        });
+
         const controlsContainer = new Container({
             id: 'data-controls-container'
         });
@@ -96,78 +85,131 @@ class DataPanel extends Panel {
             id: 'data-controls'
         });
 
-        const dataSelector = new SelectInput({
-            class: 'control-element-expand',
-            defaultValue: 'surface-area',
-            options: []
+        let selectedDataProp = 'x';
+
+        const dataListBox = new Container({
+            id: 'data-list-box'
         });
 
-        const populateDataSelector = (splat: Splat) => {
-            const localizations: any = {
-                x: 'X',
-                y: 'Y',
-                z: 'Z',
-                distance: localize('panel.splat-data.distance'),
-                volume: localize('panel.splat-data.volume'),
-                'surface-area': localize('panel.splat-data.surface-area'),
-                scale_0: localize('panel.splat-data.scale-x'),
-                scale_1: localize('panel.splat-data.scale-y'),
-                scale_2: localize('panel.splat-data.scale-z'),
-                f_dc_0: localize('panel.splat-data.red'),
-                f_dc_1: localize('panel.splat-data.green'),
-                f_dc_2: localize('panel.splat-data.blue'),
-                opacity: localize('panel.splat-data.opacity'),
-                hue: localize('panel.splat-data.hue'),
-                saturation: localize('panel.splat-data.saturation'),
-                value: localize('panel.splat-data.value')
-            };
-
-            const dataProps = splat.splatData.getElement('vertex').properties.map(p => p.name);
-            const derivedProps = ['distance', 'volume', 'surface-area', 'hue', 'saturation', 'value'];
-            const suppressedProps = ['state', 'transform'].concat(new Array(45).fill('').map((_, i) => `f_rest_${i}`));
-            const allProps = dataProps.concat(derivedProps).filter(p => !suppressedProps.includes(p));
-
-            const options = allProps.map((prop) => {
-                return {
-                    v: prop,
-                    t: localizations[prop] ?? prop
-                };
-            });
-
-            dataSelector.options = options;
-        };
-
         const logScale = new Container({
-            class: 'control-parent'
+            class: 'data-panel-toggle-row',
+            flex: true,
+            flexDirection: 'row'
         });
 
         const logScaleLabel = new Label({
-            class: 'control-label',
+            class: 'data-panel-toggle-label',
             text: localize('panel.splat-data.log-scale')
         });
 
         const logScaleValue = new BooleanInput({
-            class: 'control-element',
+            type: 'toggle',
+            class: 'data-panel-toggle',
             value: false
         });
 
         logScale.append(logScaleLabel);
         logScale.append(logScaleValue);
 
-        controls.append(dataSelector);
+        const showAll = new Container({
+            class: 'data-panel-toggle-row',
+            flex: true,
+            flexDirection: 'row'
+        });
+
+        const showAllLabel = new Label({
+            class: 'data-panel-toggle-label',
+            text: localize('panel.splat-data.show-all')
+        });
+
+        const showAllValue = new BooleanInput({
+            type: 'toggle',
+            class: 'data-panel-toggle',
+            value: false
+        });
+
+        showAll.append(showAllLabel);
+        showAll.append(showAllValue);
+
+        const populateDataSelector = (splat: Splat) => {
+            const localizations: any = {
+                x: `${localize('panel.splat-data.position')} X`,
+                y: `${localize('panel.splat-data.position')} Y`,
+                z: `${localize('panel.splat-data.position')} Z`,
+                opacity: localize('panel.splat-data.opacity'),
+                f_dc_0: localize('panel.splat-data.red'),
+                f_dc_1: localize('panel.splat-data.green'),
+                f_dc_2: localize('panel.splat-data.blue'),
+                scale_0: localize('panel.splat-data.scale-x'),
+                scale_1: localize('panel.splat-data.scale-y'),
+                scale_2: localize('panel.splat-data.scale-z'),
+                rot_0: `${localize('panel.splat-data.quat')} W`,
+                rot_1: `${localize('panel.splat-data.quat')} X`,
+                rot_2: `${localize('panel.splat-data.quat')} Y`,
+                rot_3: `${localize('panel.splat-data.quat')} Z`,
+                distance: localize('panel.splat-data.distance'),
+                volume: localize('panel.splat-data.volume'),
+                'surface-area': localize('panel.splat-data.surface-area'),
+                hue: localize('panel.splat-data.hue'),
+                saturation: localize('panel.splat-data.saturation'),
+                value: localize('panel.splat-data.value')
+            };
+
+            const extras: any = {
+                nx: `${localize('panel.splat-data.normal')} X`,
+                ny: `${localize('panel.splat-data.normal')} Y`,
+                nz: `${localize('panel.splat-data.normal')} Z`
+            };
+
+            for (let i = 0; i < 45; i++) {
+                extras[`f_rest_${i}`] = `${localize('panel.splat-data.sh')} ${i}`;
+            }
+
+            const dataProps = splat.splatData.getElement('vertex').properties.map(p => p.name);
+            const derivedProps = ['distance', 'volume', 'surface-area', 'hue', 'saturation', 'value'];
+            const availableProps = new Set(dataProps.concat(derivedProps));
+
+            const defaultProps = Object.keys(localizations).filter(p => availableProps.has(p));
+            const extraProps = showAllValue.value ?
+                Object.keys(extras).filter(p => availableProps.has(p)) :
+                [];
+
+            const listedProps = new Set([...defaultProps, ...extraProps, 'state', 'transform']);
+            const remainingProps = showAllValue.value ?
+                dataProps.filter(p => !listedProps.has(p)) :
+                [];
+
+            const allProps = [...defaultProps, ...extraProps, ...remainingProps];
+
+            dataListBox.dom.innerHTML = '';
+
+            allProps.forEach((prop) => {
+                const item = document.createElement('div');
+                item.classList.add('data-list-item');
+                if (prop === selectedDataProp) {
+                    item.classList.add('active');
+                }
+                item.textContent = localizations[prop] ?? extras[prop] ?? prop;
+
+                item.addEventListener('click', () => {
+                    selectedDataProp = prop;
+                    dataListBox.dom.querySelectorAll('.data-list-item').forEach((el) => {
+                        el.classList.remove('active');
+                    });
+                    item.classList.add('active');
+                    updateHistogram(); // eslint-disable-line no-use-before-define
+                });
+
+                dataListBox.dom.appendChild(item);
+            });
+        };
+
         controls.append(logScale);
-
-        controls.append(sepLabel(localize('panel.splat-data.totals')));
-
-        const splatsValue = dataLabel(controls, localize('panel.splat-data.totals.splats'));
-        const selectedValue = dataLabel(controls, localize('panel.splat-data.totals.selected'));
-        const lockedValue = dataLabel(controls, localize('panel.splat-data.totals.locked'));
-        const deletedValue = dataLabel(controls, localize('panel.splat-data.totals.deleted'));
-        const hiddenValue = dataLabel(controls, localize('panel.splat-data.totals.hidden'));
+        controls.append(showAll);
+        controls.append(dataListBox);
 
         controlsContainer.append(controls);
 
-        // build histogram
         const histogram = new Histogram(256, 128);
 
         const histogramContainer = new Container({
@@ -176,30 +218,21 @@ class DataPanel extends Panel {
 
         histogramContainer.dom.appendChild(histogram.canvas);
 
-        this.content.append(controlsContainer);
-        this.content.append(histogramContainer);
+        this.append(controlsContainer);
+        this.append(histogramContainer);
 
-        // current splat
         let splat: Splat;
 
-        // returns a function which will interpret the splat data for purposes of
-        // viewing it in the histogram.
-        // the returned values will depend on the currently selected data type:
-        //   * some value functions return the raw splat data, like 'x'.
-        //   * other value functions must transform the data for histogram visualization
-        //     (for example 'scale_0', which must be exponentiated).
-        //   * still other values are calculated/derived from multiple values of splat
-        //     data like 'volume' and 'surface area'.
         const getValueFunc = () => {
             // @ts-ignore
-            const dataFunc = dataFuncs[dataSelector.value];
-            const data = splat.splatData.getProp(dataSelector.value);
+            const dataFunc = dataFuncs[selectedDataProp];
+            const data = splat.splatData.getProp(selectedDataProp);
 
             let func: (i: number) => number;
             if (dataFunc && data) {
                 func = i => dataFunc(data[i]);
             } else {
-                switch (dataSelector.value) {
+                switch (selectedDataProp) {
                     case 'volume': {
                         const sx = splat.splatData.getProp('scale_0');
                         const sy = splat.splatData.getProp('scale_1');
@@ -252,20 +285,12 @@ class DataPanel extends Panel {
         };
 
         const updateHistogram = () => {
-            if (!splat || this.collapsed) return;
+            if (!splat || this.hidden) return;
 
             const state = splat.splatData.getProp('state') as Uint8Array;
             if (state) {
-                splatsValue.text = formatInteger(splat.numSplats);
-                selectedValue.text = formatInteger(splat.numSelected);
-                lockedValue.text = formatInteger(splat.numLocked);
-                deletedValue.text = formatInteger(splat.numDeleted);
-                hiddenValue.text = formatInteger(splat.numHidden);
-
-                // update histogram
                 const func = getValueFunc();
 
-                // update histogram
                 histogram.update({
                     count: state.length,
                     valueFunc: i => (visibleActive(state[i]) ? func(i) : undefined),
@@ -274,10 +299,6 @@ class DataPanel extends Panel {
                 });
             }
         };
-
-        this.on('expand', () => {
-            updateHistogram();
-        });
 
         events.on('splat.stateChanged', (splat_: Splat) => {
             splat = splat_;
@@ -292,13 +313,26 @@ class DataPanel extends Panel {
             }
         });
 
-        events.on('dataPanel.toggle', () => {
-            this.collapsed = !this.collapsed;
-            updateHistogram();
+        events.on('statusBar.panelChanged', (panel: string | null) => {
+            if (panel === 'splatData') {
+                requestAnimationFrame(() => {
+                    updateHistogram();
+
+                    const activeItem = dataListBox.dom.querySelector('.data-list-item.active');
+                    if (activeItem) {
+                        activeItem.scrollIntoView({ block: 'nearest' });
+                    }
+                });
+            }
         });
 
-        dataSelector.on('change', updateHistogram);
         logScaleValue.on('change', updateHistogram);
+
+        showAllValue.on('change', () => {
+            if (splat) {
+                populateDataSelector(splat);
+            }
+        });
 
         const popupContainer = new Container({
             id: 'data-panel-popup-container',
@@ -312,7 +346,7 @@ class DataPanel extends Panel {
         });
 
         popupContainer.append(popupLabel);
-        this.content.append(popupContainer);
+        this.append(popupContainer);
 
         histogram.events.on('showOverlay', () => {
             popupContainer.hidden = false;
@@ -333,11 +367,9 @@ class DataPanel extends Panel {
             popupLabel.text = `value: ${binValue} cnt: ${count} (${percentage}%) sel: ${info.selected}`;
         });
 
-        // highlight
         const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
         svg.setAttribute('id', 'histogram-svg');
 
-        // create rect element
         const rect = document.createElementNS(svg.namespaceURI, 'rect') as SVGRectElement;
         rect.setAttribute('id', 'highlight-rect');
         rect.setAttribute('fill', 'rgba(255, 102, 0, 0.2)');
@@ -361,16 +393,13 @@ class DataPanel extends Panel {
             svg.style.display = 'none';
 
             const state = splat.splatData.getProp('state') as Uint8Array;
-            const selection = state.some(s => selectedActive(s));
             const func = getValueFunc();
 
-            // perform selection
             events.fire('select.pred', op, (i: number) => {
                 if (!selectable(state[i])) {
                     return false;
                 }
 
-                // select all splats that fall in the given bucket range (inclusive)
                 const value = func(i);
                 const bucket = histogram.histogram.valueToBucket(value);
                 return bucket >= start && bucket <= end;
