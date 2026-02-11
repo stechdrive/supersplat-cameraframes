@@ -95,14 +95,14 @@ class BrushSelection {
                 const modState = modifiers.read(e);
                 const op = modState.shift ? 'add' : (isCtrlLike(modState) ? 'remove' : 'set');
 
+                dragEnd();
+
                 await events.invoke(
                     'select.byMask',
                     op,
                     canvas,
                     context
                 );
-
-                dragEnd();
             }
         };
 
