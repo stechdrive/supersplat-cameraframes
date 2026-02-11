@@ -1498,8 +1498,8 @@ class Camera extends Element {
     }
 
     get fovFactor() {
-        // we set the fov of the longer axis. here we get the fov of the other (smaller) axis so framing
-        // doesn't cut off the scene.
+        // In normal mode use the larger-axis FOV so distance stays stable across viewport resize.
+        // CAMERA_FRAMES keeps its custom framing behavior inside resolveCameraFramesFovFactor.
         return resolveCameraFramesFovFactor(
             this.fov,
             this.camera.horizontalFov,

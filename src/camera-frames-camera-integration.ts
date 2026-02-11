@@ -95,6 +95,11 @@ const resolveCameraFramesFovFactor = (
     scene: CameraFramesSceneLike | null | undefined,
     overrideTargetSize: CameraFramesTargetSize
 ) => {
+    const cameraFramesEnabled = scene?.events?.invoke?.('cameraFrames.enabled') === true;
+    if (!cameraFramesEnabled) {
+        return Math.sin(fov * Math.PI / 360);
+    }
+
     const targetSize = resolveCameraFramesTargetSize(overrideTargetSize, scene);
     const width = aspectViewport?.enabled ? aspectViewport.width : targetSize?.width;
     const height = aspectViewport?.enabled ? aspectViewport.height : targetSize?.height;
