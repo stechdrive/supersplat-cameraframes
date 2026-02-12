@@ -1,5 +1,6 @@
 import { Color, Mat4 } from 'playcanvas';
 
+import { AnimTrack } from './anim-track';
 import { IndexRanges, sortedPredicate } from './index-ranges';
 import { LightRig } from './light-rig';
 import { Model } from './model';
@@ -117,7 +118,6 @@ class SelectOp extends StateOp {
         const state = splatData.getProp('state') as Uint8Array;
         const bitOp = op === 'add' ? BitOp.SET : op === 'remove' ? BitOp.CLEAR : BitOp.TOGGLE;
 
-        // wrap sorted IDs in a cursor-based predicate
         const pred = filter instanceof Uint32Array ? sortedPredicate(filter) : filter;
 
         const preds = {
@@ -166,7 +166,6 @@ class ResetOp extends StateOp {
     }
 }
 
-// op for modifying a splat transform
 class EntityTransformOp {
     name = 'entityTransform';
     splat: Splat | Model | LightRig;
@@ -196,7 +195,6 @@ class EntityTransformOp {
 
 const mat = new Mat4();
 
-// op for modifying a subset of individual splats
 class SplatsTransformOp {
     name = 'splatsTransform';
 
@@ -217,7 +215,6 @@ class SplatsTransformOp {
         const indices = splat.splatData.getProp('transform') as Uint16Array;
         const selectedIndices = this.indices;
 
-        // update splat transform palette indices
         for (let i = 0; i < selectedIndices.length; ++i) {
             const idx = selectedIndices[i];
             indices[idx] = paletteMap.get(indices[idx]);
@@ -225,7 +222,6 @@ class SplatsTransformOp {
 
         splat.transformPalette.alloc(paletteMap.size);
 
-        // update transform palette
         const { transformPalette } = splat;
         transformPalette.beginUpdate();
         this.paletteMap.forEach((newIdx, oldIdx) => {
@@ -243,13 +239,11 @@ class SplatsTransformOp {
         const indices = splat.splatData.getProp('transform') as Uint16Array;
         const selectedIndices = this.indices;
 
-        // invert the palette map
         const inverseMap = new Map<number, number>();
         paletteMap.forEach((newIdx, oldIdx) => {
             inverseMap.set(newIdx, oldIdx);
         });
 
-        // restore the original transform indices
         for (let i = 0; i < selectedIndices.length; ++i) {
             const idx = selectedIndices[i];
             indices[idx] = inverseMap.get(indices[idx]);
@@ -335,6 +329,28 @@ class SetSplatColorAdjustmentOp {
         if (blackPoint !== null) splat.blackPoint = blackPoint;
         if (whitePoint !== null) splat.whitePoint = whitePoint;
         if (transparency !== null) splat.transparency = transparency;
+    }
+}
+
+class AnimTrackEditOp {
+    name: string;
+    track: AnimTrack;
+    before: unknown;
+    after: unknown;
+
+    constructor(name: string, track: AnimTrack, before: unknown, after: unknown) {
+        this.name = name;
+        this.track = track;
+        this.before = before;
+        this.after = after;
+    }
+
+    do() {
+        this.track.restore(this.after);
+    }
+
+    undo() {
+        this.track.restore(this.before);
     }
 }
 
@@ -435,7 +451,7 @@ class MultiOp {
 }
 
 class AddSplatOp {
-    name: 'addSplat';
+    name = 'addSplat';
     scene: Scene;
     splat: Splat;
 
@@ -546,6 +562,7 @@ export {
     PlacePivotOp,
     ColorAdjustment,
     SetSplatColorAdjustmentOp,
+    AnimTrackEditOp,
     LightStateOp,
     AmbientLightOp,
     CameraPresetReferenceImageOp,

@@ -112,8 +112,8 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
 
     [
         'camera.mode', 'camera.overlay', 'camera.splatSize', 'view.outlineSelection',
-        'view.centersUseGaussianColor', 'view.bands', 'camera.bound', 'selection.changed',
-        'tool.coordSpace'
+        'view.centersUseGaussianColor', 'view.bands', 'camera.bound', 'camera.showPoses',
+        'selection.changed', 'tool.coordSpace'
     ].forEach((eventName) => {
         events.on(eventName, () => {
             scene.forceRender = true;
@@ -215,6 +215,29 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
 
     events.on('camera.toggleBound', () => {
         setBoundVisible(!events.invoke('camera.bound'));
+    });
+
+    // camera.showPoses
+
+    let showPoses = scene.config.show.cameraPoses;
+
+    const setShowPoses = (visible: boolean) => {
+        if (visible !== showPoses) {
+            showPoses = visible;
+            events.fire('camera.showPoses', showPoses);
+        }
+    };
+
+    events.function('camera.showPoses', () => {
+        return showPoses;
+    });
+
+    events.on('camera.setShowPoses', (value: boolean) => {
+        setShowPoses(value);
+    });
+
+    events.on('camera.toggleShowPoses', () => {
+        setShowPoses(!events.invoke('camera.showPoses'));
     });
 
     // camera.focus
@@ -886,6 +909,7 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
             showGrid: events.invoke('grid.visible'),
             showEyeLevel: events.invoke('eyeLevel.visible'),
             showBound: events.invoke('camera.bound'),
+            showCameraPoses: events.invoke('camera.showPoses'),
             flySpeed: events.invoke('camera.flySpeed')
         };
     });
@@ -904,6 +928,7 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
         events.fire('grid.setVisible', docView.hasOwnProperty('showGrid') ? docView.showGrid : scene.config.show.grid);
         events.fire('eyeLevel.setVisible', docView.hasOwnProperty('showEyeLevel') ? docView.showEyeLevel : scene.config.show.eyeLevel);
         events.fire('camera.setBound', docView.showBound);
+        events.fire('camera.setShowPoses', docView.showCameraPoses ?? false);
         events.fire('camera.setFlySpeed', docView.flySpeed);
     });
 };

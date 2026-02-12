@@ -36,6 +36,7 @@ import { RotateTool } from './tools/rotate-tool';
 import { ScaleTool } from './tools/scale-tool';
 import { SphereSelection } from './tools/sphere-selection';
 import { ToolManager } from './tools/tool-manager';
+import { registerTrackManagerEvents } from './track-manager';
 import { registerTransformHandlerEvents } from './transform-handler';
 import { EditorUI } from './ui/editor';
 import { localizeInit } from './ui/localization';
@@ -167,6 +168,7 @@ const main = async () => {
     // register events that only need the events object (before UI is created)
     registerTimelineEvents(events);
     registerCameraPosesEvents(events);
+    registerTrackManagerEvents(events);
     registerTransformHandlerEvents(events);
     registerPlySequenceEvents(events);
     registerPublishEvents(events);
