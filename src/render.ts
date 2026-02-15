@@ -135,7 +135,7 @@ const registerRenderEvents = (scene: Scene, events: Events) => {
         } catch (error) {
             await events.invoke('showPopup', {
                 type: 'error',
-                header: localize('render.failed'),
+                header: localize('panel.render.failed'),
                 message: `'${error.message ?? error}'`
             });
         } finally {
@@ -386,8 +386,8 @@ const registerRenderEvents = (scene: Scene, events: Events) => {
         } catch (error) {
             await events.invoke('showPopup', {
                 type: 'error',
-                header: localize('render.failed'),
-                message: `'${error.message ?? error}'`
+                header: localize('panel.render.failed'),
+                message: `'${(error as any).message ?? error}'`
             });
         } finally {
             restoreLayers.forEach(({ layer, enabled }) => {
