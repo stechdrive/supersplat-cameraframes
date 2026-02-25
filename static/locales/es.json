@@ -257,10 +257,10 @@
     "panel.camera-frames.mode.toggle": "Cambiar cámara principal/edición",
     "panel.camera-frames.main-props.toggle": "Controles de la cámara principal",
     "panel.camera-frames.main-props.title": "Controles de la cámara principal",
-    "panel.camera-frames.main-props.close": "Cerrar controles de la cámara principal"
+    "panel.camera-frames.main-props.close": "Cerrar controles de la cámara principal",
     "panel.camera-frames.transform.title.main": "Controles de la cámara principal",
     "panel.camera-frames.transform.title.viewport": "Controles de la cámara de edición",
-,
+    "tooltip.scene.solo": "Solo Selected",
     "updateBanner.message": "A new version is available.",
     "updateBanner.reload": "Reload",
     "updateBanner.dismiss": "Later"

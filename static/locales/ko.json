@@ -258,10 +258,10 @@
     "panel.camera-frames.mode.toggle": "메인/편집 카메라 전환",
     "panel.camera-frames.main-props.toggle": "메인 카메라 조작",
     "panel.camera-frames.main-props.title": "메인 카메라 조작",
-    "panel.camera-frames.main-props.close": "메인 카메라 조작 닫기"
+    "panel.camera-frames.main-props.close": "메인 카메라 조작 닫기",
     "panel.camera-frames.transform.title.main": "메인 카메라 조작",
     "panel.camera-frames.transform.title.viewport": "편집 카메라 조작",
-,
+    "tooltip.scene.solo": "Solo Selected",
     "updateBanner.message": "A new version is available.",
     "updateBanner.reload": "Reload",
     "updateBanner.dismiss": "Later"

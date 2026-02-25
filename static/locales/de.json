@@ -261,7 +261,7 @@
     "panel.camera-frames.mode.toggle": "Haupt-/Bearbeitungskamera umschalten",
     "panel.camera-frames.transform.title.main": "Hauptkamera-Steuerung",
     "panel.camera-frames.transform.title.viewport": "Bearbeitungskamera-Steuerung",
-,
+    "tooltip.scene.solo": "Solo Selected",
     "updateBanner.message": "A new version is available.",
     "updateBanner.reload": "Reload",
     "updateBanner.dismiss": "Later"

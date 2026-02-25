@@ -258,10 +258,10 @@
     "panel.camera-frames.mode.toggle": "Basculer caméra principale/édition",
     "panel.camera-frames.main-props.toggle": "Commandes de la caméra principale",
     "panel.camera-frames.main-props.title": "Commandes de la caméra principale",
-    "panel.camera-frames.main-props.close": "Fermer les commandes de la caméra principale"
+    "panel.camera-frames.main-props.close": "Fermer les commandes de la caméra principale",
     "panel.camera-frames.transform.title.main": "Commandes de la caméra principale",
     "panel.camera-frames.transform.title.viewport": "Commandes de la caméra d'édition",
-,
+    "tooltip.scene.solo": "Solo Selected",
     "updateBanner.message": "A new version is available.",
     "updateBanner.reload": "Reload",
     "updateBanner.dismiss": "Later"

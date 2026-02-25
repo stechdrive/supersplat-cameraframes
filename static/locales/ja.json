@@ -387,6 +387,7 @@
     "tooltip.timeline.frame-rate": "フレームレート",
     "tooltip.timeline.total-frames": "総フレーム数",
     "tooltip.timeline.smoothness": "スムーズさ",
+    "tooltip.scene.solo": "選択のみ表示",
     "updateBanner.message": "新しいバージョンがあります。",
     "updateBanner.reload": "更新する",
     "updateBanner.dismiss": "あとで"
