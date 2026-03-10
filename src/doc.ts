@@ -235,7 +235,7 @@ const registerDocEvents = (scene: Scene, events: Events) => {
             }
 
             events.invoke('docDeserialize.timeline', document.timeline ?? {});
-            events.invoke('docDeserialize.poseSets', document.poseSets ?? []);
+            events.invoke('docDeserialize.poseSets', document.poseSets ?? [], document.camera?.fov);
             events.invoke('docDeserialize.view', document.view ?? {});
             events.invoke('docDeserialize.cameraFrames', document.cameraFrames ?? null);
             scene.camera.docDeserialize(document.camera ?? null);

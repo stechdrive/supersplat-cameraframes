@@ -152,6 +152,10 @@ class Camera extends Element {
 
     controlMode: 'orbit' | 'fly' = 'orbit';
 
+    // during fly-mode look, stores the camera position that must stay fixed
+    // while the azim/elev tween smoothly converges
+    lookCameraPos: Vec3 | null = null;
+
     picker: Picker;
     modelPicker: ModelPicker;
 
@@ -361,7 +365,27 @@ class Camera extends Element {
     }
 
     setFocalPoint(point: Vec3, dampingFactorFactor: number = 1) {
+        this.lookCameraPos = null;
         this.focalPointTween.goto(point, dampingFactorFactor * this.scene.config.controls.dampingFactor);
+    }
+
+    // Fly mode: rotate camera around itself, keeping the camera position fixed
+    look(dx: number, dy: number) {
+        const sensitivity = this.scene.config.controls.orbitSensitivity;
+        const d = this.distance * this.sceneRadius / this.fovFactor;
+
+        Camera.calcForwardVec(orbitForward, this.azim, this.elevation);
+        const currentCameraPos = this.focalPoint.clone().add(orbitForward.clone().mulScalar(d));
+
+        const azim = this.azim - dx * sensitivity;
+        const elev = this.elevation - dy * sensitivity;
+
+        Camera.calcForwardVec(orbitForward, azim, elev);
+        const focalPoint = currentCameraPos.clone().sub(orbitForward.clone().mulScalar(d));
+
+        this.setAzimElev(azim, elev);
+        this.focalPointTween.goto(focalPoint, this.scene.config.controls.dampingFactor);
+        this.lookCameraPos = currentCameraPos;
     }
 
     private applyAzimElev(azim: number, elev: number, dampingFactorFactor: number, options?: { dropOrtho?: boolean }) {
@@ -394,6 +418,8 @@ class Camera extends Element {
     }
 
     setDistance(distance: number, dampingFactorFactor: number = 1) {
+        this.lookCameraPos = null;
+
         const controls = this.scene.config.controls;
 
         // clamp
@@ -876,6 +902,14 @@ class Camera extends Element {
     }
 
     private getCameraPositionWorldFromState(out: Vec3, mode: 'orbit' | 'fpv' = this.navMode): Vec3 {
+        if (mode !== 'fpv' && this.lookCameraPos) {
+            out.copy(this.lookCameraPos);
+            if (this.azimElevTween.timer >= this.azimElevTween.transitionTime) {
+                this.lookCameraPos = null;
+            }
+            return out;
+        }
+
         return resolveCameraPositionWorldFromState(
             out,
             mode,
