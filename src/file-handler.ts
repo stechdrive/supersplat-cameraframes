@@ -4,6 +4,7 @@ import { CreateDropHandler } from './drop-handler';
 import { ElementType } from './element';
 import { Events } from './events';
 import { BrowserFileSystem, MappedReadFileSystem } from './io';
+import { Model } from './model';
 import { Scene } from './scene';
 import { Splat } from './splat';
 import { serializePly, serializePlyCompressed, SerializeSettings, serializeSog, serializeSplat, serializeViewer, SogSettings, ViewerExportSettings } from './splat-serialize';
@@ -354,13 +355,25 @@ const initFileHandler = (scene: Scene, events: Events, dropTarget: HTMLElement) 
             return [];
         }
 
-        const result = [];
+        const result: Array<Splat | Model> = [];
 
         if (isPlySequence(filenames)) {
             // handle ply sequence
             events.fire('plysequence.setFrames', files.map(f => f.contents));
             events.fire('timeline.frame', 0);
         } else if (isSog(filenames) || isLcc(filenames)) {
+            if (isLcc(filenames)) {
+                const response = await events.invoke('showPopup', {
+                    type: 'okcancel',
+                    header: 'LCC',
+                    message: localize('popup.lcc-upload-warning'),
+                    link: `${window.location.origin}/upload`
+                });
+                if (response.action === 'cancel') {
+                    return result;
+                }
+            }
+
             // import multi-file splat model (SOG or LCC)
             const model = await importSplatModel(files, animationFrame);
             if (model) {

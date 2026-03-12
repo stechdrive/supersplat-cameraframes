@@ -235,6 +235,7 @@
     "popup.no": "いいえ",
     "popup.error": "エラー",
     "popup.error-loading": "ファイルの読み込みエラー",
+    "popup.lcc-upload-warning": "superspl.atへの公開には、アップロードページから直接LCCファイルをアップロードすることをお勧めします。",
     "cameraSave.exportFailed": "カメラリストの書き出しに失敗しました。",
     "cameraSave.emptyPresets": "カメラリストが空です。",
     "cameraSave.importNotAllowedDuringRender": "書き出し（レンダリング）中は読み込みできません。",

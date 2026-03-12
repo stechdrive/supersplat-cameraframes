@@ -235,6 +235,7 @@
     "popup.no": "No",
     "popup.error": "Error",
     "popup.error-loading": "Error Loading File",
+    "popup.lcc-upload-warning": "For better publishing to superspl.at, upload your LCC file directly via the upload page.",
     "cameraSave.exportFailed": "Failed to export camera presets.",
     "cameraSave.emptyPresets": "Camera list is empty.",
     "cameraSave.importNotAllowedDuringRender": "Import is unavailable while rendering/exporting is in progress.",
