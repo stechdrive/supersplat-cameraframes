@@ -382,8 +382,6 @@ const initFileHandler = (scene: Scene, events: Events, dropTarget: HTMLElement) 
                     return result;
                 }
             }
-
-            // import multi-file splat model (SOG or LCC)
             const model = await importSplatModel(files, animationFrame);
             if (model) {
                 result.push(model);
