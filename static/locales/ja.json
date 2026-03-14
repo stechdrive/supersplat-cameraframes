@@ -227,6 +227,7 @@
     "panel.render.cancel": "キャンセル",
     "panel.render.render-video": "ビデオレンダリング",
     "panel.render.rendering": "フレームをレンダリング中",
+    "render.failed": "レンダリングに失敗しました",
     "popup.ok": "OK",
     "popup.cancel": "キャンセル",
     "popup.yes": "はい",

@@ -68,10 +68,16 @@ const registerPlySequenceEvents = (events: Events) => {
         sequenceLoading = true;
 
         const file = sequenceFiles[frame];
-        const newSplat = await events.invoke('import', [{
+        const imported = await events.invoke('import', [{
             filename: file.name,
             contents: file
         }], true) as Splat[];
+        const loadedSplat = imported.find(Boolean) ?? null;
+
+        if (!loadedSplat) {
+            sequenceLoading = false;
+            return;
+        }
 
         // wait for the new splat to render before destroying the old one
         // (forceRender is already set by updateState during import)
@@ -82,7 +88,7 @@ const registerPlySequenceEvents = (events: Events) => {
             sequenceSplat.destroy();
         }
         sequenceFrame = frame;
-        sequenceSplat = newSplat[0];
+        sequenceSplat = loadedSplat;
         sequenceLoading = false;
 
         // initiate the next frame load
@@ -129,18 +135,25 @@ const registerPlySequenceEvents = (events: Events) => {
             sequenceLoading = true;
 
             const file = sequenceFiles[frame];
-            const newSplat = await events.invoke('import', [{
+            const imported = await events.invoke('import', [{
                 filename: file.name,
                 contents: file
             }], true) as Splat[];
+            const loadedSplat = imported.find(Boolean) ?? null;
+
+            if (!loadedSplat) {
+                sequenceLoading = false;
+                loadingPromise = null;
+                return;
+            }
 
             // destroy the previous frame
             if (sequenceSplat) {
                 sequenceSplat.destroy();
             }
             sequenceFrame = frame;
-            sequenceSplat = newSplat[0];
-            newSplatResult = newSplat[0];
+            sequenceSplat = loadedSplat;
+            newSplatResult = loadedSplat;
             sequenceLoading = false;
             loadingPromise = null;
         })();
