@@ -43,6 +43,7 @@ type ParamsStorage = {
 class SplatRenderSystem {
     scene: Scene;
     sources: Splat[] = [];
+    private temporaryActiveSplats: Set<Splat> | null = null;
     offsets = new Map<Splat, number>();
     counts = new Map<Splat, number>();
     transformBases = new Map<Splat, TransformBlock>();
@@ -164,6 +165,32 @@ class SplatRenderSystem {
 
     isSplatActive(splat: Splat) {
         return this.offsets.has(splat);
+    }
+
+    private getActiveSources() {
+        const temporaryActiveSplats = this.temporaryActiveSplats;
+        return this.sources.filter((splat) => {
+            return splat.visible && (!temporaryActiveSplats || temporaryActiveSplats.has(splat));
+        });
+    }
+
+    async withTemporaryActiveSplats<T>(splats: Splat[], fn: () => Promise<T>) {
+        const prevActiveSplats = this.temporaryActiveSplats;
+        this.clearVisibilityRebuildTimer();
+        this.visibilityRebuildPending = false;
+        this.visibilityRebuildImmediate = false;
+        this.temporaryActiveSplats = new Set(splats);
+        this.rebuild();
+
+        try {
+            return await fn();
+        } finally {
+            this.clearVisibilityRebuildTimer();
+            this.visibilityRebuildPending = false;
+            this.visibilityRebuildImmediate = false;
+            this.temporaryActiveSplats = prevActiveSplats;
+            this.rebuild();
+        }
     }
 
     scheduleRebuildForVisibility(immediate = false) {
@@ -774,7 +801,7 @@ class SplatRenderSystem {
         this.destroyMerged();
         this.centersUpdateToken++;
 
-        const activeSources = this.sources.filter(splat => splat.visible);
+        const activeSources = this.getActiveSources();
         if (activeSources.length === 0) {
             console.log('SplatRenderSystem: No sources to rebuild');
             this.destroyMerged();

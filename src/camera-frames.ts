@@ -148,7 +148,7 @@ export class CameraFramesController {
         exportName: 'cf-%cam',
         exportFormat: 'psd',
         exportGridOverlay: true,
-        exportModelLayers: false,
+        exportModelLayers: true,
         exportTarget: 'current',
         exportPresetIds: [],
         cameraPresets: [],
@@ -1226,6 +1226,9 @@ export class CameraFramesController {
             const next = this.normalizeFormat(format);
             if (this.state.exportFormat === next) return;
             this.state.exportFormat = next;
+            if (next === 'psd') {
+                this.state.exportModelLayers = true;
+            }
             this.emitStateChanged();
         });
 
@@ -2620,7 +2623,9 @@ export class CameraFramesController {
             const baseState = JSON.parse(JSON.stringify(preset.cameraFramesState)) as CameraFramesStateBase;
             baseState.exportFormat = this.normalizeFormat(baseState.exportFormat);
             baseState.exportGridOverlay = !!baseState.exportGridOverlay;
-            baseState.exportModelLayers = !!baseState.exportModelLayers;
+            baseState.exportModelLayers = typeof baseState.exportModelLayers === 'boolean' ?
+                baseState.exportModelLayers :
+                baseState.exportFormat === 'psd';
             baseState.mainCameraPose = this.rebuildMainCameraPoseFromPreset(preset, baseState);
             baseState.nearClip = preset.mainCamera.nearClip ?? null;
             this.normalizeProjectionIntoState(baseState, preset.mainCamera.projection);

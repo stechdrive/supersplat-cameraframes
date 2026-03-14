@@ -130,6 +130,7 @@ const normalizeExportTarget = (value: unknown): ExportTarget => (
 );
 
 const defaultExportGridOverlay = (format: ExportFormat) => format === 'psd';
+const defaultExportModelLayers = (format: ExportFormat) => format === 'psd';
 
 const normalizeExportPresetIds = (value: unknown, presets: CameraPreset[]): string[] => {
     if (!Array.isArray(value)) {
@@ -338,7 +339,7 @@ const normalizeCameraFramesStateBase = (
         exportName: typeof state.exportName === 'string' ? state.exportName : 'cf-%cam',
         exportFormat,
         exportGridOverlay: typeof state.exportGridOverlay === 'boolean' ? state.exportGridOverlay : defaultExportGridOverlay(exportFormat),
-        exportModelLayers: !!state.exportModelLayers
+        exportModelLayers: typeof state.exportModelLayers === 'boolean' ? state.exportModelLayers : defaultExportModelLayers(exportFormat)
     };
 };
 
@@ -496,7 +497,9 @@ export const applySnapshot = ({
         state.exportGridOverlay = typeof state.exportGridOverlay === 'boolean' ?
             state.exportGridOverlay :
             defaultExportGridOverlay(state.exportFormat);
-        state.exportModelLayers = !!state.exportModelLayers;
+        state.exportModelLayers = typeof state.exportModelLayers === 'boolean' ?
+            state.exportModelLayers :
+            defaultExportModelLayers(state.exportFormat);
         state.exportTarget = normalizeExportTarget(state.exportTarget);
         state.exportPresetIds = normalizeExportPresetIds(state.exportPresetIds, state.cameraPresets);
         overlay.style.pointerEvents = 'none';
@@ -608,7 +611,9 @@ export const deserialize = ({
     const exportGridOverlay = typeof docState.exportGridOverlay === 'boolean' ?
         docState.exportGridOverlay :
         defaultExportGridOverlay(exportFormat);
-    const exportModelLayers = !!docState.exportModelLayers;
+    const exportModelLayers = typeof docState.exportModelLayers === 'boolean' ?
+        docState.exportModelLayers :
+        defaultExportModelLayers(exportFormat);
     const exportTarget = normalizeExportTarget(docState.exportTarget);
     const maskScope = normalizeMaskScope(docState.mask?.scope, DEFAULT_MASK.scope);
     const frames = (docState.frames ?? []).map((f: FrameState) => ({

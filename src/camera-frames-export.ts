@@ -1,7 +1,10 @@
 import type { CameraFramesState, CameraPoseSnapshot, ExportFormat, ReferenceExportLayer } from './camera-frames-types';
 import type { Events } from './events';
 import type { Model } from './model';
-import { renderModelLayersWithOcclusion as renderModelLayersWithOcclusionExport } from './model-occlusion-export';
+import {
+    renderModelLayersWithOcclusion as renderModelLayersWithOcclusionExport,
+    renderSplatLayersWithOcclusion as renderSplatLayersWithOcclusionExport
+} from './model-occlusion-export';
 import type { PngCompressor } from './png-compressor';
 import { exportPsd, type PsdOverlayLayer } from './psd-export';
 import type { Scene } from './scene';
@@ -199,6 +202,12 @@ export const renderBaseWithoutModels = async (events: Events, scene: Scene, widt
     }
 };
 
+export const renderBaseWithoutSeparatedElements = async (events: Events, scene: Scene, width: number, height: number) => {
+    return await scene.renderSystem.withTemporaryActiveSplats([], async () => {
+        return await renderBaseWithoutModels(events, scene, width, height);
+    });
+};
+
 export const renderReferenceLayers = async (
     events: Events,
     width: number,
@@ -362,6 +371,16 @@ export const renderModelLayersWithOcclusion = (
     return renderModelLayersWithOcclusionExport(events, scene, width, height, exportModelLayers);
 };
 
+export const renderSplatLayersWithOcclusion = (
+    events: Events,
+    scene: Scene,
+    width: number,
+    height: number,
+    exportModelLayers: boolean
+): Promise<PsdOverlayLayer[]> => {
+    return renderSplatLayersWithOcclusionExport(events, scene, width, height, exportModelLayers);
+};
+
 export const renderPng = async (params: RenderPngParams) => {
     const { basePixels, referenceLayers, frameOverlay, gridOverlay, eyeLevelOverlay, width, height, filename, getCompressor } = params;
     const canvas = document.createElement('canvas');
@@ -468,7 +487,7 @@ export const renderImage = async ({
 
     const format = normalizeFormat(options?.format ?? state.exportFormat);
     const filename = resolveFilename(options?.filename ?? state.exportName, format);
-    const usePsdModelMaskExport = format === 'psd' && !!state.exportModelLayers;
+    const usePsdElementMaskExport = format === 'psd' && !!state.exportModelLayers;
 
     try {
         // 書き出し前に明示的にエクスポート用フラスタムを適用し、副作用イベント(camera.resize)頼りを排除
@@ -480,8 +499,8 @@ export const renderImage = async ({
             syncCameraFrustum
         });
         const currentState = getState();
-        const basePixels = usePsdModelMaskExport ?
-            await renderBaseWithoutModels(events, scene, width, height) :
+        const basePixels = usePsdElementMaskExport ?
+            await renderBaseWithoutSeparatedElements(events, scene, width, height) :
             await renderBase(events, width, height);
         const debugOverlays = await renderOverlayLayers(events, width, height, getState().exportGridOverlay);
         const referenceLayers = await renderReferenceLayers(events, width, height, { applyOpacity: format !== 'psd' });
@@ -493,13 +512,17 @@ export const renderImage = async ({
             const referenceOverlays: PsdOverlayLayer[] = referenceLayers
             .filter(layer => layer.group === 'front')
             .map(layer => ({ name: layer.name, canvas: layer.canvas, opacity: layer.opacity, bounds: layer.bounds }));
-            const modelOverlays = usePsdModelMaskExport ?
+            const modelOverlays = usePsdElementMaskExport ?
                 await renderModelLayersWithOcclusion(events, scene, width, height, currentState.exportModelLayers) :
                 await renderModelLayers(events, scene, width, height, currentState.exportModelLayers);
+            const splatOverlays = usePsdElementMaskExport ?
+                await renderSplatLayersWithOcclusion(events, scene, width, height, currentState.exportModelLayers) :
+                [];
             const frameOverlays = renderFrameOverlaysByManagement(width, height);
             const overlayLayers = [
                 ...(debugOverlays?.grid ? [{ name: localize('panel.camera-frames.export.grid-layer.grid'), canvas: debugOverlays.grid }] : []),
                 ...(debugOverlays?.eyeLevel ? [{ name: localize('panel.camera-frames.export.grid-layer.eye-level'), canvas: debugOverlays.eyeLevel }] : []),
+                ...splatOverlays,
                 ...modelOverlays,
                 ...referenceOverlays,
                 ...frameOverlays
