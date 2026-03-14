@@ -72,7 +72,6 @@ type CameraFramesStateBase = {
     exportFormat?: 'png' | 'psd';
     exportGridOverlay?: boolean;
     exportModelLayers?: boolean;
-    exportModelOcclusionAlpha?: boolean;
 };
 
 type CameraPreset = {
@@ -211,7 +210,6 @@ class CameraFramesPanel extends Panel {
         let maskScope: 'all' | 'selected' = 'all';
         let gridOverlayEnabled = false;
         let modelLayerEnabled = false;
-        let modelOcclusionAlphaEnabled = false;
         let exportTarget: ExportTarget = 'current';
         let exportPresetIds: string[] = [];
         let navMode: 'orbit' | 'fpv' = 'orbit';
@@ -547,10 +545,6 @@ class CameraFramesPanel extends Panel {
         modelLayerToggle.dom.appendChild(createSvg(glbOutputSvg));
         modelLayerToggle.dom.title = localize('panel.camera-frames.export.model-layer-tooltip');
         modelLayerToggle.dom.setAttribute('aria-pressed', 'false');
-        const modelOcclusionAlphaToggle = new Button({ class: ['icon-button', 'model-occlusion-alpha-toggle-button'], text: 'OA' });
-        modelOcclusionAlphaToggle.dom.title = localize('panel.camera-frames.export.model-occlusion-alpha-tooltip');
-        modelOcclusionAlphaToggle.dom.setAttribute('aria-label', localize('panel.camera-frames.export.model-occlusion-alpha-tooltip'));
-        modelOcclusionAlphaToggle.dom.setAttribute('aria-pressed', 'false');
         const referenceIncludeToggle = new Button({ class: ['icon-button', 'reference-include-toggle-button'], text: '' });
         referenceIncludeToggle.dom.appendChild(createSvg(referenceImageSvg));
         referenceIncludeToggle.dom.title = localize('panel.camera-frames.export.reference-image-tooltip');
@@ -562,7 +556,6 @@ class CameraFramesPanel extends Panel {
         toggleGroup.dom.style.gap = '6px';
         toggleGroup.append(gridToggle);
         toggleGroup.append(modelLayerToggle);
-        toggleGroup.append(modelOcclusionAlphaToggle);
         toggleGroup.append(referenceIncludeToggle);
         const renderButton = new Button({ class: ['icon-button', 'export-render-button'], text: '' });
         renderButton.dom.appendChild(createSvg(exportSvg));
@@ -996,22 +989,6 @@ class CameraFramesPanel extends Panel {
             if (suppress) return;
             events.fire('cameraFrames.setExportModelLayers', !modelLayerEnabled);
         });
-        modelOcclusionAlphaToggle.on('click', () => {
-            if (suppress) return;
-            if (formatSelect.value !== 'psd' || !modelLayerEnabled) {
-                return;
-            }
-            events.fire('cameraFrames.setExportModelOcclusionAlpha', !modelOcclusionAlphaEnabled);
-        });
-
-        const updateModelOcclusionAlphaToggle = () => {
-            const available = formatSelect.value === 'psd' && modelLayerEnabled;
-            modelOcclusionAlphaToggle.enabled = available;
-            modelOcclusionAlphaToggle.hidden = !available;
-            modelOcclusionAlphaToggle.class[modelOcclusionAlphaEnabled ? 'add' : 'remove']('active');
-            modelOcclusionAlphaToggle.dom.setAttribute('aria-pressed', modelOcclusionAlphaEnabled ? 'true' : 'false');
-        };
-        updateModelOcclusionAlphaToggle();
 
         const setRenderBusy = (busy: boolean) => {
             rendering = busy;
@@ -1649,8 +1626,6 @@ class CameraFramesPanel extends Panel {
             modelLayerEnabled = !!state.exportModelLayers;
             modelLayerToggle.class[modelLayerEnabled ? 'add' : 'remove']('active');
             modelLayerToggle.dom.setAttribute('aria-pressed', modelLayerEnabled ? 'true' : 'false');
-            modelOcclusionAlphaEnabled = !!state.exportModelOcclusionAlpha;
-            updateModelOcclusionAlphaToggle();
             exportTarget = state.exportTarget === 'all' ? 'all' : (state.exportTarget === 'selected' ? 'selected' : 'current');
             exportTargetSelect.value = exportTarget;
             exportPresetIds = Array.isArray(state.exportPresetIds) ?

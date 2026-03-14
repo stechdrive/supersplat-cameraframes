@@ -149,7 +149,6 @@ export class CameraFramesController {
         exportFormat: 'psd',
         exportGridOverlay: false,
         exportModelLayers: false,
-        exportModelOcclusionAlpha: false,
         exportTarget: 'current',
         exportPresetIds: [],
         cameraPresets: [],
@@ -1227,9 +1226,6 @@ export class CameraFramesController {
             const next = this.normalizeFormat(format);
             if (this.state.exportFormat === next) return;
             this.state.exportFormat = next;
-            if (next !== 'psd' && this.state.exportModelOcclusionAlpha) {
-                this.state.exportModelOcclusionAlpha = false;
-            }
             this.emitStateChanged();
         });
 
@@ -1244,16 +1240,6 @@ export class CameraFramesController {
             const next = !!value;
             if (this.state.exportModelLayers === next) return;
             this.state.exportModelLayers = next;
-            if (!next && this.state.exportModelOcclusionAlpha) {
-                this.state.exportModelOcclusionAlpha = false;
-            }
-            this.emitStateChanged();
-        });
-
-        this.events.on('cameraFrames.setExportModelOcclusionAlpha', (value: boolean) => {
-            const next = !!value;
-            if (this.state.exportModelOcclusionAlpha === next) return;
-            this.state.exportModelOcclusionAlpha = next;
             this.emitStateChanged();
         });
 
@@ -1538,8 +1524,7 @@ export class CameraFramesController {
             exportName: this.state.exportName,
             exportFormat: this.normalizeFormat(this.state.exportFormat),
             exportGridOverlay: !!this.state.exportGridOverlay,
-            exportModelLayers: !!this.state.exportModelLayers,
-            exportModelOcclusionAlpha: !!this.state.exportModelOcclusionAlpha
+            exportModelLayers: !!this.state.exportModelLayers
         };
     }
 
@@ -2636,7 +2621,6 @@ export class CameraFramesController {
             baseState.exportFormat = this.normalizeFormat(baseState.exportFormat);
             baseState.exportGridOverlay = !!baseState.exportGridOverlay;
             baseState.exportModelLayers = !!baseState.exportModelLayers;
-            baseState.exportModelOcclusionAlpha = !!baseState.exportModelOcclusionAlpha && !!baseState.exportModelLayers;
             baseState.mainCameraPose = this.rebuildMainCameraPoseFromPreset(preset, baseState);
             baseState.nearClip = preset.mainCamera.nearClip ?? null;
             this.normalizeProjectionIntoState(baseState, preset.mainCamera.projection);

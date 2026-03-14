@@ -468,6 +468,7 @@ export const renderImage = async ({
 
     const format = normalizeFormat(options?.format ?? state.exportFormat);
     const filename = resolveFilename(options?.filename ?? state.exportName, format);
+    const usePsdModelMaskExport = format === 'psd' && !!state.exportModelLayers;
 
     try {
         // 書き出し前に明示的にエクスポート用フラスタムを適用し、副作用イベント(camera.resize)頼りを排除
@@ -479,7 +480,7 @@ export const renderImage = async ({
             syncCameraFrustum
         });
         const currentState = getState();
-        const basePixels = currentState.exportModelOcclusionAlpha ?
+        const basePixels = usePsdModelMaskExport ?
             await renderBaseWithoutModels(events, scene, width, height) :
             await renderBase(events, width, height);
         const debugOverlays = await renderOverlayLayers(events, width, height, getState().exportGridOverlay);
@@ -492,7 +493,7 @@ export const renderImage = async ({
             const referenceOverlays: PsdOverlayLayer[] = referenceLayers
             .filter(layer => layer.group === 'front')
             .map(layer => ({ name: layer.name, canvas: layer.canvas, opacity: layer.opacity, bounds: layer.bounds }));
-            const modelOverlays = currentState.exportModelOcclusionAlpha ?
+            const modelOverlays = usePsdModelMaskExport ?
                 await renderModelLayersWithOcclusion(events, scene, width, height, currentState.exportModelLayers) :
                 await renderModelLayers(events, scene, width, height, currentState.exportModelLayers);
             const frameOverlays = renderFrameOverlaysByManagement(width, height);
