@@ -1384,6 +1384,9 @@ export class CameraFramesController {
                 return;
             }
             if (this.scene.camera.targetSize) {
+                // Offscreen export rebuilds render targets and updates aspect state.
+                // Re-apply the export frustum, but do not touch preview viewport mapping here.
+                this.syncCameraFrustum();
                 return;
             }
             // Scene camera resize event: update viewport and refit based on the new size
