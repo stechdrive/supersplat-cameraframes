@@ -1383,6 +1383,9 @@ export class CameraFramesController {
             if (!this.state.enabled) {
                 return;
             }
+            if (this.scene.camera.targetSize) {
+                return;
+            }
             // Scene camera resize event: update viewport and refit based on the new size
             this.updateViewportFromContainer();
             this.requestRender();
@@ -2135,6 +2138,11 @@ export class CameraFramesController {
             const ctx = this.overlayCtx;
             ctx.setTransform(1, 0, 0, 1, 0, 0);
             ctx.scale(dpr, dpr);
+        }
+
+        // export 用 offscreen target 中は preview viewport を触らない
+        if (this.scene.camera.targetSize) {
+            return;
         }
 
         // viewport が変わったらフィットと rect を再計算
