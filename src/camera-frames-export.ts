@@ -252,7 +252,7 @@ export const renderModelLayers = async (
     width: number,
     height: number,
     exportModelLayers: boolean
-): Promise<Array<{ name: string; canvas: HTMLCanvasElement; }>> => {
+): Promise<PsdOverlayLayer[]> => {
     if (!exportModelLayers) {
         return [];
     }
@@ -265,7 +265,7 @@ export const renderModelLayers = async (
         return [];
     }
 
-    const overlays: Array<{ name: string; canvas: HTMLCanvasElement; }> = [];
+    const overlays: PsdOverlayLayer[] = [];
 
     const modelStates = models.map(model => ({
         model,
@@ -358,7 +358,7 @@ export const renderModelLayersWithOcclusion = (
     width: number,
     height: number,
     exportModelLayers: boolean
-): Promise<Array<{ name: string; canvas: HTMLCanvasElement; }>> => {
+): Promise<PsdOverlayLayer[]> => {
     return renderModelLayersWithOcclusionExport(events, scene, width, height, exportModelLayers);
 };
 

@@ -9,6 +9,7 @@ import {
 
 import type { Events } from './events';
 import type { Model } from './model';
+import type { PsdOverlayLayer } from './psd-export';
 import type { Scene } from './scene';
 import { localize } from './ui/localization';
 
@@ -103,52 +104,40 @@ const readPickerDepth = async (picker: any, width: number, height: number) => {
     return flipRows(data, width, height);
 };
 
-const composeOccludedModelCanvas = (
+const composeOcclusionMaskPixels = (
     colorPixels: Uint8Array,
     targetDepth: Uint8Array | null,
     otherDepth: Uint8Array | null,
-    splatOcclusion: Uint8Array | null,
-    width: number,
-    height: number
+    splatOcclusion: Uint8Array | null
 ) => {
-    const result = new Uint8ClampedArray(colorPixels);
+    const result = new Uint8ClampedArray(colorPixels.length);
     const depthBias = 1e-6;
 
     for (let i = 0; i < result.length; i += 4) {
-        const alpha = result[i + 3];
-        if (alpha === 0) {
+        const sourceAlpha = colorPixels[i + 3];
+        if (sourceAlpha === 0) {
             continue;
         }
 
         const selfDepth = decodeDepthAt(targetDepth, i);
         if (selfDepth === null) {
-            result[i + 0] = 0;
-            result[i + 1] = 0;
-            result[i + 2] = 0;
-            result[i + 3] = 0;
             continue;
         }
 
         const occluderDepth = decodeDepthAt(otherDepth, i);
         if (occluderDepth !== null && occluderDepth < selfDepth - depthBias) {
-            result[i + 0] = 0;
-            result[i + 1] = 0;
-            result[i + 2] = 0;
-            result[i + 3] = 0;
             continue;
         }
 
         const transmittance = splatOcclusion ? (splatOcclusion[i + 3] / 255) : 1;
-        const nextAlpha = Math.max(0, Math.min(255, Math.round(alpha * transmittance)));
-        result[i + 3] = nextAlpha;
-        if (nextAlpha === 0) {
-            result[i + 0] = 0;
-            result[i + 1] = 0;
-            result[i + 2] = 0;
-        }
+        const maskValue = Math.max(0, Math.min(255, Math.round(transmittance * 255)));
+        result[i + 0] = maskValue;
+        result[i + 1] = maskValue;
+        result[i + 2] = maskValue;
+        result[i + 3] = maskValue;
     }
 
-    return canvasFromPixels(result, width, height);
+    return result;
 };
 
 const setModelEnabledStates = (models: Array<{ model: Model; enabled: boolean; }>, predicate: (model: Model) => boolean) => {
@@ -189,7 +178,7 @@ export const renderModelLayersWithOcclusion = async (
     width: number,
     height: number,
     exportModelLayers: boolean
-) => {
+): Promise<PsdOverlayLayer[]> => {
     if (!exportModelLayers) {
         return [];
     }
@@ -202,7 +191,7 @@ export const renderModelLayersWithOcclusion = async (
         return [];
     }
 
-    const overlays: Array<{ name: string; canvas: HTMLCanvasElement; }> = [];
+    const overlays: PsdOverlayLayer[] = [];
     const modelStates = models.map(model => ({ model, enabled: model.entity.enabled }));
     const layers = scene.app.scene.layers;
     const worldLayer = layers.getLayerByName('World');
@@ -277,10 +266,21 @@ export const renderModelLayersWithOcclusion = async (
                 otherDepth = await readPickerDepth(depthPicker, width, height);
             }
 
-            const canvas = composeOccludedModelCanvas(colorPixels, targetDepth, otherDepth, splatOcclusion, width, height);
+            const sourceCanvas = canvasFromPixels(colorPixels, width, height);
+            const maskCanvas = canvasFromPixels(
+                composeOcclusionMaskPixels(colorPixels, targetDepth, otherDepth, splatOcclusion),
+                width,
+                height
+            );
             overlays.push({
                 name: localize('panel.camera-frames.export.model-layer', { name: model.name ?? 'Model' }),
-                canvas
+                // レイヤー本体は未遮蔽のまま保持し、遮蔽結果だけを PSD mask として載せる。
+                canvas: sourceCanvas,
+                mask: {
+                    canvas: maskCanvas,
+                    bounds: { left: 0, top: 0, right: width, bottom: height },
+                    defaultColor: 0
+                }
             });
 
             setModelEnabledStates(modelStates, () => false);

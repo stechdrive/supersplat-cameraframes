@@ -1,10 +1,31 @@
 import { writePsd, type Psd } from 'ag-psd';
 
+type PsdLayerBounds = {
+    left: number;
+    top: number;
+    right: number;
+    bottom: number;
+};
+
+type PsdLayerMask = {
+    canvas: HTMLCanvasElement;
+    bounds?: PsdLayerBounds;
+    defaultColor?: number;
+    disabled?: boolean;
+    positionRelativeToLayer?: boolean;
+    fromVectorData?: boolean;
+    userMaskDensity?: number;
+    userMaskFeather?: number;
+    vectorMaskDensity?: number;
+    vectorMaskFeather?: number;
+};
+
 type PsdOverlayLayer = {
     name: string;
     canvas: HTMLCanvasElement;
     opacity?: number;
-    bounds?: { left: number; top: number; right: number; bottom: number; };
+    bounds?: PsdLayerBounds;
+    mask?: PsdLayerMask;
 };
 
 type PsdExportParams = {
@@ -41,6 +62,85 @@ const canvasFromPixels = (pixels: Uint8ClampedArray, width: number, height: numb
     return canvas;
 };
 
+const clampOpacity = (opacity?: number) => {
+    return Math.max(0, Math.min(1, typeof opacity === 'number' ? opacity : 1));
+};
+
+const toLayerBounds = (bounds?: PsdLayerBounds) => {
+    return bounds ? { left: bounds.left, top: bounds.top, right: bounds.right, bottom: bounds.bottom } : {};
+};
+
+const toMaskData = (mask?: PsdLayerMask) => {
+    if (!mask) {
+        return undefined;
+    }
+
+    return {
+        canvas: mask.canvas,
+        defaultColor: mask.defaultColor,
+        disabled: mask.disabled,
+        positionRelativeToLayer: mask.positionRelativeToLayer,
+        fromVectorData: mask.fromVectorData,
+        userMaskDensity: mask.userMaskDensity,
+        userMaskFeather: mask.userMaskFeather,
+        vectorMaskDensity: mask.vectorMaskDensity,
+        vectorMaskFeather: mask.vectorMaskFeather,
+        ...toLayerBounds(mask.bounds)
+    };
+};
+
+const drawLayerToContext = (
+    ctx: CanvasRenderingContext2D,
+    width: number,
+    height: number,
+    layer: PsdOverlayLayer
+) => {
+    const opacity = clampOpacity(layer.opacity);
+    if (opacity <= 0) {
+        return;
+    }
+
+    const layerBounds = layer.bounds;
+    const left = layerBounds?.left ?? 0;
+    const top = layerBounds?.top ?? 0;
+    const mask = layer.mask;
+
+    if (!mask || mask.disabled) {
+        ctx.globalAlpha = opacity;
+        ctx.drawImage(layer.canvas, left, top);
+        ctx.globalAlpha = 1;
+        return;
+    }
+
+    const temp = document.createElement('canvas');
+    temp.width = width;
+    temp.height = height;
+    const tempCtx = temp.getContext('2d');
+    if (!tempCtx) {
+        throw new Error('Failed to acquire 2D context for PSD masked layer');
+    }
+
+    tempCtx.drawImage(layer.canvas, left, top);
+    tempCtx.globalCompositeOperation = 'destination-in';
+    const maskBounds = mask.bounds;
+    tempCtx.drawImage(mask.canvas, maskBounds?.left ?? 0, maskBounds?.top ?? 0);
+    tempCtx.globalCompositeOperation = 'source-over';
+
+    ctx.globalAlpha = opacity;
+    ctx.drawImage(temp, 0, 0);
+    ctx.globalAlpha = 1;
+};
+
+const toPsdLayer = (layer: PsdOverlayLayer) => {
+    return {
+        name: layer.name,
+        canvas: layer.canvas,
+        opacity: clampOpacity(layer.opacity),
+        ...toLayerBounds(layer.bounds),
+        ...(layer.mask ? { mask: toMaskData(layer.mask) } : {})
+    };
+};
+
 const exportPsd = (params: PsdExportParams) => {
     const { basePixels, overlays, width, height, filename } = params;
     const underlays = params.underlays ?? [];
@@ -57,20 +157,13 @@ const exportPsd = (params: PsdExportParams) => {
         if (!ctx) {
             throw new Error('Failed to acquire 2D context for PSD composite');
         }
-        const clampOpacity = (opacity?: number) => {
-            return Math.max(0, Math.min(1, typeof opacity === 'number' ? opacity : 1));
-        };
         underlays.forEach((layer) => {
-            ctx.globalAlpha = clampOpacity(layer.opacity);
-            const bounds = layer.bounds;
-            ctx.drawImage(layer.canvas, bounds?.left ?? 0, bounds?.top ?? 0);
+            drawLayerToContext(ctx, width, height, layer);
         });
         ctx.globalAlpha = 1;
         ctx.drawImage(baseCanvas, 0, 0);
         overlayLayers.forEach((layer) => {
-            ctx.globalAlpha = clampOpacity(layer.opacity);
-            const bounds = layer.bounds;
-            ctx.drawImage(layer.canvas, bounds?.left ?? 0, bounds?.top ?? 0);
+            drawLayerToContext(ctx, width, height, layer);
         });
         ctx.globalAlpha = 1;
         return canvas;
@@ -109,28 +202,12 @@ const exportPsd = (params: PsdExportParams) => {
             thumbnail
         },
         children: [
-            ...underlays.map((layer) => {
-                const bounds = layer.bounds;
-                return {
-                    name: layer.name,
-                    canvas: layer.canvas,
-                    opacity: Math.max(0, Math.min(1, typeof layer.opacity === 'number' ? layer.opacity : 1)),
-                    ...(bounds ? { left: bounds.left, top: bounds.top, right: bounds.right, bottom: bounds.bottom } : {})
-                };
-            }),
+            ...underlays.map(layer => toPsdLayer(layer)),
             {
                 name: 'Render',
                 canvas: baseCanvas
             },
-            ...overlayLayers.map((layer) => {
-                const bounds = layer.bounds;
-                return {
-                    name: layer.name,
-                    canvas: layer.canvas,
-                    opacity: Math.max(0, Math.min(1, typeof layer.opacity === 'number' ? layer.opacity : 1)),
-                    ...(bounds ? { left: bounds.left, top: bounds.top, right: bounds.right, bottom: bounds.bottom } : {})
-                };
-            })
+            ...overlayLayers.map(layer => toPsdLayer(layer))
         ]
     };
 
@@ -139,4 +216,4 @@ const exportPsd = (params: PsdExportParams) => {
 };
 
 export { exportPsd };
-export type { PsdExportParams, PsdOverlayLayer };
+export type { PsdExportParams, PsdLayerBounds, PsdLayerMask, PsdOverlayLayer };
