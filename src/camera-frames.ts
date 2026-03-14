@@ -147,7 +147,7 @@ export class CameraFramesController {
         nearClip: null,
         exportName: 'cf-%cam',
         exportFormat: 'psd',
-        exportGridOverlay: false,
+        exportGridOverlay: true,
         exportModelLayers: false,
         exportTarget: 'current',
         exportPresetIds: [],

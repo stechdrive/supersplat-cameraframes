@@ -129,6 +129,8 @@ const normalizeExportTarget = (value: unknown): ExportTarget => (
     value === 'all' || value === 'selected' ? value : 'current'
 );
 
+const defaultExportGridOverlay = (format: ExportFormat) => format === 'psd';
+
 const normalizeExportPresetIds = (value: unknown, presets: CameraPreset[]): string[] => {
     if (!Array.isArray(value)) {
         return [];
@@ -321,6 +323,7 @@ const normalizeCameraFramesStateBase = (
     const state = value as Record<string, unknown>;
     const maskScope = normalizeMaskScope((state.mask as any)?.scope, DEFAULT_MASK.scope);
     const renderBox = isObject(state.renderBox) ? JSON.parse(JSON.stringify(state.renderBox)) : DEFAULT_RENDERBOX();
+    const exportFormat = normalizeFormat(state.exportFormat as ExportFormat | undefined);
     return {
         enabled: !!state.enabled,
         renderBox,
@@ -333,8 +336,8 @@ const normalizeCameraFramesStateBase = (
         mainCameraPose: clonePoseSnapshot(state.mainCameraPose as CameraPoseSnapshot | null | undefined),
         nearClip: (typeof state.nearClip === 'number' && isFinite(state.nearClip)) ? state.nearClip : null,
         exportName: typeof state.exportName === 'string' ? state.exportName : 'cf-%cam',
-        exportFormat: normalizeFormat(state.exportFormat as ExportFormat | undefined),
-        exportGridOverlay: !!state.exportGridOverlay,
+        exportFormat,
+        exportGridOverlay: typeof state.exportGridOverlay === 'boolean' ? state.exportGridOverlay : defaultExportGridOverlay(exportFormat),
         exportModelLayers: !!state.exportModelLayers
     };
 };
@@ -490,7 +493,9 @@ export const applySnapshot = ({
             preset.selected = preset.id === resolvedSelectedPresetId;
         });
         state.nearClip = computeSafeNearClip(state.nearClip);
-        state.exportGridOverlay = !!state.exportGridOverlay;
+        state.exportGridOverlay = typeof state.exportGridOverlay === 'boolean' ?
+            state.exportGridOverlay :
+            defaultExportGridOverlay(state.exportFormat);
         state.exportModelLayers = !!state.exportModelLayers;
         state.exportTarget = normalizeExportTarget(state.exportTarget);
         state.exportPresetIds = normalizeExportPresetIds(state.exportPresetIds, state.cameraPresets);
@@ -600,7 +605,9 @@ export const deserialize = ({
     const rb = docState.renderBox ?? DEFAULT_RENDERBOX();
     const exportName = typeof docState.exportName === 'string' ? docState.exportName : 'cf-%cam';
     const exportFormat = normalizeFormat(docState.exportFormat ?? 'psd');
-    const exportGridOverlay = !!docState.exportGridOverlay;
+    const exportGridOverlay = typeof docState.exportGridOverlay === 'boolean' ?
+        docState.exportGridOverlay :
+        defaultExportGridOverlay(exportFormat);
     const exportModelLayers = !!docState.exportModelLayers;
     const exportTarget = normalizeExportTarget(docState.exportTarget);
     const maskScope = normalizeMaskScope(docState.mask?.scope, DEFAULT_MASK.scope);
