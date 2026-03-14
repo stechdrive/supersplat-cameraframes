@@ -1,6 +1,7 @@
 import type { CameraFramesState, CameraPoseSnapshot, ExportFormat, ReferenceExportLayer } from './camera-frames-types';
 import type { Events } from './events';
 import type { Model } from './model';
+import { renderModelLayersWithOcclusion as renderModelLayersWithOcclusionExport } from './model-occlusion-export';
 import type { PngCompressor } from './png-compressor';
 import { exportPsd, type PsdOverlayLayer } from './psd-export';
 import type { Scene } from './scene';
@@ -183,6 +184,21 @@ export const renderBase = async (events: Events, width: number, height: number) 
     return pixels;
 };
 
+export const renderBaseWithoutModels = async (events: Events, scene: Scene, width: number, height: number) => {
+    const modelLayer = scene.modelLightingLayer;
+    const prevEnabled = modelLayer?.enabled ?? false;
+    try {
+        if (modelLayer) {
+            modelLayer.enabled = false;
+        }
+        return await renderBase(events, width, height);
+    } finally {
+        if (modelLayer) {
+            modelLayer.enabled = prevEnabled;
+        }
+    }
+};
+
 export const renderReferenceLayers = async (
     events: Events,
     width: number,
@@ -236,7 +252,7 @@ export const renderModelLayers = async (
     width: number,
     height: number,
     exportModelLayers: boolean
-): Promise<Array<{ name: string; canvas: HTMLCanvasElement; }>> => {
+): Promise<PsdOverlayLayer[]> => {
     if (!exportModelLayers) {
         return [];
     }
@@ -249,7 +265,7 @@ export const renderModelLayers = async (
         return [];
     }
 
-    const overlays: Array<{ name: string; canvas: HTMLCanvasElement; }> = [];
+    const overlays: PsdOverlayLayer[] = [];
 
     const modelStates = models.map(model => ({
         model,
@@ -334,6 +350,16 @@ export const renderModelLayers = async (
     }
 
     return overlays;
+};
+
+export const renderModelLayersWithOcclusion = (
+    events: Events,
+    scene: Scene,
+    width: number,
+    height: number,
+    exportModelLayers: boolean
+): Promise<PsdOverlayLayer[]> => {
+    return renderModelLayersWithOcclusionExport(events, scene, width, height, exportModelLayers);
 };
 
 export const renderPng = async (params: RenderPngParams) => {
@@ -442,6 +468,7 @@ export const renderImage = async ({
 
     const format = normalizeFormat(options?.format ?? state.exportFormat);
     const filename = resolveFilename(options?.filename ?? state.exportName, format);
+    const usePsdModelMaskExport = format === 'psd' && !!state.exportModelLayers;
 
     try {
         // 書き出し前に明示的にエクスポート用フラスタムを適用し、副作用イベント(camera.resize)頼りを排除
@@ -452,7 +479,10 @@ export const renderImage = async ({
             clearViewportNearOverride,
             syncCameraFrustum
         });
-        const basePixels = await renderBase(events, width, height);
+        const currentState = getState();
+        const basePixels = usePsdModelMaskExport ?
+            await renderBaseWithoutModels(events, scene, width, height) :
+            await renderBase(events, width, height);
         const debugOverlays = await renderOverlayLayers(events, width, height, getState().exportGridOverlay);
         const referenceLayers = await renderReferenceLayers(events, width, height, { applyOpacity: format !== 'psd' });
 
@@ -463,7 +493,9 @@ export const renderImage = async ({
             const referenceOverlays: PsdOverlayLayer[] = referenceLayers
             .filter(layer => layer.group === 'front')
             .map(layer => ({ name: layer.name, canvas: layer.canvas, opacity: layer.opacity, bounds: layer.bounds }));
-            const modelOverlays = await renderModelLayers(events, scene, width, height, getState().exportModelLayers);
+            const modelOverlays = usePsdModelMaskExport ?
+                await renderModelLayersWithOcclusion(events, scene, width, height, currentState.exportModelLayers) :
+                await renderModelLayers(events, scene, width, height, currentState.exportModelLayers);
             const frameOverlays = renderFrameOverlaysByManagement(width, height);
             const overlayLayers = [
                 ...(debugOverlays?.grid ? [{ name: localize('panel.camera-frames.export.grid-layer.grid'), canvas: debugOverlays.grid }] : []),

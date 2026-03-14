@@ -147,8 +147,8 @@ export class CameraFramesController {
         nearClip: null,
         exportName: 'cf-%cam',
         exportFormat: 'psd',
-        exportGridOverlay: false,
-        exportModelLayers: false,
+        exportGridOverlay: true,
+        exportModelLayers: true,
         exportTarget: 'current',
         exportPresetIds: [],
         cameraPresets: [],
@@ -1226,6 +1226,9 @@ export class CameraFramesController {
             const next = this.normalizeFormat(format);
             if (this.state.exportFormat === next) return;
             this.state.exportFormat = next;
+            if (next === 'psd') {
+                this.state.exportModelLayers = true;
+            }
             this.emitStateChanged();
         });
 
@@ -1378,6 +1381,12 @@ export class CameraFramesController {
         // camera resize -> just update viewport-based overlay
         this.events.on('camera.resize', () => {
             if (!this.state.enabled) {
+                return;
+            }
+            if (this.scene.camera.targetSize) {
+                // Offscreen export rebuilds render targets and updates aspect state.
+                // Re-apply the export frustum, but do not touch preview viewport mapping here.
+                this.syncCameraFrustum();
                 return;
             }
             // Scene camera resize event: update viewport and refit based on the new size
@@ -2134,6 +2143,11 @@ export class CameraFramesController {
             ctx.scale(dpr, dpr);
         }
 
+        // export 用 offscreen target 中は preview viewport を触らない
+        if (this.scene.camera.targetSize) {
+            return;
+        }
+
         // viewport が変わったらフィットと rect を再計算
         this.computeViewportMapping(true);
         if (this.state.enabled) {
@@ -2620,7 +2634,9 @@ export class CameraFramesController {
             const baseState = JSON.parse(JSON.stringify(preset.cameraFramesState)) as CameraFramesStateBase;
             baseState.exportFormat = this.normalizeFormat(baseState.exportFormat);
             baseState.exportGridOverlay = !!baseState.exportGridOverlay;
-            baseState.exportModelLayers = !!baseState.exportModelLayers;
+            baseState.exportModelLayers = typeof baseState.exportModelLayers === 'boolean' ?
+                baseState.exportModelLayers :
+                baseState.exportFormat === 'psd';
             baseState.mainCameraPose = this.rebuildMainCameraPoseFromPreset(preset, baseState);
             baseState.nearClip = preset.mainCamera.nearClip ?? null;
             this.normalizeProjectionIntoState(baseState, preset.mainCamera.projection);
