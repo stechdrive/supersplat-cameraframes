@@ -1,6 +1,7 @@
 import type { CameraFramesState, CameraPoseSnapshot, ExportFormat, ReferenceExportLayer } from './camera-frames-types';
 import type { Events } from './events';
 import type { Model } from './model';
+import { renderModelLayersWithOcclusion as renderModelLayersWithOcclusionExport } from './model-occlusion-export';
 import type { PngCompressor } from './png-compressor';
 import { exportPsd, type PsdOverlayLayer } from './psd-export';
 import type { Scene } from './scene';
@@ -183,6 +184,21 @@ export const renderBase = async (events: Events, width: number, height: number) 
     return pixels;
 };
 
+export const renderBaseWithoutModels = async (events: Events, scene: Scene, width: number, height: number) => {
+    const modelLayer = scene.modelLightingLayer;
+    const prevEnabled = modelLayer?.enabled ?? false;
+    try {
+        if (modelLayer) {
+            modelLayer.enabled = false;
+        }
+        return await renderBase(events, width, height);
+    } finally {
+        if (modelLayer) {
+            modelLayer.enabled = prevEnabled;
+        }
+    }
+};
+
 export const renderReferenceLayers = async (
     events: Events,
     width: number,
@@ -343,10 +359,7 @@ export const renderModelLayersWithOcclusion = (
     height: number,
     exportModelLayers: boolean
 ): Promise<Array<{ name: string; canvas: HTMLCanvasElement; }>> => {
-    // Experimental export path placeholder.
-    // Keep the implementation isolated so the default PSD/PNG path remains untouched
-    // until occlusion-aware alpha is ready.
-    return renderModelLayers(events, scene, width, height, exportModelLayers);
+    return renderModelLayersWithOcclusionExport(events, scene, width, height, exportModelLayers);
 };
 
 export const renderPng = async (params: RenderPngParams) => {
@@ -465,7 +478,10 @@ export const renderImage = async ({
             clearViewportNearOverride,
             syncCameraFrustum
         });
-        const basePixels = await renderBase(events, width, height);
+        const currentState = getState();
+        const basePixels = currentState.exportModelOcclusionAlpha ?
+            await renderBaseWithoutModels(events, scene, width, height) :
+            await renderBase(events, width, height);
         const debugOverlays = await renderOverlayLayers(events, width, height, getState().exportGridOverlay);
         const referenceLayers = await renderReferenceLayers(events, width, height, { applyOpacity: format !== 'psd' });
 
@@ -476,7 +492,6 @@ export const renderImage = async ({
             const referenceOverlays: PsdOverlayLayer[] = referenceLayers
             .filter(layer => layer.group === 'front')
             .map(layer => ({ name: layer.name, canvas: layer.canvas, opacity: layer.opacity, bounds: layer.bounds }));
-            const currentState = getState();
             const modelOverlays = currentState.exportModelOcclusionAlpha ?
                 await renderModelLayersWithOcclusion(events, scene, width, height, currentState.exportModelLayers) :
                 await renderModelLayers(events, scene, width, height, currentState.exportModelLayers);

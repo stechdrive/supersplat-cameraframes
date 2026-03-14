@@ -20,7 +20,7 @@ varying mediump vec4 color;
 
 #if PICK_PASS
     uniform uint pickOp;                        // 0: add, 1: remove, 2: set
-    uniform int pickMode;                       // 0: pick id, 1: depth estimation
+    uniform int pickMode;                       // 0: pick id, 1: depth estimation, 2: occlusion export
 #endif
 
 mediump vec4 discardVec = vec4(0.0, 0.0, 2.0, 1.0);
@@ -122,6 +122,9 @@ void main(void) {
             float normalizedDepth = (linearDepth - camera_params.z) / (camera_params.y - camera_params.z);
             vec4 clr = getColor();
             color = vec4(normalizedDepth, 0.0, 0.0, 1.0) * clr.a;
+        } else if (pickMode == 2) {
+            vec4 clr = getColor();
+            color = vec4(0.0, 0.0, 0.0, clr.a);
         } else {
             // pick id
             uvec4 bits = (uvec4(splat.index) >> uvec4(0u, 8u, 16u, 24u)) & uvec4(255u);
@@ -189,7 +192,12 @@ uniform bool outlineMode;
 uniform float ringSize;
 
 #if PICK_PASS
-    uniform int pickMode;           // 0: id, 1: depth estimation
+    uniform int pickMode;           // 0: id, 1: depth estimation, 2: occlusion export
+    #ifdef DEPTH_PICK_PASS
+        uniform sampler2D occlusionModelDepthTex;
+        uniform vec2 occlusionModelDepthTexSize;
+        #include "floatAsUintPS"
+    #endif
 #endif
 
 const float EXP4 = exp(-4.0);
@@ -216,6 +224,26 @@ void main(void) {
             // we should multiply by alpha here to take into account gaussian falloff,
             // but it results in less accurate depth for some reason
             gl_FragColor = color * alpha;
+        } else if (pickMode == 2) {
+            mediump float alpha = normExp(A) * color.a;
+            if (alpha < 1.0 / 255.0) {
+                discard;
+            }
+            #ifdef DEPTH_PICK_PASS
+                vec2 uv = gl_FragCoord.xy / occlusionModelDepthTexSize;
+                vec4 depthSample = texture2D(occlusionModelDepthTex, uv);
+                if (all(greaterThanEqual(depthSample, vec4(0.999999)))) {
+                    discard;
+                }
+                float modelDepth = uint2float(depthSample);
+                if (gl_FragCoord.z >= modelDepth - 1e-6) {
+                    discard;
+                }
+                pcFragColor0 = vec4(1.0);
+                pcFragColor1 = vec4(0.0, 0.0, 0.0, alpha);
+            #else
+                gl_FragColor = vec4(0.0, 0.0, 0.0, alpha);
+            #endif
         } else {
             // pick id
             gl_FragColor = color;
