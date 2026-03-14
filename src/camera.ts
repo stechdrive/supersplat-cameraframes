@@ -44,6 +44,11 @@ import {
     shouldDropOrthoForAngles,
     type CameraCustomFrustum
 } from './camera-frames-camera-integration';
+import {
+    applyCameraOrientation,
+    resolveCameraFramesOrthoHeight,
+    resolveCameraPositionWorldFromState
+} from './camera-frames-camera-state';
 import { buildCameraMatrices, type CameraMatrices } from './camera-matrices';
 import { MIN_NEAR_CLIP } from './clip-constants';
 import { PointerController } from './controllers';
@@ -79,10 +84,6 @@ const cameraPos = new Vec3();
 const orbitOffset = new Vec3();
 const orbitForward = new Vec3();
 const v4 = new Vec4();
-const rollAxis = new Vec3();
-const quatYawPitch = new Quat();
-const quatRoll = new Quat();
-const quatFinal = new Quat();
 const quatOrbitYaw = new Quat();
 const quatOrbitPitch = new Quat();
 
@@ -875,19 +876,16 @@ class Camera extends Element {
     }
 
     private getCameraPositionWorldFromState(out: Vec3, mode: 'orbit' | 'fpv' = this.navMode): Vec3 {
-        if (mode === 'fpv') {
-            out.copy(this.fpvPosition);
-            return out;
-        }
-
-        const azimElev = this.azimElevTween.value;
-        const distNorm = this.distanceTween.value.distance;
-        const framingFactor = this.getFramingFactor();
-
-        Camera.calcForwardVec(out, azimElev.azim, azimElev.elev);
-        out.mulScalar(distNorm * this.sceneRadius / framingFactor);
-        out.add(this.focalPointTween.value);
-        return out;
+        return resolveCameraPositionWorldFromState(
+            out,
+            mode,
+            this.fpvPosition,
+            this.azimElevTween.value,
+            this.distanceTween.value.distance,
+            this.sceneRadius,
+            this.getFramingFactor(),
+            this.focalPointTween.value
+        );
     }
 
     private getOpticalAxisScreenPoint(): { x: number, y: number } | null {
@@ -960,16 +958,23 @@ class Camera extends Element {
 
         this.getCameraPositionWorldFromState(cameraPosition);
         this.entity.setLocalPosition(cameraPosition);
-        this.applyOrientation(azimElev, roll);
+        applyCameraOrientation(this.entity, azimElev, roll);
 
         this.fitClippingPlanes(this.entity.getLocalPosition(), this.entity.forward);
 
-        const framingFactor = this.getFramingFactor();
         const { camera } = this.entity;
-        if (!this.lockFraming && this.navMode !== 'fpv') {
-            const size = this.targetSize ?? this.scene.targetSize;
-            const aspect = (size && size.width > 0) ? size.height / size.width : 1;
-            camera.orthoHeight = this.distanceTween.value.distance * this.sceneRadius / framingFactor * (this.fov / 90) * (camera.horizontalFov ? aspect : 1);
+        const orthoHeight = resolveCameraFramesOrthoHeight(
+            this.lockFraming,
+            this.navMode,
+            this.targetSize,
+            this.distanceTween.value.distance,
+            this.sceneRadius,
+            this.getFramingFactor(),
+            this.fov,
+            camera.horizontalFov
+        );
+        if (orthoHeight !== null) {
+            camera.orthoHeight = orthoHeight;
         }
         camera.camera._updateViewProjMat();
     }
@@ -1369,7 +1374,7 @@ class Camera extends Element {
             this.rollTween.goto({ roll }, 0);
         }
 
-        this.applyOrientation({ azim: yaw, elev: pitch }, lockRoll ? currentRoll : roll);
+        applyCameraOrientation(this.entity, { azim: yaw, elev: pitch }, lockRoll ? currentRoll : roll);
 
         if (dropOrtho) {
             this.ortho = false;
@@ -1921,24 +1926,6 @@ class Camera extends Element {
 
         this.currentPickTarget = null;
         return result;
-    }
-
-    // build orientation that applies roll around the camera's forward axis (after yaw/pitch)
-    private applyOrientation(azimElev: { azim: number, elev: number }, rollDeg: number) {
-        // yaw/pitch first
-        quatYawPitch.setFromEulerAngles(azimElev.elev, azimElev.azim, 0);
-
-        // forward axis after yaw/pitch (camera forward is -Z)
-        rollAxis.set(0, 0, -1);
-        quatYawPitch.transformVector(rollAxis, rollAxis);
-
-        // roll about forward (PlayCanvas expects degrees)
-        quatRoll.setFromAxisAngle(rollAxis, rollDeg);
-
-        // apply yaw/pitch then roll (world-space roll around current forward)
-        quatFinal.mul2(quatRoll, quatYawPitch);
-
-        this.entity.setRotation(quatFinal);
     }
 
     docSerialize(): CameraDoc {
