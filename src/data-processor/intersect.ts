@@ -128,7 +128,7 @@ class Intersect {
         }
 
         const merged = ctx.splat.scene.renderSystem.mergedResource;
-        const transformA = merged?.transformATexture;
+        const transformA = merged?.getTexture('transformA');
         const splatTransform = ctx.transformTexture;
         const transformPalette = ctx.transformPalette;
         const splatState = ctx.stateTexture ?? this.dummyTexture;

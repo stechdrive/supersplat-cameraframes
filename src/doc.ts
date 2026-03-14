@@ -163,7 +163,8 @@ const registerDocEvents = (scene: Scene, events: Events) => {
             // stage assets before mutating current scene
             const loadSplatFromZip = async (filename: string) => {
                 try {
-                    const splat = await scene.assetLoader.load(filename, zipFs);
+                    // ssproj内のPLYはmorton順で保存されているため再ソートしない
+                    const splat = await scene.assetLoader.load(filename, zipFs, false, true);
                     if (!(splat instanceof Splat)) {
                         throw new Error('document contains a non-splat asset');
                     }
@@ -176,7 +177,7 @@ const registerDocEvents = (scene: Scene, events: Events) => {
                         const blob = await readZipBlob(filename);
                         const fallbackFs = new MappedReadFileSystem();
                         fallbackFs.addFile(filename, blob);
-                        const splat = await scene.assetLoader.load(filename, fallbackFs, false, blob);
+                        const splat = await scene.assetLoader.load(filename, fallbackFs, false, blob, true);
                         if (!(splat instanceof Splat)) {
                             throw new Error('document contains a non-splat asset');
                         }
@@ -196,7 +197,6 @@ const registerDocEvents = (scene: Scene, events: Events) => {
             for (let i = 0; i < document.splats.length; ++i) {
                 const filename = `splat_${i}.ply`;
                 const splatSettings = document.splats[i];
-
                 const splat = await loadSplatFromZip(filename);
                 stagedSplats.push({ splat, settings: splatSettings });
             }
@@ -360,10 +360,32 @@ const registerDocEvents = (scene: Scene, events: Events) => {
         await writer.close();
     };
 
+    const cleanupWritableStream = async (stream?: FileSystemWritableFileStream | null, reason?: unknown) => {
+        if (!stream) {
+            return;
+        }
+
+        const writable = stream as FileSystemWritableFileStream & {
+            abort?: (reason?: unknown) => Promise<void>;
+        };
+        try {
+            if (typeof writable.abort === 'function') {
+                await writable.abort(reason);
+            } else {
+                await writable.close();
+            }
+        } catch (cleanupError) {
+            console.warn('failed to cleanup writable stream after save failure', cleanupError);
+        }
+    };
+
     const saveDocument = async (options: { stream?: FileSystemWritableFileStream, filename?: string }): Promise<boolean> => {
         events.fire('startSpinner');
+        let saveStep = 'init';
+        let saved = false;
 
         try {
+            saveStep = 'collect scene data';
             const splats = events.invoke('scene.allSplats') as Splat[];
             const models = scene.getElementsByType(ElementType.model) as Model[];
             const referenceImagesState = events.invoke('docSerialize.referenceImages');
@@ -421,20 +443,24 @@ const registerDocEvents = (scene: Scene, events: Events) => {
             };
 
             // Create browser filesystem and zip filesystem
+            saveStep = 'create writer';
             const browserFs = new BrowserFileSystem(options.filename, options.stream);
             const browserWriter = await browserFs.createWriter(options.filename);
             const zipFs = new ZipFileSystem(browserWriter);
 
             // Write document.json
+            saveStep = 'write document.json';
             const docWriter = await zipFs.createWriter('document.json');
             await docWriter.write(new TextEncoder().encode(JSON.stringify(document)));
             await docWriter.close();
 
             // Write each splat as PLY
             for (let i = 0; i < splats.length; ++i) {
+                saveStep = `write splat_${i}.ply`;
                 await serializePly([splats[i]], serializeSettings, zipFs, `splat_${i}.ply`);
             }
             for (let i = 0; i < models.length; ++i) {
+                saveStep = `write model_${i}.glb`;
                 const blob = await getModelBlob(models[i]);
                 await writeBlobToZip(zipFs, modelDocs[i].filename, blob);
             }
@@ -442,18 +468,28 @@ const registerDocEvents = (scene: Scene, events: Events) => {
                 if (!asset?.blob || typeof asset?.path !== 'string' || !asset.path) {
                     continue;
                 }
+                saveStep = `write ${asset.path}`;
                 await writeBlobToZip(zipFs, asset.path, asset.blob);
             }
+            saveStep = 'finalize zip';
             await zipFs.close();
+            saved = true;
             return true;
         } catch (error) {
+            const errorName = (error as Error & { name?: string })?.name;
+            const errorMessage = (error as Error)?.message ?? `${error}`;
+            const fullMessage = `${saveStep}${errorName ? ` | ${errorName}` : ''} | ${errorMessage}`;
             await events.invoke('showPopup', {
                 type: 'error',
                 header: localize('doc.save-failed'),
-                message: `'${error.message ?? error}'`
+                message: `'${fullMessage}'`
             });
             return false;
         } finally {
+            if (!saved && options.stream) {
+                // Ensure failed saves release the file lock so the next save can recover.
+                await cleanupWritableStream(options.stream);
+            }
             events.fire('stopSpinner');
         }
     };
@@ -570,6 +606,11 @@ const registerDocEvents = (scene: Scene, events: Events) => {
             } catch (error) {
                 if (error.name !== 'AbortError' && error.name !== 'NotAllowedError') {
                     console.error(error);
+                    await events.invoke('showPopup', {
+                        type: 'error',
+                        header: localize('doc.save-failed'),
+                        message: `'${error.message ?? error}'`
+                    });
                 }
             }
         } else {
@@ -596,6 +637,11 @@ const registerDocEvents = (scene: Scene, events: Events) => {
             } catch (error) {
                 if (error.name !== 'AbortError') {
                     console.error(error);
+                    await events.invoke('showPopup', {
+                        type: 'error',
+                        header: localize('doc.save-failed'),
+                        message: `'${error.message ?? error}'`
+                    });
                 }
             }
         } else {

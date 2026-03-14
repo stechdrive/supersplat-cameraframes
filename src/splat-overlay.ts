@@ -65,6 +65,11 @@ class SplatOverlay extends Element {
                 meshInstance.node = null;
                 return;
             }
+            const transformATexture = renderSystem.mergedResource.getTexture('transformA');
+            if (!transformATexture) {
+                meshInstance.node = null;
+                return;
+            }
 
             const splatData = splat.splatData;
             const offset = renderSystem.offsets.get(splat) ?? 0;
@@ -102,11 +107,10 @@ class SplatOverlay extends Element {
             };
 
             material.setParameter('splatState', renderSystem.stateTexture);
-            material.setParameter('splatPosition', renderSystem.mergedResource.transformATexture);
+            material.setParameter('splatPosition', transformATexture);
             material.setParameter('splatTransform', renderSystem.transformTexture);
             material.setParameter('transformPalette', renderSystem.transformPalette.texture);
-            const tex = renderSystem.mergedResource.transformATexture;
-            material.setParameter('globalParams', [tex.width, tex.width * tex.height]);
+            material.setParameter('globalParams', [transformATexture.width, transformATexture.width * transformATexture.height]);
             material.setParameter('splatOffset', offset);
             material.setParameter('splatCount', count);
             material.update();

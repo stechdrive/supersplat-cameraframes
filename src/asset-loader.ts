@@ -1,4 +1,4 @@
-import { ReadFileSystem } from '@playcanvas/splat-transform';
+import { getInputFormat, ReadFileSystem } from '@playcanvas/splat-transform';
 import { AppBase, Asset, BoundingBox, GSplatResource, Vec3 } from 'playcanvas';
 
 import { Events } from './events';
@@ -6,8 +6,16 @@ import { loadGSplatData, validateGSplatData } from './io';
 import { Model } from './model';
 import { Splat } from './splat';
 
-const defaultOrientation = new Vec3(0, 0, 180);
-const lccOrientation = new Vec3(90, 0, 180);
+const getOrientation = (filename: string) => {
+    switch (getInputFormat(filename)) {
+        case 'spz':
+            return new Vec3(0, 0, 0);
+        case 'lcc':
+            return new Vec3(90, 0, 180);
+        default:
+            return new Vec3(0, 0, 180);
+    }
+};
 
 // handles loading gsplat assets using splat-transform
 class AssetLoader {
@@ -73,8 +81,7 @@ class AssetLoader {
             URL.revokeObjectURL(assetUrl);
         }
 
-        const orientation = defaultOrientation;
-        return new Splat(asset, orientation);
+        return new Splat(asset, getOrientation(filename));
     }
 
     private async loadContainer(filename: string, blob?: Blob | null, url?: string) {
@@ -101,7 +108,25 @@ class AssetLoader {
         }
     }
 
-    async load(filename: string, fileSystem: ReadFileSystem, animationFrame?: boolean, sourceBlob?: Blob | null) {
+    async load(filename: string,
+        fileSystem: ReadFileSystem,
+        animationFrame?: boolean,
+        sourceBlobOrSkipReorder?: Blob | boolean | null,
+        skipReorderArg?: boolean) {
+
+        let sourceBlob: Blob | null = null;
+        let skipReorder = false;
+
+        if (typeof sourceBlobOrSkipReorder === 'boolean') {
+            skipReorder = sourceBlobOrSkipReorder;
+        } else {
+            sourceBlob = sourceBlobOrSkipReorder ?? null;
+        }
+
+        if (typeof skipReorderArg === 'boolean') {
+            skipReorder = skipReorderArg;
+        }
+
         if (!animationFrame) {
             this.events.fire('startSpinner');
         }
@@ -110,7 +135,7 @@ class AssetLoader {
 
         try {
             try {
-                const gsplatData = await loadGSplatData(filename, fileSystem);
+                const gsplatData = await loadGSplatData(filename, fileSystem, skipReorder || animationFrame);
                 validateGSplatData(gsplatData);
 
                 const bounds = new BoundingBox();
@@ -123,8 +148,7 @@ class AssetLoader {
                 asset.resource = new GSplatResource(this.app.graphicsDevice, gsplatData);
                 this.setSourceBlob(asset, sourceBlob ?? null);
 
-                const orientation = lowerFilename.endsWith('.lcc') ? lccOrientation : defaultOrientation;
-                return new Splat(asset, orientation);
+                return new Splat(asset, getOrientation(filename));
             } catch (error) {
                 const canFallback = lowerFilename.endsWith('.ply') || lowerFilename.endsWith('.sog');
                 if (!canFallback) {

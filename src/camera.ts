@@ -1,13 +1,13 @@
 import {
     math,
     ADDRESS_CLAMP_TO_EDGE,
+    ASPECT_MANUAL,
     FILTER_NEAREST,
     PIXELFORMAT_RGBA8,
     PIXELFORMAT_RGBA16F,
     PIXELFORMAT_DEPTH,
     PROJECTION_ORTHOGRAPHIC,
     PROJECTION_PERSPECTIVE,
-    TONEMAP_NONE,
     TONEMAP_ACES,
     TONEMAP_ACES2,
     TONEMAP_FILMIC,
@@ -19,6 +19,7 @@ import {
     Entity,
     Layer,
     Mat4,
+    MeshInstance,
     Picker as ModelPicker,
     Plane,
     Quat,
@@ -78,6 +79,8 @@ const quatOrbitPitch = new Quat();
 // modulo dealing with negative numbers
 const mod = (n: number, m: number) => ((n % m) + m) % m;
 const MAX_ORTHO_DEPTH_RATIO = 8192;
+const GRID_FADE_END_DISTANCE = 1000;
+const GRID_FAR_CLIP_MARGIN = 50;
 const unprojectNdc = (out: Vec3, invViewProj: Mat4, x: number, y: number, z: number) => {
     cameraClip.set(x, y, z, 1);
     invViewProj.transformVec4(cameraClip, cameraWorld4);
@@ -237,7 +240,6 @@ class Camera extends Element {
     // tonemapping
     set tonemapping(value: string) {
         const mapping: Record<string, number> = {
-            none: TONEMAP_NONE,
             linear: TONEMAP_LINEAR,
             neutral: TONEMAP_NEUTRAL,
             aces: TONEMAP_ACES,
@@ -256,7 +258,6 @@ class Camera extends Element {
 
     get tonemapping() {
         switch (this.camera.toneMapping) {
-            case TONEMAP_NONE: return 'none';
             case TONEMAP_LINEAR: return 'linear';
             case TONEMAP_NEUTRAL: return 'neutral';
             case TONEMAP_ACES: return 'aces';
@@ -264,7 +265,7 @@ class Camera extends Element {
             case TONEMAP_FILMIC: return 'filmic';
             case TONEMAP_HEJL: return 'hejl';
         }
-        return 'none';
+        return 'linear';
     }
 
     // near clip
@@ -345,7 +346,12 @@ class Camera extends Element {
 
         if (!this.lockFraming) {
             this.lockedAspectRatio = null;
-            cam.aspectRatio = 0;
+            const size = this.targetSize ?? this.scene?.targetSize;
+            if (size && size.width > 0 && size.height > 0) {
+                cam.aspectRatio = size.width / size.height;
+            } else if (!(typeof cam.aspectRatio === 'number' && isFinite(cam.aspectRatio) && cam.aspectRatio > 0)) {
+                cam.aspectRatio = 1;
+            }
             return;
         }
 
@@ -472,6 +478,9 @@ class Camera extends Element {
         if (debugRender) {
             this.entity.camera.setShaderPass(`debug_${debugRender}`);
         }
+
+        // use manual aspect ratio mode so we can set it based on targetSize
+        camera.aspectRatioMode = ASPECT_MANUAL;
 
         // create render passes
         const device = scene.graphicsDevice;
@@ -875,13 +884,13 @@ class Camera extends Element {
 
         if (!this.lockFraming) {
             this.camera.horizontalFov = width > height;
+            this.camera.aspectRatio = width / height;
         } else if (this.lockFovAxis !== undefined) {
             this.camera.horizontalFov = this.lockFovAxis === 'horizontal';
         } else {
             // CAMERA FRAMES有効時はデフォルトHorizontal
             this.camera.horizontalFov = true;
         }
-
         scene.events.fire('camera.resize', { width, height });
     }
 
@@ -1117,6 +1126,18 @@ class Camera extends Element {
             near = far / (1024 * 16);
         }
 
+        const dynamicPerspective = !this.ortho && this.targetSize === null;
+        let hasSplats = false;
+        if (dynamicPerspective) {
+            hasSplats = this.scene.getElementsByType(ElementType.splat).length > 0;
+            if (this.nearOverride === null && this.customFrustum === null && !hasSplats) {
+                const nearCap = this.computeNoSplatNearCap(cameraPosition, forwardVec);
+                if (typeof nearCap === 'number' && isFinite(nearCap) && nearCap > 1e-6) {
+                    near = Math.min(near, nearCap);
+                }
+            }
+        }
+
         if (this.nearOverride !== null) {
             // ユーザー指定の near を優先し、必要なら far を延長して成立させる
             const desiredNear = Math.max(MIN_NEAR_CLIP, this.nearOverride);
@@ -1124,18 +1145,10 @@ class Camera extends Element {
                 far = desiredNear * 2;
             }
             near = desiredNear;
-        } else if (
-            !this.ortho &&
-            this.customFrustum === null &&
-            this.targetSize === null &&
-            this.scene.getElementsByType(ElementType.splat).length === 0
-        ) {
-            const nearCap = this.computeNoSplatNearCap(cameraPosition, forwardVec);
-            if (typeof nearCap === 'number' && isFinite(nearCap) && nearCap > 1e-6) {
-                near = Math.min(near, nearCap);
-            }
+        }
 
-            const farMin = this.computeNoSplatFarMin(cameraPosition, forwardVec, dist, boundRadius);
+        if (dynamicPerspective) {
+            const farMin = this.computeFarMin(cameraPosition, forwardVec, dist, boundRadius, hasSplats);
             if (typeof farMin === 'number' && isFinite(farMin) && farMin > 0) {
                 far = Math.max(far, farMin);
             }
@@ -1237,20 +1250,35 @@ class Camera extends Element {
         return cap;
     }
 
-    private computeNoSplatFarMin(cameraPosition: Vec3, forwardVec: Vec3, dist: number, boundRadius: number): number | null {
+    private computeGridFarMin(): number | null {
+        const overlaysEnabled = this.renderOverlays || this.scene.renderFlags.forceGridOverlay;
+        if (!overlaysEnabled) {
+            return null;
+        }
+        return GRID_FADE_END_DISTANCE + GRID_FAR_CLIP_MARGIN;
+    }
+
+    private computeFarMin(cameraPosition: Vec3, forwardVec: Vec3, dist: number, boundRadius: number, hasSplats: boolean): number | null {
         const candidates: number[] = [];
 
-        const dMain = this.computeMainCameraDepth(cameraPosition, forwardVec);
-        if (typeof dMain === 'number') {
-            const frustumMargin = 5;
-            candidates.push(dMain + frustumMargin);
+        const gridFarMin = this.computeGridFarMin();
+        if (typeof gridFarMin === 'number' && isFinite(gridFarMin) && gridFarMin > 0) {
+            candidates.push(gridFarMin);
         }
 
-        if (dist <= 0) {
-            vec.sub2(this.scene.bound.center, cameraPosition);
-            const farMinBound = vec.length() + boundRadius;
-            if (isFinite(farMinBound) && farMinBound > 0) {
-                candidates.push(farMinBound);
+        if (!hasSplats) {
+            const dMain = this.computeMainCameraDepth(cameraPosition, forwardVec);
+            if (typeof dMain === 'number') {
+                const frustumMargin = 5;
+                candidates.push(dMain + frustumMargin);
+            }
+
+            if (dist <= 0) {
+                vec.sub2(this.scene.bound.center, cameraPosition);
+                const farMinBound = vec.length() + boundRadius;
+                if (isFinite(farMinBound) && farMinBound > 0) {
+                    candidates.push(farMinBound);
+                }
             }
         }
 
@@ -1820,6 +1848,9 @@ class Camera extends Element {
         const selection = this.modelPicker.getSelection(ix, iy);
         for (let i = 0; i < selection.length; ++i) {
             const mesh = selection[i];
+            if (!(mesh instanceof MeshInstance)) {
+                continue;
+            }
             const model = scene.events.invoke('mesh.fromGraphNode', mesh.node) as Model;
             if (model) {
                 if (!this.getRay(screenX, screenY, ray)) {
@@ -2043,6 +2074,8 @@ class Camera extends Element {
             this.finalPass.enabled = false;
         }
         this.updateLockFramingAspect();
+        this.rebuildRenderTargets();
+        this.onUpdate(0);
     }
 
     endOffscreenMode() {
@@ -2052,6 +2085,8 @@ class Camera extends Element {
             this.finalPass.enabled = true;
         }
         this.updateLockFramingAspect();
+        this.rebuildRenderTargets();
+        this.onUpdate(0);
     }
 
     get entity() {

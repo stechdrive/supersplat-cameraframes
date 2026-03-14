@@ -679,8 +679,9 @@ class SplatRenderSystem {
             const tex = this.stateTexture;
             if (tex) {
                 // globalParams must match GSplatResource's texture for correct initSource() behavior
-                const resourceWidth = (this.mergedResource as any).transformATexture?.width ?? tex.width;
-                const resourceHeight = (this.mergedResource as any).transformATexture?.height ?? tex.height;
+                const transformA = this.mergedResource?.getTexture('transformA');
+                const resourceWidth = transformA?.width ?? this.mergedResource?.textureDimensions.x ?? tex.width;
+                const resourceHeight = transformA?.height ?? this.mergedResource?.textureDimensions.y ?? tex.height;
                 material.setParameter('globalParams', [resourceWidth, resourceWidth * resourceHeight]);
 
                 // splatParamsDim for our custom textures
@@ -946,8 +947,9 @@ class SplatRenderSystem {
 
         // テクスチャ再構築
         // GSplatResourceと同じテクスチャサイズを使用する必要がある (UV計算の一貫性のため)
-        const frameWidth = this.mergedResource.transformATexture?.width ?? 2048;
-        const frameHeight = this.mergedResource.transformATexture?.height ?? 2048;
+        const mergedTransformATexture = this.mergedResource?.getTexture('transformA');
+        const frameWidth = mergedTransformATexture?.width ?? this.mergedResource?.textureDimensions.x ?? 2048;
+        const frameHeight = mergedTransformATexture?.height ?? this.mergedResource?.textureDimensions.y ?? 2048;
 
         const width = frameWidth;
         const height = frameHeight;
@@ -956,7 +958,7 @@ class SplatRenderSystem {
             'Total splats:', totalSplats,
             'Resource Width:', width,
             'Resource Height:', height,
-            'Color Tex Width:', (this.mergedResource as any).colorTexture?.width,
+            'Color Tex Width:', this.mergedResource.getTexture('splatColor')?.width,
             'SH Bands:', shBands
         );
         const globalStateSize = width * height;
