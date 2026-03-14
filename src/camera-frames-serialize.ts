@@ -276,7 +276,8 @@ const cloneCameraFramesStateBase = (
     exportName: state.exportName,
     exportFormat: normalizeFormat(state.exportFormat),
     exportGridOverlay: !!state.exportGridOverlay,
-    exportModelLayers: !!state.exportModelLayers
+    exportModelLayers: !!state.exportModelLayers,
+    exportModelOcclusionAlpha: !!state.exportModelOcclusionAlpha
 });
 
 const cloneCameraPreset = (
@@ -335,7 +336,8 @@ const normalizeCameraFramesStateBase = (
         exportName: typeof state.exportName === 'string' ? state.exportName : 'cf-%cam',
         exportFormat: normalizeFormat(state.exportFormat as ExportFormat | undefined),
         exportGridOverlay: !!state.exportGridOverlay,
-        exportModelLayers: !!state.exportModelLayers
+        exportModelLayers: !!state.exportModelLayers,
+        exportModelOcclusionAlpha: !!state.exportModelOcclusionAlpha
     };
 };
 
@@ -492,6 +494,7 @@ export const applySnapshot = ({
         state.nearClip = computeSafeNearClip(state.nearClip);
         state.exportGridOverlay = !!state.exportGridOverlay;
         state.exportModelLayers = !!state.exportModelLayers;
+        state.exportModelOcclusionAlpha = !!state.exportModelOcclusionAlpha && !!state.exportModelLayers;
         state.exportTarget = normalizeExportTarget(state.exportTarget);
         state.exportPresetIds = normalizeExportPresetIds(state.exportPresetIds, state.cameraPresets);
         overlay.style.pointerEvents = 'none';
@@ -572,6 +575,7 @@ export const deserialize = ({
             exportFormat: 'png',
             exportGridOverlay: false,
             exportModelLayers: false,
+            exportModelOcclusionAlpha: false,
             exportTarget: 'current',
             exportPresetIds: [],
             cameraPresets: [],
@@ -602,6 +606,7 @@ export const deserialize = ({
     const exportFormat = normalizeFormat(docState.exportFormat ?? 'psd');
     const exportGridOverlay = !!docState.exportGridOverlay;
     const exportModelLayers = !!docState.exportModelLayers;
+    const exportModelOcclusionAlpha = !!docState.exportModelOcclusionAlpha;
     const exportTarget = normalizeExportTarget(docState.exportTarget);
     const maskScope = normalizeMaskScope(docState.mask?.scope, DEFAULT_MASK.scope);
     const frames = (docState.frames ?? []).map((f: FrameState) => ({
@@ -703,6 +708,7 @@ export const deserialize = ({
         exportFormat,
         exportGridOverlay,
         exportModelLayers,
+        exportModelOcclusionAlpha: exportModelOcclusionAlpha && exportModelLayers,
         exportTarget,
         exportPresetIds,
         mainCameraPose,

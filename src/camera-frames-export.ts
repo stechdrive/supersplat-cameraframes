@@ -336,6 +336,19 @@ export const renderModelLayers = async (
     return overlays;
 };
 
+export const renderModelLayersWithOcclusion = (
+    events: Events,
+    scene: Scene,
+    width: number,
+    height: number,
+    exportModelLayers: boolean
+): Promise<Array<{ name: string; canvas: HTMLCanvasElement; }>> => {
+    // Experimental export path placeholder.
+    // Keep the implementation isolated so the default PSD/PNG path remains untouched
+    // until occlusion-aware alpha is ready.
+    return renderModelLayers(events, scene, width, height, exportModelLayers);
+};
+
 export const renderPng = async (params: RenderPngParams) => {
     const { basePixels, referenceLayers, frameOverlay, gridOverlay, eyeLevelOverlay, width, height, filename, getCompressor } = params;
     const canvas = document.createElement('canvas');
@@ -463,7 +476,10 @@ export const renderImage = async ({
             const referenceOverlays: PsdOverlayLayer[] = referenceLayers
             .filter(layer => layer.group === 'front')
             .map(layer => ({ name: layer.name, canvas: layer.canvas, opacity: layer.opacity, bounds: layer.bounds }));
-            const modelOverlays = await renderModelLayers(events, scene, width, height, getState().exportModelLayers);
+            const currentState = getState();
+            const modelOverlays = currentState.exportModelOcclusionAlpha ?
+                await renderModelLayersWithOcclusion(events, scene, width, height, currentState.exportModelLayers) :
+                await renderModelLayers(events, scene, width, height, currentState.exportModelLayers);
             const frameOverlays = renderFrameOverlaysByManagement(width, height);
             const overlayLayers = [
                 ...(debugOverlays?.grid ? [{ name: localize('panel.camera-frames.export.grid-layer.grid'), canvas: debugOverlays.grid }] : []),
