@@ -417,7 +417,7 @@ export class CameraFramesController {
             this.withCameraHistorySuppressed(() => {
                 if (useDamping) {
                     camera.setFocalPoint(new Vec3(target.focalPoint.x, target.focalPoint.y, target.focalPoint.z), damping);
-                    camera.setAzimElev(target.azim, target.elev, damping, { dropOrtho: !target.ortho });
+                    camera.setAzimElevWithOptions(target.azim, target.elev, damping, { dropOrtho: !target.ortho });
                     camera.setDistance(target.distance, damping);
                     if (target.navMode === 'fpv' && target.fpvPosition) {
                         camera.setPositionWorld(new Vec3(target.fpvPosition.x, target.fpvPosition.y, target.fpvPosition.z));

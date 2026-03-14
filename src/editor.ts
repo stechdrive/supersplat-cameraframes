@@ -257,7 +257,7 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
         const damping = orthoToggleAllowed ? 0 : 1;
         const dropOrtho = !orthoToggleAllowed;
         const align = (azim: number, elev: number) => {
-            scene.camera.setAzimElev(azim, elev, damping, { dropOrtho });
+            scene.camera.setAzimElevWithOptions(azim, elev, damping, { dropOrtho });
         };
         switch (axis) {
             case 'px': align(90, 0); break;

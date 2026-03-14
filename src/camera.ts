@@ -36,8 +36,12 @@ import {
 
 import {
     applyCustomFrustumProjection,
+    resolveCameraFramesFovFactor,
+    resolveCameraFramesFramingFactor,
+    resolveCameraFramesTargetSize,
     resolveLockFramingAspect,
     sanitizeNearOverride,
+    shouldDropOrthoForAngles,
     type CameraCustomFrustum
 } from './camera-frames-camera-integration';
 import { buildCameraMatrices, type CameraMatrices } from './camera-matrices';
@@ -165,7 +169,7 @@ class Camera extends Element {
     finalPass: SimpleRenderPass;
 
     // overridden target size
-    targetSize: { width: number, height: number } = null;
+    private targetSizeOverride: { width: number, height: number } = null;
     suppressFinalBlit = false;
 
     renderOverlays = true;
@@ -359,7 +363,7 @@ class Camera extends Element {
         this.focalPointTween.goto(point, dampingFactorFactor * this.scene.config.controls.dampingFactor);
     }
 
-    setAzimElev(azim: number, elev: number, dampingFactorFactor: number = 1, options?: { dropOrtho?: boolean }) {
+    private applyAzimElev(azim: number, elev: number, dampingFactorFactor: number, options?: { dropOrtho?: boolean }) {
         // clamp
         azim = mod(azim, 360);
         elev = Math.max(this.minElev, Math.min(this.maxElev, elev));
@@ -380,6 +384,14 @@ class Camera extends Element {
         }
     }
 
+    setAzimElev(azim: number, elev: number, dampingFactorFactor: number = 1) {
+        this.applyAzimElev(azim, elev, dampingFactorFactor, { dropOrtho: true });
+    }
+
+    setAzimElevWithOptions(azim: number, elev: number, dampingFactorFactor: number = 1, options?: { dropOrtho?: boolean }) {
+        this.applyAzimElev(azim, elev, dampingFactorFactor, options);
+    }
+
     setDistance(distance: number, dampingFactorFactor: number = 1) {
         const controls = this.scene.config.controls;
 
@@ -395,10 +407,9 @@ class Camera extends Element {
         const l = vec.length();
         const azim = Math.atan2(-vec.x / l, -vec.z / l) * math.RAD_TO_DEG;
         const elev = Math.asin(vec.y / l) * math.RAD_TO_DEG;
-        const angleDelta = (a: number, b: number) => Math.abs(mod(a - b + 180, 360) - 180);
-        const dropOrtho = angleDelta(azim, this.azim) > 1e-4 || angleDelta(elev, this.elevation) > 1e-4;
+        const dropOrtho = shouldDropOrthoForAngles(azim, elev, this.azim, this.elevation);
         this.setFocalPoint(target, dampingFactorFactor);
-        this.setAzimElev(azim, elev, dampingFactorFactor, { dropOrtho });
+        this.setAzimElevWithOptions(azim, elev, dampingFactorFactor, { dropOrtho });
         this.setDistance(l / this.sceneRadius * this.getFramingFactor(), dampingFactorFactor);
     }
 
@@ -1484,20 +1495,17 @@ class Camera extends Element {
     get fovFactor() {
         // we set the fov of the longer axis. here we get the fov of the other (smaller) axis so framing
         // doesn't cut off the scene.
-        const targetSize = this.targetSize ?? this.scene.targetSize;
-        const width = this.scene.aspectViewport.enabled ? this.scene.aspectViewport.width : targetSize.width;
-        const height = this.scene.aspectViewport.enabled ? this.scene.aspectViewport.height : targetSize.height;
-        const aspect = (width && height) ? this.camera.horizontalFov ? height / width : width / height : 1;
-        const fov = 2 * Math.atan(Math.tan(this.fov * math.DEG_TO_RAD * 0.5) * aspect);
-        return Math.sin(fov * 0.5);
+        return resolveCameraFramesFovFactor(
+            this.fov,
+            this.camera.horizontalFov,
+            this.scene.aspectViewport,
+            this.scene as any,
+            this.targetSizeOverride
+        );
     }
 
     private getFramingFactor() {
-        if (this.lockFraming) {
-            return 1;
-        }
-        const factor = this.fovFactor;
-        return (typeof factor === 'number' && isFinite(factor) && factor > 1e-6) ? factor : 1;
+        return resolveCameraFramesFramingFactor(this.lockFraming, this.fovFactor);
     }
 
     getLastOrbitWorldDistance() {
@@ -1645,7 +1653,7 @@ class Camera extends Element {
     }
 
     private getRenderTargetSize() {
-        const size = this.targetSize ?? this.scene?.targetSize;
+        const size = resolveCameraFramesTargetSize(this.targetSizeOverride, this.scene as any);
         const width = size?.width ?? 0;
         const height = size?.height ?? 0;
         if (!(width > 0 && height > 0)) {
@@ -2000,7 +2008,7 @@ class Camera extends Element {
         }
 
         this.setFocalPoint(focalPoint, 0);
-        this.setAzimElev(azim, elev, 0, { dropOrtho: !ortho });
+        this.setAzimElevWithOptions(azim, elev, 0, { dropOrtho: !ortho });
         this.setDistance(distance, 0);
         if (settings.roll !== undefined) {
             this.rollTween.goto({ roll: settings.roll }, 0);
@@ -2060,6 +2068,14 @@ class Camera extends Element {
 
     get entity() {
         return this.mainCamera;
+    }
+
+    set targetSize(value: { width: number, height: number } | null) {
+        this.targetSizeOverride = value ? { ...value } : null;
+    }
+
+    get targetSize() {
+        return resolveCameraFramesTargetSize(this.targetSizeOverride, this.scene as any);
     }
 
     get camera() {

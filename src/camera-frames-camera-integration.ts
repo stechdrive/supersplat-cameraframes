@@ -28,6 +28,13 @@ const sanitizeNearOverride = (value: number | null | undefined) => {
     return (typeof value === 'number' && isFinite(value)) ? Math.max(MIN_NEAR_CLIP, value) : null;
 };
 
+const resolveCameraFramesTargetSize = (
+    overrideTargetSize: CameraFramesTargetSize,
+    scene: CameraFramesSceneLike | null | undefined
+) => {
+    return overrideTargetSize ?? scene?.targetSize ?? null;
+};
+
 const applyCustomFrustumProjection = (
     camera: {
         calculateProjection: ((projMat: Mat4, view?: number) => void) | null;
@@ -81,9 +88,42 @@ const resolveLockFramingAspect = (
     };
 };
 
+const resolveCameraFramesFovFactor = (
+    fov: number,
+    horizontalFov: boolean,
+    aspectViewport: { enabled?: boolean; width?: number; height?: number } | null | undefined,
+    scene: CameraFramesSceneLike | null | undefined,
+    overrideTargetSize: CameraFramesTargetSize
+) => {
+    const targetSize = resolveCameraFramesTargetSize(overrideTargetSize, scene);
+    const width = aspectViewport?.enabled ? aspectViewport.width : targetSize?.width;
+    const height = aspectViewport?.enabled ? aspectViewport.height : targetSize?.height;
+    const aspect = (width && height) ? (horizontalFov ? height / width : width / height) : 1;
+    const adjustedFov = 2 * Math.atan(Math.tan(fov * Math.PI / 360) * aspect);
+    return Math.sin(adjustedFov * 0.5);
+};
+
+const resolveCameraFramesFramingFactor = (lockFraming: boolean, fovFactor: number) => {
+    if (lockFraming) {
+        return 1;
+    }
+    return (typeof fovFactor === 'number' && isFinite(fovFactor) && fovFactor > 1e-6) ? fovFactor : 1;
+};
+
+const shouldDropOrthoForAngles = (azim: number, elev: number, currentAzim: number, currentElev: number) => {
+    const angleDelta = (a: number, b: number) => {
+        return Math.abs((((a - b + 180) % 360) + 360) % 360 - 180);
+    };
+    return angleDelta(azim, currentAzim) > 1e-4 || angleDelta(elev, currentElev) > 1e-4;
+};
+
 export {
     applyCustomFrustumProjection,
     resolveLockFramingAspect,
-    sanitizeNearOverride
+    resolveCameraFramesFovFactor,
+    resolveCameraFramesFramingFactor,
+    resolveCameraFramesTargetSize,
+    sanitizeNearOverride,
+    shouldDropOrthoForAngles
 };
 export type { CameraCustomFrustum };
