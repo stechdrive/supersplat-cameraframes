@@ -34,6 +34,12 @@ import {
     BLEND_NONE
 } from 'playcanvas';
 
+import {
+    applyCustomFrustumProjection,
+    resolveLockFramingAspect,
+    sanitizeNearOverride,
+    type CameraCustomFrustum
+} from './camera-frames-camera-integration';
 import { buildCameraMatrices, type CameraMatrices } from './camera-matrices';
 import { MIN_NEAR_CLIP } from './clip-constants';
 import { PointerController } from './controllers';
@@ -91,8 +97,6 @@ const unprojectNdc = (out: Vec3, invViewProj: Mat4, x: number, y: number, z: num
     out.set(cameraWorld4.x * iw, cameraWorld4.y * iw, cameraWorld4.z * iw);
     return true;
 };
-
-type CameraCustomFrustum = { left: number, right: number, bottom: number, top: number, near: number, far: number };
 
 type CameraDoc = {
     focalPoint: number[];
@@ -288,15 +292,7 @@ class Camera extends Element {
 
     setCustomFrustum(frustum: CameraCustomFrustum | null) {
         this.customFrustum = frustum ? { ...frustum } : null;
-        const cam = this.entity.camera;
-        if (frustum) {
-            cam.calculateProjection = (projMat: Mat4, _view?: number) => {
-                projMat.setFrustum(frustum.left, frustum.right, frustum.bottom, frustum.top, frustum.near, frustum.far);
-            };
-        } else {
-            cam.calculateProjection = null;
-        }
-        (cam as any)._projMatDirty = true;
+        applyCustomFrustumProjection(this.entity.camera as any, frustum);
         this.scene.forceRender = true;
     }
 
@@ -328,7 +324,7 @@ class Camera extends Element {
     }
 
     setNearOverride(value: number | null | undefined, options?: { transient?: boolean }) {
-        const sanitized = (typeof value === 'number' && isFinite(value)) ? Math.max(MIN_NEAR_CLIP, value) : null;
+        const sanitized = sanitizeNearOverride(value);
         this.nearOverride = sanitized;
         this.nearOverrideTransient = options?.transient === true;
 
@@ -343,42 +339,15 @@ class Camera extends Element {
 
     private updateLockFramingAspect() {
         const cam = this.entity.camera;
-
-        if (!this.lockFraming) {
-            this.lockedAspectRatio = null;
-            const size = this.targetSize ?? this.scene?.targetSize;
-            if (size && size.width > 0 && size.height > 0) {
-                cam.aspectRatio = size.width / size.height;
-            } else if (!(typeof cam.aspectRatio === 'number' && isFinite(cam.aspectRatio) && cam.aspectRatio > 0)) {
-                cam.aspectRatio = 1;
-            }
-            return;
+        const next = resolveLockFramingAspect(this.scene as any, this.targetSize, this.lockFraming, this.lockFovAxis);
+        this.lockedAspectRatio = next.lockedAspectRatio;
+        if (next.aspectRatio !== null) {
+            cam.aspectRatio = next.aspectRatio;
+        } else if (!(typeof cam.aspectRatio === 'number' && isFinite(cam.aspectRatio) && cam.aspectRatio > 0)) {
+            cam.aspectRatio = 1;
         }
-
-        let aspect: number | null = null;
-
-        const aspectInfo = this.scene?.events?.invoke('cameraFrames.aspectLock') as { aspect: number } | null;
-        if (aspectInfo && typeof aspectInfo.aspect === 'number' && isFinite(aspectInfo.aspect) && aspectInfo.aspect > 0) {
-            aspect = aspectInfo.aspect;
-        } else {
-            const size = this.targetSize ?? this.scene?.targetSize;
-            if (size && size.height > 0) {
-                aspect = size.width / size.height;
-            }
-        }
-
-        if (aspect && isFinite(aspect) && aspect > 0) {
-            this.lockedAspectRatio = aspect;
-            cam.aspectRatio = aspect;
-            if (this.lockFovAxis === undefined) {
-                // デフォルトは Horizontal に固定 (アスペクト比による自動反転を防止)
-                cam.horizontalFov = true;
-            } else {
-                cam.horizontalFov = this.lockFovAxis === 'horizontal';
-            }
-        } else {
-            this.lockedAspectRatio = null;
-            cam.aspectRatio = 0;
+        if (next.horizontalFov !== null) {
+            cam.horizontalFov = next.horizontalFov;
         }
     }
 

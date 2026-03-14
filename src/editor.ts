@@ -1,6 +1,7 @@
 import { MemoryFileSystem } from '@playcanvas/splat-transform';
 import { Color, Mat4, path, Texture, Vec3, Vec4 } from 'playcanvas';
 
+import { registerCameraFramesEditorBridge } from './camera-frames-editor-bridge';
 import { EditHistory } from './edit-history';
 import { SelectAllOp, SelectNoneOp, SelectInvertOp, SelectOp, HideSelectionOp, UnhideAllOp, DeleteSelectionOp, ResetOp, MultiOp, AddSplatOp } from './edit-ops';
 import { Element, ElementType } from './element';
@@ -25,6 +26,8 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
     const decodeColorChannel = (value: number) => {
         return Math.min(1, Math.max(0, 0.5 + value * SH_C0));
     };
+
+    registerCameraFramesEditorBridge(events, scene);
 
     // get the list of active splats (currently limited to just a single one)
     const activeSplats = () => {
@@ -744,14 +747,6 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
     // camera near clip (override)
     events.function('camera.near', () => {
         return scene.camera.near;
-    });
-
-    events.on('camera.setNearOverride', (value: number | null, opts?: { transient?: boolean }) => {
-        scene.camera.setNearOverride(value, opts);
-    });
-
-    events.on('camera.setCustomFrustum', (frustum: { left: number; right: number; bottom: number; top: number; near: number; far: number; } | null) => {
-        scene.camera.setCustomFrustum(frustum);
     });
 
     // splat size
