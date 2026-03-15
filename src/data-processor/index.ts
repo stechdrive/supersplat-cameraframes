@@ -13,7 +13,6 @@ import {
 import { CalcBound } from './calc-bound';
 import { CalcPositions } from './calc-positions';
 import { Intersect, IntersectOptions } from './intersect';
-import type { Splat } from '../splat';
 import type { ProcessorContext } from './types';
 
 const resolve = (scope: ScopeSpace, values: any) => {
@@ -71,24 +70,15 @@ class DataProcessor {
         return result;
     }
 
-    private resolveContext(target: Splat | ProcessorContext): ProcessorContext {
-        if ((target as ProcessorContext).splat) {
-            return target as ProcessorContext;
-        }
-        return (target as Splat).scene.renderSystem.getProcessorContext(target as Splat);
-    }
-
     // calculate the intersection of a mask canvas with splat centers
-    intersect(options: IntersectOptions, target: Splat | ProcessorContext) {
-        const ctx = this.resolveContext(target);
+    intersect(options: IntersectOptions, ctx: ProcessorContext) {
         return this.enqueue(() => this.intersectImpl.run(options, ctx));
     }
 
     // use gpu to calculate both selected and visible bounds
-    calcBound(target: Splat | ProcessorContext, selectionBound: BoundingBox, localBound: BoundingBox): Promise<void>;
-    calcBound(target: Splat | ProcessorContext, boundingBox: BoundingBox, onlySelected: boolean): Promise<void>;
-    calcBound(target: Splat | ProcessorContext, selectionBound: BoundingBox, localBoundOrOnlySelected?: BoundingBox | boolean): Promise<void> {
-        const ctx = this.resolveContext(target);
+    calcBound(ctx: ProcessorContext, selectionBound: BoundingBox, localBound: BoundingBox): Promise<void>;
+    calcBound(ctx: ProcessorContext, boundingBox: BoundingBox, onlySelected: boolean): Promise<void>;
+    calcBound(ctx: ProcessorContext, selectionBound: BoundingBox, localBoundOrOnlySelected?: BoundingBox | boolean): Promise<void> {
         if (typeof localBoundOrOnlySelected === 'boolean') {
             const onlySelected = localBoundOrOnlySelected;
             return this.enqueue(() => this.calcBoundImpl.runSingle(ctx, selectionBound, onlySelected));
@@ -100,8 +90,7 @@ class DataProcessor {
     }
 
     // calculate world-space splat positions
-    calcPositions(target: Splat | ProcessorContext) {
-        const ctx = this.resolveContext(target);
+    calcPositions(ctx: ProcessorContext) {
         return this.enqueue(() => this.calcPositionsImpl.run(ctx));
     }
 

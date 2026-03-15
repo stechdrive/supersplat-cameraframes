@@ -167,7 +167,7 @@ class Splat extends Element {
     }
 
     async updatePositions() {
-        const data = await this.scene.dataProcessor.calcPositions(this);
+        const data = await this.scene.renderSystem.calcPositions(this);
         if (data.length === 0) {
             return;
         }
@@ -436,7 +436,7 @@ class Splat extends Element {
 
     // calculate both selection and local bounds (async, callers must await)
     async updateLocalBounds(): Promise<void> {
-        await this.scene.dataProcessor.calcBound(this, this.selectionBoundStorage, this.localBoundStorage);
+        await this.scene.renderSystem.calcBound(this, this.selectionBoundStorage, this.localBoundStorage);
         this.updateWorldBound();
     }
 

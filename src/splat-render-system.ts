@@ -340,7 +340,7 @@ class SplatRenderSystem implements SplatRenderBackend {
         return this.mergedEntity.gsplat?.instance?.sorter?.centers || null;
     }
 
-    getProcessorContext(splat: Splat) {
+    private createProcessorContext(splat: Splat) {
         return {
             splat,
             offset: this.offsets.get(splat) ?? 0,
@@ -398,7 +398,7 @@ class SplatRenderSystem implements SplatRenderBackend {
         if (dirty) {
             const boundingBox = entry;
             const onlySelected = mode === 'selected';
-            this.scene.dataProcessor.calcBound(this.getProcessorContext(splat), boundingBox, onlySelected).catch(() => {});
+            this.scene.dataProcessor.calcBound(this.createProcessorContext(splat), boundingBox, onlySelected).catch(() => {});
             if (mode === 'selected') {
                 cache.selectionDirty = false;
             } else {
@@ -409,12 +409,20 @@ class SplatRenderSystem implements SplatRenderBackend {
         return entry;
     }
 
+    async calcBound(splat: Splat, selectionBound: BoundingBox, localBound: BoundingBox) {
+        await this.scene.dataProcessor.calcBound(this.createProcessorContext(splat), selectionBound, localBound);
+    }
+
     calcPositions(splat: Splat) {
         const count = this.counts.get(splat) ?? 0;
         if (count === 0) {
             return Promise.resolve(new Float32Array(0));
         }
-        return this.scene.dataProcessor.calcPositions(this.getProcessorContext(splat));
+        return this.scene.dataProcessor.calcPositions(this.createProcessorContext(splat));
+    }
+
+    intersect(splat: Splat, options: import('./data-processor').IntersectOptions) {
+        return this.scene.dataProcessor.intersect(options, this.createProcessorContext(splat));
     }
 
     private async updateSorterCenters(activeSources: Splat[], totalSplats: number, instance: any, token: number) {

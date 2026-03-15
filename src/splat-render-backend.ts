@@ -1,6 +1,6 @@
 import type { BoundingBox, Entity, Texture } from 'playcanvas';
 
-import type { ProcessorContext } from './data-processor';
+import type { IntersectOptions } from './data-processor';
 import type { Scene } from './scene';
 import type { Splat } from './splat';
 import { SplatRenderSystem } from './splat-render-system';
@@ -41,9 +41,10 @@ type SplatRenderBackend = {
     hasRenderableData: (splat: Splat) => boolean;
     readWorldCenter: (splat: Splat, localIndex: number, out: { set: (x: number, y: number, z: number) => void }) => boolean;
     writeWorldCenter: (splat: Splat, localIndex: number, x: number, y: number, z: number) => boolean;
-    getProcessorContext: (splat: Splat) => ProcessorContext;
+    calcBound: (splat: Splat, selectionBound: BoundingBox, localBound: BoundingBox) => Promise<void>;
     getBound: (splat: Splat, mode: 'selected' | 'visible') => BoundingBox | null;
     calcPositions: (splat: Splat) => Promise<Float32Array>;
+    intersect: (splat: Splat, options: IntersectOptions) => Promise<Uint8Array>;
     waitForSorter: () => Promise<void>;
     updateState: (splat: Splat) => SplatRenderStateSummary | undefined;
     updateSplatParams: (splat: Splat) => void;
