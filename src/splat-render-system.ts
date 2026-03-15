@@ -350,14 +350,22 @@ class SplatRenderSystem implements SplatRenderBackend {
 
     private createProcessorContext(splat: Splat) {
         const entry = this.getEntry(splat);
+        const positionTexture = this.mergedResource?.getTexture('transformA') ?? null;
+        const globalParams: [number, number] = [
+            positionTexture?.width ?? 0,
+            (positionTexture?.width ?? 0) * (positionTexture?.height ?? 0)
+        ];
         return {
             splat,
             offset: entry?.offset ?? 0,
             count: entry?.count ?? 0,
-            positionTexture: this.mergedResource?.getTexture('transformA') ?? null,
-            transformTexture: this.transformTexture,
-            transformPalette: this.transformPalette.texture,
-            stateTexture: this.stateTexture
+            resources: {
+                positionTexture,
+                transformTexture: this.transformTexture,
+                transformPaletteTexture: this.transformPalette.texture,
+                stateTexture: this.stateTexture,
+                globalParams
+            }
         };
     }
 

@@ -127,10 +127,14 @@ class Intersect {
             return new Uint8Array(0);
         }
 
-        const transformA = ctx.positionTexture;
-        const splatTransform = ctx.transformTexture;
-        const transformPalette = ctx.transformPalette;
-        const splatState = ctx.stateTexture ?? this.dummyTexture;
+        const {
+            positionTexture: transformA,
+            transformTexture: splatTransform,
+            transformPaletteTexture: transformPalette,
+            stateTexture,
+            globalParams
+        } = ctx.resources;
+        const splatState = stateTexture ?? this.dummyTexture;
 
         if (!transformA || !splatTransform || !transformPalette) {
             return new Uint8Array(0);
@@ -158,7 +162,7 @@ class Intersect {
             splatState,
             splatOffset: ctx.offset,
             splatCount: ctx.count,
-            globalSplatParams: [transformA.width, transformA.width * transformA.height],
+            globalSplatParams: globalParams,
             matrix_model: Mat4.IDENTITY.data,
             matrix_viewProjection: this.viewProjectionMat.data,
             output_params: [resources.texture.width, resources.texture.height]
