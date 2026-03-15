@@ -91,9 +91,11 @@ type ContainerPointerDownParams = {
     state: CameraFramesState;
     scene: Scene;
     canvasContainer: HTMLElement;
+    setDragState: SetDragState;
     selectFrame: SelectFrame;
     hitTestHandle: (px: number, py: number) => HandleHit;
     hitTestFrameBorder: (px: number, py: number) => HitFrameBorder;
+    historyBegin: HistoryBegin;
 };
 
 type PointerDownParams = {
@@ -247,18 +249,19 @@ export const onContainerPointerDown = ({
     state,
     scene,
     canvasContainer,
+    setDragState,
     selectFrame,
     hitTestHandle,
-    hitTestFrameBorder
+    hitTestFrameBorder,
+    historyBegin
 }: ContainerPointerDownParams) => {
-    // 枠外の背景クリック時のみ、赤枠選択を非履歴で解除する。
-    if (!state.enabled || !state.frames.some(frame => frame.selected)) {
+    if (!state.enabled) {
         return;
     }
 
     if ((event.pointerType === 'mouse' && event.button !== 0) ||
         (event.pointerType !== 'mouse' && !event.isPrimary) ||
-        event.shiftKey || event.altKey || event.ctrlKey || event.metaKey) {
+        event.altKey || event.ctrlKey || event.metaKey) {
         return;
     }
 
@@ -271,11 +274,32 @@ export const onContainerPointerDown = ({
     const py = event.clientY - rect.top;
     const handleHit = hitTestHandle(px, py);
     const frameHit = handleHit?.frame ?? hitTestFrameBorder(px, py);
+
+    if (event.shiftKey && !handleHit && !frameHit) {
+        canvasContainer.setPointerCapture?.(event.pointerId);
+        setDragState({
+            frameId: null,
+            startPos: { x: 0, y: 0 },
+            startPointer: { x: px, y: py },
+            axisLock: null,
+            shiftLock: false,
+            pointerId: event.pointerId,
+            mode: 'pan',
+            startCenterScreen: { x: state.renderBox.center.cx, y: state.renderBox.center.cy }
+        });
+        historyBegin('cameraFrames.renderBoxPan');
+        event.stopPropagation();
+        event.preventDefault();
+        return;
+    }
+
     if (frameHit) {
         return;
     }
 
-    selectFrame(null, { recordHistory: false });
+    if (state.frames.some(frame => frame.selected)) {
+        selectFrame(null, { recordHistory: false });
+    }
 };
 
 export const updatePointerFromLast = ({
@@ -546,8 +570,11 @@ export const onPointerMove = ({
     if (dragState.mode === 'move') {
         const dx = event.offsetX - dragState.startPointer.x;
         const dy = event.offsetY - dragState.startPointer.y;
+        const shiftLockActive = dragState.shiftLock || event.shiftKey;
 
-        if (dragState.shiftLock && !dragState.axisLock) {
+        if (!shiftLockActive) {
+            dragState.axisLock = null;
+        } else if (!dragState.axisLock) {
             if (Math.abs(dx) + Math.abs(dy) > 5) {
                 dragState.axisLock = Math.abs(dx) >= Math.abs(dy) ? 'x' : 'y';
             }
@@ -629,7 +656,9 @@ export const onPointerUp = ({
     }
     if (dragState && event.pointerId === dragState.pointerId) {
         historyCommit('cameraFrames.drag');
-        overlay.releasePointerCapture(event.pointerId);
+        if (overlay.hasPointerCapture?.(event.pointerId)) {
+            overlay.releasePointerCapture(event.pointerId);
+        }
         setDragState(null);
         setLastPointer({ x: event.clientX, y: event.clientY });
         updatePointerFromLast();

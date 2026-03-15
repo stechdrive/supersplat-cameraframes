@@ -300,8 +300,10 @@ export class CameraFramesController {
 
         // hover判定で必要なときだけポインターイベントを有効化
         canvasContainer.addEventListener('pointermove', e => this.onHover(e));
-        // フラスタム選択中にキャンバス外をクリックした場合の解除用フォールバック
-        canvasContainer.addEventListener('pointerdown', e => this.onContainerPointerDown(e));
+        canvasContainer.addEventListener('pointerdown', e => this.onContainerPointerDown(e), true);
+        canvasContainer.addEventListener('pointermove', e => this.onContainerPointerMove(e), true);
+        canvasContainer.addEventListener('pointerup', e => this.onContainerPointerUp(e), true);
+        canvasContainer.addEventListener('pointercancel', e => this.onContainerPointerUp(e), true);
 
         // events wiring
         this.registerEvents();
@@ -3053,10 +3055,59 @@ export class CameraFramesController {
             state: this.state,
             scene: this.scene,
             canvasContainer: this.canvasContainer,
+            setDragState: (value) => {
+                this.dragState = value;
+                this.canvasContainer.style.cursor = value?.mode === 'pan' ? 'grabbing' : '';
+            },
             selectFrame: (id, options) => this.selectFrame(id, options),
             hitTestHandle: (px, py) => this.hitTestHandle(px, py),
-            hitTestFrameBorder: (px, py) => this.hitTestFrameBorder(px, py)
+            hitTestFrameBorder: (px, py) => this.hitTestFrameBorder(px, py),
+            historyBegin: label => this.historyBegin(label)
         });
+    }
+
+    private onContainerPointerMove(e: PointerEvent) {
+        if (this.dragState?.mode !== 'pan') {
+            return;
+        }
+        onPointerMovePointer({
+            event: e,
+            state: this.state,
+            dragState: this.dragState,
+            overlay: this.overlay,
+            scene: this.scene,
+            viewport: this.viewport,
+            handleFrustumPointerMove: event => this.handleFrustumPointerMove(event),
+            computeViewportMapping: () => this.computeViewportMapping(),
+            screenToLogical: (x, y) => this.screenToLogical(x, y),
+            syncCameraFrustum: () => this.syncCameraFrustum(),
+            requestRender: () => this.requestRender(),
+            fireStateChanged: () => this.emitStateChanged()
+        });
+        this.canvasContainer.style.cursor = 'grabbing';
+    }
+
+    private onContainerPointerUp(e: PointerEvent) {
+        if (this.dragState?.mode !== 'pan') {
+            return;
+        }
+        onPointerUpPointer({
+            event: e,
+            dragState: this.dragState,
+            overlay: this.overlay,
+            setDragState: (value) => {
+                this.dragState = value;
+                this.canvasContainer.style.cursor = '';
+            },
+            handleFrustumPointerUp: event => this.handleFrustumPointerUp(event),
+            historyCommit: label => this.historyCommit(label),
+            setLastPointer: (value) => {
+                this.lastPointer = value;
+            },
+            updatePointerFromLast: () => this.updatePointerFromLast()
+        });
+        this.canvasContainer.releasePointerCapture?.(e.pointerId);
+        this.canvasContainer.style.cursor = '';
     }
 
     private updatePointerFromLast() {
