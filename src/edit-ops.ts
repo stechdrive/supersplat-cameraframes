@@ -481,10 +481,14 @@ class AddSplatOp {
 
     async do() {
         await this.scene.add(this.splat);
+        await this.scene.renderSystem.waitForSorter();
+        this.scene.forceRender = true;
     }
 
-    undo() {
+    async undo() {
         this.scene.remove(this.splat);
+        await this.scene.renderSystem.waitForSorter();
+        this.scene.forceRender = true;
     }
 
     destroy() {
