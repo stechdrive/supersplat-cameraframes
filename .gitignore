@@ -6,6 +6,7 @@ dist
 /loft/
 /test/
 AGENTS.md
+.npm-cache/
 src/build-info.ts
 .cursorrules
 .cursor
