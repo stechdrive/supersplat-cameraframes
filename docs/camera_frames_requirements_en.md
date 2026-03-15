@@ -3,7 +3,7 @@
 ## 0. Version and References
 
 - Base code: `src/camera-frames.ts` / `src/ui/camera-frames-panel.ts` / `src/camera.ts` / `src/scene.ts` / `src/render.ts` (package version 2.18.1 / as of HEAD).
-- CAMERA FRAMES individual version: `cameraFramesVersion` = **v2.20.9** (from `package.json`, appended as `| CAMERA FRAMES v2.20.9` to `#app-label`).
+- CAMERA FRAMES individual version: `cameraFramesVersion` = **v2.20.11** (from `package.json`, appended as `| CAMERA FRAMES v2.20.11` to `#app-label`).
 - This document replaces v8 with the **implementation-aligned v9**. Updates:
   - Reworked the header to **CAMERA FRAMES ON/OFF + Capture Camera Controls (separate panel)** and removed uiTarget switching UI.
   - Unified lens UI by view mode; edit-view capture edits are now in the Capture Camera Controls panel.

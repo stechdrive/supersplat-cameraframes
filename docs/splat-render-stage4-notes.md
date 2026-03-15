@@ -13,7 +13,7 @@
 `camera-frames` には Stage 3 まで反映済み。
 
 - SuperSplat version: `2.24.2`
-- CAMERA FRAMES version: `v2.20.9`
+- CAMERA FRAMES version: `v2.20.11`
 - 直近 merge: `a519251 merge: integrate splat render system stage3`
 
 ## Stage 2 / Stage 3 でやったこと
