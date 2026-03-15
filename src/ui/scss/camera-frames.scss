@@ -564,9 +564,16 @@
 }
 
 .collapsible-header {
+    display: flex;
     align-items: center;
+    flex-wrap: nowrap;
     cursor: pointer;
     gap: 6px;
+
+    > .control-label {
+        flex: 1 1 auto;
+        min-width: 0;
+    }
 }
 
 .collapsible-header.active {
@@ -659,6 +666,7 @@
     margin-left: auto;
     display: flex;
     align-items: center;
+    flex-shrink: 0;
     gap: 10px;
 }
 
