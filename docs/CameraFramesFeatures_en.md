@@ -1,6 +1,6 @@
 # CAMERA FRAMES Features Overview
 
-CAMERA FRAMES v2.20.0 lets you lay out multiple frames on an A4-like master sheet and keep the composition stable with anchored off-axis frustums so preview and export match. It unifies zoomable previews, frame editing, camera pose control, and PSD/PNG export.
+CAMERA FRAMES v2.20.9 lets you lay out multiple frames on an A4-like master sheet and keep the composition stable with anchored off-axis frustums so preview and export match. It unifies zoomable previews, frame editing, camera pose control, and PSD/PNG export.
 
 ## 1. What it offers
 - **Anchored render box scaling**: 3×3 anchors drive off-axis frustums so horizontal/vertical scale and viewZoom never drift the anchored composition.
@@ -14,7 +14,7 @@ CAMERA FRAMES v2.20.0 lets you lay out multiple frames on an A4-like master shee
 - Header provides **CAMERA FRAMES ON/OFF** (Capture=ON, Edit=OFF icons), **Capture Camera Controls** (separate panel) button, and **Compact** toggle. Compact mode shows only the header.
 - The Capture Camera Controls panel can be opened only while CAMERA FRAMES is OFF. While open, the capture frustum stays highlighted as a capture edit mode.
 - Panel can be dragged and is clamped inside the window; pointer events on the panel do not fall through to the canvas.
-- Label shows `| CAMERA FRAMES v2.20.0`.
+- Label shows `| CAMERA FRAMES v2.20.9`.
 
 ## 3. Render Box (Layout)
 - Master sheet `1754 × 1240px` (A4 at 150dpi). `Width/Height (%)` are clamped to 100%+ up to 16000px equivalent. 3×3 anchor sets the pivot for future scaling.
@@ -29,6 +29,7 @@ CAMERA FRAMES v2.20.0 lets you lay out multiple frames on an A4-like master shee
 - Handles are active only when selected. Scale% input (10–400%, UI 1–500%) scales uniformly.
 - Drag handles to move/scale; drag the rotation handle to rotate (Shift snaps to 15°). Alt+drag scales symmetrically around the frame anchor.
 - Drag the center handle to change the frame anchor; double-click to reset to center. Double-click the rotation handle to reset to 0°.
+- Clicking the background deselects the active frame. It does not deselect while the pointer is on a frame, handle, gizmo, or a modifier-driven operation.
 - Higher `order` frames draw and hit-test in front. Selection state is saved with snapshots.
 
 ## 5. Mask
@@ -54,11 +55,11 @@ CAMERA FRAMES v2.20.0 lets you lay out multiple frames on an A4-like master shee
 
 ## 8. Viewport interactions
 - Select: click frame outline or list; click again to deselect.
-- Move: drag inside the frame; Shift locks axis.
+- Move: drag inside the frame; Shift locks axis. Pressing Shift after a drag has started also enters axis lock.
 - Scale: drag edge/corner handles; Alt scales symmetrically around the anchor.
 - Rotate: drag the top handle; Shift snaps to 15°, double-click resets to 0°.
 - Edit anchor: drag the center handle; double-click to reset.
-- Render box pan: Shift+drag outside frames to move the sheet (clamped inside the screen).
+- Render box pan: Shift+drag outside frames to move the sheet (clamped inside the screen). This also works when Shift is pressed after the mouse has stopped and before the drag begins.
 - Lost pointer capture commits drag history. Overlay enables pointerEvents only on hit; `grabbing` cursor while dragging.
 
 ## 9. Save and history
