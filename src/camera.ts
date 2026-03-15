@@ -966,7 +966,7 @@ class Camera extends Element {
         const orthoHeight = resolveCameraFramesOrthoHeight(
             this.lockFraming,
             this.navMode,
-            this.targetSize,
+            this.targetSizeOverride ?? this.scene.targetSize,
             this.distanceTween.value.distance,
             this.sceneRadius,
             this.getFramingFactor(),
@@ -2062,7 +2062,7 @@ class Camera extends Element {
     }
 
     get targetSize() {
-        return resolveCameraFramesTargetSize(this.targetSizeOverride, this.scene as any);
+        return this.targetSizeOverride;
     }
 
     get camera() {
