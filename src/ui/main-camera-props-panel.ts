@@ -186,16 +186,35 @@ class MainCameraPropsPanel extends Container {
         const mainRollInput = new NumericInput({ class: 'control-element', precision: 2, step: 1, value: 0, style: 'width: 60px' });
         const mainRollLock = new Button({ class: ['control-element', 'roll-lock-btn'], text: '' });
         mainRollLock.dom.title = localize('panel.camera-frames.transform.roll-lock');
-        mainPropsRotGrid.dom.style.display = 'grid';
-        mainPropsRotGrid.dom.style.gridTemplateColumns = '24px 70px 24px 70px 24px 70px 26px';
-        mainPropsRotGrid.dom.style.columnGap = '4px';
+        const mainYawLabel = new Label({ class: 'control-label', text: localize('panel.camera-frames.transform.yaw') });
+        const mainPitchLabel = new Label({ class: 'control-label', text: localize('panel.camera-frames.transform.pitch') });
+        const mainRollLabel = new Label({ class: 'control-label', text: localize('panel.camera-frames.transform.roll') });
+        [mainYawLabel, mainPitchLabel, mainRollLabel].forEach((label) => {
+            label.dom.style.width = 'auto';
+            label.dom.style.minWidth = '24px';
+            label.dom.style.margin = '0';
+            label.dom.style.overflow = 'visible';
+            label.dom.style.textOverflow = 'clip';
+            label.dom.style.whiteSpace = 'nowrap';
+        });
+        mainPropsRotGrid.dom.style.display = 'flex';
         mainPropsRotGrid.dom.style.alignItems = 'center';
-        mainPropsRotGrid.append(new Label({ class: 'control-label', text: localize('panel.camera-frames.transform.yaw') }));
-        mainPropsRotGrid.append(mainYawInput);
-        mainPropsRotGrid.append(new Label({ class: 'control-label', text: localize('panel.camera-frames.transform.pitch') }));
-        mainPropsRotGrid.append(mainPitchInput);
-        mainPropsRotGrid.append(new Label({ class: 'control-label', text: localize('panel.camera-frames.transform.roll') }));
-        mainPropsRotGrid.append(mainRollInput);
+        mainPropsRotGrid.dom.style.gap = '6px';
+        mainPropsRotGrid.dom.style.paddingRight = '4px';
+        mainPropsRotGrid.dom.style.boxSizing = 'border-box';
+        const mainRotationPair = (label: Label, input: NumericInput) => {
+            const pair = new Container();
+            pair.dom.style.display = 'flex';
+            pair.dom.style.alignItems = 'center';
+            pair.dom.style.gap = '2px';
+            pair.dom.style.flex = '1 1 0';
+            pair.append(label);
+            pair.append(input);
+            return pair;
+        };
+        mainPropsRotGrid.append(mainRotationPair(mainYawLabel, mainYawInput));
+        mainPropsRotGrid.append(mainRotationPair(mainPitchLabel, mainPitchInput));
+        mainPropsRotGrid.append(mainRotationPair(mainRollLabel, mainRollInput));
         mainPropsRotGrid.append(mainRollLock);
         body.append(mainPropsRotGrid);
 
@@ -207,10 +226,20 @@ class MainCameraPropsPanel extends Container {
         const mainSliderLabelF = new Label({ class: 'control-label', text: localize('panel.camera-frames.transform.forward-back') });
         const mainSliderF = new SliderInput({ class: 'control-element-expand', min: -1, max: 1, step: 0.01, value: 0 });
         const mainPropsLocalGrid = new Container({ class: 'control-parent' });
+        [mainSliderLabelR, mainSliderLabelU, mainSliderLabelF].forEach((label) => {
+            label.dom.style.width = 'auto';
+            label.dom.style.minWidth = '32px';
+            label.dom.style.margin = '0';
+            label.dom.style.overflow = 'visible';
+            label.dom.style.textOverflow = 'clip';
+            label.dom.style.whiteSpace = 'nowrap';
+        });
         mainPropsLocalGrid.dom.style.display = 'grid';
         mainPropsLocalGrid.dom.style.gridTemplateColumns = '32px 1fr 32px 1fr 32px 1fr';
         mainPropsLocalGrid.dom.style.columnGap = '6px';
         mainPropsLocalGrid.dom.style.alignItems = 'center';
+        mainPropsLocalGrid.dom.style.paddingLeft = '4px';
+        mainPropsLocalGrid.dom.style.boxSizing = 'border-box';
         mainPropsLocalGrid.append(mainSliderLabelR);
         mainPropsLocalGrid.append(mainSliderR);
         mainPropsLocalGrid.append(mainSliderLabelU);
