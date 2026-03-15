@@ -1,4 +1,5 @@
 import {
+    BLEND_NONE,
     ADDRESS_CLAMP_TO_EDGE,
     FILTER_NEAREST,
     PIXELFORMAT_R16U,
@@ -302,6 +303,51 @@ class SplatRenderSystem implements SplatRenderBackend {
         return this.transformPalette.texture;
     }
 
+    getOverlayBinding(splat: Splat) {
+        const transformATexture = this.mergedResource?.getTexture('transformA');
+        const range = this.getSplatRange(splat);
+        const count = range?.count ?? splat.splatData.numSplats;
+        const offset = range?.offset ?? 0;
+
+        if (!transformATexture || count === 0) {
+            return null;
+        }
+
+        const globalParams: [number, number] = [
+            transformATexture.width,
+            transformATexture.width * transformATexture.height
+        ];
+
+        return {
+            node: this.mergedEntity,
+            positionTexture: transformATexture,
+            stateTexture: this.stateTexture,
+            transformTexture: this.transformTexture,
+            transformPaletteTexture: this.transformPalette.texture,
+            offset,
+            count,
+            globalParams
+        };
+    }
+
+    withPickingBlendDisabled(fn: () => void) {
+        const material = this.mergedEntity.gsplat?.instance?.material;
+        if (!material) {
+            fn();
+            return;
+        }
+
+        const oldBlend = material.blendType;
+        material.blendType = BLEND_NONE;
+        material.update();
+        try {
+            fn();
+        } finally {
+            material.blendType = oldBlend;
+            material.update();
+        }
+    }
+
     getSplatRange(splat: Splat) {
         const offset = this.offsets.get(splat);
         const count = this.counts.get(splat);
@@ -320,6 +366,7 @@ class SplatRenderSystem implements SplatRenderBackend {
             splat,
             offset: this.offsets.get(splat) ?? 0,
             count: this.counts.get(splat) ?? 0,
+            positionTexture: this.mergedResource?.getTexture('transformA') ?? null,
             transformTexture: this.transformTexture,
             transformPalette: this.transformPalette.texture,
             stateTexture: this.stateTexture

@@ -22,6 +22,17 @@ type SplatRenderCenters = {
     offset: number;
 } | null;
 
+type SplatRenderOverlayBinding = {
+    node: Entity;
+    positionTexture: Texture;
+    stateTexture: Texture | null;
+    transformTexture: Texture | null;
+    transformPaletteTexture: Texture | null;
+    offset: number;
+    count: number;
+    globalParams: [number, number];
+};
+
 type SplatRenderBackend = {
     mergedResource: GSplatResource | null;
     mergedEntity: Entity;
@@ -43,6 +54,8 @@ type SplatRenderBackend = {
     getStateTexture: () => Texture | null;
     getTransformTexture: () => Texture | null;
     getTransformPaletteTexture: () => Texture | null;
+    getOverlayBinding: (splat: Splat) => SplatRenderOverlayBinding | null;
+    withPickingBlendDisabled: (fn: () => void) => void;
     getSplatRange: (splat: Splat) => { offset: number; count: number } | null;
     getCenters: (splat: Splat) => SplatRenderCenters;
     getProcessorContext: (splat: Splat) => ProcessorContext;
@@ -65,6 +78,7 @@ export { createSupersplatSplatRenderBackend };
 export type {
     SplatRenderBackend,
     SplatRenderCenters,
+    SplatRenderOverlayBinding,
     SplatRenderPickMapping,
     SplatRenderStateSummary
 };

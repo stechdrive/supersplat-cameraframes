@@ -65,22 +65,14 @@ class SplatOverlay extends Element {
             }
 
             const renderSystem = this.scene.renderSystem;
-            const mergedResource = renderSystem.getMergedResource();
+            const binding = renderSystem.getOverlayBinding(splat);
 
-            if (!mergedResource) {
-                meshInstance.node = null;
-                return;
-            }
-            const transformATexture = mergedResource.getTexture('transformA');
-            if (!transformATexture) {
+            if (!binding) {
                 meshInstance.node = null;
                 return;
             }
 
-            const splatData = splat.splatData;
-            const range = renderSystem.getSplatRange(splat);
-            const offset = range?.offset ?? 0;
-            const count = range?.count ?? splatData.numSplats;
+            const { positionTexture, stateTexture, transformTexture, transformPaletteTexture, offset, count, globalParams } = binding;
 
             const vertexFormat = new VertexFormat(device, [{
                 semantic: SEMANTIC_POSITION,
@@ -113,17 +105,17 @@ class SplatOverlay extends Element {
                 count
             };
 
-            material.setParameter('splatState', renderSystem.getStateTexture());
-            material.setParameter('splatPosition', transformATexture);
-            material.setParameter('splatTransform', renderSystem.getTransformTexture());
-            material.setParameter('transformPalette', renderSystem.getTransformPaletteTexture());
-            material.setParameter('globalParams', [transformATexture.width, transformATexture.width * transformATexture.height]);
+            material.setParameter('splatState', stateTexture);
+            material.setParameter('splatPosition', positionTexture);
+            material.setParameter('splatTransform', transformTexture);
+            material.setParameter('transformPalette', transformPaletteTexture);
+            material.setParameter('globalParams', globalParams);
             material.setParameter('splatOffset', offset);
             material.setParameter('splatCount', count);
             material.update();
 
             // ノード行列をそのまま使用（transformPalette のローカル変換と組み合わせる）
-            meshInstance.node = renderSystem.getMergedEntity();
+            meshInstance.node = binding.node;
             this.splat = splat;
         };
 
