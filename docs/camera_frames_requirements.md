@@ -424,24 +424,37 @@ viewZoom・ビューポートサイズ非依存。
 ## 9. 実装責務とモジュール分担
 
 ### 9.1 CameraFramesController（`src/camera-frames.ts`）
-- 状態管理、ビューポートマッピング、フラスタム計算、オーバーレイ描画、ポインタ操作、export パイプラインを担当。
-- `camera.setCustomFrustum` に外挿フラスタムを渡し、CAMERA FRAMES 有効時は `camera.rect/scissorRect` を使わない。
-- near override 適用、cameraFramesVersion 表示の付与、History 連携、mainCameraPose/viewportPose の切替・復元、viewport lens 提供を行う。
-- CAMERA FRAMES ON または mainEditMode（撮影カメラ操作パネル表示中）のとき、撮影フラスタムを debugLayer に選択色で描画。タイムライン再生中は mainPose の自動更新を抑止。
+- `CameraFramesState` の正本を保持し、UI・pointer・camera・render/export・reference image 連携のハブとして振る舞う。
+- 自身が直接すべての計算を持つのではなく、`camera-frames-camera.ts` / `camera-frames-pointer.ts` / `camera-frames-overlay.ts` / `camera-frames-viewport.ts` / `camera-frames-serialize.ts` などの専用モジュールを束ねる。
+- `cameraFramesVersion` 表示、History 連携、mainCameraPose/viewportPose の切替・復元、mainEditMode 管理、タイムライン再生中の mainPose 自動更新抑止を担当する。
+- CAMERA FRAMES ON または mainEditMode（撮影カメラ操作パネル表示中）のとき、撮影フラスタムを debugLayer に選択色で描画する。
 
-### 9.2 UI パネル（`src/ui/camera-frames-panel.ts`）
-- PCUI パネル構築、入力値のバリデーションとイベント発火、パネル移動/折りたたみ、レンダリングボタン・スピナー制御。
-- FOV(mm) / Viewport lens(mm) の範囲更新、出力解像度とビューポート溢れ警告表示、グリッド/モデルレイヤートグルの状態管理、撮影/編集表示の切替と撮影カメラ操作パネルの開閉管理、transform 入力の適用先切替。
+### 9.2 カメラ責務（`src/camera-frames-camera.ts`, `src/camera-frames-camera-backend.ts`, `src/camera.ts`）
+- `src/camera-frames-camera.ts` は CAMERA FRAMES 固有のカメラ数学を持つ。基準フラスタム再構築、実効フラスタム算出、safe near clip、pose 正規化、FOV(mm) 換算、撮影フラスタム描画などを担当する。
+- `src/camera-frames-camera-backend.ts` は CAMERA FRAMES が要求するカメラ契約を定義し、Supersplat カメラへの適用/読取を 1 箇所へ集約する。pose/FOV/near/ortho/navMode/custom frustum に加え、`worldToScreenCss` / `screenToWorldCss` / `getRayCss` / `intersectNormalized` など interaction API もここから提供する。
+- `src/camera.ts` は Supersplat 側の実カメラ実装であり、custom frustum の投影行列反映、水平FOV固定、Rect/Scissor の 0,0,1,1 リセット、targetSize/lockFraming、CSS 座標ベースの ray/hit 生成を担当する。
+- `src/scene.ts` は render target 再確保や pre/post render タイミングの接着点であり、CAMERA FRAMES 側の viewport refresh を支える。
 
-### 9.3 カメラ / シーン（`src/camera.ts`, `src/scene.ts`）
-- `camera.setCustomFrustum` で渡された値を投影行列に反映。CAMERA FRAMES 有効時はアスペクト/水平FOVを固定し、Rect/Scissor を毎フレーム 0,0,1,1 へリセット。
-- `camera.setLockFraming` で aspectRatio をロックし、targetSize 変化に合わせて render target を再確保。
-- `scene.onPreRender` で aspectLock 情報を参照、`cameraFrames.forceRefreshViewport` を postrender で再送して初期レイアウトずれを補正。
+### 9.3 フレーム操作・オーバーレイ責務（`src/camera-frames-pointer.ts`, `src/camera-frames-overlay.ts`, `src/camera-frames-frame-geometry.ts`, `src/camera-frames-viewport.ts`）
+- `src/camera-frames-pointer.ts` は赤枠/ハンドルの hit test、ドラッグ状態遷移、Shift 軸固定、Alt 基準変更、背景クリックでの選択解除など、ポインタ操作の状態機械を担当する。
+- `src/camera-frames-overlay.ts` は render box / frame / mask / handles / rotation handle など 2D オーバーレイ描画を担当し、export 用 frame overlay の描画もここに集約する。
+- `src/camera-frames-frame-geometry.ts` は frame border / handle / anchor の幾何計算と hit test を担当する。
+- `src/camera-frames-viewport.ts` は logical space と screen space の相互変換、viewport mapping 計算を担当する。
 
-### 9.4 render.offscreen（`src/render.ts`）
-- オフスクリーン描画とグリッド/アイレベルオーバーレイの抽出、premultiplied alpha の解除（unpremultiplyAlpha オプション）、上下反転処理を担う。
-- overlaysOnly 指定時は背景/シャドウ/オーバーレイ/ギズモ/World を無効化してピュアなオーバーレイを返す。
-- `includeReferenceImage` により参照画像レイヤー（front/back）を offscreen 出力へ含める/除外できる。CAMERA FRAMES のベース描画は常に `false` とし、参照画像は別レイヤー合成に分離する。
+### 9.4 render / export / 下絵責務（`src/camera-frames-render-backend.ts`, `src/camera-frames-export.ts`, `src/render.ts`, `src/camera-frames-reference-backend.ts`）
+- `src/camera-frames-render-backend.ts` は CAMERA FRAMES から見た render/export 契約であり、offscreen 描画、sorter 待ち、preview 復帰、export 周辺のホスト依存を隠す。
+- `src/camera-frames-export.ts` は PNG/PSD 出力の組み立てを担当する。export 用フラスタム同期、ベース描画、frame overlay、grid/eye-level、model layers、PNG DPI、PSD レイヤー構成などの最終パイプラインを持つ。
+- `src/render.ts` は汎用 `render.offscreen` 実装を持ち、CAMERA FRAMES からは backend/bridge 経由で利用する。`overlaysOnly`、premultiplied alpha 解除、上下反転処理はここが担当する。
+- `src/camera-frames-reference-backend.ts` は参照画像プリセット連携と export 時の下絵レイヤー取得を担当し、CAMERA FRAMES 本体から参照画像管理実装を分離する。
+
+### 9.5 永続化と履歴責務（`src/camera-frames-serialize.ts`, `src/doc.ts`, `src/camera-frames-history.ts`）
+- `src/camera-frames-serialize.ts` は CAMERA FRAMES 状態の snapshot/serialize/deserialize/apply を担当する。legacy 値の吸収や selectedId 復元もここで扱う。
+- `src/doc.ts` は `.ssproj` 全体の保存/読込を担当し、CAMERA FRAMES 状態を document へ埋め込む。保存失敗時は step 名と件数を console へ出す診断責務も持つ。
+- `src/camera-frames-history.ts` は CAMERA FRAMES 固有の snapshot history を担当し、ドラッグ begin/commit と debounced 更新を集約する。
+
+### 9.6 UI パネル責務（`src/ui/camera-frames-panel.ts`, `src/ui/main-camera-props-panel.ts`）
+- `src/ui/camera-frames-panel.ts` は CAMERA FRAMES の常設 PCUI パネル構築、入力値バリデーション、折りたたみ/移動、出力解像度・警告表示、撮影/編集表示切替、各種トグル/ボタンのイベント接続を担当する。
+- `src/ui/main-camera-props-panel.ts` は CAMERA FRAMES OFF 時の撮影カメラ操作ポップアップを担当し、撮影カメラ pose/FOV/near/navMode の編集 UI を分離する。
 
 ---
 
