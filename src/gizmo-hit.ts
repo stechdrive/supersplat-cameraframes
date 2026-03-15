@@ -1,11 +1,8 @@
-import { Ray, Vec3 } from 'playcanvas';
+import { Ray } from 'playcanvas';
 
 import { Scene } from './scene';
-import { createGizmoCamera } from './tools/gizmo-camera-adapter';
 
 const ray = new Ray();
-const start = new Vec3();
-const end = new Vec3();
 
 export const hitTestGizmo = (scene: Scene, clientX: number, clientY: number): boolean => {
     const canvas = scene.canvas;
@@ -21,14 +18,9 @@ export const hitTestGizmo = (scene: Scene, clientX: number, clientY: number): bo
         return false;
     }
 
-    const camera = scene.camera.entity.camera;
-    const gizmoCamera = createGizmoCamera(camera);
-
-    gizmoCamera.screenToWorld(x, y, 0, start);
-    gizmoCamera.screenToWorld(x, y, camera.farClip - camera.nearClip, end);
-
-    ray.origin.copy(start);
-    ray.direction.sub2(end, start).normalize();
+    if (!scene.camera.getRay(x, y, ray, { space: 'css' })) {
+        return false;
+    }
 
     const layer = scene.app.scene.layers.getLayerById(scene.gizmoLayer.id);
     if (!layer) {

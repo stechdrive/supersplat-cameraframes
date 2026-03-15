@@ -6,8 +6,6 @@ type PointerOp = 'set' | 'add' | 'remove';
 
 type NormalizedPoint = { x: number, y: number };
 
-const clamp01 = (value: number) => Math.min(1, Math.max(0, value));
-
 class EyedropperSelection {
     activate: () => void;
     deactivate: () => void;
@@ -46,14 +44,10 @@ class EyedropperSelection {
             }
             return 'set';
         };
-        // Convert pointer event to normalized coordinates within the parent element
+        // Convert pointer event to normalized coordinates within the camera target
         const toNormalizedPoint = (event: PointerEvent): NormalizedPoint => {
-            const width = parent.clientWidth || 1;
-            const height = parent.clientHeight || 1;
-            return {
-                x: clamp01(event.offsetX / width),
-                y: clamp01(event.offsetY / height)
-            };
+            const point = events.invoke('camera.cssToNormalized', event.offsetX, event.offsetY) as NormalizedPoint | null;
+            return point ?? { x: 0, y: 0 };
         };
 
         const resetPointer = () => {
@@ -64,7 +58,7 @@ class EyedropperSelection {
         };
 
         thresholdInput.on('change', () => {
-            threshold = clamp01(thresholdInput.value ?? threshold);
+            threshold = Math.min(1, Math.max(0, thresholdInput.value ?? threshold));
         });
 
         const pointerdown = (event: PointerEvent) => {

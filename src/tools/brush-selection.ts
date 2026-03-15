@@ -25,9 +25,18 @@ class BrushSelection {
         const prev = { x: 0, y: 0 };
         let dragId: number | undefined;
 
+        const getLocalPoint = (e: PointerEvent) => {
+            const rect = parent.getBoundingClientRect();
+            return {
+                x: Math.max(0, Math.min(parent.clientWidth, e.clientX - rect.left)),
+                y: Math.max(0, Math.min(parent.clientHeight, e.clientY - rect.top))
+            };
+        };
+
         const update = (e: PointerEvent) => {
-            const x = e.offsetX;
-            const y = e.offsetY;
+            const point = getLocalPoint(e);
+            const x = point.x;
+            const y = point.y;
 
             circle.setAttribute('cx', x.toString());
             circle.setAttribute('cy', y.toString());
@@ -66,8 +75,9 @@ class BrushSelection {
                 // display it
                 canvas.style.display = 'inline';
 
-                prev.x = e.offsetX;
-                prev.y = e.offsetY;
+                const point = getLocalPoint(e);
+                prev.x = point.x;
+                prev.y = point.y;
 
                 update(e);
             }

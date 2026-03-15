@@ -1,4 +1,4 @@
-import { Vec3 } from 'playcanvas';
+import { Ray, Vec3 } from 'playcanvas';
 
 import {
     applyNearClipOverride,
@@ -44,6 +44,10 @@ type CameraFramesCameraBackend = {
     getSceneRadius: () => number;
     getForward: () => Vec3;
     getPosition: () => Vec3;
+    worldToScreenCss: (world: Vec3, out: Vec3) => Vec3;
+    screenToWorldCss: (screenX: number, screenY: number, cameraz: number, out: Vec3) => boolean;
+    getRayCss: (screenX: number, screenY: number, out: Ray) => boolean;
+    intersectNormalized: (x: number, y: number) => ReturnType<Scene['camera']['intersect']>;
     setOrbitPivotDistance: (pivot: Vec3, distanceNorm: number, source?: string) => void;
     setCustomFrustum: (frustum: EffectiveFrustum | null) => void;
     setNearOverride: (value: number | null) => void;
@@ -198,6 +202,10 @@ const createSupersplatCameraFramesCameraBackend = ({
         getSceneRadius: () => scene.camera.sceneRadius || 1,
         getForward: () => scene.camera.entity.forward.clone(),
         getPosition: () => scene.camera.entity.getPosition().clone(),
+        worldToScreenCss: (world, out) => scene.camera.worldToScreenCss(world, out),
+        screenToWorldCss: (screenX, screenY, cameraz, out) => scene.camera.screenToWorld(screenX, screenY, cameraz, out),
+        getRayCss: (screenX, screenY, out) => scene.camera.getRay(screenX, screenY, out, { space: 'css' }),
+        intersectNormalized: (x, y) => scene.camera.intersect(x, y),
         setOrbitPivotDistance: (pivot, distanceNorm, source) => {
             scene.camera.setFocalPoint(pivot, 0);
             scene.camera.setDistance(distanceNorm, 0);

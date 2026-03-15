@@ -6,6 +6,8 @@ class RectSelection {
     deactivate: () => void;
 
     constructor(events: Events, parent: HTMLElement) {
+        const toNormalizedPoint = (x: number, y: number) => events.invoke('camera.cssToNormalized', x, y) as { x: number; y: number } | null;
+
         // create svg
         const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
         svg.classList.add('tool-svg', 'hidden');
@@ -77,24 +79,19 @@ class RectSelection {
                 const modState = modifiers.read(e);
                 const op = modState.shift ? 'add' : (isCtrlLike(modState) ? 'remove' : 'set');
 
-                const w = parent.clientWidth;
-                const h = parent.clientHeight;
-                if (!(w > 0 && h > 0)) {
+                const startPoint = toNormalizedPoint(start.x, start.y);
+                const endPoint = toNormalizedPoint(end.x, end.y);
+                if (!startPoint || !endPoint) {
                     dragEnd();
                     return;
                 }
-                const clamp01 = (value: number) => Math.max(0, Math.min(1, value));
 
                 if (dragMoved) {
                     // rect select - wait for selection to complete before hiding rect
-                    const minX = Math.min(start.x, end.x);
-                    const minY = Math.min(start.y, end.y);
-                    const maxX = Math.max(start.x, end.x);
-                    const maxY = Math.max(start.y, end.y);
-                    const startX = clamp01(minX / w);
-                    const startY = clamp01(minY / h);
-                    const endX = clamp01(maxX / w);
-                    const endY = clamp01(maxY / h);
+                    const startX = Math.min(startPoint.x, endPoint.x);
+                    const startY = Math.min(startPoint.y, endPoint.y);
+                    const endX = Math.max(startPoint.x, endPoint.x);
+                    const endY = Math.max(startPoint.y, endPoint.y);
                     if (endX <= startX || endY <= startY) {
                         return;
                     }
@@ -106,10 +103,15 @@ class RectSelection {
                         });
                 } else {
                     // pick - wait for selection to complete before hiding rect
+                    const point = toNormalizedPoint(e.offsetX, e.offsetY);
+                    if (!point) {
+                        dragEnd();
+                        return;
+                    }
                     await events.invoke(
                         'select.point',
                         op,
-                        { x: clamp01(e.offsetX / w), y: clamp01(e.offsetY / h) }
+                        point
                     );
                 }
 

@@ -23,6 +23,14 @@ class LassoSelection {
         let currentPoint: Point = null;
         let lastPointTime = 0;
 
+        const getLocalPoint = (e: PointerEvent) => {
+            const rect = parent.getBoundingClientRect();
+            return {
+                x: Math.max(0, Math.min(parent.clientWidth, e.clientX - rect.left)),
+                y: Math.max(0, Math.min(parent.clientHeight, e.clientY - rect.top))
+            };
+        };
+
         const dist = (a: Point, b: Point) => {
             return Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2);
         };
@@ -39,7 +47,7 @@ class LassoSelection {
         let dragId: number | undefined;
 
         const update = (e: PointerEvent) => {
-            currentPoint = { x: e.offsetX, y: e.offsetY };
+            currentPoint = getLocalPoint(e);
 
             const distance = points.length === 0 ? 0 : dist(currentPoint, points[points.length - 1]);
             const millis = Date.now() - lastPointTime;

@@ -96,7 +96,7 @@ class MeasureTool {
         selectToolbar.append(lengthInput);
         canvasContainer.append(selectToolbar);
 
-        const gizmo = new TranslateGizmo(createGizmoCamera(scene.camera.camera), scene.gizmoLayer);
+        const gizmo = new TranslateGizmo(createGizmoCamera(scene.camera.camera, scene.camera), scene.gizmoLayer);
         const entity = new Entity('measureGizmoPivot');
         const transformHandler = new MeasureTransformHandler();
 
@@ -118,12 +118,7 @@ class MeasureTool {
 
         const getPoint2d = (index: number, result: Vec3) => {
             getPoint(index, result);
-            scene.camera.worldToScreen(result, result);
-            const rect = scene.canvas.getBoundingClientRect();
-            const w = rect.width > 0 ? rect.width : scene.canvas.clientWidth;
-            const h = rect.height > 0 ? rect.height : scene.canvas.clientHeight;
-            result.x *= w;
-            result.y *= h;
+            scene.camera.worldToScreenCss(result, result);
         };
 
         const updateVisuals = () => {
@@ -514,21 +509,15 @@ class MeasureTool {
             }
 
             if (splat.measurePoints.length < 2) {
-                const w = scene.canvas.clientWidth;
-                const h = scene.canvas.clientHeight;
-                if (w > 0 && h > 0) {
-                    const nx = Math.max(0, Math.min(1, pointer.cssX / w));
-                    const ny = Math.max(0, Math.min(1, pointer.cssY / h));
-                    const result = await scene.camera.intersect(nx, ny);
-                    if (result) {
-                        mat.invert(splat.worldTransform);
-                        mat.transformPoint(result.position, p);
-                        splat.measureSelection = splat.measurePoints.length;
-                        splat.measurePoints.push(p.clone());
-                        updateVisuals();
-                        e.preventDefault();
-                        e.stopPropagation();
-                    }
+                const result = await scene.camera.intersectCss(pointer.cssX, pointer.cssY);
+                if (result) {
+                    mat.invert(splat.worldTransform);
+                    mat.transformPoint(result.position, p);
+                    splat.measureSelection = splat.measurePoints.length;
+                    splat.measurePoints.push(p.clone());
+                    updateVisuals();
+                    e.preventDefault();
+                    e.stopPropagation();
                 }
             }
         };

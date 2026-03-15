@@ -7,7 +7,7 @@ import { Scene } from '../scene';
 
 class ScaleTool extends TransformTool {
     constructor(events: Events, scene: Scene) {
-        const gizmo = new ScaleGizmo(createGizmoCamera(scene.camera.camera), scene.gizmoLayer);
+        const gizmo = new ScaleGizmo(createGizmoCamera(scene.camera.camera, scene.camera), scene.gizmoLayer);
 
         // disable everything except uniform scale
         ['x', 'y', 'z', 'yz', 'xz', 'xy'].forEach((axis) => {

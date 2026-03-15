@@ -1063,9 +1063,7 @@ export const computeViewportNearCandidate = async ({ scene }: ComputeViewportNea
     for (const sample of samples) {
         const x = clamp(sample.x, 0, w - 1);
         const y = clamp(sample.y, 0, h - 1);
-        const nx = clamp(x / w, 0, 1);
-        const ny = clamp(y / h, 0, 1);
-        const hit = await scene.camera.intersect(nx, ny);
+        const hit = await scene.camera.intersectCss(x, y);
         const distance = hit?.distance;
         if (typeof distance !== 'number' || !isFinite(distance) || distance <= 0) {
             continue;
