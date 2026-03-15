@@ -23,6 +23,7 @@ import { RightToolbar } from './right-toolbar';
 import { ScenePanel } from './scene-panel';
 import { ShortcutsPopup } from './shortcuts-popup';
 import { Spinner } from './spinner';
+import { StatusBar } from './status-bar';
 import { TimelinePanel } from './timeline-panel';
 import { Tooltips } from './tooltips';
 import { UpdateBanner, type UpdateBannerOptions } from './update-banner';
@@ -166,10 +167,20 @@ class EditorUI {
 
         const timelinePanel = new TimelinePanel(events, tooltips);
         const dataPanel = new DataPanel(events);
+        const statusBar = new StatusBar(events, tooltips);
+
+        timelinePanel.hidden = true;
 
         mainContainer.append(canvasContainer);
         mainContainer.append(timelinePanel);
         mainContainer.append(dataPanel);
+        mainContainer.append(statusBar);
+
+        // Wire up status bar panel toggles
+        events.on('statusBar.panelChanged', (panel: string | null) => {
+            timelinePanel.hidden = panel !== 'timeline';
+            dataPanel.hidden = panel !== 'splatData';
+        });
 
         editorContainer.append(mainContainer);
 
@@ -306,9 +317,10 @@ class EditorUI {
                     const suggested = `${removeExtension(docName ?? 'supersplat')}${fileExtension}`;
 
                     let writable;
+                    let fileHandle: FileSystemFileHandle | undefined;
 
                     if (window.showSaveFilePicker) {
-                        const fileHandle = await window.showSaveFilePicker({
+                        fileHandle = await window.showSaveFilePicker({
                             id: 'SuperSplatVideoFileExport',
                             types: filePickerTypes,
                             suggestedName: suggested
@@ -317,7 +329,12 @@ class EditorUI {
                         writable = await fileHandle.createWritable();
                     }
 
-                    await events.invoke('render.video', videoSettings, writable);
+                    const result = await events.invoke('render.video', videoSettings, writable);
+
+                    // if the render was cancelled, remove the empty file left on disk
+                    if (result === false && fileHandle?.remove) {
+                        await fileHandle.remove();
+                    }
                 } catch (error) {
                     if (error instanceof DOMException && error.name === 'AbortError') {
                         // user cancelled save dialog
@@ -396,9 +413,13 @@ class EditorUI {
 
         topContainer.append(progress);
 
-        events.on('progressStart', (header: string) => {
+        events.on('progressStart', (header: string, cancellable?: boolean) => {
             progress.hidden = false;
             progress.setHeader(header);
+            progress.setText('');
+            progress.setProgress(0);
+            progress.showCancelButton(!!cancellable);
+            progress.onCancel = cancellable ? () => events.fire('progressCancel') : null;
         });
 
         events.on('progressUpdate', (options: { text?: string, progress?: number }) => {
@@ -412,6 +433,8 @@ class EditorUI {
 
         events.on('progressEnd', () => {
             progress.hidden = true;
+            progress.showCancelButton(false);
+            progress.onCancel = null;
         });
 
         // initialize canvas to correct size before creating graphics device etc

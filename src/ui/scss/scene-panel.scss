@@ -10,6 +10,15 @@
     display: none;
 }
 
+.panel-header-button.active,
+.panel-header-button.active:hover {
+    background-color: $clr-hilight;
+
+    svg {
+        color: $clr-active;
+    }
+}
+
 .splat-list-container,
 .mesh-list-container {
     max-height: 300px;

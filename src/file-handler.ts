@@ -4,6 +4,7 @@ import { CreateDropHandler } from './drop-handler';
 import { ElementType } from './element';
 import { Events } from './events';
 import { BrowserFileSystem, MappedReadFileSystem } from './io';
+import { Model } from './model';
 import { Scene } from './scene';
 import { Splat } from './splat';
 import { serializePly, serializePlyCompressed, SerializeSettings, serializeSog, serializeSplat, serializeViewer, SogSettings, ViewerExportSettings } from './splat-serialize';
@@ -182,11 +183,20 @@ const loadCameraPoses = async (file: ImportFile, events: Events) => {
                 // Use fixed offset along Z-axis direction instead of variable dot product
                 vec.copy(z).mulScalar(10).add(p);
 
+                // compute max FOV from intrinsics (vertical or horizontal, whichever is larger)
+                let fov = 60;
+                if (pose.fx && pose.fy && pose.width && pose.height) {
+                    const fovX = 2 * Math.atan(pose.width / (2 * pose.fx)) * (180 / Math.PI);
+                    const fovY = 2 * Math.atan(pose.height / (2 * pose.fy)) * (180 / Math.PI);
+                    fov = Math.max(fovX, fovY);
+                }
+
                 events.fire('camera.addPose', {
                     name: pose.img_name ?? `${file.filename}_${i}`,
                     frame: i,
                     position: new Vec3(-p.x, -p.y, p.z),
-                    target: new Vec3(-vec.x, -vec.y, vec.z)
+                    target: new Vec3(-vec.x, -vec.y, vec.z),
+                    fov
                 });
             }
         });
@@ -354,14 +364,24 @@ const initFileHandler = (scene: Scene, events: Events, dropTarget: HTMLElement) 
             return [];
         }
 
-        const result = [];
+        const result: Array<Splat | Model> = [];
 
         if (isPlySequence(filenames)) {
             // handle ply sequence
             events.fire('plysequence.setFrames', files.map(f => f.contents));
             events.fire('timeline.frame', 0);
         } else if (isSog(filenames) || isLcc(filenames)) {
-            // import multi-file splat model (SOG or LCC)
+            if (isLcc(filenames)) {
+                const response = await events.invoke('showPopup', {
+                    type: 'okcancel',
+                    header: 'LCC',
+                    message: localize('popup.lcc-upload-warning'),
+                    link: `${window.location.origin}/upload`
+                });
+                if (response.action === 'cancel') {
+                    return result;
+                }
+            }
             const model = await importSplatModel(files, animationFrame);
             if (model) {
                 result.push(model);

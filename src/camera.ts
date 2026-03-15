@@ -34,6 +34,21 @@ import {
     BLEND_NONE
 } from 'playcanvas';
 
+import {
+    applyCustomFrustumProjection,
+    resolveCameraFramesFovFactor,
+    resolveCameraFramesFramingFactor,
+    resolveCameraFramesTargetSize,
+    resolveLockFramingAspect,
+    sanitizeNearOverride,
+    shouldDropOrthoForAngles,
+    type CameraCustomFrustum
+} from './camera-frames-camera-integration';
+import {
+    applyCameraOrientation,
+    resolveCameraFramesOrthoHeight,
+    resolveCameraPositionWorldFromState
+} from './camera-frames-camera-state';
 import { buildCameraMatrices, type CameraMatrices } from './camera-matrices';
 import { MIN_NEAR_CLIP } from './clip-constants';
 import { PointerController } from './controllers';
@@ -69,10 +84,6 @@ const cameraPos = new Vec3();
 const orbitOffset = new Vec3();
 const orbitForward = new Vec3();
 const v4 = new Vec4();
-const rollAxis = new Vec3();
-const quatYawPitch = new Quat();
-const quatRoll = new Quat();
-const quatFinal = new Quat();
 const quatOrbitYaw = new Quat();
 const quatOrbitPitch = new Quat();
 
@@ -91,8 +102,6 @@ const unprojectNdc = (out: Vec3, invViewProj: Mat4, x: number, y: number, z: num
     out.set(cameraWorld4.x * iw, cameraWorld4.y * iw, cameraWorld4.z * iw);
     return true;
 };
-
-type CameraCustomFrustum = { left: number, right: number, bottom: number, top: number, near: number, far: number };
 
 type CameraDoc = {
     focalPoint: number[];
@@ -143,6 +152,10 @@ class Camera extends Element {
 
     controlMode: 'orbit' | 'fly' = 'orbit';
 
+    // during fly-mode look, stores the camera position that must stay fixed
+    // while the azim/elev tween smoothly converges
+    lookCameraPos: Vec3 | null = null;
+
     picker: Picker;
     modelPicker: ModelPicker;
 
@@ -161,7 +174,7 @@ class Camera extends Element {
     finalPass: SimpleRenderPass;
 
     // overridden target size
-    targetSize: { width: number, height: number } = null;
+    private targetSizeOverride: { width: number, height: number } = null;
     suppressFinalBlit = false;
 
     renderOverlays = true;
@@ -288,15 +301,7 @@ class Camera extends Element {
 
     setCustomFrustum(frustum: CameraCustomFrustum | null) {
         this.customFrustum = frustum ? { ...frustum } : null;
-        const cam = this.entity.camera;
-        if (frustum) {
-            cam.calculateProjection = (projMat: Mat4, _view?: number) => {
-                projMat.setFrustum(frustum.left, frustum.right, frustum.bottom, frustum.top, frustum.near, frustum.far);
-            };
-        } else {
-            cam.calculateProjection = null;
-        }
-        (cam as any)._projMatDirty = true;
+        applyCustomFrustumProjection(this.entity.camera as any, frustum);
         this.scene.forceRender = true;
     }
 
@@ -328,7 +333,7 @@ class Camera extends Element {
     }
 
     setNearOverride(value: number | null | undefined, options?: { transient?: boolean }) {
-        const sanitized = (typeof value === 'number' && isFinite(value)) ? Math.max(MIN_NEAR_CLIP, value) : null;
+        const sanitized = sanitizeNearOverride(value);
         this.nearOverride = sanitized;
         this.nearOverrideTransient = options?.transient === true;
 
@@ -343,42 +348,15 @@ class Camera extends Element {
 
     private updateLockFramingAspect() {
         const cam = this.entity.camera;
-
-        if (!this.lockFraming) {
-            this.lockedAspectRatio = null;
-            const size = this.targetSize ?? this.scene?.targetSize;
-            if (size && size.width > 0 && size.height > 0) {
-                cam.aspectRatio = size.width / size.height;
-            } else if (!(typeof cam.aspectRatio === 'number' && isFinite(cam.aspectRatio) && cam.aspectRatio > 0)) {
-                cam.aspectRatio = 1;
-            }
-            return;
+        const next = resolveLockFramingAspect(this.scene as any, this.targetSize, this.lockFraming, this.lockFovAxis);
+        this.lockedAspectRatio = next.lockedAspectRatio;
+        if (next.aspectRatio !== null) {
+            cam.aspectRatio = next.aspectRatio;
+        } else if (!(typeof cam.aspectRatio === 'number' && isFinite(cam.aspectRatio) && cam.aspectRatio > 0)) {
+            cam.aspectRatio = 1;
         }
-
-        let aspect: number | null = null;
-
-        const aspectInfo = this.scene?.events?.invoke('cameraFrames.aspectLock') as { aspect: number } | null;
-        if (aspectInfo && typeof aspectInfo.aspect === 'number' && isFinite(aspectInfo.aspect) && aspectInfo.aspect > 0) {
-            aspect = aspectInfo.aspect;
-        } else {
-            const size = this.targetSize ?? this.scene?.targetSize;
-            if (size && size.height > 0) {
-                aspect = size.width / size.height;
-            }
-        }
-
-        if (aspect && isFinite(aspect) && aspect > 0) {
-            this.lockedAspectRatio = aspect;
-            cam.aspectRatio = aspect;
-            if (this.lockFovAxis === undefined) {
-                // デフォルトは Horizontal に固定 (アスペクト比による自動反転を防止)
-                cam.horizontalFov = true;
-            } else {
-                cam.horizontalFov = this.lockFovAxis === 'horizontal';
-            }
-        } else {
-            this.lockedAspectRatio = null;
-            cam.aspectRatio = 0;
+        if (next.horizontalFov !== null) {
+            cam.horizontalFov = next.horizontalFov;
         }
     }
 
@@ -387,10 +365,30 @@ class Camera extends Element {
     }
 
     setFocalPoint(point: Vec3, dampingFactorFactor: number = 1) {
+        this.lookCameraPos = null;
         this.focalPointTween.goto(point, dampingFactorFactor * this.scene.config.controls.dampingFactor);
     }
 
-    setAzimElev(azim: number, elev: number, dampingFactorFactor: number = 1, options?: { dropOrtho?: boolean }) {
+    // Fly mode: rotate camera around itself, keeping the camera position fixed
+    look(dx: number, dy: number) {
+        const sensitivity = this.scene.config.controls.orbitSensitivity;
+        const d = this.distance * this.sceneRadius / this.fovFactor;
+
+        Camera.calcForwardVec(orbitForward, this.azim, this.elevation);
+        const currentCameraPos = this.focalPoint.clone().add(orbitForward.clone().mulScalar(d));
+
+        const azim = this.azim - dx * sensitivity;
+        const elev = this.elevation - dy * sensitivity;
+
+        Camera.calcForwardVec(orbitForward, azim, elev);
+        const focalPoint = currentCameraPos.clone().sub(orbitForward.clone().mulScalar(d));
+
+        this.setAzimElev(azim, elev);
+        this.focalPointTween.goto(focalPoint, this.scene.config.controls.dampingFactor);
+        this.lookCameraPos = currentCameraPos;
+    }
+
+    private applyAzimElev(azim: number, elev: number, dampingFactorFactor: number, options?: { dropOrtho?: boolean }) {
         // clamp
         azim = mod(azim, 360);
         elev = Math.max(this.minElev, Math.min(this.maxElev, elev));
@@ -411,7 +409,17 @@ class Camera extends Element {
         }
     }
 
+    setAzimElev(azim: number, elev: number, dampingFactorFactor: number = 1) {
+        this.applyAzimElev(azim, elev, dampingFactorFactor, { dropOrtho: true });
+    }
+
+    setAzimElevWithOptions(azim: number, elev: number, dampingFactorFactor: number = 1, options?: { dropOrtho?: boolean }) {
+        this.applyAzimElev(azim, elev, dampingFactorFactor, options);
+    }
+
     setDistance(distance: number, dampingFactorFactor: number = 1) {
+        this.lookCameraPos = null;
+
         const controls = this.scene.config.controls;
 
         // clamp
@@ -426,10 +434,9 @@ class Camera extends Element {
         const l = vec.length();
         const azim = Math.atan2(-vec.x / l, -vec.z / l) * math.RAD_TO_DEG;
         const elev = Math.asin(vec.y / l) * math.RAD_TO_DEG;
-        const angleDelta = (a: number, b: number) => Math.abs(mod(a - b + 180, 360) - 180);
-        const dropOrtho = angleDelta(azim, this.azim) > 1e-4 || angleDelta(elev, this.elevation) > 1e-4;
+        const dropOrtho = shouldDropOrthoForAngles(azim, elev, this.azim, this.elevation);
         this.setFocalPoint(target, dampingFactorFactor);
-        this.setAzimElev(azim, elev, dampingFactorFactor, { dropOrtho });
+        this.setAzimElevWithOptions(azim, elev, dampingFactorFactor, { dropOrtho });
         this.setDistance(l / this.sceneRadius * this.getFramingFactor(), dampingFactorFactor);
     }
 
@@ -895,19 +902,24 @@ class Camera extends Element {
     }
 
     private getCameraPositionWorldFromState(out: Vec3, mode: 'orbit' | 'fpv' = this.navMode): Vec3 {
-        if (mode === 'fpv') {
-            out.copy(this.fpvPosition);
+        if (mode !== 'fpv' && this.lookCameraPos) {
+            out.copy(this.lookCameraPos);
+            if (this.azimElevTween.timer >= this.azimElevTween.transitionTime) {
+                this.lookCameraPos = null;
+            }
             return out;
         }
 
-        const azimElev = this.azimElevTween.value;
-        const distNorm = this.distanceTween.value.distance;
-        const framingFactor = this.getFramingFactor();
-
-        Camera.calcForwardVec(out, azimElev.azim, azimElev.elev);
-        out.mulScalar(distNorm * this.sceneRadius / framingFactor);
-        out.add(this.focalPointTween.value);
-        return out;
+        return resolveCameraPositionWorldFromState(
+            out,
+            mode,
+            this.fpvPosition,
+            this.azimElevTween.value,
+            this.distanceTween.value.distance,
+            this.sceneRadius,
+            this.getFramingFactor(),
+            this.focalPointTween.value
+        );
     }
 
     private getOpticalAxisScreenPoint(): { x: number, y: number } | null {
@@ -980,16 +992,23 @@ class Camera extends Element {
 
         this.getCameraPositionWorldFromState(cameraPosition);
         this.entity.setLocalPosition(cameraPosition);
-        this.applyOrientation(azimElev, roll);
+        applyCameraOrientation(this.entity, azimElev, roll);
 
         this.fitClippingPlanes(this.entity.getLocalPosition(), this.entity.forward);
 
-        const framingFactor = this.getFramingFactor();
         const { camera } = this.entity;
-        if (!this.lockFraming && this.navMode !== 'fpv') {
-            const size = this.targetSize ?? this.scene.targetSize;
-            const aspect = (size && size.width > 0) ? size.height / size.width : 1;
-            camera.orthoHeight = this.distanceTween.value.distance * this.sceneRadius / framingFactor * (this.fov / 90) * (camera.horizontalFov ? aspect : 1);
+        const orthoHeight = resolveCameraFramesOrthoHeight(
+            this.lockFraming,
+            this.navMode,
+            this.targetSizeOverride ?? this.scene.targetSize,
+            this.distanceTween.value.distance,
+            this.sceneRadius,
+            this.getFramingFactor(),
+            this.fov,
+            camera.horizontalFov
+        );
+        if (orthoHeight !== null) {
+            camera.orthoHeight = orthoHeight;
         }
         camera.camera._updateViewProjMat();
     }
@@ -1389,7 +1408,7 @@ class Camera extends Element {
             this.rollTween.goto({ roll }, 0);
         }
 
-        this.applyOrientation({ azim: yaw, elev: pitch }, lockRoll ? currentRoll : roll);
+        applyCameraOrientation(this.entity, { azim: yaw, elev: pitch }, lockRoll ? currentRoll : roll);
 
         if (dropOrtho) {
             this.ortho = false;
@@ -1513,22 +1532,19 @@ class Camera extends Element {
     }
 
     get fovFactor() {
-        // we set the fov of the longer axis. here we get the fov of the other (smaller) axis so framing
-        // doesn't cut off the scene.
-        const targetSize = this.targetSize ?? this.scene.targetSize;
-        const width = this.scene.aspectViewport.enabled ? this.scene.aspectViewport.width : targetSize.width;
-        const height = this.scene.aspectViewport.enabled ? this.scene.aspectViewport.height : targetSize.height;
-        const aspect = (width && height) ? this.camera.horizontalFov ? height / width : width / height : 1;
-        const fov = 2 * Math.atan(Math.tan(this.fov * math.DEG_TO_RAD * 0.5) * aspect);
-        return Math.sin(fov * 0.5);
+        // In normal mode use the larger-axis FOV so distance stays stable across viewport resize.
+        // CAMERA_FRAMES keeps its custom framing behavior inside resolveCameraFramesFovFactor.
+        return resolveCameraFramesFovFactor(
+            this.fov,
+            this.camera.horizontalFov,
+            this.scene.aspectViewport,
+            this.scene as any,
+            this.targetSizeOverride
+        );
     }
 
     private getFramingFactor() {
-        if (this.lockFraming) {
-            return 1;
-        }
-        const factor = this.fovFactor;
-        return (typeof factor === 'number' && isFinite(factor) && factor > 1e-6) ? factor : 1;
+        return resolveCameraFramesFramingFactor(this.lockFraming, this.fovFactor);
     }
 
     getLastOrbitWorldDistance() {
@@ -1676,7 +1692,7 @@ class Camera extends Element {
     }
 
     private getRenderTargetSize() {
-        const size = this.targetSize ?? this.scene?.targetSize;
+        const size = resolveCameraFramesTargetSize(this.targetSizeOverride, this.scene as any);
         const width = size?.width ?? 0;
         const height = size?.height ?? 0;
         if (!(width > 0 && height > 0)) {
@@ -1905,7 +1921,7 @@ class Camera extends Element {
         this.currentPickTarget = splat;
 
         // Ensure blending is disabled for picking so that alpha=0 IDs are written
-        const instance = this.scene.renderSystem.mergedEntity?.gsplat?.instance as any;
+        const instance = this.scene.renderSystem.getMergedInstance() as any;
         const material = instance?.material;
 
         if (material) {
@@ -1944,24 +1960,6 @@ class Camera extends Element {
 
         this.currentPickTarget = null;
         return result;
-    }
-
-    // build orientation that applies roll around the camera's forward axis (after yaw/pitch)
-    private applyOrientation(azimElev: { azim: number, elev: number }, rollDeg: number) {
-        // yaw/pitch first
-        quatYawPitch.setFromEulerAngles(azimElev.elev, azimElev.azim, 0);
-
-        // forward axis after yaw/pitch (camera forward is -Z)
-        rollAxis.set(0, 0, -1);
-        quatYawPitch.transformVector(rollAxis, rollAxis);
-
-        // roll about forward (PlayCanvas expects degrees)
-        quatRoll.setFromAxisAngle(rollAxis, rollDeg);
-
-        // apply yaw/pitch then roll (world-space roll around current forward)
-        quatFinal.mul2(quatRoll, quatYawPitch);
-
-        this.entity.setRotation(quatFinal);
     }
 
     docSerialize(): CameraDoc {
@@ -2031,7 +2029,7 @@ class Camera extends Element {
         }
 
         this.setFocalPoint(focalPoint, 0);
-        this.setAzimElev(azim, elev, 0, { dropOrtho: !ortho });
+        this.setAzimElevWithOptions(azim, elev, 0, { dropOrtho: !ortho });
         this.setDistance(distance, 0);
         if (settings.roll !== undefined) {
             this.rollTween.goto({ roll: settings.roll }, 0);
@@ -2091,6 +2089,14 @@ class Camera extends Element {
 
     get entity() {
         return this.mainCamera;
+    }
+
+    set targetSize(value: { width: number, height: number } | null) {
+        this.targetSizeOverride = value ? { ...value } : null;
+    }
+
+    get targetSize() {
+        return this.targetSizeOverride;
     }
 
     get camera() {

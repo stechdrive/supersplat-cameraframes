@@ -321,6 +321,26 @@ class ViewPanel extends Container {
         showBoundRow.append(showBoundLabel);
         showBoundRow.append(showBoundToggle);
 
+        // show camera poses
+
+        const showCameraPosesRow = new Container({
+            class: 'view-panel-row'
+        });
+
+        const showCameraPosesLabel = new Label({
+            text: localize('panel.view-options.show-camera-poses'),
+            class: 'view-panel-row-label'
+        });
+
+        const showCameraPosesToggle = new BooleanInput({
+            type: 'toggle',
+            class: 'view-panel-row-toggle',
+            value: false
+        });
+
+        showCameraPosesRow.append(showCameraPosesLabel);
+        showCameraPosesRow.append(showCameraPosesToggle);
+
         this.append(header);
         this.append(clrRow);
         this.append(tonemappingRow);
@@ -333,6 +353,7 @@ class ViewPanel extends Container {
         this.append(showGridRow);
         this.append(showEyeLevelRow);
         this.append(showBoundRow);
+        this.append(showCameraPosesRow);
 
         // handle panel visibility
 
@@ -440,6 +461,16 @@ class ViewPanel extends Container {
 
         showBoundToggle.on('change', () => {
             events.fire('camera.setBound', showBoundToggle.value);
+        });
+
+        // show camera poses
+
+        events.on('camera.showPoses', (visible: boolean) => {
+            showCameraPosesToggle.value = visible;
+        });
+
+        showCameraPosesToggle.on('change', () => {
+            events.fire('camera.setShowPoses', showCameraPosesToggle.value);
         });
 
         // background color

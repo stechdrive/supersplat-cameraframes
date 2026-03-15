@@ -13,6 +13,7 @@ import lightSettingSvg from './svg/light-setting.svg';
 import sceneNewSvg from './svg/new.svg';
 import selectPickerSvg from './svg/select-picker.svg';
 import shownSvg from './svg/shown.svg';
+import soloSvg from './svg/solo.svg';
 import { Tooltips } from './tooltips';
 import { Transform } from './transform';
 
@@ -57,6 +58,23 @@ class ScenePanel extends Container {
             class: 'panel-header-label'
         });
 
+        let soloActive = false;
+
+        const soloToggle = new Container({
+            class: 'panel-header-button'
+        });
+        soloToggle.dom.appendChild(createSvg(soloSvg));
+
+        const updateSoloToggleState = (value: boolean) => {
+            soloActive = value;
+            soloToggle.class[value ? 'add' : 'remove']('active');
+        };
+
+        soloToggle.on('click', () => {
+            updateSoloToggleState(!soloActive);
+            events.fire('scene.solo', soloActive);
+        });
+
         const sceneImport = new Container({
             class: 'panel-header-button'
         });
@@ -69,6 +87,7 @@ class ScenePanel extends Container {
 
         sceneHeader.append(sceneIcon);
         sceneHeader.append(sceneLabel);
+        sceneHeader.append(soloToggle);
         sceneHeader.append(sceneImport);
         sceneHeader.append(sceneNew);
 
@@ -80,6 +99,7 @@ class ScenePanel extends Container {
             events.invoke('doc.new');
         });
 
+        tooltips.register(soloToggle, localize('tooltip.scene.solo'), 'top');
         tooltips.register(sceneImport, 'Import Scene', 'top');
         tooltips.register(sceneNew, 'New Scene', 'top');
 
@@ -219,6 +239,7 @@ class ScenePanel extends Container {
             syncingAmbient = false;
         };
 
+        updateSoloToggleState(false);
         updateLightToggleState(lightEnabled);
         updateLightSelectionState(safeInvoke<SceneElement>('selection') instanceof LightRig);
         updateIntensityFromState(initialLightState?.intensity);
@@ -253,6 +274,10 @@ class ScenePanel extends Container {
 
         events.on('selection.changed', (selection: SceneElement) => {
             updateLightSelectionState(selection instanceof LightRig);
+        });
+
+        events.on('scene.solo', (value: boolean) => {
+            updateSoloToggleState(value);
         });
 
         events.on('modelLight.state', (state: { enabled?: boolean; intensity?: number; }) => {

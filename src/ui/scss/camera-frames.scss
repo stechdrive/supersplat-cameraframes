@@ -276,13 +276,17 @@
 }
 
 .zoom-mask-row {
+    display: flex;
     align-items: center;
     gap: 8px;
     flex-wrap: nowrap;
+    min-width: 0;
 
     .control-label {
         width: auto;
         margin: 0 4px 0 6px;
+        flex: 0 0 auto;
+        white-space: nowrap;
     }
 
     .control-element.pcui-boolean-input {
@@ -290,15 +294,35 @@
     }
 }
 
+.zoom-mask-row .zoom-group,
+.zoom-mask-row .mask-group {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: nowrap;
+    min-width: 0;
+}
+
+.zoom-mask-row .zoom-group {
+    flex: 1 1 auto;
+}
+
 .zoom-mask-row .mask-group {
     margin-left: auto;
+    flex: 0 0 auto;
 }
 
 .export-row {
+    display: flex;
     align-items: center;
+    gap: 4px;
+    flex-wrap: nowrap;
+    min-width: 0;
 
     .control-label {
         width: auto;
+        flex: 0 0 auto;
+        white-space: nowrap;
     }
 }
 
@@ -314,18 +338,32 @@
 }
 
 .export-controls {
+    display: flex;
+    align-items: center;
     min-width: 0;
+    flex: 1 1 auto;
     flex-wrap: nowrap;
 }
 
+.export-controls > * {
+    flex: 0 0 auto;
+}
+
+.export-controls .format-toggle-group {
+    display: flex;
+    align-items: center;
+    flex-wrap: nowrap;
+    flex: 0 0 auto;
+}
+
 .export-controls .pcui-select-input {
-    width: 78px;
+    width: 72px;
 }
 
 .export-row .grid-toggle-button,
 .export-row .model-layer-toggle-button,
 .export-row .reference-include-toggle-button {
-    padding: 3px;
+    padding: 2px;
 
     svg {
         width: 20px;
@@ -369,8 +407,8 @@
 }
 
 .details-toggle-button.icon-button {
-    width: 26px;
-    height: 26px;
+    width: 24px;
+    height: 24px;
     padding: 0;
     font-size: 14px;
     line-height: 1;
@@ -564,9 +602,16 @@
 }
 
 .collapsible-header {
+    display: flex;
     align-items: center;
+    flex-wrap: nowrap;
     cursor: pointer;
     gap: 6px;
+
+    > .control-label {
+        flex: 1 1 auto;
+        min-width: 0;
+    }
 }
 
 .collapsible-header.active {
@@ -659,6 +704,7 @@
     margin-left: auto;
     display: flex;
     align-items: center;
+    flex-shrink: 0;
     gap: 10px;
 }
 

@@ -553,7 +553,7 @@ class CameraFramesPanel extends Panel {
         const toggleGroup = new Container({ class: 'format-toggle-group' });
         toggleGroup.dom.style.display = 'flex';
         toggleGroup.dom.style.alignItems = 'center';
-        toggleGroup.dom.style.gap = '6px';
+        toggleGroup.dom.style.gap = '4px';
         toggleGroup.append(gridToggle);
         toggleGroup.append(modelLayerToggle);
         toggleGroup.append(referenceIncludeToggle);
@@ -569,7 +569,7 @@ class CameraFramesPanel extends Panel {
         const exportControls = new Container({ class: ['export-controls', 'control-element-expand'] });
         exportControls.dom.style.display = 'flex';
         exportControls.dom.style.alignItems = 'center';
-        exportControls.dom.style.gap = '6px';
+        exportControls.dom.style.gap = '4px';
         exportControls.append(formatSelect);
         exportControls.append(toggleGroup);
         exportControls.append(renderButton);

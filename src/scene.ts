@@ -17,6 +17,7 @@ import {
 
 import { AssetLoader } from './asset-loader';
 import { Camera } from './camera';
+import { CameraPoseGizmos } from './camera-pose-gizmos';
 import { DataProcessor } from './data-processor';
 import { AmbientLightOp } from './edit-ops';
 import { Element, ElementType, ElementTypeList } from './element';
@@ -31,7 +32,10 @@ import { SceneConfig } from './scene-config';
 import { SceneState } from './scene-state';
 import { Splat } from './splat';
 import { SplatOverlay } from './splat-overlay';
-import { SplatRenderSystem } from './splat-render-system';
+import {
+    createSupersplatSplatRenderBackend,
+    type SplatRenderBackend
+} from './splat-render-backend';
 import { Underlay } from './underlay';
 
 // sort meshInstances by the aabb corner furthest from the camera
@@ -158,12 +162,13 @@ class Scene {
     dataProcessor: DataProcessor;
     assetLoader: AssetLoader;
     camera: Camera;
+    cameraPoseGizmos: CameraPoseGizmos;
     splatOverlay: SplatOverlay;
     grid: Grid;
     outline: Outline;
     underlay: Underlay;
     eyeLevel: EyeLevel;
-    renderSystem: SplatRenderSystem;
+    renderSystem: SplatRenderBackend;
 
     contentRoot: Entity;
     cameraRoot: Entity;
@@ -366,7 +371,7 @@ class Scene {
         // 環境光補助ライト（contentRoot 作成後に生成）
         this.createAmbientFillLights();
 
-        this.renderSystem = new SplatRenderSystem(this);
+        this.renderSystem = createSupersplatSplatRenderBackend(this);
 
         // create elements
         this.camera = new Camera();
@@ -375,6 +380,9 @@ class Scene {
         if (this.modelLightingLayer && !camLayers.includes(this.modelLightingLayer.id)) {
             this.camera.entity.camera.layers = camLayers.concat([this.modelLightingLayer.id]);
         }
+
+        this.cameraPoseGizmos = new CameraPoseGizmos();
+        this.add(this.cameraPoseGizmos);
 
         this.splatOverlay = new SplatOverlay();
         this.add(this.splatOverlay);

@@ -176,11 +176,31 @@ class SplatList extends Container {
         const items = new Map<Splat, SplatItem>();
         const itemsByElement = new Map<SplatItem, Splat>();
         let selectionAnchor: Splat | null = null;
+        let soloMode = false;
+        const savedVisibility = new Map<Splat, boolean>();
 
         // edit input used during renames
         const edit = new TextInput({
             id: 'splat-edit'
         });
+
+        const collectSelectedSplats = (list?: Element[]) => {
+            const selectionList = Array.isArray(list) ?
+                list :
+                (events.invoke('selection.list') as Element[] | undefined) ?? [];
+
+            return new Set(selectionList.filter((item): item is Splat => item instanceof Splat));
+        };
+
+        const applySoloVisibility = (selectedSplats: ReadonlySet<Splat>) => {
+            if (!soloMode) {
+                return;
+            }
+
+            items.forEach((_item, splat) => {
+                splat.visible = selectedSplats.has(splat);
+            });
+        };
 
         events.on('scene.elementAdded', (element: Element) => {
             if (element.type === ElementType.splat) {
@@ -190,7 +210,16 @@ class SplatList extends Container {
                 items.set(splat, item);
                 itemsByElement.set(item, splat);
 
+                if (soloMode) {
+                    savedVisibility.set(splat, splat.visible);
+                    splat.visible = collectSelectedSplats().has(splat);
+                }
+
                 item.on('visible', () => {
+                    if (soloMode) {
+                        savedVisibility.set(splat, true);
+                    }
+
                     splat.visible = true;
 
                     // also select it if there is no other selection
@@ -199,6 +228,9 @@ class SplatList extends Container {
                     }
                 });
                 item.on('invisible', () => {
+                    if (soloMode) {
+                        savedVisibility.set(splat, false);
+                    }
                     splat.visible = false;
                 });
                 item.on('rename', (value: string) => {
@@ -219,20 +251,37 @@ class SplatList extends Container {
                         selectionAnchor = null;
                     }
                 }
+                savedVisibility.delete(splat);
             }
         });
 
         events.on('selection.changed', (selection: Element, _prev: Element, list?: Element[]) => {
-            const selectionList = Array.isArray(list) ?
-                list :
-                (events.invoke('selection.list') as Element[] | undefined) ?? [];
-            const selectedSplats = new Set(selectionList.filter((item): item is Splat => item instanceof Splat));
+            const selectedSplats = collectSelectedSplats(list);
             items.forEach((value, key) => {
                 value.selected = selectedSplats.has(key);
                 value.class[selection === key ? 'add' : 'remove']('active');
             });
             if (!selectionAnchor || !selectedSplats.has(selectionAnchor)) {
                 selectionAnchor = selection instanceof Splat ? selection : (selectedSplats.values().next().value ?? null);
+            }
+
+            applySoloVisibility(selectedSplats);
+        });
+
+        events.on('scene.solo', (value: boolean) => {
+            soloMode = value;
+
+            if (soloMode) {
+                items.forEach((_item, splat) => {
+                    savedVisibility.set(splat, splat.visible);
+                });
+                applySoloVisibility(collectSelectedSplats());
+            } else {
+                items.forEach((_item, splat) => {
+                    const wasVisible = savedVisibility.get(splat);
+                    splat.visible = wasVisible !== undefined ? wasVisible : true;
+                });
+                savedVisibility.clear();
             }
         });
 

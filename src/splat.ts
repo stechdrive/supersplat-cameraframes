@@ -367,8 +367,8 @@ class Splat extends Element {
         this.scene.contentRoot.addChild(this.entity);
 
         this.scene.renderSystem.add(this);
-        this.stateTexture = this.scene.renderSystem.stateTexture;
-        this.transformTexture = this.scene.renderSystem.transformTexture;
+        this.stateTexture = this.scene.renderSystem.getStateTexture();
+        this.transformTexture = this.scene.renderSystem.getTransformTexture();
         this.scene.renderSystem.updateSplatParams(this);
         await this.updateState();
 
@@ -495,7 +495,7 @@ class Splat extends Element {
 
     // get world space bound
     get worldBound() {
-        if (!this.scene.renderSystem.counts.has(this) || !this.visible) {
+        if (!this.scene.renderSystem.getSplatRange(this) || !this.visible) {
             return null;
         }
         return this.worldBoundStorage;
