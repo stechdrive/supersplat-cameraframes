@@ -466,6 +466,19 @@ class Camera extends Element {
         return screen;
     }
 
+    cssToNormalized(screenX: number, screenY: number) {
+        const canvas = this.scene?.canvas;
+        const w = canvas?.clientWidth ?? 0;
+        const h = canvas?.clientHeight ?? 0;
+        if (!(w > 0 && h > 0)) {
+            return null;
+        }
+        return {
+            x: Math.max(0, Math.min(1, screenX / w)),
+            y: Math.max(0, Math.min(1, screenY / h))
+        };
+    }
+
     add() {
         const scene = this.scene;
         const { camera } = this;
@@ -981,10 +994,7 @@ class Camera extends Element {
         if (!(w > 0 && h > 0)) {
             return null;
         }
-        const nx = Math.max(0, Math.min(1, pt.x / w));
-        const ny = Math.max(0, Math.min(1, pt.y / h));
-
-        const hit = await this.intersect(nx, ny);
+        const hit = await this.intersectCss(pt.x, pt.y);
         if (!hit) {
             return null;
         }
@@ -1928,6 +1938,14 @@ class Camera extends Element {
         }
 
         return null;
+    }
+
+    intersectCss(screenX: number, screenY: number) {
+        const normalized = this.cssToNormalized(screenX, screenY);
+        if (!normalized) {
+            return null;
+        }
+        return this.intersect(normalized.x, normalized.y);
     }
 
     // intersect the scene at the normalized screen location (0-1 range) and focus the camera on this location

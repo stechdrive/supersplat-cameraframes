@@ -83,13 +83,8 @@ class PointerController {
             pivotForward.copy(camera.entity.forward).mulScalar(camera.sceneRadius * 2);
             pivotPoint.add(pivotForward);
 
-            const rectW = target.clientWidth || 1;
-            const rectH = target.clientHeight || 1;
-            const nx = rectW > 0 ? event.offsetX / rectW : 0;
-            const ny = rectH > 0 ? event.offsetY / rectH : 0;
-
             (async () => {
-                const hit = await camera.intersect(nx, ny);
+                const hit = await camera.intersectCss(event.offsetX, event.offsetY);
                 if (hit) {
                     pivotPoint.copy(hit.position);
                 }

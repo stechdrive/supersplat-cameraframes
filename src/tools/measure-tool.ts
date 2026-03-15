@@ -509,21 +509,15 @@ class MeasureTool {
             }
 
             if (splat.measurePoints.length < 2) {
-                const w = scene.canvas.clientWidth;
-                const h = scene.canvas.clientHeight;
-                if (w > 0 && h > 0) {
-                    const nx = Math.max(0, Math.min(1, pointer.cssX / w));
-                    const ny = Math.max(0, Math.min(1, pointer.cssY / h));
-                    const result = await scene.camera.intersect(nx, ny);
-                    if (result) {
-                        mat.invert(splat.worldTransform);
-                        mat.transformPoint(result.position, p);
-                        splat.measureSelection = splat.measurePoints.length;
-                        splat.measurePoints.push(p.clone());
-                        updateVisuals();
-                        e.preventDefault();
-                        e.stopPropagation();
-                    }
+                const result = await scene.camera.intersectCss(pointer.cssX, pointer.cssY);
+                if (result) {
+                    mat.invert(splat.worldTransform);
+                    mat.transformPoint(result.position, p);
+                    splat.measureSelection = splat.measurePoints.length;
+                    splat.measurePoints.push(p.clone());
+                    updateVisuals();
+                    e.preventDefault();
+                    e.stopPropagation();
                 }
             }
         };
