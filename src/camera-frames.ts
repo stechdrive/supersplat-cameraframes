@@ -1,18 +1,15 @@
 import { Vec3 } from 'playcanvas';
 
 import {
-    applyNearClipOverride as applyNearClipOverrideCamera,
     applyViewportNearOverride as applyViewportNearOverrideCamera,
     buildCameraBasis as buildCameraBasisCamera,
     buildFrustumPoints as buildFrustumPointsCamera,
     calcFovInfo as calcFovInfoCamera,
     calcForwardVec as calcForwardVecCamera,
-    captureCameraPose as captureCameraPoseCamera,
     clearViewportNearOverride as clearViewportNearOverrideCamera,
     clonePoseSnapshot as clonePoseSnapshotCamera,
     computeEffectiveFrustum as computeEffectiveFrustumCamera,
     computeSafeNearClip as computeSafeNearClipCamera,
-    computeViewportNearCandidate as computeViewportNearCandidateCamera,
     drawMainCameraFrustum as drawMainCameraFrustumCamera,
     enforceSafeNearClip as enforceSafeNearClipCamera,
     eqMmForFov as eqMmForFovCamera,
@@ -34,6 +31,10 @@ import {
     updateViewportNearTargetSizeState as updateViewportNearTargetSizeStateCamera,
     worldDistanceToNormalized as worldDistanceToNormalizedCamera
 } from './camera-frames-camera';
+import {
+    createSupersplatCameraFramesCameraBackend,
+    type CameraFramesCameraBackend
+} from './camera-frames-camera-backend';
 import {
     DEFAULT_FRAME_BASE,
     DEFAULT_MASK,
@@ -162,6 +163,7 @@ export class CameraFramesController {
     private selectedPresetId: string | null = null;
     private presetCounter = 0;
     private compressor: PngCompressor | null = null;
+    private cameraBackend: CameraFramesCameraBackend;
     private renderBackend: CameraFramesRenderBackend;
     private resizeObserver: ResizeObserver;
     private lastPointer: { x: number; y: number } | null = null;
@@ -239,6 +241,15 @@ export class CameraFramesController {
         this.events = events;
         this.scene = scene;
         this.canvasContainer = canvasContainer;
+        this.cameraBackend = createSupersplatCameraFramesCameraBackend({
+            scene: this.scene,
+            events: this.events,
+            withHistorySuppressed: fn => this.withCameraHistorySuppressed(fn),
+            setApplyingPose: (value) => {
+                this.applyingPose = value;
+            },
+            requestRender: () => this.requestRender()
+        });
         this.renderBackend = createSupersplatCameraFramesRenderBackend({
             events: this.events,
             scene: this.scene,
@@ -294,7 +305,7 @@ export class CameraFramesController {
             this.drawOverlay();
         });
 
-        const initialBaseFov = this.scene.camera?.fov ?? this.state.renderBox.projection.baseFov ?? 60;
+        const initialBaseFov = this.cameraBackend.getFov() ?? this.state.renderBox.projection.baseFov ?? 60;
         this.state.renderBox.projection.baseFov = initialBaseFov;
         this.baseFovRad = initialBaseFov * DEG2RAD;
         this.rebuildBaseFrustum();
@@ -353,7 +364,7 @@ export class CameraFramesController {
     }
 
     private captureCameraPose(): CameraPoseSnapshot | null {
-        return captureCameraPoseCamera(this.scene);
+        return this.cameraBackend.capturePose();
     }
 
     private normalizeViewportPose(pose: CameraPoseSnapshot, allowOrtho: boolean) {
@@ -368,7 +379,7 @@ export class CameraFramesController {
     }
 
     private normalizeMainRenderBoxProjection(baseFov?: number) {
-        const fallbackFov = (typeof baseFov === 'number' && isFinite(baseFov)) ? baseFov : (this.scene.camera?.fov ?? 60);
+        const fallbackFov = (typeof baseFov === 'number' && isFinite(baseFov)) ? baseFov : this.cameraBackend.getFov();
         const raw = this.state.renderBox?.projection;
         const baseFovValue = (typeof raw?.baseFov === 'number' && isFinite(raw.baseFov)) ? raw.baseFov : fallbackFov;
         this.state.renderBox.projection = {
@@ -382,7 +393,7 @@ export class CameraFramesController {
     }
 
     private orthoToggleAllowed() {
-        return !this.state.enabled && !this.scene.camera.targetSize;
+        return !this.state.enabled && !this.cameraBackend.getTargetSize();
     }
 
     private orthoBlocked() {
@@ -390,7 +401,7 @@ export class CameraFramesController {
     }
 
     private allowViewCube() {
-        return !this.scene.camera.targetSize;
+        return !this.cameraBackend.getTargetSize();
     }
 
     private withCameraHistorySuppressed(fn: () => void) {
@@ -412,57 +423,7 @@ export class CameraFramesController {
     }
 
     private applyCameraPose(pose: CameraPoseSnapshot | null | undefined, opts?: { damp?: number; silent?: boolean; allowOrtho?: boolean; }) {
-        const target = this.clonePoseSnapshot(pose);
-        if (!target) {
-            return;
-        }
-        const camera = this.scene.camera;
-        const allowOrtho = opts?.allowOrtho !== false;
-        this.normalizeViewportPose(target, allowOrtho);
-        const damping = opts?.damp ?? 0;
-        const rollDamping = damping * (this.scene.config?.controls?.dampingFactor ?? 1);
-        const navModeChanged = target.navMode !== camera.navMode;
-        const useDamping = damping > 0 && !navModeChanged;
-        this.applyingPose = true;
-        try {
-            this.withCameraHistorySuppressed(() => {
-                if (useDamping) {
-                    camera.setFocalPoint(new Vec3(target.focalPoint.x, target.focalPoint.y, target.focalPoint.z), damping);
-                    camera.setAzimElevWithOptions(target.azim, target.elev, damping, { dropOrtho: !target.ortho });
-                    camera.setDistance(target.distance, damping);
-                    if (target.navMode === 'fpv' && target.fpvPosition) {
-                        camera.setPositionWorld(new Vec3(target.fpvPosition.x, target.fpvPosition.y, target.fpvPosition.z));
-                    }
-                    if (target.roll !== undefined) {
-                        camera.rollTween.goto({ roll: target.roll }, rollDamping);
-                    }
-                    if (allowOrtho) {
-                        camera.ortho = !!target.ortho;
-                    } else {
-                        camera.ortho = false;
-                    }
-                } else {
-                    camera.docDeserialize({
-                        focalPoint: target.focalPoint,
-                        azim: target.azim,
-                        elev: target.elev,
-                        distance: target.distance,
-                        roll: target.roll,
-                        navMode: target.navMode,
-                        fpvPosition: target.fpvPosition,
-                        ortho: target.ortho
-                    }, { allowOrtho, preserveNavMode: true, source: 'cameraFrames' });
-                }
-                if (target.navMode === 'orbit') {
-                    camera.syncOrbitCache(target.distance, new Vec3(target.focalPoint.x, target.focalPoint.y, target.focalPoint.z));
-                }
-            });
-        } finally {
-            this.applyingPose = false;
-        }
-        if (!opts?.silent) {
-            this.requestRender();
-        }
+        this.cameraBackend.applyPose(pose, opts);
     }
 
     private calcForwardVec(result: Vec3, azim: number, elev: number) {
@@ -507,7 +468,7 @@ export class CameraFramesController {
     }
 
     private canSelectMainTarget() {
-        return !this.state.enabled && !!this.state.mainCameraPose && !this.scene.camera.targetSize;
+        return !this.state.enabled && !!this.state.mainCameraPose && !this.cameraBackend.getTargetSize();
     }
 
     private captureViewportRuntimeFromCamera() {
@@ -554,7 +515,7 @@ export class CameraFramesController {
             return;
         }
         this.applyCameraPose(mainPose, { silent: true, allowOrtho: false });
-        const baseFov = this.state.renderBox?.projection?.baseFov ?? this.scene.camera?.fov ?? 60;
+        const baseFov = this.state.renderBox?.projection?.baseFov ?? this.cameraBackend.getFov();
         if (typeof baseFov === 'number' && isFinite(baseFov)) {
             this.withCameraHistorySuppressed(() => {
                 this.suppressViewportFovCapture = true;
@@ -1082,7 +1043,7 @@ export class CameraFramesController {
             // effective frustum (render box基準)
             const rbFrustum = this.computeEffectiveFrustum();
             // previewか書き出しかでviewportを切り替え
-            const targetSize = this.scene.camera.targetSize;
+            const targetSize = this.cameraBackend.getTargetSize();
             const vw = targetSize ? targetSize.width : this.viewport.vw;
             const vh = targetSize ? targetSize.height : this.viewport.vh;
 
@@ -1393,7 +1354,7 @@ export class CameraFramesController {
             if (!this.state.enabled) {
                 return;
             }
-            if (this.scene.camera.targetSize) {
+            if (this.cameraBackend.getTargetSize()) {
                 // Offscreen export rebuilds render targets and updates aspect state.
                 // Re-apply the export frustum, but do not touch preview viewport mapping here.
                 this.syncCameraFrustum();
@@ -1554,7 +1515,7 @@ export class CameraFramesController {
         this.ensureMainCameraPose();
         const baseState = this.cloneCameraFramesStateBaseFromCurrent();
         const mainTransform = this.getMainCameraTransform() ?? this.scene.camera.getTransform();
-        const rawBaseFov = this.scene.camera?.fov ?? baseState.renderBox?.projection?.baseFov ?? 60;
+        const rawBaseFov = this.cameraBackend.getFov() ?? baseState.renderBox?.projection?.baseFov ?? 60;
         const baseFov = (typeof rawBaseFov === 'number' && isFinite(rawBaseFov)) ? rawBaseFov : 60;
         const referenceImagePresetId = (typeof options?.referenceImagePresetId === 'string' && options.referenceImagePresetId) ?
             options.referenceImagePresetId :
@@ -1979,7 +1940,7 @@ export class CameraFramesController {
         if (!mainTransform) {
             return;
         }
-        const rawBaseFov = this.state.renderBox?.projection?.baseFov ?? this.scene.camera?.fov ?? 60;
+        const rawBaseFov = this.state.renderBox?.projection?.baseFov ?? this.cameraBackend.getFov();
         const baseFov = (typeof rawBaseFov === 'number' && isFinite(rawBaseFov)) ? rawBaseFov : 60;
         target.mainCamera = {
             transform: {
@@ -2125,7 +2086,7 @@ export class CameraFramesController {
     }
 
     private normalizeProjectionIntoState(state: CameraFramesStateBase, projection: CameraPreset['mainCamera']['projection']) {
-        const fallbackFov = (typeof this.scene.camera?.fov === 'number' && isFinite(this.scene.camera.fov)) ? this.scene.camera.fov : 60;
+        const fallbackFov = this.cameraBackend.getFov();
         const rawBaseFov = projection.type === 'perspective' ? projection.baseFov : fallbackFov;
         const baseFov = (typeof rawBaseFov === 'number' && isFinite(rawBaseFov)) ? rawBaseFov : fallbackFov;
         state.renderBox.projection = {
@@ -2154,7 +2115,7 @@ export class CameraFramesController {
         }
 
         // export 用 offscreen target 中は preview viewport を触らない
-        if (this.scene.camera.targetSize) {
+        if (this.cameraBackend.getTargetSize()) {
             return;
         }
 
@@ -2198,7 +2159,7 @@ export class CameraFramesController {
             const prevUiTarget = this.getUiTarget();
             this.clearViewportNearOverride();
             const currentPose = this.captureCameraPose();
-            this.normalizeMainRenderBoxProjection(this.scene.camera.fov);
+            this.normalizeMainRenderBoxProjection(this.cameraBackend.getFov());
 
             if (value) {
                 // OFF -> ON
@@ -2239,7 +2200,7 @@ export class CameraFramesController {
                 this.withCameraHistorySuppressed(() => {
                     this.scene.camera.ortho = false;
                 });
-                const mainFov = this.state.renderBox.projection?.baseFov ?? this.scene.camera.fov;
+                const mainFov = this.state.renderBox.projection?.baseFov ?? this.cameraBackend.getFov();
                 if (typeof mainFov === 'number' && isFinite(mainFov)) {
                     this.state.renderBox.projection.baseFov = mainFov;
                     this.withCameraHistorySuppressed(() => {
@@ -2349,11 +2310,7 @@ export class CameraFramesController {
     }
 
     private applyNearClipOverride() {
-        applyNearClipOverrideCamera({
-            stateEnabled: this.state.enabled,
-            nearClip: this.state.nearClip,
-            events: this.events
-        });
+        this.cameraBackend.applyNearClipOverride(this.state.enabled, this.state.nearClip);
     }
 
     private setNearClip(value: number | null, suppressHistory = false) {
@@ -2456,7 +2413,7 @@ export class CameraFramesController {
     }
 
     private computeViewportNearCandidate(): Promise<number | null> {
-        return computeViewportNearCandidateCamera({ scene: this.scene });
+        return this.cameraBackend.computeViewportNearCandidate();
     }
 
     private enforceSafeNearClip() {
@@ -2833,7 +2790,7 @@ export class CameraFramesController {
         return computeViewportMappingViewport(
             this.state.renderBox,
             this.viewport,
-            this.scene.camera.targetSize,
+            this.cameraBackend.getTargetSize(),
             updateFitScale,
             (value?: number) => this.normalizeViewZoomPct(value)
         );
@@ -3295,7 +3252,7 @@ export class CameraFramesController {
         const prevViewportFov = this.viewportFovRuntime;
         applySnapshotSerialize({
             snapshot,
-            sceneCameraFov: this.scene.camera.fov,
+            sceneCameraFov: this.cameraBackend.getFov(),
             setApplyingHistory: (value) => {
                 this.applyingHistory = value;
             },
