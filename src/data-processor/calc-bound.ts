@@ -119,10 +119,13 @@ class CalcBound {
         const { scope } = device;
 
         const numSplats = ctx.count;
-        const transformA = ctx.positionTexture;
-        const splatTransform = ctx.transformTexture;
-        const transformPalette = ctx.transformPalette;
-        const splatState = ctx.stateTexture;
+        const {
+            positionTexture: transformA,
+            transformTexture: splatTransform,
+            transformPaletteTexture: transformPalette,
+            stateTexture: splatState,
+            globalParams
+        } = ctx.resources;
 
         if (!transformA || !splatTransform || !transformPalette || !splatState || numSplats === 0) {
             boundingBox.center.set(0, 0, 0);
@@ -144,7 +147,7 @@ class CalcBound {
             splatState,
             splatOffset: ctx.offset,
             splatCount: numSplats,
-            globalSplatParams: [transformA.width, transformA.width * transformA.height],
+            globalSplatParams: globalParams,
             mode: onlySelected ? 0 : 1,
             matrix_invModel: invWorld.data
         });

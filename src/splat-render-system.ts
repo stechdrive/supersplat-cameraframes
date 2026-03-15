@@ -23,6 +23,12 @@ import { TransformPalette } from './transform-palette';
 
 type TransformBlock = { base: number; size: number };
 
+type SplatRenderEntry = {
+    offset: number;
+    count: number;
+    transformBlock?: TransformBlock;
+};
+
 type BoundCacheEntry = {
     selection: BoundingBox;
     visible: BoundingBox;
@@ -42,14 +48,21 @@ type ParamsStorage = {
     arr2: Float32Array;
 };
 
+type MergedResourceInfo = {
+    positionTexture: Texture | null;
+    globalParams: [number, number];
+    width: number;
+    height: number;
+    colorTextureWidth: number;
+};
+
 class SplatRenderSystem implements SplatRenderBackend {
     scene: Scene;
     sources: Splat[] = [];
-    offsets = new Map<Splat, number>();
-    counts = new Map<Splat, number>();
-    transformBases = new Map<Splat, TransformBlock>();
+    entries = new Map<Splat, SplatRenderEntry>();
     mergedData: GSplatData | null = null;
     mergedResource: GSplatResource | null = null;
+    mergedResourceInfo: MergedResourceInfo | null = null;
     mergedAsset: Asset | null = null;
     mergedEntity: Entity;
     materialDirty = false;
@@ -137,9 +150,7 @@ class SplatRenderSystem implements SplatRenderBackend {
         const idx = this.sources.indexOf(splat);
         if (idx !== -1) {
             this.sources.splice(idx, 1);
-            this.offsets.delete(splat);
-            this.counts.delete(splat);
-            this.transformBases.delete(splat);
+            this.entries.delete(splat);
             this.boundCache.delete(splat);
             if (this._frozen) {
                 this._dirty = true;
@@ -165,7 +176,11 @@ class SplatRenderSystem implements SplatRenderBackend {
     }
 
     isSplatActive(splat: Splat) {
-        return this.offsets.has(splat);
+        return this.entries.has(splat);
+    }
+
+    private getEntry(splat: Splat) {
+        return this.entries.get(splat) ?? null;
     }
 
     scheduleRebuildForVisibility(immediate = false) {
@@ -279,8 +294,24 @@ class SplatRenderSystem implements SplatRenderBackend {
         return entry || null;
     }
 
+    private createMergedResourceInfo(resource: GSplatResource | null) {
+        const positionTexture = resource?.getTexture('transformA') ?? null;
+        const width = positionTexture?.width ?? resource?.textureDimensions.x ?? 2048;
+        const height = positionTexture?.height ?? resource?.textureDimensions.y ?? 2048;
+        const colorTextureWidth = resource?.getTexture('splatColor')?.width ?? 0;
+        const globalParams: [number, number] = [width, width * height];
+
+        return {
+            positionTexture,
+            globalParams,
+            width,
+            height,
+            colorTextureWidth
+        };
+    }
+
     getOverlayBinding(splat: Splat) {
-        const transformATexture = this.mergedResource?.getTexture('transformA');
+        const transformATexture = this.mergedResourceInfo?.positionTexture ?? null;
         const range = this.getRenderableRange(splat);
         const count = range?.count ?? splat.splatData.numSplats;
         const offset = range?.offset ?? 0;
@@ -288,11 +319,6 @@ class SplatRenderSystem implements SplatRenderBackend {
         if (!transformATexture || count === 0) {
             return null;
         }
-
-        const globalParams: [number, number] = [
-            transformATexture.width,
-            transformATexture.width * transformATexture.height
-        ];
 
         return {
             node: this.mergedEntity,
@@ -302,7 +328,7 @@ class SplatRenderSystem implements SplatRenderBackend {
             transformPaletteTexture: this.transformPalette.texture,
             offset,
             count,
-            globalParams
+            globalParams: this.mergedResourceInfo?.globalParams ?? [0, 0]
         };
     }
 
@@ -328,12 +354,14 @@ class SplatRenderSystem implements SplatRenderBackend {
     }
 
     private getRenderableRange(splat: Splat) {
-        const offset = this.offsets.get(splat);
-        const count = this.counts.get(splat);
-        if (offset === undefined || count === undefined) {
+        const entry = this.getEntry(splat);
+        if (!entry) {
             return null;
         }
-        return { offset, count };
+        return {
+            offset: entry.offset,
+            count: entry.count
+        };
     }
 
     get centers() {
@@ -341,25 +369,29 @@ class SplatRenderSystem implements SplatRenderBackend {
     }
 
     private createProcessorContext(splat: Splat) {
+        const entry = this.getEntry(splat);
+        const resourceInfo = this.mergedResourceInfo;
         return {
             splat,
-            offset: this.offsets.get(splat) ?? 0,
-            count: this.counts.get(splat) ?? 0,
-            positionTexture: this.mergedResource?.getTexture('transformA') ?? null,
-            transformTexture: this.transformTexture,
-            transformPalette: this.transformPalette.texture,
-            stateTexture: this.stateTexture
+            offset: entry?.offset ?? 0,
+            count: entry?.count ?? 0,
+            resources: {
+                positionTexture: resourceInfo?.positionTexture ?? null,
+                transformTexture: this.transformTexture,
+                transformPaletteTexture: this.transformPalette.texture,
+                stateTexture: this.stateTexture,
+                globalParams: resourceInfo?.globalParams ?? [0, 0]
+            }
         };
     }
 
     readWorldCenter(splat: Splat, localIndex: number, out: { set: (x: number, y: number, z: number) => void }) {
         const centers = this.centers;
-        const count = this.counts.get(splat) ?? 0;
-        const offset = this.offsets.get(splat);
-        if (!centers || offset === undefined || localIndex < 0 || localIndex >= count) {
+        const entry = this.getEntry(splat);
+        if (!centers || !entry || localIndex < 0 || localIndex >= entry.count) {
             return false;
         }
-        const base = (offset + localIndex) * 3;
+        const base = (entry.offset + localIndex) * 3;
         out.set(
             centers[base + 0],
             centers[base + 1],
@@ -370,12 +402,11 @@ class SplatRenderSystem implements SplatRenderBackend {
 
     writeWorldCenter(splat: Splat, localIndex: number, x: number, y: number, z: number) {
         const centers = this.centers;
-        const count = this.counts.get(splat) ?? 0;
-        const offset = this.offsets.get(splat);
-        if (!centers || offset === undefined || localIndex < 0 || localIndex >= count) {
+        const entry = this.getEntry(splat);
+        if (!centers || !entry || localIndex < 0 || localIndex >= entry.count) {
             return false;
         }
-        const base = (offset + localIndex) * 3;
+        const base = (entry.offset + localIndex) * 3;
         centers[base + 0] = x;
         centers[base + 1] = y;
         centers[base + 2] = z;
@@ -383,8 +414,8 @@ class SplatRenderSystem implements SplatRenderBackend {
     }
 
     getBound(splat: Splat, mode: 'selected' | 'visible') {
-        const count = this.counts.get(splat);
-        if (!this.mergedResource || count === undefined || count === 0) {
+        const entry = this.getEntry(splat);
+        if (!this.mergedResource || !entry || entry.count === 0) {
             return null;
         }
         const cache = this.boundCache.get(splat);
@@ -392,11 +423,10 @@ class SplatRenderSystem implements SplatRenderBackend {
             return null;
         }
 
-        const entry = mode === 'selected' ? cache.selection : cache.visible;
+        const boundingBox = mode === 'selected' ? cache.selection : cache.visible;
         const dirty = mode === 'selected' ? cache.selectionDirty : cache.visibleDirty;
 
         if (dirty) {
-            const boundingBox = entry;
             const onlySelected = mode === 'selected';
             this.scene.dataProcessor.calcBound(this.createProcessorContext(splat), boundingBox, onlySelected).catch(() => {});
             if (mode === 'selected') {
@@ -406,7 +436,7 @@ class SplatRenderSystem implements SplatRenderBackend {
             }
         }
 
-        return entry;
+        return boundingBox;
     }
 
     async calcBound(splat: Splat, selectionBound: BoundingBox, localBound: BoundingBox) {
@@ -414,7 +444,7 @@ class SplatRenderSystem implements SplatRenderBackend {
     }
 
     calcPositions(splat: Splat) {
-        const count = this.counts.get(splat) ?? 0;
+        const count = this.getEntry(splat)?.count ?? 0;
         if (count === 0) {
             return Promise.resolve(new Float32Array(0));
         }
@@ -428,8 +458,9 @@ class SplatRenderSystem implements SplatRenderBackend {
     private async updateSorterCenters(activeSources: Splat[], totalSplats: number, instance: any, token: number) {
         const centers = new Float32Array(totalSplats * 3);
         for (const splat of activeSources) {
-            const offset = this.offsets.get(splat) ?? 0;
-            const count = this.counts.get(splat) ?? 0;
+            const entry = this.getEntry(splat);
+            const offset = entry?.offset ?? 0;
+            const count = entry?.count ?? 0;
             const positions = await this.calcPositions(splat);
             for (let i = 0; i < count; i++) {
                 centers[(offset + i) * 3 + 0] = positions[i * 4 + 0];
@@ -506,12 +537,12 @@ class SplatRenderSystem implements SplatRenderBackend {
 
     updateState(splat: Splat) {
         const state = splat.splatData.getProp('state') as Uint8Array;
-        const offset = this.offsets.get(splat);
-        if (this.stateTexture && this.globalState && offset !== undefined) {
-            this.globalState.set(state, offset);
+        const entry = this.getEntry(splat);
+        if (this.stateTexture && this.globalState && entry) {
+            this.globalState.set(state, entry.offset);
 
             const data = this.stateTexture.lock() as Uint8Array;
-            data.set(state, offset);
+            data.set(state, entry.offset);
             this.stateTexture.unlock();
         }
 
@@ -563,11 +594,11 @@ class SplatRenderSystem implements SplatRenderBackend {
             return;
         }
 
-        const offset = this.offsets.get(splat) ?? 0;
-        const count = this.counts.get(splat);
-        if (!count) {
+        const entry = this.getEntry(splat);
+        if (!entry?.count) {
             return;
         }
+        const { offset, count } = entry;
         const { arr0, arr1, arr2 } = this.paramsStorage;
 
         const tint = splat.tintClr;
@@ -610,8 +641,9 @@ class SplatRenderSystem implements SplatRenderBackend {
     }
 
     updateTransform(splat: Splat, skipCenterUpdate = false) {
-        const block = this.transformBases.get(splat);
-        if (!block) {
+        const entry = this.getEntry(splat);
+        const block = entry?.transformBlock;
+        if (!entry || !block) {
             return;
         }
 
@@ -636,8 +668,7 @@ class SplatRenderSystem implements SplatRenderBackend {
         // ソーターの位置情報も更新
         const instance = this.mergedEntity.gsplat?.instance;
         if (instance && !skipCenterUpdate) {
-            const offset = this.offsets.get(splat) ?? 0;
-            const count = this.counts.get(splat) ?? 0;
+            const { offset, count } = entry;
 
             // OPTIMIZATION: Use CPU for center updates during interaction to avoid slow readPixels
             const localCenters = splat.localCenters;
@@ -673,11 +704,12 @@ class SplatRenderSystem implements SplatRenderBackend {
         }
 
         const indices = updatedIndices ?? (splat.splatData.getProp('transform') as Uint16Array);
-        const block = this.transformBases.get(splat);
-        const offset = this.offsets.get(splat) ?? 0;
-        if (!block) {
+        const entry = this.getEntry(splat);
+        const block = entry?.transformBlock;
+        if (!entry || !block) {
             return;
         }
+        const { offset } = entry;
 
         let maxLocal = 0;
         for (let i = 0; i < indices.length; i++) {
@@ -769,11 +801,8 @@ class SplatRenderSystem implements SplatRenderBackend {
             // Use stateTexture width/height which covers all splats (mergedResource might be smaller)
             const tex = this.stateTexture;
             if (tex) {
-                // globalParams must match GSplatResource's texture for correct initSource() behavior
-                const transformA = this.mergedResource?.getTexture('transformA');
-                const resourceWidth = transformA?.width ?? this.mergedResource?.textureDimensions.x ?? tex.width;
-                const resourceHeight = transformA?.height ?? this.mergedResource?.textureDimensions.y ?? tex.height;
-                material.setParameter('globalParams', [resourceWidth, resourceWidth * resourceHeight]);
+                const globalParams = this.mergedResourceInfo?.globalParams ?? [tex.width, tex.width * tex.height];
+                material.setParameter('globalParams', globalParams);
 
                 // splatParamsDim for our custom textures
                 material.setParameter('splatParamsDim', [tex.width, tex.width * tex.height]);
@@ -800,6 +829,7 @@ class SplatRenderSystem implements SplatRenderBackend {
 
         this.mergedAsset = null;
         this.mergedResource = null;
+        this.mergedResourceInfo = null;
     }
 
     private createTexture(name: string, width: number, height: number, format: number) {
@@ -878,9 +908,7 @@ class SplatRenderSystem implements SplatRenderBackend {
             this.paramsTextures?.tex2.destroy();
             this.paramsTextures = null;
             this.paramsStorage = null;
-            this.transformBases.clear();
-            this.offsets.clear();
-            this.counts.clear();
+            this.entries.clear();
             this.globalState = null;
             this.globalTransformIndices = null;
             this.globalIdToSplat = [];
@@ -910,23 +938,24 @@ class SplatRenderSystem implements SplatRenderBackend {
         const totalSplats = activeSources.reduce((sum, s) => sum + s.splatData.numSplats, 0);
         let shBands = 0;
 
-        this.offsets.clear();
-        this.counts.clear();
-        this.transformBases.clear();
+        this.entries.clear();
         this.globalIdToSplat = new Array(totalSplats);
 
         // オフセット計算
         let runningOffset = 0;
         activeSources.forEach((splat) => {
-            this.offsets.set(splat, runningOffset);
-            this.counts.set(splat, splat.splatData.numSplats);
+            const count = splat.splatData.numSplats;
+            this.entries.set(splat, {
+                offset: runningOffset,
+                count
+            });
 
             // Map global IDs to this splat for picking
-            for (let i = 0; i < splat.splatData.numSplats; i++) {
+            for (let i = 0; i < count; i++) {
                 this.globalIdToSplat[runningOffset + i] = { splat, local: i };
             }
 
-            runningOffset += splat.splatData.numSplats;
+            runningOffset += count;
             const resource = splat.asset.resource as GSplatResource;
             shBands = Math.max(shBands, resource.shBands ?? 0);
         });
@@ -942,7 +971,10 @@ class SplatRenderSystem implements SplatRenderBackend {
             }
             const size = maxLocal + 1;
             const base = this.transformPalette.alloc(size);
-            this.transformBases.set(splat, { base, size });
+            const entry = this.getEntry(splat);
+            if (entry) {
+                entry.transformBlock = { base, size };
+            }
 
             const world = splat.entity.getWorldTransform();
             for (let i = 0; i < size; i++) {
@@ -967,8 +999,9 @@ class SplatRenderSystem implements SplatRenderBackend {
         });
 
         activeSources.forEach((splat) => {
-            const offset = this.offsets.get(splat) ?? 0;
-            const count = this.counts.get(splat) ?? 0;
+            const entry = this.getEntry(splat);
+            const offset = entry?.offset ?? 0;
+            const count = entry?.count ?? 0;
             const propSrc = splat.splatData.getElement('vertex').properties;
 
             mergedProperties.forEach((mergedProp, index) => {
@@ -992,7 +1025,7 @@ class SplatRenderSystem implements SplatRenderBackend {
                 const dstOffset = offset * stride;
 
                 if (srcProp.name === 'transform') {
-                    const block = this.transformBases.get(splat);
+                    const block = entry?.transformBlock;
                     const src = srcProp.storage as Uint16Array;
                     const dstTyped = dst as Uint16Array;
                     for (let i = 0; i < count; i++) {
@@ -1015,6 +1048,7 @@ class SplatRenderSystem implements SplatRenderBackend {
 
 
         this.mergedResource = new GSplatResource(this.scene.graphicsDevice, this.mergedData);
+        this.mergedResourceInfo = this.createMergedResourceInfo(this.mergedResource);
         this.mergedAsset = new Asset('mergedSplat', 'gsplat', {
             filename: 'mergedSplat'
         });
@@ -1034,18 +1068,15 @@ class SplatRenderSystem implements SplatRenderBackend {
 
         // テクスチャ再構築
         // GSplatResourceと同じテクスチャサイズを使用する必要がある (UV計算の一貫性のため)
-        const mergedTransformATexture = this.mergedResource?.getTexture('transformA');
-        const frameWidth = mergedTransformATexture?.width ?? this.mergedResource?.textureDimensions.x ?? 2048;
-        const frameHeight = mergedTransformATexture?.height ?? this.mergedResource?.textureDimensions.y ?? 2048;
-
-        const width = frameWidth;
-        const height = frameHeight;
+        const resourceInfo = this.mergedResourceInfo ?? this.createMergedResourceInfo(this.mergedResource);
+        const width = resourceInfo.width;
+        const height = resourceInfo.height;
 
         console.log('SplatRenderSystem: Merged data created.',
             'Total splats:', totalSplats,
             'Resource Width:', width,
             'Resource Height:', height,
-            'Color Tex Width:', this.mergedResource.getTexture('splatColor')?.width,
+            'Color Tex Width:', resourceInfo.colorTextureWidth,
             'SH Bands:', shBands
         );
         const globalStateSize = width * height;
@@ -1087,10 +1118,9 @@ class SplatRenderSystem implements SplatRenderBackend {
         }
 
         activeSources.forEach((splat) => {
-            const offset = this.offsets.get(splat);
-            const count = this.counts.get(splat);
-            const block = this.transformBases.get(splat);
-            if (offset === undefined || count === undefined || !block) {
+            const entry = this.getEntry(splat);
+            const block = entry?.transformBlock;
+            if (!entry || !block) {
                 return;
             }
             const state = splat.splatData.getProp('state') as Uint8Array;
@@ -1098,12 +1128,12 @@ class SplatRenderSystem implements SplatRenderBackend {
 
             // globalState updating is handled in updateState call below
             // but we need globalTransformIndices setup here or in updateTransform
-            for (let i = 0; i < count; i++) {
-                this.globalTransformIndices[offset + i] = block.base + indices[i];
+            for (let i = 0; i < entry.count; i++) {
+                this.globalTransformIndices[entry.offset + i] = block.base + indices[i];
             }
 
-            for (let i = 0; i < count; i++) {
-                this.globalIdToSplat[offset + i] = { splat, local: i };
+            for (let i = 0; i < entry.count; i++) {
+                this.globalIdToSplat[entry.offset + i] = { splat, local: i };
             }
         });
 

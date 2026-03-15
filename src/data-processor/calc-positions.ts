@@ -87,9 +87,12 @@ class CalcPositions {
             return new Float32Array(0);
         }
 
-        const transformA = ctx.positionTexture;
-        const splatTransform = ctx.transformTexture;
-        const transformPalette = ctx.transformPalette;
+        const {
+            positionTexture: transformA,
+            transformTexture: splatTransform,
+            transformPaletteTexture: transformPalette,
+            globalParams
+        } = ctx.resources;
 
         if (!transformA || !splatTransform || !transformPalette) {
             return new Float32Array(0);
@@ -106,7 +109,7 @@ class CalcPositions {
             transformPalette,
             splatOffset: ctx.offset,
             splatCount: numSplats,
-            globalSplatParams: [transformA.width, transformA.width * transformA.height],
+            globalSplatParams: globalParams,
             output_params: [width, height]
         });
 
