@@ -4065,12 +4065,8 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
-}
-
-.layout-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
+  flex: 0 0 auto;
+  align-items: flex-start;
 }
 
 .anchor-cell {
@@ -4563,6 +4559,11 @@
   opacity: 0.35;
 }
 
+#camera-frames-panel .pcui-button.icon-button.frame-delete-button.pcui-disabled {
+  opacity: 0.8;
+  color: #8f5757;
+}
+
 .cam-nav-controls {
   margin-left: auto;
   display: flex;
@@ -4573,19 +4574,23 @@
 
 .camera-transform-slider-grid {
   display: grid;
-  grid-template-columns: max-content minmax(0, 1fr) max-content minmax(0, 1fr) max-content minmax(0, 1fr);
+  grid-template-columns: 2.4em minmax(0, 1fr) 2.4em minmax(0, 1fr) 2.4em minmax(0, 1fr);
   -moz-column-gap: 6px;
        column-gap: 6px;
   align-items: center;
   width: 100%;
   min-width: 0;
+  padding-left: 4px;
+  box-sizing: border-box;
 }
 
 .camera-transform-axis-label {
-  width: auto;
-  min-width: 0;
+  width: 2.4em;
+  min-width: 2.4em;
+  max-width: none;
   margin: 0;
-  justify-self: center;
+  justify-self: start;
+  text-align: left;
   white-space: nowrap;
   overflow: visible;
   text-overflow: clip;
