@@ -1,4 +1,5 @@
 import {
+    BLEND_NONE,
     ADDRESS_CLAMP_TO_EDGE,
     FILTER_NEAREST,
     PIXELFORMAT_R16U,
@@ -278,31 +279,55 @@ class SplatRenderSystem implements SplatRenderBackend {
         return entry || null;
     }
 
-    getMergedResource() {
-        return this.mergedResource;
+    getOverlayBinding(splat: Splat) {
+        const transformATexture = this.mergedResource?.getTexture('transformA');
+        const range = this.getRenderableRange(splat);
+        const count = range?.count ?? splat.splatData.numSplats;
+        const offset = range?.offset ?? 0;
+
+        if (!transformATexture || count === 0) {
+            return null;
+        }
+
+        const globalParams: [number, number] = [
+            transformATexture.width,
+            transformATexture.width * transformATexture.height
+        ];
+
+        return {
+            node: this.mergedEntity,
+            positionTexture: transformATexture,
+            stateTexture: this.stateTexture,
+            transformTexture: this.transformTexture,
+            transformPaletteTexture: this.transformPalette.texture,
+            offset,
+            count,
+            globalParams
+        };
     }
 
-    getMergedEntity() {
-        return this.mergedEntity;
+    withPickingBlendDisabled(fn: () => void) {
+        const material = this.mergedEntity.gsplat?.instance?.material;
+        if (material) {
+            const oldBlend = material.blendType;
+            material.blendType = BLEND_NONE;
+            material.update();
+            try {
+                fn();
+            } finally {
+                material.blendType = oldBlend;
+                material.update();
+            }
+        } else {
+            fn();
+        }
     }
 
-    getMergedInstance() {
-        return this.mergedEntity.gsplat?.instance ?? null;
+    hasRenderableData(splat: Splat) {
+        return !!this.getRenderableRange(splat);
     }
 
-    getStateTexture() {
-        return this.stateTexture;
-    }
-
-    getTransformTexture() {
-        return this.transformTexture;
-    }
-
-    getTransformPaletteTexture() {
-        return this.transformPalette.texture;
-    }
-
-    getSplatRange(splat: Splat) {
+    private getRenderableRange(splat: Splat) {
         const offset = this.offsets.get(splat);
         const count = this.counts.get(splat);
         if (offset === undefined || count === undefined) {
@@ -315,22 +340,46 @@ class SplatRenderSystem implements SplatRenderBackend {
         return this.mergedEntity.gsplat?.instance?.sorter?.centers || null;
     }
 
-    getProcessorContext(splat: Splat) {
+    private createProcessorContext(splat: Splat) {
         return {
             splat,
             offset: this.offsets.get(splat) ?? 0,
             count: this.counts.get(splat) ?? 0,
+            positionTexture: this.mergedResource?.getTexture('transformA') ?? null,
             transformTexture: this.transformTexture,
             transformPalette: this.transformPalette.texture,
             stateTexture: this.stateTexture
         };
     }
 
-    getCenters(splat: Splat) {
+    readWorldCenter(splat: Splat, localIndex: number, out: { set: (x: number, y: number, z: number) => void }) {
         const centers = this.centers;
-        if (!centers) return null;
-        const offset = (this.offsets.get(splat) ?? 0) * 3;
-        return { centers, offset };
+        const count = this.counts.get(splat) ?? 0;
+        const offset = this.offsets.get(splat);
+        if (!centers || offset === undefined || localIndex < 0 || localIndex >= count) {
+            return false;
+        }
+        const base = (offset + localIndex) * 3;
+        out.set(
+            centers[base + 0],
+            centers[base + 1],
+            centers[base + 2]
+        );
+        return true;
+    }
+
+    writeWorldCenter(splat: Splat, localIndex: number, x: number, y: number, z: number) {
+        const centers = this.centers;
+        const count = this.counts.get(splat) ?? 0;
+        const offset = this.offsets.get(splat);
+        if (!centers || offset === undefined || localIndex < 0 || localIndex >= count) {
+            return false;
+        }
+        const base = (offset + localIndex) * 3;
+        centers[base + 0] = x;
+        centers[base + 1] = y;
+        centers[base + 2] = z;
+        return true;
     }
 
     getBound(splat: Splat, mode: 'selected' | 'visible') {
@@ -349,7 +398,7 @@ class SplatRenderSystem implements SplatRenderBackend {
         if (dirty) {
             const boundingBox = entry;
             const onlySelected = mode === 'selected';
-            this.scene.dataProcessor.calcBound(this.getProcessorContext(splat), boundingBox, onlySelected).catch(() => {});
+            this.scene.dataProcessor.calcBound(this.createProcessorContext(splat), boundingBox, onlySelected).catch(() => {});
             if (mode === 'selected') {
                 cache.selectionDirty = false;
             } else {
@@ -360,12 +409,20 @@ class SplatRenderSystem implements SplatRenderBackend {
         return entry;
     }
 
+    async calcBound(splat: Splat, selectionBound: BoundingBox, localBound: BoundingBox) {
+        await this.scene.dataProcessor.calcBound(this.createProcessorContext(splat), selectionBound, localBound);
+    }
+
     calcPositions(splat: Splat) {
         const count = this.counts.get(splat) ?? 0;
         if (count === 0) {
             return Promise.resolve(new Float32Array(0));
         }
-        return this.scene.dataProcessor.calcPositions(this.getProcessorContext(splat));
+        return this.scene.dataProcessor.calcPositions(this.createProcessorContext(splat));
+    }
+
+    intersect(splat: Splat, options: import('./data-processor').IntersectOptions) {
+        return this.scene.dataProcessor.intersect(options, this.createProcessorContext(splat));
     }
 
     private async updateSorterCenters(activeSources: Splat[], totalSplats: number, instance: any, token: number) {
@@ -816,10 +873,6 @@ class SplatRenderSystem implements SplatRenderBackend {
             this.stateTexture = null;
             this.transformTexture?.destroy();
             this.transformTexture = null;
-            this.sources.forEach((splat) => {
-                splat.stateTexture = null;
-                splat.transformTexture = null;
-            });
             this.paramsTextures?.tex0.destroy();
             this.paramsTextures?.tex1.destroy();
             this.paramsTextures?.tex2.destroy();
@@ -1032,16 +1085,6 @@ class SplatRenderSystem implements SplatRenderBackend {
             // Params2: Trans(1), Sel(1)
             arr2[idx + 0] = 1; arr2[idx + 1] = 1; arr2[idx + 2] = 0; arr2[idx + 3] = 0;
         }
-
-        this.sources.forEach((splat) => {
-            if (splat.visible) {
-                splat.stateTexture = this.stateTexture;
-                splat.transformTexture = this.transformTexture;
-            } else {
-                splat.stateTexture = null;
-                splat.transformTexture = null;
-            }
-        });
 
         activeSources.forEach((splat) => {
             const offset = this.offsets.get(splat);

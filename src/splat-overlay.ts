@@ -24,6 +24,7 @@ import { Splat } from './splat';
 class SplatOverlay extends Element {
     meshInstance: MeshInstance;
     splat: Splat;
+    overlayBinding: ReturnType<Element['scene']['renderSystem']['getOverlayBinding']> = null;
     cameraMatrices: CameraMatrices = {
         projection: new Mat4(),
         viewInv: new Mat4(),
@@ -65,22 +66,15 @@ class SplatOverlay extends Element {
             }
 
             const renderSystem = this.scene.renderSystem;
-            const mergedResource = renderSystem.getMergedResource();
+            const binding = renderSystem.getOverlayBinding(splat);
 
-            if (!mergedResource) {
+            if (!binding) {
                 meshInstance.node = null;
-                return;
-            }
-            const transformATexture = mergedResource.getTexture('transformA');
-            if (!transformATexture) {
-                meshInstance.node = null;
+                this.overlayBinding = null;
                 return;
             }
 
-            const splatData = splat.splatData;
-            const range = renderSystem.getSplatRange(splat);
-            const offset = range?.offset ?? 0;
-            const count = range?.count ?? splatData.numSplats;
+            const { positionTexture, stateTexture, transformTexture, transformPaletteTexture, offset, count, globalParams } = binding;
 
             const vertexFormat = new VertexFormat(device, [{
                 semantic: SEMANTIC_POSITION,
@@ -113,17 +107,18 @@ class SplatOverlay extends Element {
                 count
             };
 
-            material.setParameter('splatState', renderSystem.getStateTexture());
-            material.setParameter('splatPosition', transformATexture);
-            material.setParameter('splatTransform', renderSystem.getTransformTexture());
-            material.setParameter('transformPalette', renderSystem.getTransformPaletteTexture());
-            material.setParameter('globalParams', [transformATexture.width, transformATexture.width * transformATexture.height]);
+            material.setParameter('splatState', stateTexture);
+            material.setParameter('splatPosition', positionTexture);
+            material.setParameter('splatTransform', transformTexture);
+            material.setParameter('transformPalette', transformPaletteTexture);
+            material.setParameter('globalParams', globalParams);
             material.setParameter('splatOffset', offset);
             material.setParameter('splatCount', count);
             material.update();
 
             // ノード行列をそのまま使用（transformPalette のローカル変換と組み合わせる）
-            meshInstance.node = renderSystem.getMergedEntity();
+            meshInstance.node = binding.node;
+            this.overlayBinding = binding;
             this.splat = splat;
         };
 
@@ -175,10 +170,14 @@ class SplatOverlay extends Element {
         const selectedClr = events.invoke('selectedClr');
         const unselectedClr = events.invoke('unselectedClr');
         const { material } = this.meshInstance;
+        const binding = this.overlayBinding;
+        if (!binding) {
+            return;
+        }
         material.setParameter('splatSize', splatSize * window.devicePixelRatio);
         material.setParameter('selectedClr', [selectedClr.r, selectedClr.g, selectedClr.b, selectedClr.a]);
         material.setParameter('unselectedClr', [unselectedClr.r, unselectedClr.g, unselectedClr.b, unselectedClr.a]);
-        material.setParameter('transformPalette', this.scene.renderSystem.getTransformPaletteTexture());
+        material.setParameter('transformPalette', binding.transformPaletteTexture);
 
         // 修正: シェーダ側の自動ユニフォーム依存を廃止し、明示的にメインカメラの行列を渡す。
         // これにより、postrender 時に他のカメラ（ピッカー等）の行列が残っている可能性やタイミングのズレを排除する。

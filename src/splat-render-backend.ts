@@ -1,6 +1,6 @@
-import type { BoundingBox, Entity, GSplatResource, Texture } from 'playcanvas';
+import type { BoundingBox, Entity, Texture } from 'playcanvas';
 
-import type { ProcessorContext } from './data-processor';
+import type { IntersectOptions } from './data-processor';
 import type { Scene } from './scene';
 import type { Splat } from './splat';
 import { SplatRenderSystem } from './splat-render-system';
@@ -17,19 +17,18 @@ type SplatRenderStateSummary = {
     numSplats: number;
 };
 
-type SplatRenderCenters = {
-    centers: Float32Array;
-    offset: number;
-} | null;
-
-type SplatRenderBackend = {
-    mergedResource: GSplatResource | null;
-    mergedEntity: Entity;
+type SplatRenderOverlayBinding = {
+    node: Entity;
+    positionTexture: Texture;
     stateTexture: Texture | null;
     transformTexture: Texture | null;
-    transformPalette: TransformPalette;
-    offsets: ReadonlyMap<Splat, number>;
-    counts: ReadonlyMap<Splat, number>;
+    transformPaletteTexture: Texture | null;
+    offset: number;
+    count: number;
+    globalParams: [number, number];
+};
+
+type SplatRenderBackend = {
     add: (splat: Splat) => void;
     remove: (splat: Splat) => void;
     freeze: () => void;
@@ -37,17 +36,15 @@ type SplatRenderBackend = {
     isSplatActive: (splat: Splat) => boolean;
     scheduleRebuildForVisibility: (immediate?: boolean) => void;
     mapPickId: (id: number) => SplatRenderPickMapping | null;
-    getMergedResource: () => GSplatResource | null;
-    getMergedEntity: () => Entity;
-    getMergedInstance: () => any;
-    getStateTexture: () => Texture | null;
-    getTransformTexture: () => Texture | null;
-    getTransformPaletteTexture: () => Texture | null;
-    getSplatRange: (splat: Splat) => { offset: number; count: number } | null;
-    getCenters: (splat: Splat) => SplatRenderCenters;
-    getProcessorContext: (splat: Splat) => ProcessorContext;
+    getOverlayBinding: (splat: Splat) => SplatRenderOverlayBinding | null;
+    withPickingBlendDisabled: (fn: () => void) => void;
+    hasRenderableData: (splat: Splat) => boolean;
+    readWorldCenter: (splat: Splat, localIndex: number, out: { set: (x: number, y: number, z: number) => void }) => boolean;
+    writeWorldCenter: (splat: Splat, localIndex: number, x: number, y: number, z: number) => boolean;
+    calcBound: (splat: Splat, selectionBound: BoundingBox, localBound: BoundingBox) => Promise<void>;
     getBound: (splat: Splat, mode: 'selected' | 'visible') => BoundingBox | null;
     calcPositions: (splat: Splat) => Promise<Float32Array>;
+    intersect: (splat: Splat, options: IntersectOptions) => Promise<Uint8Array>;
     waitForSorter: () => Promise<void>;
     updateState: (splat: Splat) => SplatRenderStateSummary | undefined;
     updateSplatParams: (splat: Splat) => void;
@@ -64,7 +61,7 @@ const createSupersplatSplatRenderBackend = (scene: Scene): SplatRenderBackend =>
 export { createSupersplatSplatRenderBackend };
 export type {
     SplatRenderBackend,
-    SplatRenderCenters,
+    SplatRenderOverlayBinding,
     SplatRenderPickMapping,
     SplatRenderStateSummary
 };

@@ -847,24 +847,19 @@ const sortSplats = (splats: Splat[], indices: CompressedIndex[]) => {
     let maxx: number;
     let maxy: number;
     let maxz: number;
+    const center = new Vec3();
 
     // calculate scene extents across all splats (using sort centers, because they're in world space)
     for (let i = 0; i < splats.length; ++i) {
         const splat = splats[i];
         const splatData = splat.splatData;
         const state = splatData.getProp('state') as Uint8Array;
-        const centersInfo = splat.scene.renderSystem.getCenters(splat);
-        if (!centersInfo) {
-            continue;
-        }
-        const { centers, offset } = centersInfo;
 
         for (let i = 0; i < splatData.numSplats; ++i) {
-            if ((state[i] & State.deleted) === 0) {
-                const base = offset + i * 3;
-                const x = centers[base + 0];
-                const y = centers[base + 1];
-                const z = centers[base + 2];
+            if ((state[i] & State.deleted) === 0 && splat.scene.renderSystem.readWorldCenter(splat, i, center)) {
+                const x = center.x;
+                const y = center.y;
+                const z = center.z;
 
                 if (minx === undefined) {
                     minx = maxx = x;
@@ -889,18 +884,12 @@ const sortSplats = (splats: Splat[], indices: CompressedIndex[]) => {
         const splat = splats[i];
         const splatData = splat.splatData;
         const state = splatData.getProp('state') as Uint8Array;
-        const centersInfo = splat.scene.renderSystem.getCenters(splat);
-        if (!centersInfo) {
-            continue;
-        }
-        const { centers, offset } = centersInfo;
 
         for (let i = 0; i < splatData.numSplats; ++i) {
-            if ((state[i] & State.deleted) === 0) {
-                const base = offset + i * 3;
-                const x = centers[base + 0];
-                const y = centers[base + 1];
-                const z = centers[base + 2];
+            if ((state[i] & State.deleted) === 0 && splat.scene.renderSystem.readWorldCenter(splat, i, center)) {
+                const x = center.x;
+                const y = center.y;
+                const z = center.z;
 
                 const ix = Math.min(1023, Math.floor(1024 * (x - minx) / xlen));
                 const iy = Math.min(1023, Math.floor(1024 * (y - miny) / ylen));
