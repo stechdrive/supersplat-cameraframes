@@ -8,6 +8,7 @@ CAMERA FRAMES v2.20.9 lets you lay out multiple frames on an A4-like master shee
 - **Multi-frame management**: Add/move/rotate/scale/change anchors for up to 20 frames; mask and draw order are preserved.
 - **Dual camera handling**: When CAMERA FRAMES is on, the capture composition is held. When off, use the edit camera to explore, and open the separate Capture Camera Controls panel to edit the capture camera as needed.
 - **Export options**: PNG/PSD, grid+eye-level combined toggle, PSD model layers, 150dpi pHYs, unpremultiply, and per-frame layers.
+- **Per-camera export settings**: Export format, guide output, and model-layer output are stored per camera preset and reused by all-camera export.
 - **Reference image presets**: Auto-create a preset named after the first imported file and allow renaming in the panel (`(blank)` is read-only).
 
 ## 2. Panel and toggles
@@ -41,7 +42,7 @@ CAMERA FRAMES v2.20.9 lets you lay out multiple frames on an A4-like master shee
 - Filename and format (PSD/PNG, default PSD). Blank names fall back to `cf-%cam`. Export settings are not part of history.
 - **Export target**: switch between current/all/selected cameras. Selected mode uses checkboxes in the camera preset list.
 - **Grid/Eye-level**: Single toggle outputs both overlays. Composited for PNG; separate layers for PSD.
-- **Model layers**: PSD-only; each visible model renders into its own layer with localized names (toggle is always shown).
+- **Model layers**: PSD-only; each visible GLB is exported as `Source + layer mask`, making it easier to composite against other models and the Render layer (the toggle itself is always shown).
 - Render button starts export; shows spinner and disables while busy.
 - Export locks viewZoom=100% and centers the frustum; preview frustum is restored afterward.
 - PSD layer order: grid → eye-level → models → frames (grouped by leading frame letter) → Render. PNG is compressed with 150dpi pHYs.
@@ -64,6 +65,7 @@ CAMERA FRAMES v2.20.9 lets you lay out multiple frames on an A4-like master shee
 
 ## 9. Save and history
 - Document saves include full CAMERA FRAMES state (renderBox, frames, mask, nearClip, export options, selectedId, mainCameraPose, cameraFramesVersion, etc.).
+- When `.ssproj` save fails, the browser console logs `saveDocument failed` with the failing step and item counts to make diagnosis easier.
 - Undo/Redo tracks enable/disable, render box scale/anchor/pan/viewZoom, FOV, frame add/delete/select/edit, mask, nearClip, and mainPose edits. Export settings are excluded.
 
 ## 10. Display and drawing notes
