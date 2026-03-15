@@ -27,6 +27,7 @@ type CameraFramesCameraBackend = {
     applyPose: (pose: CameraPoseSnapshot | null | undefined, options?: CameraFramesApplyPoseOptions) => void;
     getFov: () => number;
     setFov: (value: number) => void;
+    getNear: () => number | null;
     onFovChanged: (listener: (value?: number) => void) => () => void;
     onTransformChanged: (listener: () => void) => () => void;
     onNavModeChanged: (listener: () => void) => () => void;
@@ -46,6 +47,7 @@ type CameraFramesCameraBackend = {
     setOrbitPivotDistance: (pivot: Vec3, distanceNorm: number, source?: string) => void;
     setCustomFrustum: (frustum: EffectiveFrustum | null) => void;
     setNearOverride: (value: number | null) => void;
+    setTransientNearOverride: (value: number | null) => void;
     applyNearClipOverride: (stateEnabled: boolean, nearClip: number | null) => void;
     computeViewportNearCandidate: () => Promise<number | null>;
     setLockFraming: (value: boolean) => void;
@@ -131,6 +133,14 @@ const createSupersplatCameraFramesCameraBackend = ({
                 events.fire('camera.setFov', value);
             });
         },
+        getNear: () => {
+            const value = events.invoke('camera.near');
+            if (typeof value === 'number' && isFinite(value)) {
+                return value;
+            }
+            const fallback = scene.camera?.near;
+            return (typeof fallback === 'number' && isFinite(fallback)) ? fallback : null;
+        },
         onFovChanged: (listener) => {
             events.on('camera.fov', listener);
             return () => {
@@ -209,8 +219,17 @@ const createSupersplatCameraFramesCameraBackend = ({
         setNearOverride: (value) => {
             events.fire('camera.setNearOverride', value);
         },
+        setTransientNearOverride: (value) => {
+            events.fire('camera.setNearOverride', value, { transient: true });
+        },
         applyNearClipOverride: (stateEnabled, nearClip) => {
-            applyNearClipOverride({ stateEnabled, nearClip, events });
+            applyNearClipOverride({
+                stateEnabled,
+                nearClip,
+                setNearOverride: (value) => {
+                    events.fire('camera.setNearOverride', value);
+                }
+            });
         },
         computeViewportNearCandidate: () => computeViewportNearCandidate({ scene }),
         setLockFraming: (value) => {

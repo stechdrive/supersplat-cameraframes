@@ -2327,7 +2327,7 @@ export class CameraFramesController {
 
     private updateViewportNearTargetSizeState() {
         updateViewportNearTargetSizeStateCamera({
-            scene: this.scene,
+            getTargetSize: () => this.cameraBackend.getTargetSize(),
             viewportNearTargetSizeActive: this.viewportNearTargetSizeActive,
             setViewportNearTargetSizeActive: (value) => {
                 this.viewportNearTargetSizeActive = value;
@@ -2341,7 +2341,8 @@ export class CameraFramesController {
         return shouldApplyViewportNearOverrideCamera({
             stateEnabled: this.state.enabled,
             uiTarget: this.getUiTarget(),
-            scene: this.scene
+            getTargetSize: () => this.cameraBackend.getTargetSize(),
+            getOrtho: () => this.cameraBackend.getOrtho()
         });
     }
 
@@ -2359,7 +2360,7 @@ export class CameraFramesController {
             setViewportNearOverride: (value) => {
                 this.viewportNearOverride = value;
             },
-            events: this.events
+            setTransientNearOverride: value => this.cameraBackend.setTransientNearOverride(value)
         });
     }
 
@@ -2392,7 +2393,7 @@ export class CameraFramesController {
                 this.viewportNearOverrideActive = value;
             },
             clearViewportNearOverride: () => this.clearViewportNearOverride(),
-            events: this.events
+            setTransientNearOverride: value => this.cameraBackend.setTransientNearOverride(value)
         });
     }
 
@@ -2405,7 +2406,7 @@ export class CameraFramesController {
             stateEnabled: this.state.enabled,
             nearClipGuardSeed: this.nearClipGuardSeed,
             nearClip: this.state.nearClip,
-            events: this.events,
+            getNear: () => this.cameraBackend.getNear(),
             setNearClip: (value, suppressHistory) => this.setNearClip(value, suppressHistory)
         });
     }
