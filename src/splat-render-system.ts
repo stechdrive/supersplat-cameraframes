@@ -281,7 +281,7 @@ class SplatRenderSystem implements SplatRenderBackend {
 
     getOverlayBinding(splat: Splat) {
         const transformATexture = this.mergedResource?.getTexture('transformA');
-        const range = this.getSplatRange(splat);
+        const range = this.getRenderableRange(splat);
         const count = range?.count ?? splat.splatData.numSplats;
         const offset = range?.offset ?? 0;
 
@@ -323,7 +323,11 @@ class SplatRenderSystem implements SplatRenderBackend {
         }
     }
 
-    getSplatRange(splat: Splat) {
+    hasRenderableData(splat: Splat) {
+        return !!this.getRenderableRange(splat);
+    }
+
+    private getRenderableRange(splat: Splat) {
         const offset = this.offsets.get(splat);
         const count = this.counts.get(splat);
         if (offset === undefined || count === undefined) {

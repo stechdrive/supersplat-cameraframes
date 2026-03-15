@@ -38,7 +38,7 @@ type SplatRenderBackend = {
     mapPickId: (id: number) => SplatRenderPickMapping | null;
     getOverlayBinding: (splat: Splat) => SplatRenderOverlayBinding | null;
     withPickingBlendDisabled: (fn: () => void) => void;
-    getSplatRange: (splat: Splat) => { offset: number; count: number } | null;
+    hasRenderableData: (splat: Splat) => boolean;
     readWorldCenter: (splat: Splat, localIndex: number, out: { set: (x: number, y: number, z: number) => void }) => boolean;
     writeWorldCenter: (splat: Splat, localIndex: number, x: number, y: number, z: number) => boolean;
     getProcessorContext: (splat: Splat) => ProcessorContext;

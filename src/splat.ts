@@ -458,7 +458,7 @@ class Splat extends Element {
 
     // get world space bound
     get worldBound() {
-        if (!this.scene.renderSystem.getSplatRange(this) || !this.visible) {
+        if (!this.scene.renderSystem.hasRenderableData(this) || !this.visible) {
             return null;
         }
         return this.worldBoundStorage;
