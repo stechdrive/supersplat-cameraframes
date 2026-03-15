@@ -1,6 +1,6 @@
 # CAMERA FRAMES Features Overview
 
-CAMERA FRAMES v2.20.0 lets you lay out multiple frames on an A4-like master sheet and keep the composition stable with anchored off-axis frustums so preview and export match. It unifies zoomable previews, frame editing, camera pose control, and PSD/PNG export.
+CAMERA FRAMES v2.20.9 lets you lay out multiple frames on an A4-like master sheet and keep the composition stable with anchored off-axis frustums so preview and export match. It unifies zoomable previews, frame editing, camera pose control, and PSD/PNG export.
 
 ## 1. What it offers
 - **Anchored render box scaling**: 3×3 anchors drive off-axis frustums so horizontal/vertical scale and viewZoom never drift the anchored composition.
@@ -8,13 +8,14 @@ CAMERA FRAMES v2.20.0 lets you lay out multiple frames on an A4-like master shee
 - **Multi-frame management**: Add/move/rotate/scale/change anchors for up to 20 frames; mask and draw order are preserved.
 - **Dual camera handling**: When CAMERA FRAMES is on, the capture composition is held. When off, use the edit camera to explore, and open the separate Capture Camera Controls panel to edit the capture camera as needed.
 - **Export options**: PNG/PSD, grid+eye-level combined toggle, PSD model layers, 150dpi pHYs, unpremultiply, and per-frame layers.
+- **Per-camera export settings**: Export format, guide output, and model-layer output are stored per camera preset and reused by all-camera export.
 - **Reference image presets**: Auto-create a preset named after the first imported file and allow renaming in the panel (`(blank)` is read-only).
 
 ## 2. Panel and toggles
 - Header provides **CAMERA FRAMES ON/OFF** (Capture=ON, Edit=OFF icons), **Capture Camera Controls** (separate panel) button, and **Compact** toggle. Compact mode shows only the header.
 - The Capture Camera Controls panel can be opened only while CAMERA FRAMES is OFF. While open, the capture frustum stays highlighted as a capture edit mode.
 - Panel can be dragged and is clamped inside the window; pointer events on the panel do not fall through to the canvas.
-- Label shows `| CAMERA FRAMES v2.20.0`.
+- Label shows `| CAMERA FRAMES v2.20.9`.
 
 ## 3. Render Box (Layout)
 - Master sheet `1754 × 1240px` (A4 at 150dpi). `Width/Height (%)` are clamped to 100%+ up to 16000px equivalent. 3×3 anchor sets the pivot for future scaling.
@@ -29,6 +30,7 @@ CAMERA FRAMES v2.20.0 lets you lay out multiple frames on an A4-like master shee
 - Handles are active only when selected. Scale% input (10–400%, UI 1–500%) scales uniformly.
 - Drag handles to move/scale; drag the rotation handle to rotate (Shift snaps to 15°). Alt+drag scales symmetrically around the frame anchor.
 - Drag the center handle to change the frame anchor; double-click to reset to center. Double-click the rotation handle to reset to 0°.
+- Clicking the background deselects the active frame. It does not deselect while the pointer is on a frame, handle, gizmo, or a modifier-driven operation.
 - Higher `order` frames draw and hit-test in front. Selection state is saved with snapshots.
 
 ## 5. Mask
@@ -40,7 +42,7 @@ CAMERA FRAMES v2.20.0 lets you lay out multiple frames on an A4-like master shee
 - Filename and format (PSD/PNG, default PSD). Blank names fall back to `cf-%cam`. Export settings are not part of history.
 - **Export target**: switch between current/all/selected cameras. Selected mode uses checkboxes in the camera preset list.
 - **Grid/Eye-level**: Single toggle outputs both overlays. Composited for PNG; separate layers for PSD.
-- **Model layers**: PSD-only; each visible model renders into its own layer with localized names (toggle is always shown).
+- **Model layers**: PSD-only; each visible GLB is exported as `Source + layer mask`, making it easier to composite against other models and the Render layer (the toggle itself is always shown).
 - Render button starts export; shows spinner and disables while busy.
 - Export locks viewZoom=100% and centers the frustum; preview frustum is restored afterward.
 - PSD layer order: grid → eye-level → models → frames (grouped by leading frame letter) → Render. PNG is compressed with 150dpi pHYs.
@@ -54,15 +56,16 @@ CAMERA FRAMES v2.20.0 lets you lay out multiple frames on an A4-like master shee
 
 ## 8. Viewport interactions
 - Select: click frame outline or list; click again to deselect.
-- Move: drag inside the frame; Shift locks axis.
+- Move: drag inside the frame; Shift locks axis. Pressing Shift after a drag has started also enters axis lock.
 - Scale: drag edge/corner handles; Alt scales symmetrically around the anchor.
 - Rotate: drag the top handle; Shift snaps to 15°, double-click resets to 0°.
 - Edit anchor: drag the center handle; double-click to reset.
-- Render box pan: Shift+drag outside frames to move the sheet (clamped inside the screen).
+- Render box pan: Shift+drag outside frames to move the sheet (clamped inside the screen). This also works when Shift is pressed after the mouse has stopped and before the drag begins.
 - Lost pointer capture commits drag history. Overlay enables pointerEvents only on hit; `grabbing` cursor while dragging.
 
 ## 9. Save and history
 - Document saves include full CAMERA FRAMES state (renderBox, frames, mask, nearClip, export options, selectedId, mainCameraPose, cameraFramesVersion, etc.).
+- When `.ssproj` save fails, the browser console logs `saveDocument failed` with the failing step and item counts to make diagnosis easier.
 - Undo/Redo tracks enable/disable, render box scale/anchor/pan/viewZoom, FOV, frame add/delete/select/edit, mask, nearClip, and mainPose edits. Export settings are excluded.
 
 ## 10. Display and drawing notes

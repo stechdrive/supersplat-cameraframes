@@ -32,3 +32,13 @@ Automate the manual labor of verifying "Composition Stability" by performing the
 - Open the generated `walkthrough.md`.
 - Look at the side-by-side images.
 - **Judge**: Does the 3D object stay in the same relative position?
+
+## Regression Smoke Checklist
+
+- `custom frustum` 下で XYZ gizmo の hover / hit がずれない
+- `custom frustum` 下で Measure tool の点追加位置がずれない
+- `Shift` を後から押しても render box pan と frame axis lock が効く
+- 背景クリックで赤いフレーム選択を解除できる
+- 矩形 / スポイト / ブラシ / 投げ縄 / ポリゴン選択がずれない
+- `.ssproj` 保存と再読み込みが成功する
+- 保存失敗時は browser console の `saveDocument failed` ログに step と counts が出る
