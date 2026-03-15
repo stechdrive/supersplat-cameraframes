@@ -31,7 +31,10 @@ import { SceneConfig } from './scene-config';
 import { SceneState } from './scene-state';
 import { Splat } from './splat';
 import { SplatOverlay } from './splat-overlay';
-import { SplatRenderSystem } from './splat-render-system';
+import {
+    createSupersplatSplatRenderBackend,
+    type SplatRenderBackend
+} from './splat-render-backend';
 import { Underlay } from './underlay';
 
 // sort meshInstances by the aabb corner furthest from the camera
@@ -163,7 +166,7 @@ class Scene {
     outline: Outline;
     underlay: Underlay;
     eyeLevel: EyeLevel;
-    renderSystem: SplatRenderSystem;
+    renderSystem: SplatRenderBackend;
 
     contentRoot: Entity;
     cameraRoot: Entity;
@@ -366,7 +369,7 @@ class Scene {
         // 環境光補助ライト（contentRoot 作成後に生成）
         this.createAmbientFillLights();
 
-        this.renderSystem = new SplatRenderSystem(this);
+        this.renderSystem = createSupersplatSplatRenderBackend(this);
 
         // create elements
         this.camera = new Camera();

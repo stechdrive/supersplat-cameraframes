@@ -16,6 +16,7 @@ import {
 import type { Scene } from './scene';
 import { vertexShader, fragmentShader, gsplatCenter } from './shaders/splat-shader';
 import { Splat } from './splat';
+import type { SplatRenderBackend } from './splat-render-backend';
 import { State } from './splat-state';
 import { TransformPalette } from './transform-palette';
 
@@ -40,7 +41,7 @@ type ParamsStorage = {
     arr2: Float32Array;
 };
 
-class SplatRenderSystem {
+class SplatRenderSystem implements SplatRenderBackend {
     scene: Scene;
     sources: Splat[] = [];
     offsets = new Map<Splat, number>();
@@ -275,6 +276,39 @@ class SplatRenderSystem {
     mapPickId(id: number) {
         const entry = this.globalIdToSplat[id];
         return entry || null;
+    }
+
+    getMergedResource() {
+        return this.mergedResource;
+    }
+
+    getMergedEntity() {
+        return this.mergedEntity;
+    }
+
+    getMergedInstance() {
+        return this.mergedEntity.gsplat?.instance ?? null;
+    }
+
+    getStateTexture() {
+        return this.stateTexture;
+    }
+
+    getTransformTexture() {
+        return this.transformTexture;
+    }
+
+    getTransformPaletteTexture() {
+        return this.transformPalette.texture;
+    }
+
+    getSplatRange(splat: Splat) {
+        const offset = this.offsets.get(splat);
+        const count = this.counts.get(splat);
+        if (offset === undefined || count === undefined) {
+            return null;
+        }
+        return { offset, count };
     }
 
     get centers() {

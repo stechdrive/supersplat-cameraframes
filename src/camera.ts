@@ -1887,7 +1887,7 @@ class Camera extends Element {
         this.currentPickTarget = splat;
 
         // Ensure blending is disabled for picking so that alpha=0 IDs are written
-        const instance = this.scene.renderSystem.mergedEntity?.gsplat?.instance as any;
+        const instance = this.scene.renderSystem.getMergedInstance() as any;
         const material = instance?.material;
 
         if (material) {
