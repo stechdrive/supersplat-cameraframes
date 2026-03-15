@@ -27,6 +27,11 @@ type CameraFramesCameraBackend = {
     applyPose: (pose: CameraPoseSnapshot | null | undefined, options?: CameraFramesApplyPoseOptions) => void;
     getFov: () => number;
     setFov: (value: number) => void;
+    onFovChanged: (listener: (value?: number) => void) => () => void;
+    onTransformChanged: (listener: () => void) => () => void;
+    onNavModeChanged: (listener: () => void) => () => void;
+    onOrthoChanged: (listener: (value: boolean) => void) => () => void;
+    onResize: (listener: () => void) => () => void;
     getTargetSize: () => CameraFramesTargetSize;
     withTargetSize: (size: { width: number; height: number; }, fn: () => void) => void;
     getTransform: () => { position: { x: number; y: number; z: number; }; rotation: { yaw: number; pitch: number; roll: number; }; };
@@ -125,6 +130,36 @@ const createSupersplatCameraFramesCameraBackend = ({
             withHistorySuppressed(() => {
                 events.fire('camera.setFov', value);
             });
+        },
+        onFovChanged: (listener) => {
+            events.on('camera.fov', listener);
+            return () => {
+                events.off('camera.fov', listener);
+            };
+        },
+        onTransformChanged: (listener) => {
+            events.on('camera.transform', listener);
+            return () => {
+                events.off('camera.transform', listener);
+            };
+        },
+        onNavModeChanged: (listener) => {
+            events.on('camera.navMode', listener);
+            return () => {
+                events.off('camera.navMode', listener);
+            };
+        },
+        onOrthoChanged: (listener) => {
+            events.on('camera.ortho', listener);
+            return () => {
+                events.off('camera.ortho', listener);
+            };
+        },
+        onResize: (listener) => {
+            events.on('camera.resize', listener);
+            return () => {
+                events.off('camera.resize', listener);
+            };
         },
         getTargetSize: () => (scene.camera.targetSize ? { ...scene.camera.targetSize } : null),
         withTargetSize: (size, fn) => {

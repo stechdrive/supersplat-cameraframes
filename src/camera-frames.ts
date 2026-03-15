@@ -478,7 +478,7 @@ export class CameraFramesController {
         }
         this.viewportPoseRuntime = pose;
         this.viewportPoseRuntimeWorldDistance = (pose.navMode === 'orbit') ? this.getPoseWorldDistance(pose) : null;
-        const currentFov = this.events.invoke('camera.fov');
+        const currentFov = this.cameraBackend.getFov();
         if (typeof currentFov === 'number' && isFinite(currentFov)) {
             this.viewportFovRuntime = currentFov;
         }
@@ -500,7 +500,7 @@ export class CameraFramesController {
         this.applyCameraPose(viewportPose, { silent: true, allowOrtho: true });
         const vpFov = (typeof this.viewportFovRuntime === 'number' && isFinite(this.viewportFovRuntime)) ?
             this.viewportFovRuntime :
-            this.events.invoke('camera.fov');
+            this.cameraBackend.getFov();
         if (typeof vpFov === 'number' && isFinite(vpFov)) {
             this.cameraBackend.setFov(vpFov);
         }
@@ -865,7 +865,7 @@ export class CameraFramesController {
         });
 
         // カメラ操作でクリップが変わった場合も追従
-        this.events.on('camera.transform', () => {
+        this.cameraBackend.onTransformChanged(() => {
             if (this.applyingPose) {
                 return;
             }
@@ -896,7 +896,7 @@ export class CameraFramesController {
             }
             this.syncCameraFrustum();
         });
-        this.events.on('camera.navMode', () => {
+        this.cameraBackend.onNavModeChanged(() => {
             if (this.applyingPose) {
                 return;
             }
@@ -905,7 +905,7 @@ export class CameraFramesController {
             }
             this.refreshViewportRuntime();
         });
-        this.events.on('camera.ortho', (value: boolean) => {
+        this.cameraBackend.onOrthoChanged((value: boolean) => {
             if (this.applyingPose) {
                 return;
             }
@@ -1263,7 +1263,7 @@ export class CameraFramesController {
             const target = this.normalizeExportTarget(options?.target ?? this.state.exportTarget);
             if (target === 'current') {
                 // Ensure splat sorter updates for the active camera before exporting.
-                await this.scene.renderSystem.waitForSorter();
+                await this.renderBackend.waitForSplatSorter();
                 await renderOnce();
                 return;
             }
@@ -1293,7 +1293,7 @@ export class CameraFramesController {
                     this.applyCameraPreset(presetId, { skipHistory: true });
                     await this.syncReferenceImagesPreset(presetId);
                     // Ensure splat sorter updates for the preset camera before exporting.
-                    await this.scene.renderSystem.waitForSorter();
+                    await this.renderBackend.waitForSplatSorter();
                     await renderOnce();
                 }
             } finally {
@@ -1316,8 +1316,8 @@ export class CameraFramesController {
         });
 
         // camera fov -> update fov info
-        this.events.on('camera.fov', (value?: number) => {
-            const currentFov = (typeof value === 'number' && isFinite(value)) ? value : this.events.invoke('camera.fov');
+        this.cameraBackend.onFovChanged((value?: number) => {
+            const currentFov = (typeof value === 'number' && isFinite(value)) ? value : this.cameraBackend.getFov();
             if (!this.state.enabled) {
                 if (!this.suppressViewportFovCapture &&
                     typeof currentFov === 'number' &&
@@ -1340,7 +1340,7 @@ export class CameraFramesController {
         });
 
         // camera resize -> just update viewport-based overlay
-        this.events.on('camera.resize', () => {
+        this.cameraBackend.onResize(() => {
             if (!this.state.enabled) {
                 return;
             }
@@ -2157,7 +2157,7 @@ export class CameraFramesController {
                 this.viewportPoseRuntime = this.clonePoseSnapshot(currentPose);
                 this.viewportPoseRuntimeWorldDistance = (this.viewportPoseRuntime?.navMode === 'orbit') ? this.getPoseWorldDistance(this.viewportPoseRuntime) : null;
                 if (this.viewportFovRuntime === null || this.viewportFovRuntime === undefined) {
-                    const currentFov = this.events.invoke('camera.fov');
+                    const currentFov = this.cameraBackend.getFov();
                     if (typeof currentFov === 'number' && isFinite(currentFov)) {
                         this.viewportFovRuntime = currentFov;
                     }
@@ -2227,12 +2227,12 @@ export class CameraFramesController {
                 this.overlay.style.pointerEvents = 'none';
                 this.frustumDragState = null;
                 if (this.viewportFovRuntime === null || this.viewportFovRuntime === undefined) {
-                    const currentFov = this.events.invoke('camera.fov');
+                    const currentFov = this.cameraBackend.getFov();
                     if (typeof currentFov === 'number' && isFinite(currentFov)) {
                         this.viewportFovRuntime = currentFov;
                     }
                 }
-                const vpFov = this.viewportFovRuntime ?? this.events.invoke('camera.fov');
+                const vpFov = this.viewportFovRuntime ?? this.cameraBackend.getFov();
                 if (typeof vpFov === 'number' && isFinite(vpFov)) {
                     this.cameraBackend.setFov(vpFov);
                 }
@@ -2884,7 +2884,7 @@ export class CameraFramesController {
     private getViewportLensMm(): number | null {
         const rb = this.state.renderBox;
         const crop = this.cropFactor(rb);
-        const fov = (typeof this.viewportFovRuntime === 'number' && isFinite(this.viewportFovRuntime)) ? this.viewportFovRuntime : this.events.invoke('camera.fov');
+        const fov = (typeof this.viewportFovRuntime === 'number' && isFinite(this.viewportFovRuntime)) ? this.viewportFovRuntime : this.cameraBackend.getFov();
         if (typeof fov !== 'number' || !isFinite(fov)) {
             return null;
         }

@@ -16,6 +16,7 @@ type OffscreenOptions = {
 
 type CameraFramesRenderBackend = {
     syncExportFrustum: (width: number, height: number) => void;
+    waitForSplatSorter: () => Promise<void>;
     renderBase: (width: number, height: number) => Promise<Uint8Array>;
     renderBaseWithoutModels: (width: number, height: number) => Promise<Uint8Array>;
     renderReferenceLayers: (width: number, height: number, options?: { applyOpacity?: boolean; }) => Promise<ReferenceExportLayer[]>;
@@ -239,6 +240,7 @@ const createSupersplatCameraFramesRenderBackend = ({
 
     return {
         syncExportFrustum,
+        waitForSplatSorter: () => scene.renderSystem.waitForSorter(),
         renderBase,
         renderBaseWithoutModels,
         renderReferenceLayers,
