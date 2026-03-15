@@ -6,7 +6,6 @@ import {
     GSplatData,
     Mat4,
     Quat,
-    Texture,
     Vec3,
     GSplatResource
 } from 'playcanvas';
@@ -45,8 +44,6 @@ class Splat extends Element {
     numSelected = 0;
     entity: Entity;
     changedCounter = 0;
-    stateTexture: Texture | null = null;
-    transformTexture: Texture | null = null;
     selectionBoundStorage: BoundingBox;
     localBoundStorage: BoundingBox;
     worldBoundStorage: BoundingBox;
@@ -143,8 +140,6 @@ class Splat extends Element {
             this.asset = null as any;
         }
         this.splatData = null as any;
-        this.stateTexture = null;
-        this.transformTexture = null;
         this._localCenters = null;
     }
 
@@ -367,8 +362,6 @@ class Splat extends Element {
         this.scene.contentRoot.addChild(this.entity);
 
         this.scene.renderSystem.add(this);
-        this.stateTexture = this.scene.renderSystem.getStateTexture();
-        this.transformTexture = this.scene.renderSystem.getTransformTexture();
         this.scene.renderSystem.updateSplatParams(this);
         await this.updateState();
 
@@ -404,19 +397,12 @@ class Splat extends Element {
             other.transformPalette, this.transformPalette,
             other._localCenters, this._localCenters
         ];
-
-        this.stateTexture = null;
-        this.transformTexture = null;
-        other.stateTexture = null;
-        other.transformTexture = null;
     }
 
     remove() {
         this.scene.renderSystem.remove(this);
         this.scene.contentRoot.removeChild(this.entity);
         this.scene.boundDirty = true;
-        this.stateTexture = null;
-        this.transformTexture = null;
     }
 
     serialize(serializer: Serializer) {

@@ -1,4 +1,4 @@
-import type { BoundingBox, Entity, GSplatResource, Texture } from 'playcanvas';
+import type { BoundingBox, Entity, Texture } from 'playcanvas';
 
 import type { ProcessorContext } from './data-processor';
 import type { Scene } from './scene';
@@ -34,13 +34,6 @@ type SplatRenderOverlayBinding = {
 };
 
 type SplatRenderBackend = {
-    mergedResource: GSplatResource | null;
-    mergedEntity: Entity;
-    stateTexture: Texture | null;
-    transformTexture: Texture | null;
-    transformPalette: TransformPalette;
-    offsets: ReadonlyMap<Splat, number>;
-    counts: ReadonlyMap<Splat, number>;
     add: (splat: Splat) => void;
     remove: (splat: Splat) => void;
     freeze: () => void;
@@ -48,11 +41,7 @@ type SplatRenderBackend = {
     isSplatActive: (splat: Splat) => boolean;
     scheduleRebuildForVisibility: (immediate?: boolean) => void;
     mapPickId: (id: number) => SplatRenderPickMapping | null;
-    getMergedResource: () => GSplatResource | null;
-    getMergedEntity: () => Entity;
     getMergedInstance: () => any;
-    getStateTexture: () => Texture | null;
-    getTransformTexture: () => Texture | null;
     getTransformPaletteTexture: () => Texture | null;
     getOverlayBinding: (splat: Splat) => SplatRenderOverlayBinding | null;
     withPickingBlendDisabled: (fn: () => void) => void;

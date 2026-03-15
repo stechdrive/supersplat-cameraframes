@@ -279,24 +279,8 @@ class SplatRenderSystem implements SplatRenderBackend {
         return entry || null;
     }
 
-    getMergedResource() {
-        return this.mergedResource;
-    }
-
-    getMergedEntity() {
-        return this.mergedEntity;
-    }
-
     getMergedInstance() {
         return this.mergedEntity.gsplat?.instance ?? null;
-    }
-
-    getStateTexture() {
-        return this.stateTexture;
-    }
-
-    getTransformTexture() {
-        return this.transformTexture;
     }
 
     getTransformPaletteTexture() {
@@ -863,10 +847,6 @@ class SplatRenderSystem implements SplatRenderBackend {
             this.stateTexture = null;
             this.transformTexture?.destroy();
             this.transformTexture = null;
-            this.sources.forEach((splat) => {
-                splat.stateTexture = null;
-                splat.transformTexture = null;
-            });
             this.paramsTextures?.tex0.destroy();
             this.paramsTextures?.tex1.destroy();
             this.paramsTextures?.tex2.destroy();
@@ -1079,16 +1059,6 @@ class SplatRenderSystem implements SplatRenderBackend {
             // Params2: Trans(1), Sel(1)
             arr2[idx + 0] = 1; arr2[idx + 1] = 1; arr2[idx + 2] = 0; arr2[idx + 3] = 0;
         }
-
-        this.sources.forEach((splat) => {
-            if (splat.visible) {
-                splat.stateTexture = this.stateTexture;
-                splat.transformTexture = this.transformTexture;
-            } else {
-                splat.stateTexture = null;
-                splat.transformTexture = null;
-            }
-        });
 
         activeSources.forEach((splat) => {
             const offset = this.offsets.get(splat);
