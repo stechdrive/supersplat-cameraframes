@@ -357,11 +357,34 @@ class SplatRenderSystem implements SplatRenderBackend {
         };
     }
 
-    getCenters(splat: Splat) {
+    readWorldCenter(splat: Splat, localIndex: number, out: { set: (x: number, y: number, z: number) => void }) {
         const centers = this.centers;
-        if (!centers) return null;
-        const offset = (this.offsets.get(splat) ?? 0) * 3;
-        return { centers, offset };
+        const count = this.counts.get(splat) ?? 0;
+        const offset = this.offsets.get(splat);
+        if (!centers || offset === undefined || localIndex < 0 || localIndex >= count) {
+            return false;
+        }
+        const base = (offset + localIndex) * 3;
+        out.set(
+            centers[base + 0],
+            centers[base + 1],
+            centers[base + 2]
+        );
+        return true;
+    }
+
+    writeWorldCenter(splat: Splat, localIndex: number, x: number, y: number, z: number) {
+        const centers = this.centers;
+        const count = this.counts.get(splat) ?? 0;
+        const offset = this.offsets.get(splat);
+        if (!centers || offset === undefined || localIndex < 0 || localIndex >= count) {
+            return false;
+        }
+        const base = (offset + localIndex) * 3;
+        centers[base + 0] = x;
+        centers[base + 1] = y;
+        centers[base + 2] = z;
+        return true;
     }
 
     getBound(splat: Splat, mode: 'selected' | 'visible') {

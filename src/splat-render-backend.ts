@@ -17,11 +17,6 @@ type SplatRenderStateSummary = {
     numSplats: number;
 };
 
-type SplatRenderCenters = {
-    centers: Float32Array;
-    offset: number;
-} | null;
-
 type SplatRenderOverlayBinding = {
     node: Entity;
     positionTexture: Texture;
@@ -46,7 +41,8 @@ type SplatRenderBackend = {
     getOverlayBinding: (splat: Splat) => SplatRenderOverlayBinding | null;
     withPickingBlendDisabled: (fn: () => void) => void;
     getSplatRange: (splat: Splat) => { offset: number; count: number } | null;
-    getCenters: (splat: Splat) => SplatRenderCenters;
+    readWorldCenter: (splat: Splat, localIndex: number, out: { set: (x: number, y: number, z: number) => void }) => boolean;
+    writeWorldCenter: (splat: Splat, localIndex: number, x: number, y: number, z: number) => boolean;
     getProcessorContext: (splat: Splat) => ProcessorContext;
     getBound: (splat: Splat, mode: 'selected' | 'visible') => BoundingBox | null;
     calcPositions: (splat: Splat) => Promise<Float32Array>;
@@ -66,7 +62,6 @@ const createSupersplatSplatRenderBackend = (scene: Scene): SplatRenderBackend =>
 export { createSupersplatSplatRenderBackend };
 export type {
     SplatRenderBackend,
-    SplatRenderCenters,
     SplatRenderOverlayBinding,
     SplatRenderPickMapping,
     SplatRenderStateSummary

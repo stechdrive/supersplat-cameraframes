@@ -174,16 +174,15 @@ class Splat extends Element {
 
         // update the splat centers which are used for render-time sorting
         const state = this.splatData.getProp('state') as Uint8Array;
-        const centersInfo = this.scene.renderSystem.getCenters(this);
-        if (centersInfo) {
-            const { centers, offset } = centersInfo;
-            for (let i = 0; i < this.splatData.numSplats; ++i) {
-                const base = (offset / 3 + i) * 3;
-                if ((state[i] & (State.deleted | State.hidden)) === 0) {
-                    centers[base + 0] = data[i * 4];
-                    centers[base + 1] = data[i * 4 + 1];
-                    centers[base + 2] = data[i * 4 + 2];
-                }
+        for (let i = 0; i < this.splatData.numSplats; ++i) {
+            if ((state[i] & (State.deleted | State.hidden)) === 0) {
+                this.scene.renderSystem.writeWorldCenter(
+                    this,
+                    i,
+                    data[i * 4 + 0],
+                    data[i * 4 + 1],
+                    data[i * 4 + 2]
+                );
             }
         }
 
@@ -199,16 +198,9 @@ class Splat extends Element {
             return;
         }
 
-        const centersInfo = this.scene.renderSystem.getCenters(this);
-        if (!centersInfo) {
-            return;
-        }
-
         const state = data.getProp('state') as Uint8Array;
         const indices = data.getProp('transform') as Uint16Array;
         const localCenters = this.localCenters;
-        const { centers, offset } = centersInfo;
-        const baseOffset = offset / 3;
         const localPalette = this.transformPalette;
         const world = this.entity.getWorldTransform();
         const localMat = new Mat4();
@@ -236,13 +228,16 @@ class Splat extends Element {
                 transforms.set(index, transform);
             }
 
-            const base = (baseOffset + i) * 3;
             const x = localCenters[i * 3 + 0];
             const y = localCenters[i * 3 + 1];
             const z = localCenters[i * 3 + 2];
-            centers[base + 0] = x * transform[0] + y * transform[3] + z * transform[6] + transform[9];
-            centers[base + 1] = x * transform[1] + y * transform[4] + z * transform[7] + transform[10];
-            centers[base + 2] = x * transform[2] + y * transform[5] + z * transform[8] + transform[11];
+            this.scene.renderSystem.writeWorldCenter(
+                this,
+                i,
+                x * transform[0] + y * transform[3] + z * transform[6] + transform[9],
+                x * transform[1] + y * transform[4] + z * transform[7] + transform[10],
+                x * transform[2] + y * transform[5] + z * transform[8] + transform[11]
+            );
         }
 
         this.scene.forceRender = true;
@@ -260,16 +255,9 @@ class Splat extends Element {
             return;
         }
 
-        const centersInfo = this.scene.renderSystem.getCenters(this);
-        if (!centersInfo) {
-            return;
-        }
-
         const state = data.getProp('state') as Uint8Array;
         const transformIndices = data.getProp('transform') as Uint16Array;
         const localCenters = this.localCenters;
-        const { centers, offset } = centersInfo;
-        const baseOffset = offset / 3;
         const localPalette = this.transformPalette;
         const world = this.entity.getWorldTransform();
         const localMat = new Mat4();
@@ -298,13 +286,16 @@ class Splat extends Element {
                 transforms.set(transformIndex, transform);
             }
 
-            const base = (baseOffset + idx) * 3;
             const x = localCenters[idx * 3 + 0];
             const y = localCenters[idx * 3 + 1];
             const z = localCenters[idx * 3 + 2];
-            centers[base + 0] = x * transform[0] + y * transform[3] + z * transform[6] + transform[9];
-            centers[base + 1] = x * transform[1] + y * transform[4] + z * transform[7] + transform[10];
-            centers[base + 2] = x * transform[2] + y * transform[5] + z * transform[8] + transform[11];
+            this.scene.renderSystem.writeWorldCenter(
+                this,
+                idx,
+                x * transform[0] + y * transform[3] + z * transform[6] + transform[9],
+                x * transform[1] + y * transform[4] + z * transform[7] + transform[10],
+                x * transform[2] + y * transform[5] + z * transform[8] + transform[11]
+            );
         }
 
         this.scene.forceRender = true;
@@ -340,21 +331,7 @@ class Splat extends Element {
             return false;
         }
 
-        const centersInfo = this.scene.renderSystem.getCenters(this);
-        if (!centersInfo) {
-            return false;
-        }
-
-        const { centers, offset } = centersInfo;
-        const base = offset + splatId * 3;
-        // console.log(`calcSplatWorldPosition: SplatId=${splatId} Offset=${offset} Base=${base} Center=[${centers[base]}, ${centers[base+1]}, ${centers[base+2]}]`);
-        result.set(
-            centers[base + 0],
-            centers[base + 1],
-            centers[base + 2]
-        );
-
-        return true;
+        return this.scene.renderSystem.readWorldCenter(this, splatId, result);
     }
 
     async add() {
