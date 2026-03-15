@@ -79,6 +79,10 @@ import {
     updatePointerFromLast as updatePointerFromLastPointer
 } from './camera-frames-pointer';
 import {
+    createSupersplatCameraFramesReferenceBackend,
+    type CameraFramesReferenceBackend
+} from './camera-frames-reference-backend';
+import {
     createSupersplatCameraFramesRenderBackend,
     type CameraFramesRenderBackend
 } from './camera-frames-render-backend';
@@ -165,6 +169,7 @@ export class CameraFramesController {
     private compressor: PngCompressor | null = null;
     private cameraBackend: CameraFramesCameraBackend;
     private renderBackend: CameraFramesRenderBackend;
+    private referenceBackend: CameraFramesReferenceBackend;
     private resizeObserver: ResizeObserver;
     private lastPointer: { x: number; y: number } | null = null;
     // Auto-captured poses (e.g. frustum preview) should not override explicit nav mode on enable.
@@ -256,6 +261,9 @@ export class CameraFramesController {
             clearViewportNearOverride: () => this.clearViewportNearOverride(),
             syncCameraFrustum: () => this.syncCameraFrustum(),
             requestRender: () => this.requestRender()
+        });
+        this.referenceBackend = createSupersplatCameraFramesReferenceBackend({
+            events: this.events
         });
 
         // overlay canvas
@@ -1996,13 +2004,13 @@ export class CameraFramesController {
         if (this.suppressReferencePresetSync) {
             return;
         }
-        if (referenceImagePresetId && this.events.functions.has('referenceImages.setActivePreset')) {
-            this.events.invoke('referenceImages.setActivePreset', referenceImagePresetId).catch((): void => undefined);
+        if (referenceImagePresetId && this.referenceBackend.canSetActivePreset()) {
+            this.referenceBackend.setActivePresetSafe(referenceImagePresetId);
         }
     }
 
     private async syncReferenceImagesPreset(presetId: string | null) {
-        if (!presetId || !this.events.functions.has('referenceImages.setActivePreset')) {
+        if (!presetId || !this.referenceBackend.canSetActivePreset()) {
             return;
         }
         const preset = this.state.cameraPresets.find(item => item.id === presetId);
@@ -2013,7 +2021,7 @@ export class CameraFramesController {
         if (!referenceImagePresetId) {
             return;
         }
-        await this.events.invoke('referenceImages.setActivePreset', referenceImagePresetId);
+        await this.referenceBackend.setActivePreset(referenceImagePresetId);
     }
 
     private emitStateChanged() {
