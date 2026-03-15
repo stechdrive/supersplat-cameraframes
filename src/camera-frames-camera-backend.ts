@@ -26,11 +26,25 @@ type CameraFramesCameraBackend = {
     capturePose: () => CameraPoseSnapshot | null;
     applyPose: (pose: CameraPoseSnapshot | null | undefined, options?: CameraFramesApplyPoseOptions) => void;
     getFov: () => number;
+    setFov: (value: number) => void;
     getTargetSize: () => CameraFramesTargetSize;
     withTargetSize: (size: { width: number; height: number; }, fn: () => void) => void;
+    getTransform: () => { position: { x: number; y: number; z: number; }; rotation: { yaw: number; pitch: number; roll: number; }; };
+    getNavMode: () => 'orbit' | 'fpv';
+    ensureOrbitNavMode: (source?: string) => void;
+    getOrtho: () => boolean;
+    setOrtho: (value: boolean) => void;
+    getLastOrbitWorldDistance: () => number;
+    getSceneRadius: () => number;
+    getForward: () => Vec3;
+    getPosition: () => Vec3;
+    setOrbitPivotDistance: (pivot: Vec3, distanceNorm: number, source?: string) => void;
     setCustomFrustum: (frustum: EffectiveFrustum | null) => void;
+    setNearOverride: (value: number | null) => void;
     applyNearClipOverride: (stateEnabled: boolean, nearClip: number | null) => void;
     computeViewportNearCandidate: () => Promise<number | null>;
+    setLockFraming: (value: boolean) => void;
+    setLockFovAxis: (value: 'vertical' | 'horizontal' | undefined) => void;
 };
 
 type CreateSupersplatCameraFramesCameraBackendParams = {
@@ -107,6 +121,11 @@ const createSupersplatCameraFramesCameraBackend = ({
             const value = events.invoke('camera.fov');
             return (typeof value === 'number' && isFinite(value)) ? value : (scene.camera?.fov ?? 60);
         },
+        setFov: (value) => {
+            withHistorySuppressed(() => {
+                events.fire('camera.setFov', value);
+            });
+        },
         getTargetSize: () => (scene.camera.targetSize ? { ...scene.camera.targetSize } : null),
         withTargetSize: (size, fn) => {
             const prevTarget = scene.camera.targetSize ? { ...scene.camera.targetSize } : null;
@@ -116,6 +135,31 @@ const createSupersplatCameraFramesCameraBackend = ({
             } finally {
                 scene.camera.targetSize = prevTarget;
             }
+        },
+        getTransform: () => scene.camera.getTransform(),
+        getNavMode: () => scene.camera.navMode,
+        ensureOrbitNavMode: (source) => {
+            if (scene.camera.navMode !== 'orbit') {
+                scene.camera.setNavMode('orbit', { preservePose: true, source });
+            }
+        },
+        getOrtho: () => !!scene.camera.ortho,
+        setOrtho: (value) => {
+            withHistorySuppressed(() => {
+                scene.camera.ortho = value;
+            });
+        },
+        getLastOrbitWorldDistance: () => scene.camera.getLastOrbitWorldDistance(),
+        getSceneRadius: () => scene.camera.sceneRadius || 1,
+        getForward: () => scene.camera.entity.forward.clone(),
+        getPosition: () => scene.camera.entity.getPosition().clone(),
+        setOrbitPivotDistance: (pivot, distanceNorm, source) => {
+            scene.camera.setFocalPoint(pivot, 0);
+            scene.camera.setDistance(distanceNorm, 0);
+            if (scene.camera.navMode !== 'orbit') {
+                scene.camera.setNavMode('orbit', { preservePose: true, source });
+            }
+            scene.camera.syncOrbitCache(distanceNorm, pivot);
         },
         setCustomFrustum: (frustum) => {
             events.fire('camera.setCustomFrustum', frustum ? {
@@ -127,10 +171,19 @@ const createSupersplatCameraFramesCameraBackend = ({
                 far: frustum.far
             } : null);
         },
+        setNearOverride: (value) => {
+            events.fire('camera.setNearOverride', value);
+        },
         applyNearClipOverride: (stateEnabled, nearClip) => {
             applyNearClipOverride({ stateEnabled, nearClip, events });
         },
-        computeViewportNearCandidate: () => computeViewportNearCandidate({ scene })
+        computeViewportNearCandidate: () => computeViewportNearCandidate({ scene }),
+        setLockFraming: (value) => {
+            events.fire('camera.setLockFraming', value);
+        },
+        setLockFovAxis: (value) => {
+            events.fire('camera.setLockFovAxis', value);
+        }
     };
 };
 

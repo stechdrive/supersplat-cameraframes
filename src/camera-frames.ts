@@ -502,9 +502,7 @@ export class CameraFramesController {
             this.viewportFovRuntime :
             this.events.invoke('camera.fov');
         if (typeof vpFov === 'number' && isFinite(vpFov)) {
-            this.withCameraHistorySuppressed(() => {
-                this.events.fire('camera.setFov', vpFov);
-            });
+            this.cameraBackend.setFov(vpFov);
         }
         this.requestRender();
     }
@@ -520,7 +518,7 @@ export class CameraFramesController {
             this.withCameraHistorySuppressed(() => {
                 this.suppressViewportFovCapture = true;
                 try {
-                    this.events.fire('camera.setFov', baseFov);
+                    this.cameraBackend.setFov(baseFov);
                 } finally {
                     this.suppressViewportFovCapture = false;
                 }
@@ -725,9 +723,8 @@ export class CameraFramesController {
         if (!this.orthoToggleAllowed()) {
             return;
         }
-        const camera = this.scene.camera;
         const next = !!value;
-        if (next === camera.ortho) {
+        if (next === this.cameraBackend.getOrtho()) {
             return;
         }
 
@@ -740,28 +737,23 @@ export class CameraFramesController {
         if (next) {
             const worldDistRaw = (currentPose.navMode === 'orbit') ?
                 this.getPoseWorldDistance(currentPose) :
-                camera.getLastOrbitWorldDistance();
+                this.cameraBackend.getLastOrbitWorldDistance();
             const worldDist = (typeof worldDistRaw === 'number' && isFinite(worldDistRaw) && worldDistRaw > 0) ?
                 worldDistRaw :
-                (camera.sceneRadius || 1) * 2;
-            const forward = camera.entity.forward.clone();
+                this.cameraBackend.getSceneRadius() * 2;
+            const forward = this.cameraBackend.getForward();
             if (forward.lengthSq() < 1e-6) {
                 forward.set(0, 0, -1);
             } else {
                 forward.normalize();
             }
-            const position = camera.entity.getPosition().clone();
+            const position = this.cameraBackend.getPosition();
             const pivot = position.clone().add(forward.mulScalar(worldDist));
             const distNorm = this.worldDistanceToNormalized(worldDist, currentPose);
-            camera.setFocalPoint(pivot, 0);
-            camera.setDistance(distNorm, 0);
-            if (currentPose.navMode !== 'orbit') {
-                camera.setNavMode('orbit', { preservePose: true, source: options?.source });
-            }
-            camera.syncOrbitCache(distNorm, pivot);
-            camera.ortho = true;
+            this.cameraBackend.setOrbitPivotDistance(pivot, distNorm, options?.source);
+            this.cameraBackend.setOrtho(true);
         } else {
-            camera.ortho = false;
+            this.cameraBackend.setOrtho(false);
         }
     }
 
@@ -923,17 +915,15 @@ export class CameraFramesController {
                 }
                 this.orthoGuardActive = true;
                 try {
-                    this.withCameraHistorySuppressed(() => {
-                        this.scene.camera.ortho = false;
-                    });
+                    this.cameraBackend.setOrtho(false);
                 } finally {
                     this.orthoGuardActive = false;
                 }
                 return;
             }
             if (!this.state.enabled) {
-                if (value && this.scene.camera.navMode === 'fpv') {
-                    this.scene.camera.setNavMode('orbit', { preservePose: true, source: 'cameraFrames' });
+                if (value && this.cameraBackend.getNavMode() === 'fpv') {
+                    this.cameraBackend.ensureOrbitNavMode('cameraFrames');
                 }
                 this.refreshViewportRuntime();
                 if (value) {
@@ -1514,7 +1504,7 @@ export class CameraFramesController {
     ): CameraPreset {
         this.ensureMainCameraPose();
         const baseState = this.cloneCameraFramesStateBaseFromCurrent();
-        const mainTransform = this.getMainCameraTransform() ?? this.scene.camera.getTransform();
+        const mainTransform = this.getMainCameraTransform() ?? this.cameraBackend.getTransform();
         const rawBaseFov = this.cameraBackend.getFov() ?? baseState.renderBox?.projection?.baseFov ?? 60;
         const baseFov = (typeof rawBaseFov === 'number' && isFinite(rawBaseFov)) ? rawBaseFov : 60;
         const referenceImagePresetId = (typeof options?.referenceImagePresetId === 'string' && options.referenceImagePresetId) ?
@@ -2189,23 +2179,19 @@ export class CameraFramesController {
                 this.frustumDragState = null;
                 this.state.enabled = true;
                 // CAMERA FRAMES 有効時はカメラフレーミングと水平画角をロック
-                this.events.fire('camera.setLockFraming', true);
-                this.events.fire('camera.setLockFovAxis', this.lockFovAxis ?? 'horizontal');
+                this.cameraBackend.setLockFraming(true);
+                this.cameraBackend.setLockFovAxis(this.lockFovAxis ?? 'horizontal');
                 this.overlay.style.pointerEvents = 'none';
                 const poseToApply = this.forceMainCameraPoseOrthoOff(this.clonePoseSnapshot(this.state.mainCameraPose ?? currentPose));
                 if (poseToApply) {
                     // フラスタム同期前にポーズを適用
                     this.applyCameraPose(poseToApply, { silent: true, allowOrtho: false });
                 }
-                this.withCameraHistorySuppressed(() => {
-                    this.scene.camera.ortho = false;
-                });
+                this.cameraBackend.setOrtho(false);
                 const mainFov = this.state.renderBox.projection?.baseFov ?? this.cameraBackend.getFov();
                 if (typeof mainFov === 'number' && isFinite(mainFov)) {
                     this.state.renderBox.projection.baseFov = mainFov;
-                    this.withCameraHistorySuppressed(() => {
-                        this.events.fire('camera.setFov', mainFov);
-                    });
+                    this.cameraBackend.setFov(mainFov);
                 }
                 // ニアクリップの初期値を現在のカメラから引き継ぎ、固定値として適用
                 const baseNear = (this.state.nearClip === null || this.state.nearClip === undefined) ?
@@ -2229,15 +2215,15 @@ export class CameraFramesController {
                 }
                 this.state.enabled = false;
                 // 復元のため、viewport pose 適用前にフレーミングロックを解除しておく（orbit の揺れ抑止）
-                this.events.fire('camera.setLockFraming', false);
+                this.cameraBackend.setLockFraming(false);
                 // ビューポート表示用にフラスタムを再計算しておく
                 this.rebuildBaseFrustum();
                 this.frustumDebugCache.points = null;
                 this.frustumDebugCache.pose = null;
                 // 無効化時はニアクリップ固定を解除
-                this.events.fire('camera.setNearOverride', null);
-                this.events.fire('camera.setCustomFrustum', null);
-                this.events.fire('camera.setLockFovAxis', undefined);
+                this.cameraBackend.setNearOverride(null);
+                this.cameraBackend.setCustomFrustum(null);
+                this.cameraBackend.setLockFovAxis(undefined);
                 this.overlay.style.pointerEvents = 'none';
                 this.frustumDragState = null;
                 if (this.viewportFovRuntime === null || this.viewportFovRuntime === undefined) {
@@ -2248,9 +2234,7 @@ export class CameraFramesController {
                 }
                 const vpFov = this.viewportFovRuntime ?? this.events.invoke('camera.fov');
                 if (typeof vpFov === 'number' && isFinite(vpFov)) {
-                    this.withCameraHistorySuppressed(() => {
-                        this.events.fire('camera.setFov', vpFov);
-                    });
+                    this.cameraBackend.setFov(vpFov);
                 }
                 if (!this.state.mainCameraPose) {
                     this.state.mainCameraPose = this.forceMainCameraPoseOrthoOff(this.clonePoseSnapshot(currentPose));
@@ -2529,7 +2513,7 @@ export class CameraFramesController {
 
             if (this.state.enabled) {
                 // 現在のレンダーボックス比率でカメラのアスペクトを再適用
-                this.events.fire('camera.setLockFraming', true);
+                this.cameraBackend.setLockFraming(true);
             }
 
             this.requestRender();
