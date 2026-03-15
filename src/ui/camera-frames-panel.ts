@@ -411,8 +411,16 @@ class CameraFramesPanel extends Panel {
 
         // scale controls
         const scaleRow = (label: string) => {
-            const row = new Container({ class: 'layout-row' });
-            row.append(new Label({ class: 'control-label', text: label }));
+            const row = new Container({ class: 'layout-size-row' });
+            row.dom.style.display = 'grid';
+            row.dom.style.gridTemplateColumns = '52px 72px';
+            row.dom.style.columnGap = '6px';
+            row.dom.style.alignItems = 'center';
+            const rowLabel = new Label({ class: 'control-label', text: label });
+            rowLabel.dom.style.width = 'auto';
+            rowLabel.dom.style.margin = '0';
+            rowLabel.dom.style.whiteSpace = 'nowrap';
+            row.append(rowLabel);
             const input = new NumericInput({
                 class: 'control-element',
                 precision: 1,
@@ -718,7 +726,7 @@ class CameraFramesPanel extends Panel {
         const addButton = new Button({ class: ['icon-button'], text: '' });
         addButton.dom.appendChild(createSvg(newSvg));
         addButton.dom.title = localize('panel.camera-frames.frames.add');
-        const deleteBtn = new Button({ class: ['icon-button', 'danger-icon'], text: '' });
+        const deleteBtn = new Button({ class: ['icon-button', 'danger-icon', 'frame-delete-button'], text: '' });
         deleteBtn.dom.appendChild(createSvg(deleteSvg));
         deleteBtn.dom.title = localize('panel.camera-frames.frames.delete');
         frameActions.append(addButton);
@@ -1069,16 +1077,36 @@ class CameraFramesPanel extends Panel {
         const rollInput = new NumericInput({ class: 'control-element', precision: 2, step: 1, value: 0, style: 'width: 60px' });
         const rollLock = new Button({ class: ['control-element', 'roll-lock-btn'], text: '' });
         rollLock.dom.title = localize('panel.camera-frames.transform.roll-lock');
-        rotGrid.dom.style.display = 'grid';
-        rotGrid.dom.style.gridTemplateColumns = '24px 70px 24px 70px 24px 70px 26px';
-        rotGrid.dom.style.columnGap = '2px';
+        const yawLabel = new Label({ class: 'control-label', text: localize('panel.camera-frames.transform.yaw') });
+        const pitchLabel = new Label({ class: 'control-label', text: localize('panel.camera-frames.transform.pitch') });
+        const rollLabel = new Label({ class: 'control-label', text: localize('panel.camera-frames.transform.roll') });
+        [yawLabel, pitchLabel, rollLabel].forEach((label) => {
+            label.dom.style.width = 'auto';
+            label.dom.style.minWidth = '24px';
+            label.dom.style.margin = '0';
+            label.dom.style.overflow = 'visible';
+            label.dom.style.textOverflow = 'clip';
+            label.dom.style.whiteSpace = 'nowrap';
+        });
+        rotGrid.dom.style.display = 'flex';
         rotGrid.dom.style.alignItems = 'center';
-        rotGrid.append(new Label({ class: 'control-label', text: localize('panel.camera-frames.transform.yaw') }));
-        rotGrid.append(yawInput);
-        rotGrid.append(new Label({ class: 'control-label', text: localize('panel.camera-frames.transform.pitch') }));
-        rotGrid.append(pitchInput);
-        rotGrid.append(new Label({ class: 'control-label', text: localize('panel.camera-frames.transform.roll') }));
-        rotGrid.append(rollInput);
+        rotGrid.dom.style.gap = '6px';
+        rotGrid.dom.style.paddingLeft = '4px';
+        rotGrid.dom.style.paddingRight = '4px';
+        rotGrid.dom.style.boxSizing = 'border-box';
+        const rotationPair = (label: Label, input: NumericInput) => {
+            const pair = new Container();
+            pair.dom.style.display = 'flex';
+            pair.dom.style.alignItems = 'center';
+            pair.dom.style.gap = '2px';
+            pair.dom.style.flex = '1 1 0';
+            pair.append(label);
+            pair.append(input);
+            return pair;
+        };
+        rotGrid.append(rotationPair(yawLabel, yawInput));
+        rotGrid.append(rotationPair(pitchLabel, pitchInput));
+        rotGrid.append(rotationPair(rollLabel, rollInput));
         rotGrid.append(rollLock);
 
         const nearStep = 0.01;
@@ -1111,6 +1139,20 @@ class CameraFramesPanel extends Panel {
         const sliderLabelF = new Label({ class: ['control-label', 'camera-transform-axis-label'], text: localize('panel.camera-frames.transform.forward-back') });
         const sliderF = new SliderInput({ class: 'control-element-expand', min: -1, max: 1, step: 0.01, value: 0 });
         const localGrid = new Container({ class: ['control-parent', 'camera-transform-slider-grid'] });
+        [sliderLabelR, sliderLabelU, sliderLabelF].forEach((label) => {
+            label.dom.style.width = 'auto';
+            label.dom.style.minWidth = '32px';
+            label.dom.style.margin = '0';
+            label.dom.style.overflow = 'visible';
+            label.dom.style.textOverflow = 'clip';
+            label.dom.style.whiteSpace = 'nowrap';
+        });
+        localGrid.dom.style.display = 'grid';
+        localGrid.dom.style.gridTemplateColumns = '32px 1fr 32px 1fr 32px 1fr';
+        localGrid.dom.style.columnGap = '6px';
+        localGrid.dom.style.alignItems = 'center';
+        localGrid.dom.style.paddingLeft = '4px';
+        localGrid.dom.style.boxSizing = 'border-box';
         localGrid.append(sliderLabelR);
         localGrid.append(sliderR);
         localGrid.append(sliderLabelU);
