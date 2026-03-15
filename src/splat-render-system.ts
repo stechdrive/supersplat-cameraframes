@@ -48,12 +48,21 @@ type ParamsStorage = {
     arr2: Float32Array;
 };
 
+type MergedResourceInfo = {
+    positionTexture: Texture | null;
+    globalParams: [number, number];
+    width: number;
+    height: number;
+    colorTextureWidth: number;
+};
+
 class SplatRenderSystem implements SplatRenderBackend {
     scene: Scene;
     sources: Splat[] = [];
     entries = new Map<Splat, SplatRenderEntry>();
     mergedData: GSplatData | null = null;
     mergedResource: GSplatResource | null = null;
+    mergedResourceInfo: MergedResourceInfo | null = null;
     mergedAsset: Asset | null = null;
     mergedEntity: Entity;
     materialDirty = false;
@@ -285,8 +294,24 @@ class SplatRenderSystem implements SplatRenderBackend {
         return entry || null;
     }
 
+    private createMergedResourceInfo(resource: GSplatResource | null) {
+        const positionTexture = resource?.getTexture('transformA') ?? null;
+        const width = positionTexture?.width ?? resource?.textureDimensions.x ?? 2048;
+        const height = positionTexture?.height ?? resource?.textureDimensions.y ?? 2048;
+        const colorTextureWidth = resource?.getTexture('splatColor')?.width ?? 0;
+        const globalParams: [number, number] = [width, width * height];
+
+        return {
+            positionTexture,
+            globalParams,
+            width,
+            height,
+            colorTextureWidth
+        };
+    }
+
     getOverlayBinding(splat: Splat) {
-        const transformATexture = this.mergedResource?.getTexture('transformA');
+        const transformATexture = this.mergedResourceInfo?.positionTexture ?? null;
         const range = this.getRenderableRange(splat);
         const count = range?.count ?? splat.splatData.numSplats;
         const offset = range?.offset ?? 0;
@@ -294,11 +319,6 @@ class SplatRenderSystem implements SplatRenderBackend {
         if (!transformATexture || count === 0) {
             return null;
         }
-
-        const globalParams: [number, number] = [
-            transformATexture.width,
-            transformATexture.width * transformATexture.height
-        ];
 
         return {
             node: this.mergedEntity,
@@ -308,7 +328,7 @@ class SplatRenderSystem implements SplatRenderBackend {
             transformPaletteTexture: this.transformPalette.texture,
             offset,
             count,
-            globalParams
+            globalParams: this.mergedResourceInfo?.globalParams ?? [0, 0]
         };
     }
 
@@ -350,21 +370,17 @@ class SplatRenderSystem implements SplatRenderBackend {
 
     private createProcessorContext(splat: Splat) {
         const entry = this.getEntry(splat);
-        const positionTexture = this.mergedResource?.getTexture('transformA') ?? null;
-        const globalParams: [number, number] = [
-            positionTexture?.width ?? 0,
-            (positionTexture?.width ?? 0) * (positionTexture?.height ?? 0)
-        ];
+        const resourceInfo = this.mergedResourceInfo;
         return {
             splat,
             offset: entry?.offset ?? 0,
             count: entry?.count ?? 0,
             resources: {
-                positionTexture,
+                positionTexture: resourceInfo?.positionTexture ?? null,
                 transformTexture: this.transformTexture,
                 transformPaletteTexture: this.transformPalette.texture,
                 stateTexture: this.stateTexture,
-                globalParams
+                globalParams: resourceInfo?.globalParams ?? [0, 0]
             }
         };
     }
@@ -785,11 +801,8 @@ class SplatRenderSystem implements SplatRenderBackend {
             // Use stateTexture width/height which covers all splats (mergedResource might be smaller)
             const tex = this.stateTexture;
             if (tex) {
-                // globalParams must match GSplatResource's texture for correct initSource() behavior
-                const transformA = this.mergedResource?.getTexture('transformA');
-                const resourceWidth = transformA?.width ?? this.mergedResource?.textureDimensions.x ?? tex.width;
-                const resourceHeight = transformA?.height ?? this.mergedResource?.textureDimensions.y ?? tex.height;
-                material.setParameter('globalParams', [resourceWidth, resourceWidth * resourceHeight]);
+                const globalParams = this.mergedResourceInfo?.globalParams ?? [tex.width, tex.width * tex.height];
+                material.setParameter('globalParams', globalParams);
 
                 // splatParamsDim for our custom textures
                 material.setParameter('splatParamsDim', [tex.width, tex.width * tex.height]);
@@ -816,6 +829,7 @@ class SplatRenderSystem implements SplatRenderBackend {
 
         this.mergedAsset = null;
         this.mergedResource = null;
+        this.mergedResourceInfo = null;
     }
 
     private createTexture(name: string, width: number, height: number, format: number) {
@@ -1034,6 +1048,7 @@ class SplatRenderSystem implements SplatRenderBackend {
 
 
         this.mergedResource = new GSplatResource(this.scene.graphicsDevice, this.mergedData);
+        this.mergedResourceInfo = this.createMergedResourceInfo(this.mergedResource);
         this.mergedAsset = new Asset('mergedSplat', 'gsplat', {
             filename: 'mergedSplat'
         });
@@ -1053,18 +1068,15 @@ class SplatRenderSystem implements SplatRenderBackend {
 
         // テクスチャ再構築
         // GSplatResourceと同じテクスチャサイズを使用する必要がある (UV計算の一貫性のため)
-        const mergedTransformATexture = this.mergedResource?.getTexture('transformA');
-        const frameWidth = mergedTransformATexture?.width ?? this.mergedResource?.textureDimensions.x ?? 2048;
-        const frameHeight = mergedTransformATexture?.height ?? this.mergedResource?.textureDimensions.y ?? 2048;
-
-        const width = frameWidth;
-        const height = frameHeight;
+        const resourceInfo = this.mergedResourceInfo ?? this.createMergedResourceInfo(this.mergedResource);
+        const width = resourceInfo.width;
+        const height = resourceInfo.height;
 
         console.log('SplatRenderSystem: Merged data created.',
             'Total splats:', totalSplats,
             'Resource Width:', width,
             'Resource Height:', height,
-            'Color Tex Width:', this.mergedResource.getTexture('splatColor')?.width,
+            'Color Tex Width:', resourceInfo.colorTextureWidth,
             'SH Bands:', shBands
         );
         const globalStateSize = width * height;
