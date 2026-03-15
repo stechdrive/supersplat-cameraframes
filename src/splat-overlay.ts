@@ -39,6 +39,11 @@ class SplatOverlay extends Element {
         const scene = this.scene;
         const device = scene.graphicsDevice;
 
+        // NOTE:
+        // upstream #833 rewrites this overlay for the standard GSplat path as a performance tweak.
+        // CAMERA_FRAMES uses a merged splat renderer + custom frustum alignment, so that change must
+        // not be applied here verbatim without re-validating positioning.
+
         const material = new ShaderMaterial({
             uniqueName: 'splatOverlayMaterial',
             attributes: { vertex_id: SEMANTIC_POSITION },
