@@ -6,8 +6,8 @@
     <meta charset="utf-8" />
     <meta http-equiv="Cache-Control" content="no-cache, must-revalidate">
     <base href="/supersplat-cameraframes/">
-    <link rel="manifest" href="./manifest.json?v=v2.20.2-1773545934">
-    <link rel="stylesheet" href="./index.css?v=v2.20.2-1773545934">
+    <link rel="manifest" href="./manifest.json?v=v2.24.2-1773561247">
+    <link rel="stylesheet" href="./index.css?v=v2.24.2-1773561247">
     <link rel="shortcut icon" href="#">
     <meta name="description"
         content="SuperSplat is an advanced browser-based editor for manipulating and optimizing 3D Gaussian Splats. It is open source and engine agnostic. Camera Frames is the composition-safe camera workflow for renders. It keeps a reference render box anchored while you zoom the UI, preview extra scene area, and export matching images." />
@@ -17,7 +17,7 @@
     <script>
         const sw = navigator.serviceWorker;
         if (sw) {
-            sw.register('./sw.js?v=v2.20.2-1773545934', { updateViaCache: 'none' })
+            sw.register('./sw.js?v=v2.24.2-1773561247', { updateViaCache: 'none' })
                 .then(reg => console.log('service worker registered', reg))
                 .catch(err => console.log('failed to register service worker', err));
         }
@@ -25,7 +25,7 @@
 </head>
 
 <body>
-    <script type="module" src="./index.js?v=v2.20.2-1773545934"></script>
+    <script type="module" src="./index.js?v=v2.24.2-1773561247"></script>
 </body>
 
 </html>
