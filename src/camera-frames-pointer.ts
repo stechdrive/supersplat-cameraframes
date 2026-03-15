@@ -51,7 +51,7 @@ type GetHandleLogicalPosition = (
     frameH: number,
     rotationRad: number
 ) => LogicalPoint;
-type SelectFrame = (id: string) => void;
+type SelectFrame = (id: string | null, options?: { recordHistory?: boolean; }) => void;
 type SetDragState = (value: DragState) => void;
 type SetLastPointer = (value: PointerPosition) => void;
 type RequestRender = () => void;
@@ -84,6 +84,16 @@ type UpdatePointerParams = {
     ensureUiTargetAvailability: () => void;
     hitTestHandle: (px: number, py: number) => { handleId?: string } | null;
     hitTestFrameBorder: (px: number, py: number) => any;
+};
+
+type ContainerPointerDownParams = {
+    event: PointerEvent;
+    state: CameraFramesState;
+    scene: Scene;
+    canvasContainer: HTMLElement;
+    selectFrame: SelectFrame;
+    hitTestHandle: (px: number, py: number) => HandleHit;
+    hitTestFrameBorder: (px: number, py: number) => HitFrameBorder;
 };
 
 type PointerDownParams = {
@@ -232,8 +242,40 @@ export const onHover = ({
     overlay.style.cursor = getCursorForHit(handleHit?.handleId, borderHit);
 };
 
-export const onContainerPointerDown = (_event: PointerEvent) => {
-    // クリックでの対象切り替えは行わない（パネルUI経由でのみ操作対象を変更）
+export const onContainerPointerDown = ({
+    event,
+    state,
+    scene,
+    canvasContainer,
+    selectFrame,
+    hitTestHandle,
+    hitTestFrameBorder
+}: ContainerPointerDownParams) => {
+    // 枠外の背景クリック時のみ、赤枠選択を非履歴で解除する。
+    if (!state.enabled || !state.frames.some(frame => frame.selected)) {
+        return;
+    }
+
+    if ((event.pointerType === 'mouse' && event.button !== 0) ||
+        (event.pointerType !== 'mouse' && !event.isPrimary) ||
+        event.shiftKey || event.altKey || event.ctrlKey || event.metaKey) {
+        return;
+    }
+
+    if (hitTestGizmo(scene, event.clientX, event.clientY)) {
+        return;
+    }
+
+    const rect = canvasContainer.getBoundingClientRect();
+    const px = event.clientX - rect.left;
+    const py = event.clientY - rect.top;
+    const handleHit = hitTestHandle(px, py);
+    const frameHit = handleHit?.frame ?? hitTestFrameBorder(px, py);
+    if (frameHit) {
+        return;
+    }
+
+    selectFrame(null, { recordHistory: false });
 };
 
 export const updatePointerFromLast = ({
