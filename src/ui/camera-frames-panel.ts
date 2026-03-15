@@ -370,10 +370,15 @@ class CameraFramesPanel extends Panel {
         this.header.append(collapseButton);
         setCompact(false);
 
+        const setChevronExpanded = (element: Label | Button, expanded: boolean) => {
+            element.class[expanded ? 'add' : 'remove']('is-expanded');
+        };
+
         // layout group (大判指定)
         const layoutGroup = new Container({ class: ['layout-group'] });
         const layoutHeader = new Container({ class: ['layout-header', 'collapsible-header'] });
-        const layoutArrow = new Label({ class: 'collapsible-arrow', text: '▶' });
+        const layoutArrow = new Label({ class: ['collapsible-arrow', 'chevron-toggle'], text: '' });
+        layoutArrow.dom.setAttribute('aria-hidden', 'true');
         const layoutTitle = new Label({ class: 'control-label', text: localize('panel.camera-frames.layout.title') });
         const layoutSummary = new Label({ class: 'layout-summary', text: '-' });
         layoutHeader.append(layoutArrow);
@@ -436,7 +441,7 @@ class CameraFramesPanel extends Panel {
         let layoutCollapsed = true;
         const updateLayoutVisibility = () => {
             layoutBody.dom.style.display = layoutCollapsed ? 'none' : 'flex';
-            layoutArrow.text = layoutCollapsed ? '▶' : '▼';
+            setChevronExpanded(layoutArrow, !layoutCollapsed);
             layoutHeader.class[layoutCollapsed ? 'remove' : 'add']('active');
         };
         updateLayoutVisibility();
@@ -514,7 +519,7 @@ class CameraFramesPanel extends Panel {
         filenameRow.append(filenameLabel);
         filenameRow.append(filenameInput);
 
-        const exportTargetRow = new Container({ class: 'control-parent' });
+        const exportTargetRow = new Container({ class: ['control-parent', 'single-line-select-row', 'export-target-row'] });
         const exportTargetLabel = new Label({ class: 'control-label', text: localize('panel.camera-frames.export.target') });
         const exportTargetSelect = new SelectInput({
             class: 'control-element',
@@ -561,7 +566,7 @@ class CameraFramesPanel extends Panel {
         renderButton.dom.appendChild(createSvg(exportSvg));
         renderButton.dom.title = localize('panel.camera-frames.export.render');
         const renderSpinner = new Container({ class: 'render-spinner', hidden: true });
-        const exportDetailsToggle = new Button({ class: ['icon-button', 'details-toggle-button'], text: '▶' });
+        const exportDetailsToggle = new Button({ class: ['icon-button', 'details-toggle-button', 'chevron-toggle'], text: '' });
         exportDetailsToggle.dom.title = localize('panel.camera-frames.export.details');
         exportDetailsToggle.dom.setAttribute('aria-label', localize('panel.camera-frames.export.details'));
         exportDetailsToggle.dom.setAttribute('aria-expanded', 'false');
@@ -641,7 +646,8 @@ class CameraFramesPanel extends Panel {
         cameraPresetsActions.append(cameraPresetsDeleteBtn);
 
         const cameraPresetsSectionHeader = new Container({ class: ['control-parent', 'collapsible-header', 'camera-presets-section-header'] });
-        const cameraPresetsSectionArrow = new Label({ class: 'collapsible-arrow', text: '▶' });
+        const cameraPresetsSectionArrow = new Label({ class: ['collapsible-arrow', 'chevron-toggle'], text: '' });
+        cameraPresetsSectionArrow.dom.setAttribute('aria-hidden', 'true');
         const cameraPresetsSectionLabel = new Label({ class: 'control-label', text: localize('panel.camera-frames.camera-presets.section') });
         cameraPresetsSectionHeader.append(cameraPresetsSectionArrow);
         cameraPresetsSectionHeader.append(cameraPresetsSectionLabel);
@@ -658,7 +664,7 @@ class CameraFramesPanel extends Panel {
         cameraPresetsSectionBody.dom.style.gap = '6px';
         const updateCameraPresetsSectionVisibility = () => {
             cameraPresetsSectionBody.dom.style.display = cameraPresetsCollapsed ? 'none' : 'flex';
-            cameraPresetsSectionArrow.text = cameraPresetsCollapsed ? '▶' : '▼';
+            setChevronExpanded(cameraPresetsSectionArrow, !cameraPresetsCollapsed);
             cameraPresetsSectionHeader.class[cameraPresetsCollapsed ? 'remove' : 'add']('active');
             cameraPresetsSectionHeader.dom.setAttribute('aria-expanded', (!cameraPresetsCollapsed).toString());
         };
@@ -670,7 +676,7 @@ class CameraFramesPanel extends Panel {
 
         const updateExportDetailsVisibility = () => {
             exportDetails.dom.style.display = exportDetailsCollapsed ? 'none' : 'flex';
-            exportDetailsToggle.text = exportDetailsCollapsed ? '▶' : '▼';
+            setChevronExpanded(exportDetailsToggle, !exportDetailsCollapsed);
             exportDetailsToggle.dom.setAttribute('aria-expanded', (!exportDetailsCollapsed).toString());
         };
         updateExportDetailsVisibility();
@@ -724,7 +730,8 @@ class CameraFramesPanel extends Panel {
         });
 
         const framesSectionHeader = new Container({ class: ['control-parent', 'collapsible-header', 'frames-section-header'] });
-        const framesSectionArrow = new Label({ class: 'collapsible-arrow', text: '▶' });
+        const framesSectionArrow = new Label({ class: ['collapsible-arrow', 'chevron-toggle'], text: '' });
+        framesSectionArrow.dom.setAttribute('aria-hidden', 'true');
         const framesSectionLabel = new Label({ class: 'control-label', text: localize('panel.camera-frames.frames.section') });
         framesSectionHeader.append(framesSectionArrow);
         framesSectionHeader.append(framesSectionLabel);
@@ -753,7 +760,7 @@ class CameraFramesPanel extends Panel {
 
         const updateFramesSectionVisibility = () => {
             framesSectionBody.dom.style.display = framesSectionCollapsed ? 'none' : 'flex';
-            framesSectionArrow.text = framesSectionCollapsed ? '▶' : '▼';
+            setChevronExpanded(framesSectionArrow, !framesSectionCollapsed);
             framesSectionHeader.class[framesSectionCollapsed ? 'remove' : 'add']('active');
             framesSectionHeader.dom.setAttribute('aria-expanded', (!framesSectionCollapsed).toString());
         };
@@ -766,7 +773,7 @@ class CameraFramesPanel extends Panel {
         // mask controls
         const maskLabel = new Label({ class: ['control-label', 'mask-label'], text: localize('panel.camera-frames.mask') });
         const maskToggle = new BooleanInput({ type: 'toggle', class: 'control-element', value: false });
-        const maskDetailsToggle = new Button({ class: ['icon-button', 'details-toggle-button'], text: '▶' });
+        const maskDetailsToggle = new Button({ class: ['icon-button', 'details-toggle-button', 'chevron-toggle'], text: '' });
         maskDetailsToggle.dom.title = localize('panel.camera-frames.mask.details');
         maskDetailsToggle.dom.setAttribute('aria-label', localize('panel.camera-frames.mask.details'));
         maskDetailsToggle.dom.setAttribute('aria-expanded', 'false');
@@ -811,7 +818,7 @@ class CameraFramesPanel extends Panel {
         maskDetails.dom.style.display = 'none';
         maskDetails.dom.style.flexDirection = 'column';
         maskDetails.dom.style.gap = '6px';
-        const maskScopeRow = new Container({ class: 'control-parent' });
+        const maskScopeRow = new Container({ class: ['control-parent', 'single-line-select-row', 'mask-scope-row'] });
         maskScopeRow.append(maskScopeLabel);
         maskScopeRow.append(maskScopeSelect);
         const maskOpacityRow = new Container({ class: 'control-parent' });
@@ -822,7 +829,7 @@ class CameraFramesPanel extends Panel {
 
         const updateMaskDetailsVisibility = () => {
             maskDetails.dom.style.display = maskDetailsCollapsed ? 'none' : 'flex';
-            maskDetailsToggle.text = maskDetailsCollapsed ? '▶' : '▼';
+            setChevronExpanded(maskDetailsToggle, !maskDetailsCollapsed);
             maskDetailsToggle.dom.setAttribute('aria-expanded', (!maskDetailsCollapsed).toString());
         };
         updateMaskDetailsVisibility();
@@ -1022,7 +1029,7 @@ class CameraFramesPanel extends Panel {
 
         frameScaleInput.on('change', updateFrameScale);
 
-        deleteBtn.on('click', () => events.fire('cameraFrames.deleteSelected'));
+        deleteBtn.on('click', () => events.fire('cameraFrames.deleteFrame', selectedFrameId));
 
         maskToggle.on('change', (v: boolean) => {
             if (suppress) return;
@@ -1113,7 +1120,8 @@ class CameraFramesPanel extends Panel {
         localRow.append(localGrid);
 
         const camTransformHeader = new Container({ class: ['control-parent', 'collapsible-header'] });
-        const camTransformArrow = new Label({ class: 'collapsible-arrow', text: '▶' });
+        const camTransformArrow = new Label({ class: ['collapsible-arrow', 'chevron-toggle'], text: '' });
+        camTransformArrow.dom.setAttribute('aria-hidden', 'true');
         const camTransformLabel = new Label({ class: 'control-label', text: '' });
         updateCamTransformLabel = () => {
             camTransformLabel.text = framesEnabled ?
@@ -1151,7 +1159,7 @@ class CameraFramesPanel extends Panel {
         let camTransformCollapsed = true;
         const updateCamTransformVisibility = () => {
             camTransformBody.dom.style.display = camTransformCollapsed ? 'none' : 'flex';
-            camTransformArrow.text = camTransformCollapsed ? '▶' : '▼';
+            setChevronExpanded(camTransformArrow, !camTransformCollapsed);
             camTransformHeader.class[camTransformCollapsed ? 'remove' : 'add']('active');
         };
         updateCamTransformVisibility();

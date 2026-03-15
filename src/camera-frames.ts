@@ -145,6 +145,7 @@ export class CameraFramesController {
     private scene: Scene;
     private overlay: HTMLCanvasElement;
     private overlayCtx: CanvasRenderingContext2D;
+    private baseCanvas: HTMLCanvasElement | null = null;
     private viewport: Viewport = { vw: 1, vh: 1 };
     private canvasContainer: HTMLElement;
     private state: CameraFramesState = {
@@ -274,9 +275,9 @@ export class CameraFramesController {
         this.overlay.style.inset = '0';
         this.overlay.style.pointerEvents = 'none'; // 初期状態では既存UI操作を阻害しない
         // WebGLキャンバスの直後に挿入してUI要素より下に配置
-        const baseCanvas = canvasContainer.querySelector<HTMLCanvasElement>('#canvas');
-        if (baseCanvas && baseCanvas.parentElement === canvasContainer) {
-            canvasContainer.insertBefore(this.overlay, baseCanvas.nextSibling);
+        this.baseCanvas = canvasContainer.querySelector<HTMLCanvasElement>('#canvas');
+        if (this.baseCanvas && this.baseCanvas.parentElement === canvasContainer) {
+            canvasContainer.insertBefore(this.overlay, this.baseCanvas.nextSibling);
         } else {
             canvasContainer.appendChild(this.overlay);
         }
@@ -1163,6 +1164,7 @@ export class CameraFramesController {
         // frames
         this.events.on('cameraFrames.addFrame', () => this.addFrame());
         this.events.on('cameraFrames.deleteSelected', () => this.deleteSelectedFrame());
+        this.events.on('cameraFrames.deleteFrame', (id?: string | null) => this.deleteSelectedFrame(id));
         this.events.on('cameraFrames.selectFrame', (id: string | null) => this.selectFrame(id));
         this.events.on('cameraFrames.setFrameScale', (data: { id: string; scalePct: number }) => {
             this.setFrameScale(data.id, data.scalePct);
@@ -2717,11 +2719,15 @@ export class CameraFramesController {
         });
     }
 
-    private deleteSelectedFrame() {
+    private deleteSelectedFrame(id?: string | null) {
         this.historyRecord('cameraFrames.deleteFrame', () => {
-            if (!this.selectedId) return;
-            this.state.frames = this.state.frames.filter(f => f.id !== this.selectedId);
+            const targetId = id ?? this.selectedId ?? this.state.frames.find(f => f.selected)?.id ?? null;
+            if (!targetId) return;
+            this.state.frames = this.state.frames.filter(f => f.id !== targetId);
             this.selectedId = this.state.frames.length ? this.state.frames[this.state.frames.length - 1].id : null;
+            this.state.frames.forEach((f) => {
+                f.selected = f.id === this.selectedId;
+            });
             this.requestRender();
             this.emitStateChanged();
             this.updatePointerFromLast();
@@ -3050,6 +3056,9 @@ export class CameraFramesController {
     }
 
     private onContainerPointerDown(e: PointerEvent) {
+        if (!this.isRenderSurfaceTarget(e.target)) {
+            return;
+        }
         onContainerPointerDownPointer({
             event: e,
             state: this.state,
@@ -3064,6 +3073,13 @@ export class CameraFramesController {
             hitTestFrameBorder: (px, py) => this.hitTestFrameBorder(px, py),
             historyBegin: label => this.historyBegin(label)
         });
+    }
+
+    private isRenderSurfaceTarget(target: EventTarget | null) {
+        if (!(target instanceof Node)) {
+            return false;
+        }
+        return target === this.overlay || target === this.baseCanvas;
     }
 
     private onContainerPointerMove(e: PointerEvent) {

@@ -410,7 +410,7 @@
     width: 24px;
     height: 24px;
     padding: 0;
-    font-size: 14px;
+    font-size: 0;
     line-height: 1;
     color: $text-secondary;
 }
@@ -618,9 +618,84 @@
     background-color: rgba($bcg-dark, 0.4);
 }
 
-.collapsible-arrow {
+.collapsible-body > .control-parent {
+    flex-wrap: nowrap;
+    min-width: 0;
+
+    > .control-label {
+        flex: 0 0 auto;
+        min-width: 0;
+        white-space: nowrap;
+    }
+
+    > .control-element,
+    > .control-element-expand {
+        min-width: 0;
+    }
+
+    > .control-element-expand {
+        flex: 1 1 auto;
+    }
+}
+
+.single-line-select-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: nowrap;
+    min-width: 0;
+
+    > .control-label {
+        width: auto;
+        flex: 0 0 auto;
+        white-space: nowrap;
+    }
+
+    > .control-element {
+        flex: 1 1 0;
+        min-width: 0;
+        width: auto;
+    }
+}
+
+.export-target-row > .control-element,
+.mask-scope-row > .control-element {
+    min-width: 110px;
+}
+
+.chevron-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    color: $text-secondary;
+
+    &::before {
+        content: '';
+        width: 7px;
+        height: 7px;
+        border-right: 1.5px solid currentColor;
+        border-bottom: 1.5px solid currentColor;
+        transform: rotate(-45deg);
+        transform-origin: 50% 50%;
+        transition: transform 120ms ease;
+    }
+
+    &.is-expanded::before {
+        transform: rotate(45deg);
+    }
+}
+
+.collapsible-arrow.chevron-toggle {
     width: 16px;
-    text-align: center;
+    height: 16px;
+}
+
+.details-toggle-button.chevron-toggle.icon-button {
+    &::before {
+        width: 6px;
+        height: 6px;
+    }
 }
 
 .frame-list-header,
