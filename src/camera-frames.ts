@@ -2727,8 +2727,11 @@ export class CameraFramesController {
         });
     }
 
-    private selectFrame(id: string | null) {
-        this.historyRecord('cameraFrames.selectFrame', () => {
+    private selectFrame(id: string | null, options?: { recordHistory?: boolean; }) {
+        const apply = () => {
+            if (this.selectedId === id) {
+                return;
+            }
             this.selectedId = id;
             this.state.frames.forEach((f) => {
                 f.selected = f.id === id;
@@ -2737,7 +2740,12 @@ export class CameraFramesController {
             this.emitStateChanged();
             this.updatePointerFromLast();
             this.updateFovInfo();
-        });
+        };
+        if (options?.recordHistory === false) {
+            apply();
+            return;
+        }
+        this.historyRecord('cameraFrames.selectFrame', apply);
     }
 
     private setFrameScale(id: string, scalePct: number) {
@@ -3040,7 +3048,15 @@ export class CameraFramesController {
     }
 
     private onContainerPointerDown(e: PointerEvent) {
-        onContainerPointerDownPointer(e);
+        onContainerPointerDownPointer({
+            event: e,
+            state: this.state,
+            scene: this.scene,
+            canvasContainer: this.canvasContainer,
+            selectFrame: (id, options) => this.selectFrame(id, options),
+            hitTestHandle: (px, py) => this.hitTestHandle(px, py),
+            hitTestFrameBorder: (px, py) => this.hitTestFrameBorder(px, py)
+        });
     }
 
     private updatePointerFromLast() {
