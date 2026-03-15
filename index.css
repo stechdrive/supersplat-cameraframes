@@ -4705,9 +4705,12 @@ body.collapsed #camera-frames-panel {
   padding: 8px;
 }
 #reference-image-panel .reference-image-actions-row {
+  display: flex;
   align-items: center;
+  flex-wrap: nowrap;
   min-height: 32px;
   gap: 6px;
+  width: 100%;
 }
 #reference-image-panel .reference-image-mode-row {
   display: flex;
@@ -4733,10 +4736,33 @@ body.collapsed #camera-frames-panel {
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.2);
 }
 #reference-image-panel .reference-image-preset-row {
+  display: flex;
   align-items: center;
   gap: 6px;
+  flex-wrap: nowrap;
+  width: 100%;
+}
+#reference-image-panel .reference-image-preset-row > .control-label {
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 #reference-image-panel .reference-image-preset-input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+#reference-image-panel .reference-image-group-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: nowrap;
+  width: 100%;
+}
+#reference-image-panel .reference-image-group-row > .control-label {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+#reference-image-panel .reference-image-group-row > .control-element {
+  flex: 1 1 auto;
   min-width: 0;
 }
 #reference-image-panel .reference-image-lists {
@@ -4858,28 +4884,44 @@ body.collapsed #camera-frames-panel {
   gap: 6px;
 }
 #reference-image-panel .reference-image-offset-row {
+  display: flex;
   align-items: center;
   gap: 4px;
   flex-wrap: nowrap;
 }
+#reference-image-panel .reference-image-offset-row > .control-label {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+#reference-image-panel .reference-image-offset-row > .control-element {
+  flex: 0 0 64px;
+  min-width: 0;
+}
 #reference-image-panel .reference-image-transform-row {
+  display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
   flex-wrap: nowrap;
-  padding-left: 6px;
+  padding-left: 4px;
 }
 #reference-image-panel .reference-image-transform-group {
   display: flex;
   align-items: center;
   gap: 4px;
   min-width: 0;
+  flex: 1 1 0;
 }
 #reference-image-panel .reference-image-transform-group .control-label {
-  width: auto;
+  flex: 0 0 auto;
   margin: 0;
   white-space: nowrap;
 }
+#reference-image-panel .reference-image-transform-group .control-element {
+  flex: 0 0 56px;
+  min-width: 0;
+}
 #reference-image-panel .reference-image-center-button {
+  flex: 0 0 auto;
   display: grid;
   place-items: center;
 }
@@ -4889,10 +4931,13 @@ body.collapsed #camera-frames-panel {
   display: block;
 }
 #reference-image-panel .reference-image-info {
+  flex: 1 1 auto;
   min-width: 0;
   margin: 0 6px;
   line-height: 16px;
-  word-break: break-all;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 #reference-image-panel .pcui-input-element.mixed {
   background: rgba(255, 255, 255, 0.04);
