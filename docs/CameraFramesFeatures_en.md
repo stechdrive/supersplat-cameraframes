@@ -10,6 +10,8 @@ CAMERA FRAMES v2.20.11 lets you lay out multiple frames on an A4-like master she
 - **Export options**: PNG/PSD, grid+eye-level combined toggle, PSD model layers, 150dpi pHYs, unpremultiply, and per-frame layers.
 - **Per-camera export settings**: Export format, guide output, and model-layer output are stored per camera preset and reused by all-camera export.
 - **Reference image presets**: Auto-create a preset named after the first imported file and allow renaming in the panel (`(blank)` is read-only).
+- **Per-camera reference overrides**: Visibility/export/order/offset/opacity/scale can be overridden per camera and reset back to the shared preset state.
+- **Reference image export integration**: Only reference images that satisfy `enabled / visible / includeInRender` are exported. PNG composites them in front/back order, while PSD adds them as `Reference` layers that preserve the same stacking.
 
 ## 2. Panel and toggles
 - Header provides **CAMERA FRAMES ON/OFF** (Capture=ON, Edit=OFF icons), **Capture Camera Controls** (separate panel) button, and **Compact** toggle. Compact mode shows only the header.
