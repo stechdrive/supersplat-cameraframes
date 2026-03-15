@@ -32,9 +32,12 @@
     }
 
     .reference-image-actions-row {
+        display: flex;
         align-items: center;
+        flex-wrap: nowrap;
         min-height: 32px;
         gap: 6px;
+        width: 100%;
     }
 
     .reference-image-mode-row {
@@ -64,12 +67,39 @@
     }
 
     .reference-image-preset-row {
+        display: flex;
         align-items: center;
         gap: 6px;
+        flex-wrap: nowrap;
+        width: 100%;
+
+        > .control-label {
+            flex: 0 0 auto;
+            white-space: nowrap;
+        }
     }
 
     .reference-image-preset-input {
+        flex: 1 1 auto;
         min-width: 0;
+    }
+
+    .reference-image-group-row {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        flex-wrap: nowrap;
+        width: 100%;
+
+        > .control-label {
+            flex: 0 0 auto;
+            white-space: nowrap;
+        }
+
+        > .control-element {
+            flex: 1 1 auto;
+            min-width: 0;
+        }
     }
 
     .reference-image-lists {
@@ -211,16 +241,28 @@
     }
 
     .reference-image-offset-row {
+        display: flex;
         align-items: center;
         gap: 4px;
         flex-wrap: nowrap;
+
+        > .control-label {
+            flex: 0 0 auto;
+            white-space: nowrap;
+        }
+
+        > .control-element {
+            flex: 0 0 64px;
+            min-width: 0;
+        }
     }
 
     .reference-image-transform-row {
+        display: flex;
         align-items: center;
-        gap: 12px;
+        gap: 8px;
         flex-wrap: nowrap;
-        padding-left: 6px;
+        padding-left: 4px;
     }
 
     .reference-image-transform-group {
@@ -228,15 +270,22 @@
         align-items: center;
         gap: 4px;
         min-width: 0;
+        flex: 1 1 0;
 
         .control-label {
-            width: auto;
+            flex: 0 0 auto;
             margin: 0;
             white-space: nowrap;
+        }
+
+        .control-element {
+            flex: 0 0 56px;
+            min-width: 0;
         }
     }
 
     .reference-image-center-button {
+        flex: 0 0 auto;
         display: grid;
         place-items: center;
     }
@@ -248,10 +297,13 @@
     }
 
     .reference-image-info {
+        flex: 1 1 auto;
         min-width: 0;
         margin: 0 6px;
         line-height: 16px;
-        word-break: break-all;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
     }
 
     .pcui-input-element.mixed {

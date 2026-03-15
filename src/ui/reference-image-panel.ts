@@ -576,7 +576,7 @@ class ReferenceImagePanel extends Container {
         };
 
         // properties (active item)
-        const groupRow = new Container({ class: ['control-parent'] });
+        const groupRow = new Container({ class: ['control-parent', 'reference-image-group-row'] });
         groupRow.append(new Label({ class: 'control-label', text: localize('panel.reference-image.layer') }));
         const groupSelect = new SelectInput({
             class: 'control-element',
