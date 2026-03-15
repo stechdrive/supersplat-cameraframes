@@ -78,6 +78,10 @@ import {
     updatePointerFromLast as updatePointerFromLastPointer
 } from './camera-frames-pointer';
 import {
+    createSupersplatCameraFramesRenderBackend,
+    type CameraFramesRenderBackend
+} from './camera-frames-render-backend';
+import {
     applySnapshot as applySnapshotSerialize,
     deserialize as deserializeSerialize,
     serialize as serializeSerialize,
@@ -158,6 +162,7 @@ export class CameraFramesController {
     private selectedPresetId: string | null = null;
     private presetCounter = 0;
     private compressor: PngCompressor | null = null;
+    private renderBackend: CameraFramesRenderBackend;
     private resizeObserver: ResizeObserver;
     private lastPointer: { x: number; y: number } | null = null;
     // Auto-captured poses (e.g. frustum preview) should not override explicit nav mode on enable.
@@ -234,6 +239,12 @@ export class CameraFramesController {
         this.events = events;
         this.scene = scene;
         this.canvasContainer = canvasContainer;
+        this.renderBackend = createSupersplatCameraFramesRenderBackend({
+            events: this.events,
+            scene: this.scene,
+            clearViewportNearOverride: () => this.clearViewportNearOverride(),
+            syncCameraFrustum: () => this.syncCameraFrustum()
+        });
 
         // overlay canvas
         this.overlay = document.createElement('canvas');
@@ -1285,7 +1296,7 @@ export class CameraFramesController {
             const renderOnce = async () => {
                 await renderImage({
                     events: this.events,
-                    scene: this.scene,
+                    renderBackend: this.renderBackend,
                     getState: () => this.state,
                     applyCameraPose: (pose, opts) => this.applyCameraPose(pose, opts),
                     normalizeFormat: format => this.normalizeFormat(format),
@@ -1295,7 +1306,6 @@ export class CameraFramesController {
                     getCompressor: () => this.getCompressor(),
                     requestRender: () => this.requestRender(),
                     syncCameraFrustum: () => this.syncCameraFrustum(),
-                    clearViewportNearOverride: () => this.clearViewportNearOverride(),
                     options
                 });
             };
