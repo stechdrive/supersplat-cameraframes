@@ -496,6 +496,55 @@ class AddSplatOp {
     }
 }
 
+class SeparateSplatOp {
+    name = 'separateSplat';
+    scene: Scene;
+    splat: Splat;
+    remainder: Splat;
+    copy: Splat;
+
+    constructor(scene: Scene, splat: Splat, remainder: Splat, copy: Splat) {
+        this.scene = scene;
+        this.splat = splat;
+        this.remainder = remainder;
+        this.copy = copy;
+    }
+
+    private async swapOriginalRuntime() {
+        this.splat.remove();
+        this.splat.swapRuntimeDataWith(this.remainder);
+        await this.splat.add();
+        await this.scene.renderSystem.waitForSorter();
+        this.scene.boundDirty = true;
+        this.scene.forceRender = true;
+    }
+
+    async do() {
+        await this.swapOriginalRuntime();
+        await this.scene.add(this.copy);
+        await this.scene.renderSystem.waitForSorter();
+        this.scene.forceRender = true;
+    }
+
+    async undo() {
+        if (this.copy.scene === this.scene) {
+            this.scene.remove(this.copy);
+            await this.scene.renderSystem.waitForSorter();
+        }
+        await this.swapOriginalRuntime();
+    }
+
+    destroy() {
+        if (!this.copy.scene) {
+            this.copy.destroy();
+        }
+        this.remainder.destroy();
+        this.splat = null;
+        this.remainder = null;
+        this.copy = null;
+    }
+}
+
 class SplatRenameOp {
     name = 'splatRename';
     splat: Splat;
@@ -537,5 +586,6 @@ export {
     CameraPresetReferenceImageOp,
     MultiOp,
     AddSplatOp,
+    SeparateSplatOp,
     SplatRenameOp
 };
