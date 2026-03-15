@@ -383,16 +383,26 @@ const registerDocEvents = (scene: Scene, events: Events) => {
         events.fire('startSpinner');
         let saveStep = 'init';
         let saved = false;
+        let splatCount = 0;
+        let modelCount = 0;
+        let cameraPresetCount = 0;
+        let referenceImageAssetCount = 0;
+        let documentJsonLength = 0;
 
         try {
             saveStep = 'collect scene data';
             const splats = events.invoke('scene.allSplats') as Splat[];
             const models = scene.getElementsByType(ElementType.model) as Model[];
+            splatCount = splats.length;
+            modelCount = models.length;
+            saveStep = 'serialize reference images';
             const referenceImagesState = events.invoke('docSerialize.referenceImages');
             const referenceImagesAssets = (events.invoke('referenceImages.docAssets') as Array<{ path: string; blob: Blob }> | null) ?? [];
+            referenceImageAssetCount = referenceImagesAssets.length;
             const referenceImagesBytes = referenceImagesAssets.reduce((sum, a) => sum + BigInt(a?.blob?.size ?? 0), 0n);
             const referenceImagesEntryCount = BigInt(referenceImagesAssets.length);
 
+            saveStep = 'serialize models';
             const modelDocs = models.map((model, i) => {
                 const serialized = model.docSerialize();
                 return {
@@ -401,24 +411,41 @@ const registerDocEvents = (scene: Scene, events: Events) => {
                 };
             });
 
+            saveStep = 'serialize camera';
+            const cameraState = scene.camera.docSerialize();
+            saveStep = 'serialize view';
+            const viewState = events.invoke('docSerialize.view');
+            saveStep = 'serialize pose sets';
+            const poseSetsState = events.invoke('docSerialize.poseSets');
+            saveStep = 'serialize timeline';
+            const timelineState = events.invoke('docSerialize.timeline');
+            saveStep = 'serialize camera frames';
+            const cameraFramesState = events.invoke('docSerialize.cameraFrames');
+            cameraPresetCount = Array.isArray(cameraFramesState?.cameraPresets) ? cameraFramesState.cameraPresets.length : 0;
+            saveStep = 'serialize splat metadata';
+            const splatDocs = splats.map(s => s.docSerialize());
+            saveStep = 'serialize lighting';
+            const lightingState = scene.docSerializeLighting();
+
             const createDocumentPayload = (zip64: boolean) => ({
                 // keep version compatible with upstream (playcanvas/supersplat)
                 version: 0,
                 // internal schema marker for this fork (upstream will ignore unknown keys)
                 schemaVersion: DOC_VERSION,
                 ...(zip64 ? { zip64: true } : {}),
-                camera: scene.camera.docSerialize(),
-                view: events.invoke('docSerialize.view'),
-                poseSets: events.invoke('docSerialize.poseSets'),
-                timeline: events.invoke('docSerialize.timeline'),
-                cameraFrames: events.invoke('docSerialize.cameraFrames'),
+                camera: cameraState,
+                view: viewState,
+                poseSets: poseSetsState,
+                timeline: timelineState,
+                cameraFrames: cameraFramesState,
                 referenceImages: referenceImagesState ?? undefined,
-                splats: splats.map(s => s.docSerialize()),
+                splats: splatDocs,
                 models: modelDocs,
-                lighting: scene.docSerializeLighting()
+                lighting: lightingState
             });
 
             // Use a provisional payload to decide if ZIP64 is needed.
+            saveStep = 'estimate document size';
             const provisionalDoc = createDocumentPayload(true);
             const estimate = estimateDocumentSize(provisionalDoc, splats, models, model => scene.assetLoader.getSourceBlob(model), referenceImagesBytes, referenceImagesEntryCount);
             const useZip64 = estimate.total >= ZIP64_MARGIN_BYTES || estimate.total > ZIP32_LIMIT;
@@ -450,8 +477,12 @@ const registerDocEvents = (scene: Scene, events: Events) => {
 
             // Write document.json
             saveStep = 'write document.json';
+            saveStep = 'stringify document.json';
+            const documentJson = JSON.stringify(document);
+            documentJsonLength = documentJson.length;
+            saveStep = 'write document.json';
             const docWriter = await zipFs.createWriter('document.json');
-            await docWriter.write(new TextEncoder().encode(JSON.stringify(document)));
+            await docWriter.write(new TextEncoder().encode(documentJson));
             await docWriter.close();
 
             // Write each splat as PLY
@@ -479,6 +510,15 @@ const registerDocEvents = (scene: Scene, events: Events) => {
             const errorName = (error as Error & { name?: string })?.name;
             const errorMessage = (error as Error)?.message ?? `${error}`;
             const fullMessage = `${saveStep}${errorName ? ` | ${errorName}` : ''} | ${errorMessage}`;
+            console.error('saveDocument failed', {
+                saveStep,
+                splatCount,
+                modelCount,
+                cameraPresetCount,
+                referenceImageAssetCount,
+                documentJsonLength,
+                error
+            });
             await events.invoke('showPopup', {
                 type: 'error',
                 header: localize('doc.save-failed'),
