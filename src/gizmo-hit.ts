@@ -22,7 +22,7 @@ export const hitTestGizmo = (scene: Scene, clientX: number, clientY: number): bo
     }
 
     const camera = scene.camera.entity.camera;
-    const gizmoCamera = createGizmoCamera(camera);
+    const gizmoCamera = createGizmoCamera(camera, scene.camera);
 
     gizmoCamera.screenToWorld(x, y, 0, start);
     gizmoCamera.screenToWorld(x, y, camera.farClip - camera.nearClip, end);

@@ -455,6 +455,17 @@ class Camera extends Element {
         screen.z = v4.z / v4.w;
     }
 
+    // transform the world space coordinate to CSS screen coordinates
+    worldToScreenCss(world: Vec3, screen: Vec3) {
+        this.worldToScreen(world, screen);
+        const canvas = this.scene?.canvas;
+        const w = canvas?.clientWidth ?? 0;
+        const h = canvas?.clientHeight ?? 0;
+        screen.x *= w;
+        screen.y *= h;
+        return screen;
+    }
+
     add() {
         const scene = this.scene;
         const { camera } = this;
@@ -1735,6 +1746,30 @@ class Camera extends Element {
             x: screenX / size.width * w,
             y: screenY / size.height * h
         };
+    }
+
+    screenToWorld(screenX: number, screenY: number, cameraz: number, world: Vec3, options?: { space?: 'css' | 'target' }) {
+        let sx = screenX;
+        let sy = screenY;
+        if (options?.space === 'target') {
+            const mapped = this.mapTargetToCssCoords(screenX, screenY);
+            if (!mapped) {
+                return false;
+            }
+            sx = mapped.x;
+            sy = mapped.y;
+        }
+
+        if (this.customFrustum && !this.ortho) {
+            if (!this.getRay(sx, sy, ray, { space: 'css' })) {
+                return false;
+            }
+            world.copy(ray.origin).add(vec.copy(ray.direction).mulScalar(cameraz));
+            return true;
+        }
+
+        this.entity.camera.screenToWorld(sx, sy, cameraz, world);
+        return true;
     }
 
     getRay(screenX: number, screenY: number, ray: Ray, options?: { space?: 'css' | 'target' }) {

@@ -7,9 +7,14 @@ import {
     type CameraComponent
 } from 'playcanvas';
 
+type CameraInteractionSource = {
+    screenToWorld: (x: number, y: number, cameraz: number, out?: Vec3) => boolean;
+    worldToScreenCss: (worldPos: Vec3, out?: Vec3) => Vec3;
+};
+
 const cameraCache = new WeakMap<CameraComponent, CameraComponent>();
 
-export const createGizmoCamera = (base: CameraComponent): CameraComponent => {
+export const createGizmoCamera = (base: CameraComponent, interaction?: CameraInteractionSource): CameraComponent => {
     const cached = cameraCache.get(base);
     if (cached) {
         return cached;
@@ -95,9 +100,18 @@ export const createGizmoCamera = (base: CameraComponent): CameraComponent => {
     const proxy = new Proxy(base, {
         get: (target, prop) => {
             if (prop === 'screenToWorld') {
+                if (interaction) {
+                    return (x: number, y: number, cameraz: number, out: Vec3 = new Vec3()) => {
+                        interaction.screenToWorld(x, y, cameraz, out);
+                        return out;
+                    };
+                }
                 return screenToWorld;
             }
             if (prop === 'worldToScreen') {
+                if (interaction) {
+                    return (worldPos: Vec3, out: Vec3 = new Vec3()) => interaction.worldToScreenCss(worldPos, out);
+                }
                 return worldToScreen;
             }
             return Reflect.get(target, prop, target);
