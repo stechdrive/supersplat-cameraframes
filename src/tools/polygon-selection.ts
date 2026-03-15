@@ -24,6 +24,14 @@ class PolygonSelection {
         let points: Point[] = [];
         let currentPoint: Point = null;
 
+        const getLocalPoint = (e: PointerEvent) => {
+            const rect = parent.getBoundingClientRect();
+            return {
+                x: Math.max(0, Math.min(parent.clientWidth, e.clientX - rect.left)),
+                y: Math.max(0, Math.min(parent.clientHeight, e.clientY - rect.top))
+            };
+        };
+
         const dist = (a: Point, b: Point) => {
             return Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2);
         };
@@ -76,7 +84,7 @@ class PolygonSelection {
         };
 
         const pointermove = (e: PointerEvent) => {
-            currentPoint = { x: e.offsetX, y: e.offsetY };
+            currentPoint = getLocalPoint(e);
 
             if (points.length > 0) {
                 paint();
