@@ -1,6 +1,5 @@
 import type { CameraFramesRenderBackend } from './camera-frames-render-backend';
 import type { CameraFramesState, CameraPoseSnapshot, ExportFormat, ReferenceExportLayer } from './camera-frames-types';
-import type { Events } from './events';
 import type { PngCompressor } from './png-compressor';
 import { exportPsd, type PsdOverlayLayer } from './psd-export';
 import { localize } from './ui/localization';
@@ -12,7 +11,6 @@ type GetState = () => CameraFramesState;
 type NormalizeFormat = (format: ExportFormat) => ExportFormat;
 type RenderFrameOverlay = (width: number, height: number) => { canvas: HTMLCanvasElement; };
 type RenderFrameOverlaysByManagement = (width: number, height: number) => Array<{ name: string; canvas: HTMLCanvasElement; }>;
-type RequestRender = () => void;
 type ResolveFilename = (name: string | undefined, format: ExportFormat) => string;
 
 type RenderPngParams = {
@@ -39,7 +37,6 @@ type RenderPsdParams = {
 type RenderImageOptions = { format?: ExportFormat; filename?: string };
 
 type RenderImageParams = {
-    events: Events;
     renderBackend: CameraFramesRenderBackend;
     getState: GetState;
     applyCameraPose: ApplyCameraPose;
@@ -48,8 +45,6 @@ type RenderImageParams = {
     renderFrameOverlay: RenderFrameOverlay;
     renderFrameOverlaysByManagement: RenderFrameOverlaysByManagement;
     getCompressor: GetCompressor;
-    requestRender: RequestRender;
-    syncCameraFrustum: () => void;
     options?: RenderImageOptions;
 };
 
@@ -207,7 +202,6 @@ export const renderPsd = async (params: RenderPsdParams) => {
 };
 
 export const renderImage = async ({
-    events,
     renderBackend,
     getState,
     applyCameraPose,
@@ -216,8 +210,6 @@ export const renderImage = async ({
     renderFrameOverlay,
     renderFrameOverlaysByManagement,
     getCompressor,
-    requestRender,
-    syncCameraFrustum,
     options
 }: RenderImageParams) => {
     const state = getState();
@@ -290,19 +282,8 @@ export const renderImage = async ({
         }
     } catch (error) {
         console.error('cameraFrames.render failed', error);
-        await events.invoke('showPopup', {
-            type: 'error',
-            header: 'Camera Frames',
-            message: `'${(error as Error)?.message ?? error}'`
-        });
+        await renderBackend.showExportError(error);
     } finally {
-        // --- 修正箇所: ビューの復元 ---
-        // render.offscreen が終了し、scene.camera.targetSize は null に戻っている。
-        // ここで syncCameraFrustum を呼ぶことで、「Exportモード」から「Previewモード」の計算に戻り、
-        // 元の ViewZoomPct が適用されたフラスタムがカメラに再設定される。
-        if (getState().enabled) {
-            syncCameraFrustum();
-            requestRender();
-        }
+        renderBackend.restorePreviewAfterExport(getState().enabled);
     }
 };

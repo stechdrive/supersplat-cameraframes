@@ -254,7 +254,8 @@ export class CameraFramesController {
             events: this.events,
             scene: this.scene,
             clearViewportNearOverride: () => this.clearViewportNearOverride(),
-            syncCameraFrustum: () => this.syncCameraFrustum()
+            syncCameraFrustum: () => this.syncCameraFrustum(),
+            requestRender: () => this.requestRender()
         });
 
         // overlay canvas
@@ -1246,7 +1247,6 @@ export class CameraFramesController {
             }
             const renderOnce = async () => {
                 await renderImage({
-                    events: this.events,
                     renderBackend: this.renderBackend,
                     getState: () => this.state,
                     applyCameraPose: (pose, opts) => this.applyCameraPose(pose, opts),
@@ -1255,8 +1255,6 @@ export class CameraFramesController {
                     renderFrameOverlay: (width, height) => this.renderFrameOverlay(width, height),
                     renderFrameOverlaysByManagement: (width, height) => this.renderFrameOverlaysByManagement(width, height),
                     getCompressor: () => this.getCompressor(),
-                    requestRender: () => this.requestRender(),
-                    syncCameraFrustum: () => this.syncCameraFrustum(),
                     options
                 });
             };

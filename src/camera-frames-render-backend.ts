@@ -17,6 +17,8 @@ type OffscreenOptions = {
 type CameraFramesRenderBackend = {
     syncExportFrustum: (width: number, height: number) => void;
     waitForSplatSorter: () => Promise<void>;
+    showExportError: (error: unknown) => Promise<void>;
+    restorePreviewAfterExport: (enabled: boolean) => void;
     renderBase: (width: number, height: number) => Promise<Uint8Array>;
     renderBaseWithoutModels: (width: number, height: number) => Promise<Uint8Array>;
     renderReferenceLayers: (width: number, height: number, options?: { applyOpacity?: boolean; }) => Promise<ReferenceExportLayer[]>;
@@ -34,6 +36,7 @@ type CreateRenderBackendParams = {
     scene: Scene;
     clearViewportNearOverride: () => void;
     syncCameraFrustum: () => void;
+    requestRender: () => void;
 };
 
 const canvasFromPixels = (pixels: Uint8Array | Uint8ClampedArray, width: number, height: number) => {
@@ -55,7 +58,8 @@ const createSupersplatCameraFramesRenderBackend = ({
     events,
     scene,
     clearViewportNearOverride,
-    syncCameraFrustum
+    syncCameraFrustum,
+    requestRender
 }: CreateRenderBackendParams): CameraFramesRenderBackend => {
     const renderOffscreen = async (width: number, height: number, options: OffscreenOptions) => {
         const pixels = await events.invoke('render.offscreen', width, height, options) as Uint8Array;
@@ -238,9 +242,27 @@ const createSupersplatCameraFramesRenderBackend = ({
         scene.camera.targetSize = prevTarget;
     };
 
+    const showExportError = async (error: unknown) => {
+        await events.invoke('showPopup', {
+            type: 'error',
+            header: 'Camera Frames',
+            message: `'${(error as Error)?.message ?? error}'`
+        });
+    };
+
+    const restorePreviewAfterExport = (enabled: boolean) => {
+        if (!enabled) {
+            return;
+        }
+        syncCameraFrustum();
+        requestRender();
+    };
+
     return {
         syncExportFrustum,
         waitForSplatSorter: () => scene.renderSystem.waitForSorter(),
+        showExportError,
+        restorePreviewAfterExport,
         renderBase,
         renderBaseWithoutModels,
         renderReferenceLayers,
