@@ -787,6 +787,9 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
     events.on('camera.transform', (t: any) => {
         // passthrough
     });
+    events.function('camera.cssToNormalized', (x: number, y: number) => {
+        return scene.camera.cssToNormalized(x, y);
+    });
 
     // camera near clip (override)
     events.function('camera.near', () => {
