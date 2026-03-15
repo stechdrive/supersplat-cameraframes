@@ -2,7 +2,7 @@ import { MemoryFileSystem } from '@playcanvas/splat-transform';
 import { Color, Mat4, path, Texture, Vec3, Vec4 } from 'playcanvas';
 
 import { EditHistory } from './edit-history';
-import { SelectAllOp, SelectNoneOp, SelectInvertOp, SelectOp, HideSelectionOp, UnhideAllOp, DeleteSelectionOp, ResetOp, MultiOp, AddSplatOp } from './edit-ops';
+import { SelectAllOp, SelectNoneOp, SelectInvertOp, SelectOp, HideSelectionOp, UnhideAllOp, DeleteSelectionOp, ResetOp, AddSplatOp, SeparateSplatOp } from './edit-ops';
 import { Element, ElementType } from './element';
 import { Events } from './events';
 import { MappedReadFileSystem } from './io';
@@ -12,6 +12,13 @@ import { serializePly } from './splat-serialize';
 
 const removeExtension = (filename: string) => {
     return filename.substring(0, filename.length - path.getExtension(filename).length);
+};
+
+const loadSerializedSplat = (scene: Scene, filename: string, data: Uint8Array) => {
+    const blob = new Blob([data.buffer as ArrayBuffer], { type: 'application/octet-stream' });
+    const fileSystem = new MappedReadFileSystem();
+    fileSystem.addFile(filename, blob);
+    return scene.assetLoader.load(filename, fileSystem, false, blob);
 };
 
 // register for editor and scene events
@@ -573,6 +580,12 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
 
     const performSelectionFunc = async (func: 'duplicate' | 'separate') => {
         const splats = selectedSplats();
+        if (splats.length === 0) {
+            return;
+        }
+
+        const splat = splats[0];
+        const filename = `${removeExtension(splat.filename)}.ply`;
 
         const memFs = new MemoryFileSystem();
 
@@ -584,23 +597,39 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
         const data = memFs.results.get('output.ply');
 
         if (data) {
-            const splat = splats[0];
-
-            // wrap PLY in a blob and load it
-            const blob = new Blob([data.buffer as ArrayBuffer], { type: 'application/octet-stream' });
-            const filename = `${removeExtension(splat.filename)}.ply`;
-            const fileSystem = new MappedReadFileSystem();
-            fileSystem.addFile(filename, blob);
-            const copy = await scene.assetLoader.load(filename, fileSystem);
+            const copy = await loadSerializedSplat(scene, filename, data);
             if (!(copy instanceof Splat)) {
                 throw new Error('Duplicate/separate supports splats only');
             }
 
             if (func === 'separate') {
-                editHistory.add(new MultiOp([
-                    new DeleteSelectionOp(splat),
-                    new AddSplatOp(scene, copy)
-                ]));
+                const remainderFs = new MemoryFileSystem();
+                await serializePly([splat], {
+                    maxSHBands: 3,
+                    excludeSelected: true,
+                    keepStateData: true,
+                    keepWorldTransform: true,
+                    keepColorTint: true
+                }, remainderFs);
+
+                const remainderData = remainderFs.results.get('output.ply');
+                if (!remainderData) {
+                    copy.destroy();
+                    await events.invoke('showPopup', {
+                        type: 'error',
+                        header: 'Separate Splat',
+                        message: 'Cannot separate all gaussians from the source splat.'
+                    });
+                    return;
+                }
+
+                const remainder = await loadSerializedSplat(scene, filename, remainderData);
+                if (!(remainder instanceof Splat)) {
+                    copy.destroy();
+                    throw new Error('Separate supports splats only');
+                }
+
+                editHistory.add(new SeparateSplatOp(scene, splat, remainder, copy));
             } else {
                 editHistory.add(new AddSplatOp(scene, copy));
             }

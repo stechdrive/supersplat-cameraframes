@@ -134,9 +134,18 @@ class Splat extends Element {
     destroy() {
         super.destroy();
         this.transformPalette?.destroy();
-        this.entity.destroy();
-        this.asset.registry.remove(this.asset);
-        this.asset.unload();
+        this.transformPalette = null as any;
+        this.entity?.destroy();
+        this.entity = null as any;
+        if (this.asset) {
+            this.asset.registry?.remove(this.asset);
+            this.asset.unload();
+            this.asset = null as any;
+        }
+        this.splatData = null as any;
+        this.stateTexture = null;
+        this.transformTexture = null;
+        this._localCenters = null;
     }
 
     async updateState(changedState = State.selected) {
@@ -369,6 +378,37 @@ class Splat extends Element {
         if (gsplatComp) {
             gsplatComp.enabled = false;
         }
+    }
+
+    swapRuntimeDataWith(other: Splat) {
+        [
+            this.asset, other.asset,
+            this.splatData, other.splatData,
+            this.numSplats, other.numSplats,
+            this.numDeleted, other.numDeleted,
+            this.numHidden, other.numHidden,
+            this.numVisible, other.numVisible,
+            this.numLocked, other.numLocked,
+            this.numSelected, other.numSelected,
+            this.transformPalette, other.transformPalette,
+            this._localCenters, other._localCenters
+        ] = [
+            other.asset, this.asset,
+            other.splatData, this.splatData,
+            other.numSplats, this.numSplats,
+            other.numDeleted, this.numDeleted,
+            other.numHidden, this.numHidden,
+            other.numVisible, this.numVisible,
+            other.numLocked, this.numLocked,
+            other.numSelected, this.numSelected,
+            other.transformPalette, this.transformPalette,
+            other._localCenters, this._localCenters
+        ];
+
+        this.stateTexture = null;
+        this.transformTexture = null;
+        other.stateTexture = null;
+        other.transformTexture = null;
     }
 
     remove() {

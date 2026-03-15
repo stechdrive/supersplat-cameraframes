@@ -33,6 +33,7 @@ import { State } from './splat-state';
 type SerializeSettings = {
     maxSHBands?: number;            // specifies the maximum number of bands to be exported
     selected?: boolean;             // only export selected gaussians. used for copy/paste
+    excludeSelected?: boolean;      // export all non-selected gaussians. used for separate
     minOpacity?: number;            // filter out gaussians with alpha less than or equal to minAlpha
     removeInvalid?: boolean;        // filter out gaussians with invalid data (NaN/Infinity)
 
@@ -108,6 +109,7 @@ class GaussianFilter {
         };
 
         const onlySelected = serializeSettings.selected ?? false;
+        const excludeSelected = serializeSettings.excludeSelected ?? false;
         const minOpacity = serializeSettings.minOpacity ?? 0;
         const removeInvalid = serializeSettings.removeInvalid ?? false;
 
@@ -119,6 +121,10 @@ class GaussianFilter {
 
             // optionally filter out unselected gaussians
             if (onlySelected && !selectedActive(state[i])) {
+                return false;
+            }
+
+            if (excludeSelected && (state[i] & State.selected) !== 0) {
                 return false;
             }
 
