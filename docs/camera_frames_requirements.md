@@ -2,7 +2,7 @@
 
 ## 0. バージョンと参照
 
-- ベースコード: `src/camera-frames.ts` / `src/ui/camera-frames-panel.ts` / `src/camera.ts` / `src/scene.ts` / `src/render.ts`（package version 2.18.1 / HEAD 時点）。
+- ベースコード: `src/camera-frames.ts` / `src/ui/camera-frames-panel.ts` / `src/camera.ts` / `src/scene.ts` / `src/render.ts`（package version 2.24.2 / HEAD 時点）。
 - 関連実装: `src/reference-image-controller.ts` / `src/reference-image-types.ts` / `src/render.ts`（参照画像のプレビュー/書き出し・includeReferenceImage フラグ・永続化）。
 - CAMERA FRAMES 個別バージョン: `cameraFramesVersion` = **v2.20.11**（`package.json` 由来、`#app-label` に `| CAMERA FRAMES v2.20.11` を追加表示）。
 - 本書は v9 を置き換える **実装準拠版 v10**。更新点:
