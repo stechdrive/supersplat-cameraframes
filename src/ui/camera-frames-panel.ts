@@ -1097,17 +1097,13 @@ class CameraFramesPanel extends Panel {
         nearClipRow.append(nearClipInput);
 
         const localRow = new Container({ class: 'control-parent' });
-        const sliderLabelR = new Label({ class: 'control-label', text: localize('panel.camera-frames.transform.right-left') });
+        const sliderLabelR = new Label({ class: ['control-label', 'camera-transform-axis-label'], text: localize('panel.camera-frames.transform.right-left') });
         const sliderR = new SliderInput({ class: 'control-element-expand', min: -1, max: 1, step: 0.01, value: 0 });
-        const sliderLabelU = new Label({ class: 'control-label', text: localize('panel.camera-frames.transform.up-down') });
+        const sliderLabelU = new Label({ class: ['control-label', 'camera-transform-axis-label'], text: localize('panel.camera-frames.transform.up-down') });
         const sliderU = new SliderInput({ class: 'control-element-expand', min: -1, max: 1, step: 0.01, value: 0 });
-        const sliderLabelF = new Label({ class: 'control-label', text: localize('panel.camera-frames.transform.forward-back') });
+        const sliderLabelF = new Label({ class: ['control-label', 'camera-transform-axis-label'], text: localize('panel.camera-frames.transform.forward-back') });
         const sliderF = new SliderInput({ class: 'control-element-expand', min: -1, max: 1, step: 0.01, value: 0 });
-        const localGrid = new Container({ class: 'control-parent' });
-        localGrid.dom.style.display = 'grid';
-        localGrid.dom.style.gridTemplateColumns = '32px 1fr 32px 1fr 32px 1fr';
-        localGrid.dom.style.columnGap = '6px';
-        localGrid.dom.style.alignItems = 'center';
+        const localGrid = new Container({ class: ['control-parent', 'camera-transform-slider-grid'] });
         localGrid.append(sliderLabelR);
         localGrid.append(sliderR);
         localGrid.append(sliderLabelU);
