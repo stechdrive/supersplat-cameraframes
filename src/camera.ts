@@ -1921,13 +1921,9 @@ class Camera extends Element {
         this.currentPickTarget = splat;
 
         // Ensure blending is disabled for picking so that alpha=0 IDs are written
-        if (this.scene.renderSystem.getMergedInstance()) {
-            this.scene.renderSystem.withPickingBlendDisabled(() => {
-                this.picker.prepareId(splat, mode);
-            });
-        } else {
+        this.scene.renderSystem.withPickingBlendDisabled(() => {
             this.picker.prepareId(splat, mode);
-        }
+        });
     }
 
     async pick(x: number, y: number) {

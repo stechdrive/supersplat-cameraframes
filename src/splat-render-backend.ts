@@ -36,8 +36,6 @@ type SplatRenderBackend = {
     isSplatActive: (splat: Splat) => boolean;
     scheduleRebuildForVisibility: (immediate?: boolean) => void;
     mapPickId: (id: number) => SplatRenderPickMapping | null;
-    getMergedInstance: () => any;
-    getTransformPaletteTexture: () => Texture | null;
     getOverlayBinding: (splat: Splat) => SplatRenderOverlayBinding | null;
     withPickingBlendDisabled: (fn: () => void) => void;
     getSplatRange: (splat: Splat) => { offset: number; count: number } | null;

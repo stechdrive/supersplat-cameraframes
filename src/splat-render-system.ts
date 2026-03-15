@@ -279,14 +279,6 @@ class SplatRenderSystem implements SplatRenderBackend {
         return entry || null;
     }
 
-    getMergedInstance() {
-        return this.mergedEntity.gsplat?.instance ?? null;
-    }
-
-    getTransformPaletteTexture() {
-        return this.transformPalette.texture;
-    }
-
     getOverlayBinding(splat: Splat) {
         const transformATexture = this.mergedResource?.getTexture('transformA');
         const range = this.getSplatRange(splat);
@@ -316,19 +308,18 @@ class SplatRenderSystem implements SplatRenderBackend {
 
     withPickingBlendDisabled(fn: () => void) {
         const material = this.mergedEntity.gsplat?.instance?.material;
-        if (!material) {
-            fn();
-            return;
-        }
-
-        const oldBlend = material.blendType;
-        material.blendType = BLEND_NONE;
-        material.update();
-        try {
-            fn();
-        } finally {
-            material.blendType = oldBlend;
+        if (material) {
+            const oldBlend = material.blendType;
+            material.blendType = BLEND_NONE;
             material.update();
+            try {
+                fn();
+            } finally {
+                material.blendType = oldBlend;
+                material.update();
+            }
+        } else {
+            fn();
         }
     }
 
