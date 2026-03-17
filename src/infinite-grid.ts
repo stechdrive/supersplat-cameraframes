@@ -14,8 +14,7 @@ import {
     ScopeSpace,
     Shader,
     ShaderUtils,
-    Vec3,
-    Mat4
+    Vec3
 } from 'playcanvas';
 
 import {
@@ -67,10 +66,7 @@ class InfiniteGrid extends Element {
         );
 
         const view_position = [0, 0, 0];
-        const viewProjectionMatrix = new Mat4();
-        const viewProjectionInverse = new Mat4();
         const cameraMatrices: CameraProjectionData = createCameraProjectionData();
-        cameraMatrices.viewProjection = viewProjectionMatrix;
         let plane;
 
         this.preRenderLayerHandler = (cameraComponent: CameraComponent, layer: Layer, transparent: boolean) => {
@@ -104,18 +100,18 @@ class InfiniteGrid extends Element {
                 view_position[2] = p.z;
 
                 if (!buildCameraProjectionData(cameraComponent, cameraMatrices)) {
-                    viewProjectionMatrix.mul2(cameraComponent.projectionMatrix, cameraComponent.viewMatrix);
-                }
-                viewProjectionInverse.copy(viewProjectionMatrix);
-                if (!viewProjectionInverse.invert()) {
-                    return;
+                    cameraMatrices.viewProjection.mul2(cameraComponent.projectionMatrix, cameraComponent.viewMatrix);
+                    cameraMatrices.invViewProjection.copy(cameraMatrices.viewProjection);
+                    if (!cameraMatrices.invViewProjection.invert()) {
+                        return;
+                    }
                 }
 
                 resolve(device.scope, {
                     plane,
                     view_position,
-                    matrix_viewProjection: viewProjectionMatrix.data,
-                    matrix_viewProjectionInverse: viewProjectionInverse.data
+                    matrix_viewProjection: cameraMatrices.viewProjection.data,
+                    matrix_viewProjectionInverse: cameraMatrices.invViewProjection.data
                 });
 
                 this.quadRender.render();

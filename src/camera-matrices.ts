@@ -13,6 +13,7 @@ type CameraProjectionData = {
     viewInv: Mat4;
     view: Mat4;
     viewProjection: Mat4;
+    invViewProjection: Mat4;
     projectionOverridden: boolean;
     nearClip: number;
     farClip: number;
@@ -26,6 +27,7 @@ const createCameraProjectionData = (): CameraProjectionData => {
         viewInv: new Mat4(),
         view: new Mat4(),
         viewProjection: new Mat4(),
+        invViewProjection: new Mat4(),
         projectionOverridden: false,
         nearClip: 0,
         farClip: 0
@@ -38,7 +40,6 @@ const nearWorld = new Vec3();
 const farWorld = new Vec3();
 const cameraWorld = new Vec3();
 const rayPoint = new Vec3();
-const invViewProjection = new Mat4();
 const screenRay = new Ray();
 
 const unprojectClipCoord = (invViewProjection: Mat4, x: number, y: number, z: number, out: Vec3) => {
@@ -50,6 +51,16 @@ const unprojectClipCoord = (invViewProjection: Mat4, x: number, y: number, z: nu
     const iw = 1 / worldCoord.w;
     out.set(worldCoord.x * iw, worldCoord.y * iw, worldCoord.z * iw);
     return true;
+};
+
+const unprojectClipCoordWithProjectionData = (
+    projectionData: CameraProjectionData,
+    x: number,
+    y: number,
+    z: number,
+    out: Vec3
+) => {
+    return unprojectClipCoord(projectionData.invViewProjection, x, y, z, out);
 };
 
 const buildViewportCoords = (
@@ -99,15 +110,10 @@ const buildCameraRay = (
         return false;
     }
 
-    invViewProjection.copy(projectionData.viewProjection);
-    if (!invViewProjection.invert()) {
-        return false;
-    }
-
     const clipX = viewport.x * 2 - 1;
     const clipY = viewport.y * 2 - 1;
-    if (!unprojectClipCoord(invViewProjection, clipX, clipY, -1, nearWorld) ||
-        !unprojectClipCoord(invViewProjection, clipX, clipY, 1, farWorld)) {
+    if (!unprojectClipCoordWithProjectionData(projectionData, clipX, clipY, -1, nearWorld) ||
+        !unprojectClipCoordWithProjectionData(projectionData, clipX, clipY, 1, farWorld)) {
         return false;
     }
 
@@ -182,6 +188,10 @@ const buildCameraProjectionData = (camera: CameraComponent, out: CameraProjectio
     }
 
     out.viewProjection.mul2(out.projection, out.view);
+    out.invViewProjection.copy(out.viewProjection);
+    if (!out.invViewProjection.invert()) {
+        return false;
+    }
     return true;
 };
 
@@ -193,6 +203,7 @@ export {
     buildCameraProjectionData,
     createCameraProjectionData,
     screenToWorldWithProjectionData,
+    unprojectClipCoordWithProjectionData,
     worldToScreenWithProjectionData,
     type CameraMatrices,
     type CameraProjectionData

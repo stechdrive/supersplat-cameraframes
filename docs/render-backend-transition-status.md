@@ -63,6 +63,7 @@ projection contract の抽出は別レーンで継続している。
   - `CameraProjectionData`
   - `buildCameraProjectionData()`
   - `screenToWorld / getRay / worldToScreen` の contract 経由化
+  - `invViewProjection` を含む派生行列の共通化
 - 目的
   - custom frustum を renderer の偶発的な実装詳細ではなく、projection override として明示する
   - 将来 unified backend や upstream 実装が入っても、camera 側の境界で吸収しやすくする

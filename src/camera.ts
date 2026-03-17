@@ -54,6 +54,7 @@ import {
     buildCameraProjectionData,
     createCameraProjectionData,
     screenToWorldWithProjectionData,
+    unprojectClipCoordWithProjectionData,
     worldToScreenWithProjectionData,
     type CameraProjectionData
 } from './camera-matrices';
@@ -76,9 +77,6 @@ const vec = new Vec3();
 const vecb = new Vec3();
 const va = new Vec3();
 const cameraMatricesScratch: CameraProjectionData = createCameraProjectionData();
-const cameraInvViewProj = new Mat4();
-const cameraClip = new Vec4();
-const cameraWorld4 = new Vec4();
 const cameraFarBL = new Vec3();
 const cameraFarBR = new Vec3();
 const cameraFarTL = new Vec3();
@@ -94,17 +92,6 @@ const mod = (n: number, m: number) => ((n % m) + m) % m;
 const MAX_ORTHO_DEPTH_RATIO = 8192;
 const GRID_FADE_END_DISTANCE = 1000;
 const GRID_FAR_CLIP_MARGIN = 50;
-const unprojectNdc = (out: Vec3, invViewProj: Mat4, x: number, y: number, z: number) => {
-    cameraClip.set(x, y, z, 1);
-    invViewProj.transformVec4(cameraClip, cameraWorld4);
-    if (!isFinite(cameraWorld4.w) || Math.abs(cameraWorld4.w) <= 1e-6) {
-        return false;
-    }
-    const iw = 1 / cameraWorld4.w;
-    out.set(cameraWorld4.x * iw, cameraWorld4.y * iw, cameraWorld4.z * iw);
-    return true;
-};
-
 type CameraDoc = {
     focalPoint: number[];
     azim: number;
@@ -628,10 +615,7 @@ class Camera extends Element {
             }
 
             const matricesOk = buildCameraProjectionData(camera, cameraMatricesScratch);
-            if (matricesOk) {
-                cameraInvViewProj.copy(cameraMatricesScratch.viewProjection);
-            }
-            if (!matricesOk || !cameraInvViewProj.invert()) {
+            if (!matricesOk) {
                 if (!cameraMatricesScratch.projectionOverridden) {
                     // fallback to legacy when no custom frustum is active
                     const points = camera.camera.getFrustumCorners(-100);
@@ -659,9 +643,9 @@ class Camera extends Element {
                 return;
             }
 
-            const okFar = unprojectNdc(cameraFarBL, cameraInvViewProj, -1, -1, 1) &&
-                unprojectNdc(cameraFarBR, cameraInvViewProj, 1, -1, 1) &&
-                unprojectNdc(cameraFarTL, cameraInvViewProj, -1, 1, 1);
+            const okFar = unprojectClipCoordWithProjectionData(cameraMatricesScratch, -1, -1, 1, cameraFarBL) &&
+                unprojectClipCoordWithProjectionData(cameraMatricesScratch, 1, -1, 1, cameraFarBR) &&
+                unprojectClipCoordWithProjectionData(cameraMatricesScratch, -1, 1, 1, cameraFarTL);
             if (!okFar) {
                 if (!customFrustumActive) {
                     const points = camera.camera.getFrustumCorners(-100);

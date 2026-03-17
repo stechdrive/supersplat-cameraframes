@@ -9,7 +9,6 @@ import {
     CameraComponent,
     DepthState,
     Layer,
-    Mat4,
     QuadRender,
     ScopeSpace,
     Shader,
@@ -63,10 +62,7 @@ class EyeLevel extends Element {
             BLENDEQUATION_ADD, BLENDMODE_SRC_ALPHA, BLENDMODE_ONE_MINUS_SRC_ALPHA
         );
 
-        const viewProjectionMatrix = new Mat4();
-        const viewProjectionInverse = new Mat4();
         const cameraMatrices: CameraProjectionData = createCameraProjectionData();
-        cameraMatrices.viewProjection = viewProjectionMatrix;
 
         this.preRenderLayerHandler = (cameraComponent: CameraComponent, layer: Layer, transparent: boolean) => {
             const { scene } = this;
@@ -85,7 +81,11 @@ class EyeLevel extends Element {
                 return;
             }
             if (!buildCameraProjectionData(cameraComponent, cameraMatrices)) {
-                viewProjectionMatrix.mul2(cameraComponent.projectionMatrix, cameraComponent.viewMatrix);
+                cameraMatrices.viewProjection.mul2(cameraComponent.projectionMatrix, cameraComponent.viewMatrix);
+                cameraMatrices.invViewProjection.copy(cameraMatrices.viewProjection);
+                if (!cameraMatrices.invViewProjection.invert()) {
+                    return;
+                }
             }
 
             device.setBlendState(blendState);
@@ -94,13 +94,8 @@ class EyeLevel extends Element {
             device.setDepthState(DepthState.NODEPTH);
             device.setStencilState(null, null);
 
-            viewProjectionInverse.copy(viewProjectionMatrix);
-            if (!viewProjectionInverse.invert()) {
-                return;
-            }
-
             resolve(device.scope, {
-                matrix_viewProjectionInverse: viewProjectionInverse.data,
+                matrix_viewProjectionInverse: cameraMatrices.invViewProjection.data,
                 uColor: [1, 1, 1, 0.9],
                 uLineWidthPx: 1.2,
                 uGlowWidthPx: 4.0,
