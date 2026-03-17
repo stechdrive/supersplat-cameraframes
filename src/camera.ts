@@ -50,8 +50,11 @@ import {
     resolveCameraPositionWorldFromState
 } from './camera-frames-camera-state';
 import {
+    buildCameraRay,
     buildCameraProjectionData,
     createCameraProjectionData,
+    screenToWorldWithProjectionData,
+    worldToScreenWithProjectionData,
     type CameraProjectionData
 } from './camera-matrices';
 import { MIN_NEAR_CLIP } from './clip-constants';
@@ -445,13 +448,9 @@ class Camera extends Element {
         if (!buildCameraProjectionData(camera, cameraMatricesScratch)) {
             cameraMatricesScratch.viewProjection.mul2(camera.projectionMatrix, camera.viewMatrix);
         }
-
-        v4.set(world.x, world.y, world.z, 1);
-        cameraMatricesScratch.viewProjection.transformVec4(v4, v4);
-
-        screen.x = v4.x / v4.w * 0.5 + 0.5;
-        screen.y = 1.0 - (v4.y / v4.w * 0.5 + 0.5);
-        screen.z = v4.z / v4.w;
+        if (!worldToScreenWithProjectionData(cameraMatricesScratch, world, screen)) {
+            screen.set(0, 0, 0);
+        }
     }
 
     // transform the world space coordinate to CSS screen coordinates
@@ -1769,16 +1768,19 @@ class Camera extends Element {
             sy = mapped.y;
         }
 
-        if (this.customFrustum && !this.ortho) {
-            if (!this.getRay(sx, sy, ray, { space: 'css' })) {
-                return false;
+        const { camera } = this.entity;
+        if (!buildCameraProjectionData(camera, cameraMatricesScratch)) {
+            if (!cameraMatricesScratch.projectionOverridden) {
+                camera.screenToWorld(sx, sy, cameraz, world);
+                return true;
             }
-            world.copy(ray.origin).add(vec.copy(ray.direction).mulScalar(cameraz));
-            return true;
+            return false;
         }
 
-        this.entity.camera.screenToWorld(sx, sy, cameraz, world);
-        return true;
+        const device = this.scene?.graphicsDevice;
+        const clientWidth = device?.clientRect?.width ?? 0;
+        const clientHeight = device?.clientRect?.height ?? 0;
+        return screenToWorldWithProjectionData(camera, cameraMatricesScratch, sx, sy, cameraz, clientWidth, clientHeight, world);
     }
 
     getRay(screenX: number, screenY: number, ray: Ray, options?: { space?: 'css' | 'target' }) {
@@ -1792,37 +1794,18 @@ class Camera extends Element {
             sx = mapped.x;
             sy = mapped.y;
         }
-        const { entity, ortho } = this;
-        const cameraPos = this.entity.getPosition();
-        if (this.customFrustum && !ortho) {
-            const device = this.scene?.graphicsDevice;
-            const rect = entity.camera.rect;
-            const cw = device?.clientRect?.width ?? 0;
-            const ch = device?.clientRect?.height ?? 0;
-            if (cw > 0 && ch > 0 && rect.z > 0 && rect.w > 0) {
-                const nx = (sx - rect.x * cw) / (rect.z * cw);
-                const ny = 1 - (sy - (1 - rect.y - rect.w) * ch) / (rect.w * ch);
-                const { left, right, bottom, top, near } = this.customFrustum;
-                vec.set(left + nx * (right - left), bottom + ny * (top - bottom), -near);
-                entity.getWorldTransform().transformPoint(vec, vecb);
-                vecb.sub(cameraPos).normalize();
-                ray.set(cameraPos, vecb);
-                return true;
+        const camera = this.entity.camera;
+        if (!buildCameraProjectionData(camera, cameraMatricesScratch)) {
+            if (!cameraMatricesScratch.projectionOverridden) {
+                return false;
             }
+            return false;
         }
 
-        // create the pick ray in world space (screenToWorld expects CSS coords)
-        if (ortho) {
-            entity.camera.screenToWorld(sx, sy, -1.0, vec);
-            entity.camera.screenToWorld(sx, sy, 1.0, vecb);
-            vecb.sub(vec).normalize();
-            ray.set(vec, vecb);
-        } else {
-            entity.camera.screenToWorld(sx, sy, 1.0, vec);
-            vec.sub(cameraPos).normalize();
-            ray.set(cameraPos, vec);
-        }
-        return true;
+        const device = this.scene?.graphicsDevice;
+        const clientWidth = device?.clientRect?.width ?? 0;
+        const clientHeight = device?.clientRect?.height ?? 0;
+        return buildCameraRay(camera, cameraMatricesScratch, sx, sy, clientWidth, clientHeight, ray);
     }
 
     // intersect the scene at the given normalized screen coordinate (0-1 range) using depth picking

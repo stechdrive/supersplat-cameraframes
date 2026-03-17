@@ -56,6 +56,17 @@ custom frustum と整合しない可能性が高い。
 - stable 停止線 commit: `580e16f`
 - experimental branch: `codex/unified-display-prototype`
 
+projection contract の抽出は別レーンで継続している。
+
+- work branch: `codex/camera-projection-contract`
+- 導入済み
+  - `CameraProjectionData`
+  - `buildCameraProjectionData()`
+  - `screenToWorld / getRay / worldToScreen` の contract 経由化
+- 目的
+  - custom frustum を renderer の偶発的な実装詳細ではなく、projection override として明示する
+  - 将来 unified backend や upstream 実装が入っても、camera 側の境界で吸収しやすくする
+
 ## 次に進むときの方針
 
 1. stable では引き続き upstream SuperSplat 追従を優先する
