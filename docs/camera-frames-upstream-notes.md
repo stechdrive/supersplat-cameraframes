@@ -3,6 +3,8 @@
 このメモは、`camera-frames` 系の upstream 追従で判断を忘れないための短いログです。
 `codex/upstream-2.24.2-staged-integration` 以降の作業で参照する前提です。
 
+render backend の移行方針と stable / prototype の境界は `docs/render-backend-transition-status.md` を参照。
+
 ## 方針
 
 - 一括 merge はしない

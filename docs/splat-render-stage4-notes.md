@@ -10,11 +10,12 @@
 
 ## 現在の到達点
 
-`camera-frames` には Stage 3 まで反映済み。
+`camera-frames` には Stage 4 の stable 停止線まで反映済み。
 
 - SuperSplat version: `2.24.2`
-- CAMERA FRAMES version: `v2.20.11`
-- 直近 merge: `a519251 merge: integrate splat render system stage3`
+- CAMERA FRAMES version: `v2.20.12`
+- stable 反映先: `camera-frames`
+- stable 停止線: `580e16f refactor(render): add backend mode capabilities`
 
 補足:
 
@@ -24,6 +25,7 @@
 - backend factory は、同一インスタンスをそのまま配る形ではなく、役割別 wrapper と合成 backend を返す
 - mainline には `renderBackend.mode` と `capabilities` を入れ、既定は `merged` のまま維持する
 - `unified-display` は mainline ではまだ実装せず、安全に `merged` へフォールバックさせる
+- `codex/unified-display-prototype` は stable に戻さず、Engine unified renderer 実験用ブランチとして分離する
 
 ## Stage 2 / Stage 3 でやったこと
 
@@ -162,5 +164,5 @@
 
 ## 再開位置
 
-現時点では `camera-frames` に Stage 3 までマージ済み。
+現時点では `camera-frames` に Stage 4 の stable 停止線までマージ済み。
 新しい作業は、`camera-frames` から新しい `codex/` ブランチを切って始めること。
