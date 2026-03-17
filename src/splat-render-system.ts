@@ -222,6 +222,10 @@ class SplatRenderSystem {
         return this.displayOps.isSplatActive(splat);
     }
 
+    getDisplayBackend() {
+        return this.displayController;
+    }
+
     private getEntry(splat: Splat) {
         return this.entries.get(splat) ?? null;
     }
@@ -1453,7 +1457,7 @@ const createSupersplatSplatRenderSystemBackends = (scene: Scene): Omit<SplatRend
 
     return {
         lifecycle: new SplatRenderSystemLifecycleBackend(core),
-        display: createSplatRenderSystemDisplayBackend(core.createDisplayContext()),
+        display: core.getDisplayBackend(),
         data: new SplatRenderSystemDataBackend(core.createDataContext()),
         picking: new SplatRenderSystemPickingBackend(core.createPickingContext()),
         overlay: new SplatRenderSystemOverlayBackend(core.createOverlayContext())
