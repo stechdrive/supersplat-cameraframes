@@ -52,11 +52,10 @@ import {
 import {
     buildCameraRay,
     buildCameraProjectionData,
-    buildLegacyCameraRayBasis,
-    buildProjectionCameraRayBasis,
     createCameraProjectionData,
     createCameraRayBasis,
     getOpticalAxisScreenCoordsWithProjectionData,
+    resolveCameraRayBasis,
     screenToWorldWithProjectionData,
     worldToScreenWithProjectionData,
     type CameraRayBasis,
@@ -602,36 +601,10 @@ class Camera extends Element {
             setRayValid(0);
 
             const customFrustumActive = this.customFrustum !== null;
-            const isOrtho = camera.projection === PROJECTION_ORTHOGRAPHIC;
-
-            if (isOrtho && !customFrustumActive) {
-                // legacy ortho path for stable UX (avoid near-plane pop)
-                if (buildLegacyCameraRayBasis(camera, cameraRayBasisScratch)) {
-                    applyRayBasis(cameraRayBasisScratch);
-                    setRayValid(1);
-                }
-                return;
-            }
-
-            const matricesOk = buildCameraProjectionData(camera, cameraMatricesScratch);
-            if (!matricesOk) {
-                if (!cameraMatricesScratch.projectionOverridden) {
-                    // fallback to legacy when no custom frustum is active
-                    if (buildLegacyCameraRayBasis(camera, cameraRayBasisScratch)) {
-                        applyRayBasis(cameraRayBasisScratch);
-                        setRayValid(1);
-                    }
-                }
-                return;
-            }
-
-            if (!buildProjectionCameraRayBasis(cameraMatricesScratch, cameraRayBasisScratch)) {
-                if (!customFrustumActive) {
-                    if (buildLegacyCameraRayBasis(camera, cameraRayBasisScratch)) {
-                        applyRayBasis(cameraRayBasisScratch);
-                        setRayValid(1);
-                    }
-                }
+            if (!resolveCameraRayBasis(camera, cameraMatricesScratch, cameraRayBasisScratch, {
+                allowLegacyFallback: !customFrustumActive,
+                preferLegacyOrtho: !customFrustumActive
+            })) {
                 return;
             }
 

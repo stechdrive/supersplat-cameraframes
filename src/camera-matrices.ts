@@ -30,6 +30,11 @@ type CameraRayBasis = {
     farY: Vec3;
 };
 
+type CameraRayBasisResolveOptions = {
+    allowLegacyFallback: boolean;
+    preferLegacyOrtho: boolean;
+};
+
 const createCameraProjectionData = (): CameraProjectionData => {
     return {
         projection: new Mat4(),
@@ -272,6 +277,31 @@ const buildCameraProjectionData = (camera: CameraComponent, out: CameraProjectio
     return true;
 };
 
+const resolveCameraRayBasis = (
+    camera: CameraComponent,
+    projectionData: CameraProjectionData,
+    out: CameraRayBasis,
+    options: CameraRayBasisResolveOptions
+) => {
+    if (options.preferLegacyOrtho && camera.projection === PROJECTION_ORTHOGRAPHIC) {
+        return buildLegacyCameraRayBasis(camera, out);
+    }
+
+    const projectionOk = buildCameraProjectionData(camera, projectionData);
+    if (!projectionOk) {
+        if (options.allowLegacyFallback && !projectionData.projectionOverridden) {
+            return buildLegacyCameraRayBasis(camera, out);
+        }
+        return false;
+    }
+
+    if (buildProjectionCameraRayBasis(projectionData, out)) {
+        return true;
+    }
+
+    return options.allowLegacyFallback ? buildLegacyCameraRayBasis(camera, out) : false;
+};
+
 const buildCameraMatrices = buildCameraProjectionData;
 
 export {
@@ -280,6 +310,7 @@ export {
     buildCameraProjectionData,
     buildLegacyCameraRayBasis,
     buildProjectionCameraRayBasis,
+    resolveCameraRayBasis,
     createCameraProjectionData,
     createCameraRayBasis,
     getOpticalAxisScreenCoordsWithProjectionData,
@@ -287,6 +318,7 @@ export {
     unprojectClipCoordWithProjectionData,
     worldToScreenWithProjectionData,
     type CameraRayBasis,
+    type CameraRayBasisResolveOptions,
     type CameraMatrices,
     type CameraProjectionData
 };
