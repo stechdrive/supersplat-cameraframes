@@ -49,7 +49,11 @@ import {
     resolveCameraFramesOrthoHeight,
     resolveCameraPositionWorldFromState
 } from './camera-frames-camera-state';
-import { buildCameraMatrices, type CameraMatrices } from './camera-matrices';
+import {
+    buildCameraProjectionData,
+    createCameraProjectionData,
+    type CameraProjectionData
+} from './camera-matrices';
 import { MIN_NEAR_CLIP } from './clip-constants';
 import { PointerController } from './controllers';
 import { Element, ElementType } from './element';
@@ -68,12 +72,7 @@ const ray = new Ray();
 const vec = new Vec3();
 const vecb = new Vec3();
 const va = new Vec3();
-const cameraMatricesScratch: CameraMatrices = {
-    projection: new Mat4(),
-    viewInv: new Mat4(),
-    view: new Mat4(),
-    viewProjection: new Mat4()
-};
+const cameraMatricesScratch: CameraProjectionData = createCameraProjectionData();
 const cameraInvViewProj = new Mat4();
 const cameraClip = new Vec4();
 const cameraWorld4 = new Vec4();
@@ -443,7 +442,7 @@ class Camera extends Element {
     // transform the world space coordinate to normalized screen coordinate
     worldToScreen(world: Vec3, screen: Vec3) {
         const camera = this.camera;
-        if (!buildCameraMatrices(camera, cameraMatricesScratch)) {
+        if (!buildCameraProjectionData(camera, cameraMatricesScratch)) {
             cameraMatricesScratch.viewProjection.mul2(camera.projectionMatrix, camera.viewMatrix);
         }
 
@@ -629,12 +628,12 @@ class Camera extends Element {
                 return;
             }
 
-            const matricesOk = buildCameraMatrices(camera, cameraMatricesScratch);
+            const matricesOk = buildCameraProjectionData(camera, cameraMatricesScratch);
             if (matricesOk) {
                 cameraInvViewProj.copy(cameraMatricesScratch.viewProjection);
             }
             if (!matricesOk || !cameraInvViewProj.invert()) {
-                if (!customFrustumActive) {
+                if (!cameraMatricesScratch.projectionOverridden) {
                     // fallback to legacy when no custom frustum is active
                     const points = camera.camera.getFrustumCorners(-100);
                     const worldTransform = entity.getWorldTransform();

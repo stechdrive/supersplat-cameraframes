@@ -18,7 +18,11 @@ import {
     Mat4
 } from 'playcanvas';
 
-import { buildCameraMatrices, type CameraMatrices } from './camera-matrices';
+import {
+    buildCameraProjectionData,
+    createCameraProjectionData,
+    type CameraProjectionData
+} from './camera-matrices';
 import { Element, ElementType } from './element';
 import { Serializer } from './serializer';
 import { vertexShader, fragmentShader } from './shaders/infinite-grid-shader';
@@ -65,12 +69,8 @@ class InfiniteGrid extends Element {
         const view_position = [0, 0, 0];
         const viewProjectionMatrix = new Mat4();
         const viewProjectionInverse = new Mat4();
-        const cameraMatrices: CameraMatrices = {
-            projection: new Mat4(),
-            viewInv: new Mat4(),
-            view: new Mat4(),
-            viewProjection: viewProjectionMatrix
-        };
+        const cameraMatrices: CameraProjectionData = createCameraProjectionData();
+        cameraMatrices.viewProjection = viewProjectionMatrix;
         let plane;
 
         this.preRenderLayerHandler = (cameraComponent: CameraComponent, layer: Layer, transparent: boolean) => {
@@ -103,7 +103,7 @@ class InfiniteGrid extends Element {
                 view_position[1] = p.y;
                 view_position[2] = p.z;
 
-                if (!buildCameraMatrices(cameraComponent, cameraMatrices)) {
+                if (!buildCameraProjectionData(cameraComponent, cameraMatrices)) {
                     viewProjectionMatrix.mul2(cameraComponent.projectionMatrix, cameraComponent.viewMatrix);
                 }
                 viewProjectionInverse.copy(viewProjectionMatrix);

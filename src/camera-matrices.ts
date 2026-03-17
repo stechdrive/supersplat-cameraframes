@@ -5,14 +5,35 @@ import {
     type CameraComponent
 } from 'playcanvas';
 
-type CameraMatrices = {
+type CameraProjectionData = {
     projection: Mat4;
     viewInv: Mat4;
     view: Mat4;
     viewProjection: Mat4;
+    projectionOverridden: boolean;
+    nearClip: number;
+    farClip: number;
 };
 
-const buildCameraMatrices = (camera: CameraComponent, out: CameraMatrices): boolean => {
+type CameraMatrices = CameraProjectionData;
+
+const createCameraProjectionData = (): CameraProjectionData => {
+    return {
+        projection: new Mat4(),
+        viewInv: new Mat4(),
+        view: new Mat4(),
+        viewProjection: new Mat4(),
+        projectionOverridden: false,
+        nearClip: 0,
+        farClip: 0
+    };
+};
+
+const buildCameraProjectionData = (camera: CameraComponent, out: CameraProjectionData): boolean => {
+    out.projectionOverridden = !!camera.calculateProjection;
+    out.nearClip = camera.nearClip;
+    out.farClip = camera.farClip;
+
     out.projection.copy(camera.projectionMatrix);
     camera.calculateProjection?.(out.projection, VIEW_CENTER);
 
@@ -31,4 +52,12 @@ const buildCameraMatrices = (camera: CameraComponent, out: CameraMatrices): bool
     return true;
 };
 
-export { buildCameraMatrices, type CameraMatrices };
+const buildCameraMatrices = buildCameraProjectionData;
+
+export {
+    buildCameraMatrices,
+    buildCameraProjectionData,
+    createCameraProjectionData,
+    type CameraMatrices,
+    type CameraProjectionData
+};

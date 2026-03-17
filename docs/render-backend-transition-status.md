@@ -60,6 +60,6 @@ custom frustum と整合しない可能性が高い。
 
 1. stable では引き続き upstream SuperSplat 追従を優先する
 2. unified 実験は `codex/unified-display-prototype` で続ける
-3. まず `CAMERA_FRAMES` custom frustum と Engine unified の不一致を切り分ける
+3. renderer より先に `camera projection contract` を抽出し、custom frustum を projection override として扱う境界を明確にする
 4. 必要なら Engine 側差分か adapter 層で吸収する
 5. unified が stable に戻るのは、表示だけでなく編集機能と CAMERA_FRAMES 機能の整合が見えた後

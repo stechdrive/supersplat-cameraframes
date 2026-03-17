@@ -16,7 +16,11 @@ import {
     ShaderUtils
 } from 'playcanvas';
 
-import { buildCameraMatrices, type CameraMatrices } from './camera-matrices';
+import {
+    buildCameraProjectionData,
+    createCameraProjectionData,
+    type CameraProjectionData
+} from './camera-matrices';
 import { Element, ElementType } from './element';
 import { Serializer } from './serializer';
 import { vertexShader, fragmentShader } from './shaders/eye-level-shader';
@@ -61,12 +65,8 @@ class EyeLevel extends Element {
 
         const viewProjectionMatrix = new Mat4();
         const viewProjectionInverse = new Mat4();
-        const cameraMatrices: CameraMatrices = {
-            projection: new Mat4(),
-            viewInv: new Mat4(),
-            view: new Mat4(),
-            viewProjection: viewProjectionMatrix
-        };
+        const cameraMatrices: CameraProjectionData = createCameraProjectionData();
+        cameraMatrices.viewProjection = viewProjectionMatrix;
 
         this.preRenderLayerHandler = (cameraComponent: CameraComponent, layer: Layer, transparent: boolean) => {
             const { scene } = this;
@@ -84,7 +84,7 @@ class EyeLevel extends Element {
                 // Eye-level overlay fills the screen in orthographic projection.
                 return;
             }
-            if (!buildCameraMatrices(cameraComponent, cameraMatrices)) {
+            if (!buildCameraProjectionData(cameraComponent, cameraMatrices)) {
                 viewProjectionMatrix.mul2(cameraComponent.projectionMatrix, cameraComponent.viewMatrix);
             }
 

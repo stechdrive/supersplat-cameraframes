@@ -13,7 +13,11 @@ import {
     BlendState
 } from 'playcanvas';
 
-import { buildCameraMatrices, type CameraMatrices } from '../camera-matrices';
+import {
+    buildCameraProjectionData,
+    createCameraProjectionData,
+    type CameraProjectionData
+} from '../camera-matrices';
 import { getProcessorShaderBindings, type ProcessorContext } from './types';
 import { vertexShader, fragmentShader } from '../shaders/intersection-shader';
 
@@ -48,7 +52,7 @@ class Intersect {
     private viewMat = new Mat4();
     private viewInvMat = new Mat4();
     private projMat = new Mat4();
-    private cameraMatrices: CameraMatrices;
+    private cameraMatrices: CameraProjectionData;
     private shader: Shader = null;
     private texture: Texture = null;
     private renderTarget: RenderTarget = null;
@@ -61,12 +65,11 @@ class Intersect {
             height: 1,
             format: PIXELFORMAT_RGBA8
         });
-        this.cameraMatrices = {
-            projection: this.projMat,
-            viewInv: this.viewInvMat,
-            view: this.viewMat,
-            viewProjection: this.viewProjectionMat
-        };
+        this.cameraMatrices = createCameraProjectionData();
+        this.cameraMatrices.projection = this.projMat;
+        this.cameraMatrices.viewInv = this.viewInvMat;
+        this.cameraMatrices.view = this.viewMat;
+        this.cameraMatrices.viewProjection = this.viewProjectionMat;
     }
 
     private getResources(width: number, numSplats: number) {
@@ -145,9 +148,8 @@ class Intersect {
 
         // update view projection matrix (respect calculateProjection/calculateTransform)
         const camera = ctx.splat.scene.camera.entity.camera;
-        const hasCustomFrustum = !!ctx.splat.scene.camera.getCustomFrustum();
-        if (!buildCameraMatrices(camera, this.cameraMatrices)) {
-            if (!hasCustomFrustum) {
+        if (!buildCameraProjectionData(camera, this.cameraMatrices)) {
+            if (!this.cameraMatrices.projectionOverridden) {
                 this.viewProjectionMat.mul2(camera.projectionMatrix, camera.viewMatrix);
             } else {
                 resources.data.fill(0);
