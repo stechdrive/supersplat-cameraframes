@@ -58,6 +58,7 @@
 - `display backend` は source list と visibility rebuild 状態も内部に持ち、core は `getSources()` 経由で参照する形に寄せた
 - `lifecycle backend` も controller 化し、`freeze / dirty / needsTransformUpdate / waitForSorter / preRender` の state を core 直持ちしない形にした
 - `rebuild()` は `build artifacts` と `runtime state` の helper を使う形に分け、merged data/resource と runtime texture 初期化のまとまりを明示した
+- `rebuild()` の後段も `apply build artifacts / apply runtime state / populate runtime / sync runtime textures / finalize` に分けた
 
 主な反映:
 

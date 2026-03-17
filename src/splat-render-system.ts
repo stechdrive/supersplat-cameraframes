@@ -160,6 +160,11 @@ type SplatRenderRuntimeState = {
     globalTransformIndices: Uint16Array;
 };
 
+type SplatRenderRuntimeDimensions = {
+    width: number;
+    height: number;
+};
+
 const createSplatRenderProcessorContext = (context: SplatRenderSystemDataContext, splat: Splat): ProcessorContext => {
     const entry = context.getEntry(splat);
     const resourceInfo = context.getMergedResourceInfo();
@@ -370,6 +375,18 @@ const createSplatRenderRuntimeState = (
         globalState: new Uint8Array(globalStateSize),
         globalTransformIndices: new Uint16Array(globalStateSize)
     };
+};
+
+const destroySplatRenderRuntimeState = (
+    stateTexture: Texture | null,
+    transformTexture: Texture | null,
+    paramsTextures: ParamsTextures | null
+) => {
+    stateTexture?.destroy();
+    transformTexture?.destroy();
+    paramsTextures?.tex0.destroy();
+    paramsTextures?.tex1.destroy();
+    paramsTextures?.tex2.destroy();
 };
 
 class SplatRenderSystem {
@@ -824,33 +841,21 @@ class SplatRenderSystem {
         });
     }
 
-    rebuild() {
-        this.destroyMerged();
-        this.centersUpdateToken++;
+    private resetEmptyRebuildState() {
+        destroySplatRenderRuntimeState(this.stateTexture, this.transformTexture, this.paramsTextures);
+        this.stateTexture = null;
+        this.transformTexture = null;
+        this.paramsTextures = null;
+        this.paramsStorage = null;
+        this.entries.clear();
+        this.globalState = null;
+        this.globalTransformIndices = null;
+        this.globalIdToSplat = [];
+        this.sorterMapping = null;
+        this.sorterCentersDirty = false;
+    }
 
-        const activeSources = this.displayController.getSources().filter(splat => splat.visible);
-        if (activeSources.length === 0) {
-            console.log('SplatRenderSystem: No sources to rebuild');
-            this.destroyMerged();
-            this.stateTexture?.destroy();
-            this.stateTexture = null;
-            this.transformTexture?.destroy();
-            this.transformTexture = null;
-            this.paramsTextures?.tex0.destroy();
-            this.paramsTextures?.tex1.destroy();
-            this.paramsTextures?.tex2.destroy();
-            this.paramsTextures = null;
-            this.paramsStorage = null;
-            this.entries.clear();
-            this.globalState = null;
-            this.globalTransformIndices = null;
-            this.globalIdToSplat = [];
-            this.sorterMapping = null;
-            this.sorterCentersDirty = false;
-            return;
-        }
-
-        const buildArtifacts = createSplatRenderBuildArtifacts(this.scene, activeSources);
+    private applyBuildArtifacts(buildArtifacts: SplatRenderBuildArtifacts) {
         this.transformPalette.destroy();
         this.transformPalette = buildArtifacts.transformPalette;
         this.entries = buildArtifacts.entries;
@@ -860,115 +865,130 @@ class SplatRenderSystem {
         this.mergedResourceInfo = buildArtifacts.mergedResourceInfo;
         this.mergedAsset = buildArtifacts.mergedAsset;
         this.shBands = buildArtifacts.shBands;
+    }
 
+    private attachMergedAsset() {
         this.mergedEntity.addComponent('gsplat', { asset: this.mergedAsset });
         const splatLayer = this.scene.splatLayer ?? this.scene.app.scene.layers.getLayerByName('Splat');
         if (splatLayer) {
             this.mergedEntity.gsplat.layers = [splatLayer.id];
-        } else {
-            const worldLayer = this.scene.app.scene.layers.getLayerByName('World');
-            if (worldLayer) {
-                this.mergedEntity.gsplat.layers = [worldLayer.id];
-            }
+            return;
         }
 
-        // テクスチャ再構築
-        // GSplatResourceと同じテクスチャサイズを使用する必要がある (UV計算の一貫性のため)
+        const worldLayer = this.scene.app.scene.layers.getLayerByName('World');
+        if (worldLayer) {
+            this.mergedEntity.gsplat.layers = [worldLayer.id];
+        }
+    }
+
+    private getRuntimeDimensions(): SplatRenderRuntimeDimensions {
         const resourceInfo = this.mergedResourceInfo ?? createMergedResourceInfo(this.mergedResource);
-        const width = resourceInfo.width;
-        const height = resourceInfo.height;
+        return {
+            width: resourceInfo.width,
+            height: resourceInfo.height
+        };
+    }
 
-        console.log('SplatRenderSystem: Merged data created.',
-            'Total splats:', buildArtifacts.totalSplats,
-            'Resource Width:', width,
-            'Resource Height:', height,
-            'Color Tex Width:', resourceInfo.colorTextureWidth,
-            'SH Bands:', buildArtifacts.shBands
-        );
-
-        this.stateTexture?.destroy();
-        this.transformTexture?.destroy();
-        this.paramsTextures?.tex0.destroy();
-        this.paramsTextures?.tex1.destroy();
-        this.paramsTextures?.tex2.destroy();
-        this.paramsTextures = null;
-        this.paramsStorage = null;
-
-        const runtimeState = createSplatRenderRuntimeState(
-            (name: string, texWidth: number, texHeight: number, format: number) => this.createTexture(name, texWidth, texHeight, format),
-            width,
-            height
-        );
+    private applyRuntimeState(runtimeState: SplatRenderRuntimeState) {
+        destroySplatRenderRuntimeState(this.stateTexture, this.transformTexture, this.paramsTextures);
         this.stateTexture = runtimeState.stateTexture;
         this.transformTexture = runtimeState.transformTexture;
         this.paramsTextures = runtimeState.paramsTextures;
         this.paramsStorage = runtimeState.paramsStorage;
         this.globalState = runtimeState.globalState;
         this.globalTransformIndices = runtimeState.globalTransformIndices;
+    }
 
+    private populateRuntimeState(activeSources: Splat[]) {
         activeSources.forEach((splat) => {
             const entry = this.getEntry(splat);
             const block = entry?.transformBlock;
             if (!entry || !block) {
                 return;
             }
-            const state = splat.splatData.getProp('state') as Uint8Array;
-            const indices = splat.splatData.getProp('transform') as Uint16Array;
 
-            // globalState updating is handled in updateState call below
-            // but we need globalTransformIndices setup here or in updateTransform
+            const indices = splat.splatData.getProp('transform') as Uint16Array;
             for (let i = 0; i < entry.count; i++) {
                 this.globalTransformIndices[entry.offset + i] = block.base + indices[i];
             }
-
-            for (let i = 0; i < entry.count; i++) {
-                this.globalIdToSplat[entry.offset + i] = { splat, local: i };
-            }
         });
 
-        // データ設定 (updateState/updateSplatParams でテクスチャ転送を行うため、ここでは初期化のみ)
-        // transformTexture はここで一度転送する
         const transformData = this.transformTexture.lock() as Uint16Array;
         transformData.set(this.globalTransformIndices);
         this.transformTexture.unlock();
+    }
 
-        // 各Splatのパラメータと状態を更新・転送
-        if (this.paramsTextures && this.paramsStorage) {
-            this.displayController.getSources().forEach((splat) => {
-                this.updateSplatParams(splat);
-                this.updateState(splat);
-            });
+    private syncRuntimeTextures() {
+        if (!this.paramsTextures || !this.paramsStorage) {
+            return;
         }
 
+        this.displayController.getSources().forEach((splat) => {
+            this.updateSplatParams(splat);
+            this.updateState(splat);
+        });
+    }
+
+    private finalizeRebuild(activeSources: Splat[], totalSplats: number) {
         this.applyMaterialBands(this.scene.events.invoke('view.bands'));
 
         const instance = this.mergedEntity.gsplat.instance;
         if (instance) {
             instance.meshInstance.cull = false;
-            this.seedInstance(instance, buildArtifacts.totalSplats);
+            this.seedInstance(instance, totalSplats);
 
-            // Update sorter centers asynchronously (GPU readback).
             const centersToken = this.centersUpdateToken;
-            this.updateSorterCenters([...activeSources], buildArtifacts.totalSplats, instance, centersToken).catch(() => {});
+            this.updateSorterCenters([...activeSources], totalSplats, instance, centersToken).catch(() => {});
         }
 
         this.ensureSorterUpdatedHandler();
-
         this.rebuildSorterMapping();
         this.scene.forceRender = true;
         this.materialDirty = false;
-
         this.scene.boundDirty = true;
 
-        // Ensure transforms (and thus world centers) are up to date
-        // This prevents pivot picking issues where centers are initially 0 or unscaled
         activeSources.forEach((splat) => {
             this.updateTransform(splat);
         });
-
-        // Trigger delayed transform update to ensure centers are valid
-        // regardless of async sorter initialization timing
         this.lifecycleController.setNeedsTransformUpdate(true);
+    }
+
+    rebuild() {
+        this.destroyMerged();
+        this.centersUpdateToken++;
+
+        const activeSources = this.displayController.getSources().filter(splat => splat.visible);
+        if (activeSources.length === 0) {
+            console.log('SplatRenderSystem: No sources to rebuild');
+            this.destroyMerged();
+            this.resetEmptyRebuildState();
+            return;
+        }
+
+        const buildArtifacts = createSplatRenderBuildArtifacts(this.scene, activeSources);
+        this.applyBuildArtifacts(buildArtifacts);
+        this.attachMergedAsset();
+
+        const resourceInfo = this.mergedResourceInfo ?? createMergedResourceInfo(this.mergedResource);
+        const runtimeDimensions = this.getRuntimeDimensions();
+
+        console.log('SplatRenderSystem: Merged data created.',
+            'Total splats:', buildArtifacts.totalSplats,
+            'Resource Width:', runtimeDimensions.width,
+            'Resource Height:', runtimeDimensions.height,
+            'Color Tex Width:', resourceInfo.colorTextureWidth,
+            'SH Bands:', buildArtifacts.shBands
+        );
+
+        const runtimeState = createSplatRenderRuntimeState(
+            (name: string, texWidth: number, texHeight: number, format: number) => this.createTexture(name, texWidth, texHeight, format),
+            runtimeDimensions.width,
+            runtimeDimensions.height
+        );
+        this.applyRuntimeState(runtimeState);
+        this.populateRuntimeState(activeSources);
+        this.syncRuntimeTextures();
+        this.finalizeRebuild(activeSources, buildArtifacts.totalSplats);
     }
 }
 
