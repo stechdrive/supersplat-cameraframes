@@ -114,6 +114,25 @@ type SplatRenderSystemOverlayContext = {
     getTransformPaletteTexture: () => Texture | null;
 };
 
+type SplatRenderSystemLifecycleContext = {
+    scene: Scene;
+    getSources: () => Splat[];
+    getMergedInstance: () => any;
+    ensureSorterUpdatedHandler: () => void;
+    flushSorterCenters: () => void;
+    isMaterialDirty: () => boolean;
+    setMaterialDirty: (value: boolean) => void;
+    applyMaterialBands: (bands: number) => void;
+    updateTransform: (splat: Splat, skipCenterUpdate?: boolean) => void;
+    rebuild: () => void;
+};
+
+type SplatRenderSystemLifecycleController = SplatRenderLifecycleBackend & {
+    isFrozen: () => boolean;
+    markDirty: () => void;
+    setNeedsTransformUpdate: (value: boolean) => void;
+};
+
 type SplatRenderSystemDisplayController = SplatRenderDisplayBackend & {
     getSources: () => Splat[];
     onPivotStarted: () => void;
@@ -161,12 +180,12 @@ class SplatRenderSystem {
     globalTransformIndices: Uint16Array | null = null;
     boundCache = new Map<Splat, BoundCacheEntry>();
     shBands = 0;
-    sorterPromiseHandle: Promise<void> | null = null;
     private sorterCentersDirty = false;
     private centersUpdateToken = 0;
     private sorterMapping: Uint32Array | null = null;
     private sorterUpdatedHandle: { off: () => void } | null = null;
     private sorterUpdatedSorter: unknown | null = null;
+    private lifecycleController!: SplatRenderSystemLifecycleController;
     private displayOps!: SplatRenderDisplayBackend;
     private displayController!: SplatRenderSystemDisplayController;
 
@@ -176,6 +195,7 @@ class SplatRenderSystem {
 
         this.mergedEntity = new Entity('mergedSplat');
         this.scene.contentRoot.addChild(this.mergedEntity);
+        this.lifecycleController = createSplatRenderSystemLifecycleBackend(this.createLifecycleContext());
         this.displayController = createSplatRenderSystemDisplayBackend(this.createDisplayContext());
         this.displayOps = this.displayController;
 
@@ -203,23 +223,12 @@ class SplatRenderSystem {
         });
     }
 
-    private _frozen = false;
-    private _dirty = false;
-
-    freeze() {
-        this._frozen = true;
-    }
-
-    unfreeze() {
-        this._frozen = false;
-        if (this._dirty) {
-            this.rebuild();
-            this._dirty = false;
-        }
-    }
-
     isSplatActive(splat: Splat) {
         return this.displayOps.isSplatActive(splat);
+    }
+
+    getLifecycleBackend() {
+        return this.lifecycleController;
     }
 
     getDisplayBackend() {
@@ -330,10 +339,25 @@ class SplatRenderSystem {
             getTransformPalette: () => this.transformPalette,
             markSorterCentersDirty: () => this.markSorterCentersDirty(),
             rebuildSorterMapping: () => this.rebuildSorterMapping(),
-            isFrozen: () => this._frozen,
-            markDirty: () => {
-                this._dirty = true;
+            isFrozen: () => this.lifecycleController.isFrozen(),
+            markDirty: () => this.lifecycleController.markDirty(),
+            rebuild: () => this.rebuild()
+        };
+    }
+
+    createLifecycleContext(): SplatRenderSystemLifecycleContext {
+        return {
+            scene: this.scene,
+            getSources: () => this.displayController?.getSources?.() ?? [],
+            getMergedInstance: () => this.mergedEntity.gsplat?.instance,
+            ensureSorterUpdatedHandler: () => this.ensureSorterUpdatedHandler(),
+            flushSorterCenters: () => this.flushSorterCenters(),
+            isMaterialDirty: () => this.materialDirty,
+            setMaterialDirty: (value: boolean) => {
+                this.materialDirty = value;
             },
+            applyMaterialBands: (bands: number) => this.applyMaterialBands(bands),
+            updateTransform: (splat: Splat, skipCenterUpdate?: boolean) => this.updateTransform(splat, skipCenterUpdate),
             rebuild: () => this.rebuild()
         };
     }
@@ -480,36 +504,6 @@ class SplatRenderSystem {
         }
     }
 
-    waitForSorter() {
-        const instance = this.mergedEntity.gsplat?.instance;
-        if (!instance?.sorter) {
-            return Promise.resolve();
-        }
-
-        let resolver: (() => void) | null = null;
-        this.sorterPromiseHandle = new Promise<void>((resolve) => {
-            const handle = instance.sorter.on('updated', () => {
-                handle.off();
-                resolver = null;
-                resolve();
-            });
-            resolver = () => {
-                handle.off();
-                resolve();
-            };
-        });
-
-        instance.sort(this.scene.camera.entity);
-        setTimeout(() => {
-            // フォールバック: ソートされなかった場合でも resolve する
-            if (resolver) {
-                resolver();
-            }
-        }, 1000);
-
-        return this.sorterPromiseHandle;
-    }
-
     updateState(splat: Splat) {
         return this.displayOps.updateState(splat);
     }
@@ -633,51 +627,6 @@ class SplatRenderSystem {
             addressU: ADDRESS_CLAMP_TO_EDGE,
             addressV: ADDRESS_CLAMP_TO_EDGE
         });
-    }
-
-    private _needsTransformUpdate = false;
-
-    onPreRender() {
-        const instance = this.mergedEntity.gsplat?.instance;
-        if (!instance) return;
-
-        this.ensureSorterUpdatedHandler();
-
-        // check if we need to run delayed transform updates
-        // this is necessary because the sorter (worker) and GPU resources might not be ready
-        // immediately after rebuild/add, leading to valid centers being overwritten with 0s
-        if (this._needsTransformUpdate && instance.sorter) {
-            this.displayController.getSources().forEach(splat => this.updateTransform(splat));
-            this._needsTransformUpdate = false;
-        }
-
-        this.flushSorterCenters();
-
-        if (this.materialDirty) {
-            this.applyMaterialBands(this.scene.events.invoke('view.bands'));
-            this.materialDirty = false;
-        }
-
-        const material = instance.material;
-        const events = this.scene.events;
-        const selection = events.invoke('selection');
-        const selected = selection instanceof Splat ? selection : null;
-        const selectedClr = events.invoke('selectedClr');
-        const unselectedClr = events.invoke('unselectedClr');
-        const lockedClr = events.invoke('lockedClr');
-        const cameraMode = events.invoke('camera.mode');
-        const cameraOverlay = events.invoke('camera.overlay');
-        const outlineMode = !!events.invoke('view.outlineSelection');
-
-        material.setParameter('selectedClr', [selectedClr.r, selectedClr.g, selectedClr.b, selectedClr.a]);
-        material.setParameter('unselectedClr', [unselectedClr.r, unselectedClr.g, unselectedClr.b, unselectedClr.a]);
-        material.setParameter('lockedClr', [lockedClr.r, lockedClr.g, lockedClr.b, lockedClr.a]);
-
-        material.setParameter('mode', cameraMode === 'rings' ? 1 : 0);
-        material.setParameter('ringSize', (selected && cameraOverlay && cameraMode === 'rings') ? 0.04 : 0);
-        material.setParameter('outlineMode', outlineMode ? 1 : 0);
-        material.setParameter('clrOffset', [0, 0, 0]);
-        material.setParameter('clrScale', [1, 1, 1, 1]);
     }
 
     rebuild() {
@@ -968,32 +917,109 @@ class SplatRenderSystem {
 
         // Trigger delayed transform update to ensure centers are valid
         // regardless of async sorter initialization timing
-        this._needsTransformUpdate = true;
+        this.lifecycleController.setNeedsTransformUpdate(true);
     }
 }
 
-class SplatRenderSystemLifecycleBackend implements SplatRenderLifecycleBackend {
-    constructor(private readonly core: SplatRenderSystem) {}
+function createSplatRenderSystemLifecycleBackend(
+    context: SplatRenderSystemLifecycleContext
+): SplatRenderSystemLifecycleController {
+    let frozen = false;
+    let dirty = false;
+    let needsTransformUpdate = false;
+    let sorterPromiseHandle: Promise<void> | null = null;
 
-    freeze() {
-        this.core.freeze();
-    }
+    return {
+        isFrozen: () => frozen,
+        markDirty: () => {
+            dirty = true;
+        },
+        setNeedsTransformUpdate: (value: boolean) => {
+            needsTransformUpdate = value;
+        },
+        freeze: () => {
+            frozen = true;
+        },
+        unfreeze: () => {
+            frozen = false;
+            if (dirty) {
+                context.rebuild();
+                dirty = false;
+            }
+        },
+        waitForSorter: () => {
+            const instance = context.getMergedInstance();
+            if (!instance?.sorter) {
+                return Promise.resolve();
+            }
 
-    unfreeze() {
-        this.core.unfreeze();
-    }
+            let resolver: (() => void) | null = null;
+            sorterPromiseHandle = new Promise<void>((resolve) => {
+                const handle = instance.sorter.on('updated', () => {
+                    handle.off();
+                    resolver = null;
+                    resolve();
+                });
+                resolver = () => {
+                    handle.off();
+                    resolve();
+                };
+            });
 
-    waitForSorter() {
-        return this.core.waitForSorter();
-    }
+            instance.sort(context.scene.camera.entity);
+            setTimeout(() => {
+                if (resolver) {
+                    resolver();
+                }
+            }, 1000);
 
-    onPreRender() {
-        this.core.onPreRender();
-    }
+            return sorterPromiseHandle;
+        },
+        onPreRender: () => {
+            const instance = context.getMergedInstance();
+            if (!instance) {
+                return;
+            }
 
-    rebuild() {
-        this.core.rebuild();
-    }
+            context.ensureSorterUpdatedHandler();
+
+            if (needsTransformUpdate && instance.sorter) {
+                context.getSources().forEach(splat => context.updateTransform(splat));
+                needsTransformUpdate = false;
+            }
+
+            context.flushSorterCenters();
+
+            if (context.isMaterialDirty()) {
+                context.applyMaterialBands(context.scene.events.invoke('view.bands'));
+                context.setMaterialDirty(false);
+            }
+
+            const material = instance.material;
+            const events = context.scene.events;
+            const selection = events.invoke('selection');
+            const selected = selection instanceof Splat ? selection : null;
+            const selectedClr = events.invoke('selectedClr');
+            const unselectedClr = events.invoke('unselectedClr');
+            const lockedClr = events.invoke('lockedClr');
+            const cameraMode = events.invoke('camera.mode');
+            const cameraOverlay = events.invoke('camera.overlay');
+            const outlineMode = !!events.invoke('view.outlineSelection');
+
+            material.setParameter('selectedClr', [selectedClr.r, selectedClr.g, selectedClr.b, selectedClr.a]);
+            material.setParameter('unselectedClr', [unselectedClr.r, unselectedClr.g, unselectedClr.b, unselectedClr.a]);
+            material.setParameter('lockedClr', [lockedClr.r, lockedClr.g, lockedClr.b, lockedClr.a]);
+
+            material.setParameter('mode', cameraMode === 'rings' ? 1 : 0);
+            material.setParameter('ringSize', (selected && cameraOverlay && cameraMode === 'rings') ? 0.04 : 0);
+            material.setParameter('outlineMode', outlineMode ? 1 : 0);
+            material.setParameter('clrOffset', [0, 0, 0]);
+            material.setParameter('clrScale', [1, 1, 1, 1]);
+        },
+        rebuild: () => {
+            context.rebuild();
+        }
+    };
 }
 
 function createSplatRenderSystemDisplayBackend(
@@ -1456,7 +1482,7 @@ const createSupersplatSplatRenderSystemBackends = (scene: Scene): Omit<SplatRend
     const core = new SplatRenderSystem(scene);
 
     return {
-        lifecycle: new SplatRenderSystemLifecycleBackend(core),
+        lifecycle: core.getLifecycleBackend(),
         display: core.getDisplayBackend(),
         data: new SplatRenderSystemDataBackend(core.createDataContext()),
         picking: new SplatRenderSystemPickingBackend(core.createPickingContext()),

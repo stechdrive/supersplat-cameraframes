@@ -56,6 +56,7 @@
 - `display backend` も `state / params / transform` 更新経路は context ベースの自前実装へ寄せた
 - `picking / overlay` も context ベースに切り出し、core の `globalIdToSplat` / merged material / merged texture 群を直接 backend へ渡す形にした
 - `display backend` は source list と visibility rebuild 状態も内部に持ち、core は `getSources()` 経由で参照する形に寄せた
+- `lifecycle backend` も controller 化し、`freeze / dirty / needsTransformUpdate / waitForSorter / preRender` の state を core 直持ちしない形にした
 
 主な反映:
 
