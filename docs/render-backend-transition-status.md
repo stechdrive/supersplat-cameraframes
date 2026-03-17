@@ -103,3 +103,15 @@ projection contract の第一段は、次の条件を満たした時点で一度
 3. renderer より先に `camera projection contract` を抽出し、custom frustum を projection override として扱う境界を明確にする
 4. 必要なら Engine 側差分か adapter 層で吸収する
 5. unified が stable に戻るのは、表示だけでなく編集機能と CAMERA_FRAMES 機能の整合が見えた後
+
+## unified prototype の追加知見
+
+2026-03-17 の `codex/unified-frustum-prototype` では、large PLY の初期崩れについて次を確認した。
+
+- 症状は `収束待ち` ではなく `sortKey overflow`
+- Console warning:
+  - `[SortWorker] ... splats lost due to sortKey overflow. Check resource AABB bounds contain all the splats.`
+- 原因は prototype adapter が direct engine `gsplat` に `customAabb = localBoundStorage` を渡していたこと
+- `unified-display` 時は resource 既定 AABB を使うことで、ロード直後の large PLY 表示は正常化した
+
+この知見は、将来 unified を採用する場合でも `editor 用 bound` と `engine display/sort 用 bound` を分ける必要があることを示している。

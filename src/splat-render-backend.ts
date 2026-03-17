@@ -228,11 +228,127 @@ const createUnifiedDisplayRenderBackendCapabilities = (): SplatRenderBackendCapa
     };
 };
 
+const configureUnifiedDisplaySceneGsplat = (scene: Scene) => {
+    const gsplat = scene.app.scene.gsplat;
+    const needsUpdate =
+        gsplat.culling !== false ||
+        gsplat.radialSorting !== true ||
+        gsplat.colorUpdateAngle !== 0 ||
+        gsplat.colorUpdateDistance !== 0;
+
+    gsplat.culling = false;
+    gsplat.radialSorting = true;
+    gsplat.colorUpdateAngle = 0;
+    gsplat.colorUpdateDistance = 0;
+
+    if (needsUpdate) {
+        gsplat.dirty = true;
+        console.info('[SplatRender] unified-display scene.gsplat configured: culling=false, radialSorting=true, colorUpdateAngle=0, colorUpdateDistance=0');
+    }
+};
+
 const createUnifiedDisplayBackends = (scene: Scene): SplatRenderRoleBackends => {
+    configureUnifiedDisplaySceneGsplat(scene);
+
     const mergedRenderer = createSupersplatSplatRenderSystemBackends(scene);
     const sources: Splat[] = [];
+    const debugUnifiedState = scene.config.renderBackend?.debugState === true;
     let engineDirectActive = false;
     let lastFallbackReason: string | null = null;
+    let pendingDirectForceRenderFrames = 0;
+    let lastUnifiedStateLog = '';
+
+    const markUnifiedDisplayDirty = () => {
+        scene.app.scene.gsplat.dirty = true;
+        scene.forceRender = true;
+    };
+
+    const kickEngineDirectPlacements = () => {
+        if (!engineDirectActive) {
+            return;
+        }
+
+        sources.forEach((splat) => {
+            const component = splat.entity.gsplat;
+            if (component?.enabled) {
+                component.workBufferUpdate = 1;
+            }
+        });
+
+        markUnifiedDisplayDirty();
+    };
+
+    const getUnifiedDisplayManagers = () => {
+        const director = (scene.app.renderer as any).gsplatDirector;
+        if (!director?.camerasMap) {
+            return [] as any[];
+        }
+
+        const managers: any[] = [];
+        director.camerasMap.forEach((cameraData: any) => {
+            cameraData.layersMap?.forEach((layerData: any) => {
+                if (layerData.gsplatManager) {
+                    managers.push(layerData.gsplatManager);
+                }
+            });
+        });
+        return managers;
+    };
+
+    const isUnifiedDisplaySettled = () => {
+        const managers = getUnifiedDisplayManagers();
+        if (managers.length === 0) {
+            return false;
+        }
+
+        return managers.every((manager) => {
+            const jobsInFlight = manager.cpuSorter?.jobsInFlight ?? 0;
+            const latestState = manager.worldStates?.get?.(manager.lastWorldStateVersion);
+            const sortedBefore = latestState ? latestState.sortedBefore !== false : false;
+
+            return manager.sortedVersion === manager.lastWorldStateVersion &&
+                jobsInFlight === 0 &&
+                !manager.sortNeeded &&
+                !manager.layerPlacementsDirty &&
+                !manager._workBufferRebuildRequired &&
+                !manager.scene.gsplat.dirty &&
+                sortedBefore;
+        });
+    };
+
+    const logUnifiedDisplayState = () => {
+        if (!debugUnifiedState) {
+            return;
+        }
+
+        const managers = getUnifiedDisplayManagers();
+        const summary = managers.map((manager, index) => {
+            const jobsInFlight = manager.cpuSorter?.jobsInFlight ?? 0;
+            const latestState = manager.worldStates?.get?.(manager.lastWorldStateVersion);
+            const sortedBefore = latestState ? latestState.sortedBefore !== false : false;
+            const activeSplats = latestState?.totalActiveSplats ?? -1;
+            const uploadCount = latestState?.needsUpload?.length ?? 0;
+            const fullRebuild = latestState?.fullRebuild ? 1 : 0;
+            const placements = manager.layerPlacements?.length ?? 0;
+            const copyUploaded = manager.bufferCopyUploaded ?? 0;
+            const copyTotal = manager.bufferCopyTotal ?? 0;
+            return `m${index}:sv=${manager.sortedVersion} lv=${manager.lastWorldStateVersion} jobs=${jobsInFlight} sort=${manager.sortNeeded ? 1 : 0} layer=${manager.layerPlacementsDirty ? 1 : 0} wb=${manager._workBufferRebuildRequired ? 1 : 0} dirty=${manager.scene.gsplat.dirty ? 1 : 0} sorted=${sortedBefore ? 1 : 0} placements=${placements} active=${activeSplats} upload=${uploadCount} full=${fullRebuild} copy=${copyUploaded}/${copyTotal}`;
+        }).join(' | ');
+
+        if (summary !== lastUnifiedStateLog) {
+            lastUnifiedStateLog = summary;
+            console.info(`[SplatRender] unified-display state ${summary || 'no-managers'}`);
+        }
+    };
+
+    const scheduleDirectRefresh = (frames = 24) => {
+        if (!engineDirectActive) {
+            return;
+        }
+
+        pendingDirectForceRenderFrames = Math.max(pendingDirectForceRenderFrames, frames);
+        kickEngineDirectPlacements();
+    };
 
     const findFallbackReason = () => {
         for (const splat of sources) {
@@ -247,6 +363,7 @@ const createUnifiedDisplayBackends = (scene: Scene): SplatRenderRoleBackends => 
     const syncEngineComponents = () => {
         const fallbackReason = findFallbackReason();
         const shouldUseEngineDirect = fallbackReason === null;
+        const directModeChanged = engineDirectActive !== shouldUseEngineDirect;
         if (fallbackReason !== lastFallbackReason) {
             if (fallbackReason) {
                 console.warn(`[SplatRender] unified-display fallback to merged: ${fallbackReason}`);
@@ -258,6 +375,9 @@ const createUnifiedDisplayBackends = (scene: Scene): SplatRenderRoleBackends => 
 
         engineDirectActive = shouldUseEngineDirect;
         mergedRenderer.setMergedDisplayVisible(!shouldUseEngineDirect);
+        if (!shouldUseEngineDirect) {
+            pendingDirectForceRenderFrames = 0;
+        }
 
         sources.forEach((splat) => {
             if (shouldUseEngineDirect) {
@@ -269,6 +389,10 @@ const createUnifiedDisplayBackends = (scene: Scene): SplatRenderRoleBackends => 
                 splat.disableEngineGsplatComponent();
             }
         });
+
+        if (shouldUseEngineDirect) {
+            scheduleDirectRefresh(directModeChanged ? 36 : 24);
+        }
     };
 
     const display: SplatRenderDisplayBackend = {
@@ -329,7 +453,24 @@ const createUnifiedDisplayBackends = (scene: Scene): SplatRenderRoleBackends => 
     syncEngineComponents();
 
     return {
-        lifecycle: mergedRenderer.lifecycle,
+        lifecycle: {
+            freeze: () => mergedRenderer.lifecycle.freeze(),
+            unfreeze: () => mergedRenderer.lifecycle.unfreeze(),
+            waitForSorter: () => mergedRenderer.lifecycle.waitForSorter(),
+            onPreRender: () => {
+                if (engineDirectActive) {
+                    logUnifiedDisplayState();
+                    if (pendingDirectForceRenderFrames > 0) {
+                        pendingDirectForceRenderFrames--;
+                        scene.forceRender = true;
+                    } else if (!isUnifiedDisplaySettled()) {
+                        scene.forceRender = true;
+                    }
+                }
+                mergedRenderer.lifecycle.onPreRender();
+            },
+            rebuild: () => mergedRenderer.lifecycle.rebuild()
+        },
         display,
         data: mergedRenderer.data,
         picking: mergedRenderer.picking,

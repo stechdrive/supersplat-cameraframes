@@ -44,7 +44,8 @@ const sceneConfig = {
         fpvLookSensitivity: 0.002
     },
     renderBackend: {
-        mode: 'merged' as SplatRenderBackendMode
+        mode: 'merged' as SplatRenderBackendMode,
+        debugState: false
     },
     debug: {
         showBound: false,

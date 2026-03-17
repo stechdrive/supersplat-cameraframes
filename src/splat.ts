@@ -382,6 +382,13 @@ class Splat extends Element {
         return [];
     }
 
+    private resolveEngineGsplatCustomAabb() {
+        if (this.scene?.splatRenderCapabilities.resolvedMode === 'unified-display') {
+            return null;
+        }
+        return this.localBoundStorage;
+    }
+
     ensureEngineGsplatComponent(state: EngineGsplatComponentState = {}): GSplatComponent | null {
         if (!this.scene) {
             return null;
@@ -405,7 +412,7 @@ class Splat extends Element {
         component.asset = this.asset;
         component.layers = layers;
         component.castShadows = false;
-        component.customAabb = this.localBoundStorage;
+        component.customAabb = this.resolveEngineGsplatCustomAabb();
 
         if (state.unified !== undefined) {
             component.unified = state.unified;
@@ -426,7 +433,7 @@ class Splat extends Element {
         component.asset = this.asset;
         component.layers = this.resolveEngineGsplatLayers();
         component.castShadows = false;
-        component.customAabb = this.localBoundStorage;
+        component.customAabb = this.resolveEngineGsplatCustomAabb();
 
         if (state.unified !== undefined) {
             component.unified = state.unified;
