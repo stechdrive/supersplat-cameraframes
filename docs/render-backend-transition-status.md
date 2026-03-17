@@ -73,6 +73,29 @@ projection contract の抽出は別レーンで継続している。
   - custom frustum を renderer の偶発的な実装詳細ではなく、projection override として明示する
   - 将来 unified backend や upstream 実装が入っても、camera 側の境界で吸収しやすくする
 
+### 第一段の停止候補
+
+projection contract の第一段は、次の条件を満たした時点で一度止めてよい。
+
+- `camera.ts` の `worldToScreen / screenToWorld / getRay / optical axis / ray basis / projection fallback` が helper 経由になっている
+- `eye-level / infinite-grid / splat-overlay` が `resolveCameraProjectionData()` を通る
+- `customFrustum` の直接参照が「projection の数式」ではなく「CAMERA_FRAMES の機能ポリシー」に限られている
+
+2026-03-17 時点では、この停止候補に到達している。
+
+### まだ camera.ts に残してよいもの
+
+以下は projection contract へ無理に押し込まない。
+
+- `setCustomFrustum()` と serialize / deserialize
+- clipping plane policy
+  - `nearOverride`
+  - `customFrustum` 有無による near/far 調整
+- clip log / debug log
+- CAMERA_FRAMES 固有の UI / state 同期
+
+これらは camera projection の抽象化ではなく、CAMERA_FRAMES 機能そのものだから。
+
 ## 次に進むときの方針
 
 1. stable では引き続き upstream SuperSplat 追従を優先する
