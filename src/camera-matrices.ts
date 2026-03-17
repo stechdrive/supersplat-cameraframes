@@ -277,6 +277,43 @@ const buildCameraProjectionData = (camera: CameraComponent, out: CameraProjectio
     return true;
 };
 
+const buildCameraRayWithProjectionData = (
+    camera: CameraComponent,
+    projectionData: CameraProjectionData,
+    screenX: number,
+    screenY: number,
+    clientWidth: number,
+    clientHeight: number,
+    out: Ray
+) => {
+    if (!buildCameraProjectionData(camera, projectionData)) {
+        return false;
+    }
+
+    return buildCameraRay(camera, projectionData, screenX, screenY, clientWidth, clientHeight, out);
+};
+
+const screenToWorldWithCameraProjectionData = (
+    camera: CameraComponent,
+    projectionData: CameraProjectionData,
+    screenX: number,
+    screenY: number,
+    cameraZ: number,
+    clientWidth: number,
+    clientHeight: number,
+    out: Vec3
+) => {
+    if (!buildCameraProjectionData(camera, projectionData)) {
+        if (!projectionData.projectionOverridden) {
+            camera.screenToWorld(screenX, screenY, cameraZ, out);
+            return true;
+        }
+        return false;
+    }
+
+    return screenToWorldWithProjectionData(camera, projectionData, screenX, screenY, cameraZ, clientWidth, clientHeight, out);
+};
+
 const resolveCameraRayBasis = (
     camera: CameraComponent,
     projectionData: CameraProjectionData,
@@ -306,6 +343,7 @@ const buildCameraMatrices = buildCameraProjectionData;
 
 export {
     buildCameraRay,
+    buildCameraRayWithProjectionData,
     buildCameraMatrices,
     buildCameraProjectionData,
     buildLegacyCameraRayBasis,
@@ -314,6 +352,7 @@ export {
     createCameraProjectionData,
     createCameraRayBasis,
     getOpticalAxisScreenCoordsWithProjectionData,
+    screenToWorldWithCameraProjectionData,
     screenToWorldWithProjectionData,
     unprojectClipCoordWithProjectionData,
     worldToScreenWithProjectionData,

@@ -50,12 +50,13 @@ import {
     resolveCameraPositionWorldFromState
 } from './camera-frames-camera-state';
 import {
-    buildCameraRay,
     buildCameraProjectionData,
+    buildCameraRayWithProjectionData,
     createCameraProjectionData,
     createCameraRayBasis,
     getOpticalAxisScreenCoordsWithProjectionData,
     resolveCameraRayBasis,
+    screenToWorldWithCameraProjectionData,
     screenToWorldWithProjectionData,
     worldToScreenWithProjectionData,
     type CameraRayBasis,
@@ -1679,18 +1680,10 @@ class Camera extends Element {
         }
 
         const { camera } = this.entity;
-        if (!buildCameraProjectionData(camera, cameraMatricesScratch)) {
-            if (!cameraMatricesScratch.projectionOverridden) {
-                camera.screenToWorld(sx, sy, cameraz, world);
-                return true;
-            }
-            return false;
-        }
-
         const device = this.scene?.graphicsDevice;
         const clientWidth = device?.clientRect?.width ?? 0;
         const clientHeight = device?.clientRect?.height ?? 0;
-        return screenToWorldWithProjectionData(camera, cameraMatricesScratch, sx, sy, cameraz, clientWidth, clientHeight, world);
+        return screenToWorldWithCameraProjectionData(camera, cameraMatricesScratch, sx, sy, cameraz, clientWidth, clientHeight, world);
     }
 
     getRay(screenX: number, screenY: number, ray: Ray, options?: { space?: 'css' | 'target' }) {
@@ -1705,17 +1698,10 @@ class Camera extends Element {
             sy = mapped.y;
         }
         const camera = this.entity.camera;
-        if (!buildCameraProjectionData(camera, cameraMatricesScratch)) {
-            if (!cameraMatricesScratch.projectionOverridden) {
-                return false;
-            }
-            return false;
-        }
-
         const device = this.scene?.graphicsDevice;
         const clientWidth = device?.clientRect?.width ?? 0;
         const clientHeight = device?.clientRect?.height ?? 0;
-        return buildCameraRay(camera, cameraMatricesScratch, sx, sy, clientWidth, clientHeight, ray);
+        return buildCameraRayWithProjectionData(camera, cameraMatricesScratch, sx, sy, clientWidth, clientHeight, ray);
     }
 
     // intersect the scene at the given normalized screen coordinate (0-1 range) using depth picking
