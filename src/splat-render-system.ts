@@ -14,7 +14,7 @@ import {
     Texture
 } from 'playcanvas';
 
-import type { ProcessorInputLayout } from './data-processor/types';
+import type { ProcessorContext, ProcessorInputLayout } from './data-processor/types';
 import type { Scene } from './scene';
 import { vertexShader, fragmentShader, gsplatCenter } from './shaders/splat-shader';
 import { Splat } from './splat';
@@ -62,6 +62,40 @@ type MergedResourceInfo = {
     width: number;
     height: number;
     colorTextureWidth: number;
+};
+
+type SplatRenderSystemDataContext = {
+    scene: Scene;
+    getEntry: (splat: Splat) => SplatRenderEntry | null;
+    getCenters: () => Float32Array | null;
+    hasMergedResource: () => boolean;
+    getMergedResourceInfo: () => MergedResourceInfo | null;
+    getTransformTexture: () => Texture | null;
+    getTransformPaletteTexture: () => Texture | null;
+    getStateTexture: () => Texture | null;
+    getBoundCache: (splat: Splat) => BoundCacheEntry | null;
+};
+
+const createSplatRenderProcessorContext = (context: SplatRenderSystemDataContext, splat: Splat): ProcessorContext => {
+    const entry = context.getEntry(splat);
+    const resourceInfo = context.getMergedResourceInfo();
+    const inputLayout: ProcessorInputLayout = {
+        centerSource: resourceInfo?.positionTexture ?? null,
+        transformIndexSource: context.getTransformTexture(),
+        transformPaletteSource: context.getTransformPaletteTexture(),
+        stateSource: context.getStateTexture(),
+        globalUv: {
+            textureWidth: resourceInfo?.globalParams[0] ?? 0,
+            textureCapacity: resourceInfo?.globalParams[1] ?? 0
+        }
+    };
+
+    return {
+        splat,
+        offset: entry?.offset ?? 0,
+        count: entry?.count ?? 0,
+        inputLayout
+    };
 };
 
 class SplatRenderSystem {
@@ -376,25 +410,22 @@ class SplatRenderSystem {
         return this.mergedEntity.gsplat?.instance?.sorter?.centers || null;
     }
 
-    private createProcessorContext(splat: Splat) {
-        const entry = this.getEntry(splat);
-        const resourceInfo = this.mergedResourceInfo;
-        const inputLayout: ProcessorInputLayout = {
-            centerSource: resourceInfo?.positionTexture ?? null,
-            transformIndexSource: this.transformTexture,
-            transformPaletteSource: this.transformPalette.texture,
-            stateSource: this.stateTexture,
-            globalUv: {
-                textureWidth: resourceInfo?.globalParams[0] ?? 0,
-                textureCapacity: resourceInfo?.globalParams[1] ?? 0
-            }
-        };
+    createDataContext(): SplatRenderSystemDataContext {
         return {
-            splat,
-            offset: entry?.offset ?? 0,
-            count: entry?.count ?? 0,
-            inputLayout
+            scene: this.scene,
+            getEntry: (splat: Splat) => this.getEntry(splat),
+            getCenters: () => this.centers,
+            hasMergedResource: () => !!this.mergedResource,
+            getMergedResourceInfo: () => this.mergedResourceInfo,
+            getTransformTexture: () => this.transformTexture,
+            getTransformPaletteTexture: () => this.transformPalette.texture,
+            getStateTexture: () => this.stateTexture,
+            getBoundCache: (splat: Splat) => this.boundCache.get(splat) ?? null
         };
+    }
+
+    private createProcessorContext(splat: Splat) {
+        return createSplatRenderProcessorContext(this.createDataContext(), splat);
     }
 
     readWorldCenter(splat: Splat, localIndex: number, out: { set: (x: number, y: number, z: number) => void }) {
@@ -1260,30 +1291,81 @@ class SplatRenderSystemDisplayBackend implements SplatRenderDisplayBackend {
 }
 
 class SplatRenderSystemDataBackend implements SplatRenderDataBackend {
-    constructor(private readonly core: SplatRenderSystem) {}
+    constructor(private readonly context: SplatRenderSystemDataContext) {}
+
+    private createProcessorContext(splat: Splat) {
+        return createSplatRenderProcessorContext(this.context, splat);
+    }
 
     readWorldCenter(splat: Splat, localIndex: number, out: { set: (x: number, y: number, z: number) => void }) {
-        return this.core.readWorldCenter(splat, localIndex, out);
+        const centers = this.context.getCenters();
+        const entry = this.context.getEntry(splat);
+        if (!centers || !entry || localIndex < 0 || localIndex >= entry.count) {
+            return false;
+        }
+        const base = (entry.offset + localIndex) * 3;
+        out.set(
+            centers[base + 0],
+            centers[base + 1],
+            centers[base + 2]
+        );
+        return true;
     }
 
     writeWorldCenter(splat: Splat, localIndex: number, x: number, y: number, z: number) {
-        return this.core.writeWorldCenter(splat, localIndex, x, y, z);
+        const centers = this.context.getCenters();
+        const entry = this.context.getEntry(splat);
+        if (!centers || !entry || localIndex < 0 || localIndex >= entry.count) {
+            return false;
+        }
+        const base = (entry.offset + localIndex) * 3;
+        centers[base + 0] = x;
+        centers[base + 1] = y;
+        centers[base + 2] = z;
+        return true;
     }
 
     calcBound(splat: Splat, selectionBound: BoundingBox, localBound: BoundingBox) {
-        return this.core.calcBound(splat, selectionBound, localBound);
+        return this.context.scene.dataProcessor.calcBound(this.createProcessorContext(splat), selectionBound, localBound);
     }
 
     getBound(splat: Splat, mode: 'selected' | 'visible') {
-        return this.core.getBound(splat, mode);
+        const entry = this.context.getEntry(splat);
+        if (!this.context.hasMergedResource() || !entry || entry.count === 0) {
+            return null;
+        }
+
+        const cache = this.context.getBoundCache(splat);
+        if (!cache) {
+            return null;
+        }
+
+        const boundingBox = mode === 'selected' ? cache.selection : cache.visible;
+        const dirty = mode === 'selected' ? cache.selectionDirty : cache.visibleDirty;
+
+        if (dirty) {
+            const onlySelected = mode === 'selected';
+            this.context.scene.dataProcessor.calcBound(this.createProcessorContext(splat), boundingBox, onlySelected).catch(() => {});
+            if (mode === 'selected') {
+                cache.selectionDirty = false;
+            } else {
+                cache.visibleDirty = false;
+            }
+        }
+
+        return boundingBox;
     }
 
     calcPositions(splat: Splat) {
-        return this.core.calcPositions(splat);
+        const count = this.context.getEntry(splat)?.count ?? 0;
+        if (count === 0) {
+            return Promise.resolve(new Float32Array(0));
+        }
+        return this.context.scene.dataProcessor.calcPositions(this.createProcessorContext(splat));
     }
 
     intersect(splat: Splat, options: import('./data-processor').IntersectOptions) {
-        return this.core.intersect(splat, options);
+        return this.context.scene.dataProcessor.intersect(options, this.createProcessorContext(splat));
     }
 }
 
@@ -1313,7 +1395,7 @@ const createSupersplatSplatRenderSystemBackends = (scene: Scene): Omit<SplatRend
     return {
         lifecycle: new SplatRenderSystemLifecycleBackend(core),
         display: new SplatRenderSystemDisplayBackend(core),
-        data: new SplatRenderSystemDataBackend(core),
+        data: new SplatRenderSystemDataBackend(core.createDataContext()),
         picking: new SplatRenderSystemPickingBackend(core),
         overlay: new SplatRenderSystemOverlayBackend(core)
     };

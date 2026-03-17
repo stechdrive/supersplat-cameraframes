@@ -52,6 +52,7 @@
 - `Scene` は backend bundle を受け取り、call site は `lifecycle / display / data / picking / overlay` の narrow interface を使う
 - backend factory は role 別 wrapper を返し、将来 `display=unified / data=merged` の混成構成を差し込みやすくした
 - `SplatRenderSystem` は merged renderer の core として残し、role backend 実装は別クラスが core を使う形にした
+- `data backend` は delegate ではなく、core から渡す context を使って processor context / bound / position / intersect を自前実装する形にした
 
 主な反映:
 
