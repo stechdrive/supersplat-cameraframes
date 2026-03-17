@@ -20,11 +20,12 @@ import { buildCameraMatrices, type CameraMatrices } from './camera-matrices';
 import { ElementType, Element } from './element';
 import { vertexShader, fragmentShader } from './shaders/splat-overlay-shader';
 import { Splat } from './splat';
+import type { SplatRenderOverlayBinding } from './splat-render-backend';
 
 class SplatOverlay extends Element {
     meshInstance: MeshInstance;
     splat: Splat;
-    overlayBinding: ReturnType<Element['scene']['renderSystem']['getOverlayBinding']> = null;
+    overlayBinding: SplatRenderOverlayBinding | null = null;
     cameraMatrices: CameraMatrices = {
         projection: new Mat4(),
         viewInv: new Mat4(),
@@ -65,7 +66,7 @@ class SplatOverlay extends Element {
                 return;
             }
 
-            const renderSystem = this.scene.renderSystem;
+            const renderSystem = this.scene.splatRenderOverlay;
             const binding = renderSystem.getOverlayBinding(splat);
 
             if (!binding) {

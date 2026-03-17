@@ -12,7 +12,7 @@ import {
     BlendState
 } from 'playcanvas';
 
-import type { ProcessorContext } from './types';
+import { getProcessorShaderBindings, type ProcessorContext } from './types';
 import { vertexShader, fragmentShader } from '../shaders/position-shader';
 
 const resolve = (scope: ScopeSpace, values: any) => {
@@ -88,11 +88,11 @@ class CalcPositions {
         }
 
         const {
-            positionTexture: transformA,
-            transformTexture: splatTransform,
-            transformPaletteTexture: transformPalette,
-            globalParams
-        } = ctx.resources;
+            transformA,
+            splatTransform,
+            transformPalette,
+            globalSplatParams
+        } = getProcessorShaderBindings(ctx.inputLayout);
 
         if (!transformA || !splatTransform || !transformPalette) {
             return new Float32Array(0);
@@ -109,7 +109,7 @@ class CalcPositions {
             transformPalette,
             splatOffset: ctx.offset,
             splatCount: numSplats,
-            globalSplatParams: globalParams,
+            globalSplatParams,
             output_params: [width, height]
         });
 

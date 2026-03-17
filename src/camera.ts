@@ -1974,14 +1974,14 @@ class Camera extends Element {
         this.currentPickTarget = splat;
 
         // Ensure blending is disabled for picking so that alpha=0 IDs are written
-        this.scene.renderSystem.withPickingBlendDisabled(() => {
+        this.scene.splatRenderPicking.withPickingBlendDisabled(() => {
             this.picker.prepareId(splat, mode);
         });
     }
 
     async pick(x: number, y: number) {
         const id = await this.picker.readId(x, y);
-        const mapped = this.scene.renderSystem.mapPickId(id);
+        const mapped = this.scene.splatRenderPicking.mapPickId(id);
         if (!mapped || (this.currentPickTarget && mapped.splat !== this.currentPickTarget)) {
             return -1;
         }
@@ -1993,7 +1993,7 @@ class Camera extends Element {
         const result: number[] = [];
 
         for (let i = 0; i < ids.length; i++) {
-            const mapped = this.scene.renderSystem.mapPickId(ids[i]);
+            const mapped = this.scene.splatRenderPicking.mapPickId(ids[i]);
             if (!mapped || (this.currentPickTarget && mapped.splat !== this.currentPickTarget)) {
                 result.push(-1);
             } else {

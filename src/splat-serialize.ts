@@ -856,7 +856,7 @@ const sortSplats = (splats: Splat[], indices: CompressedIndex[]) => {
         const state = splatData.getProp('state') as Uint8Array;
 
         for (let i = 0; i < splatData.numSplats; ++i) {
-            if ((state[i] & State.deleted) === 0 && splat.scene.renderSystem.readWorldCenter(splat, i, center)) {
+            if ((state[i] & State.deleted) === 0 && splat.scene.splatRenderData.readWorldCenter(splat, i, center)) {
                 const x = center.x;
                 const y = center.y;
                 const z = center.z;
@@ -886,7 +886,7 @@ const sortSplats = (splats: Splat[], indices: CompressedIndex[]) => {
         const state = splatData.getProp('state') as Uint8Array;
 
         for (let i = 0; i < splatData.numSplats; ++i) {
-            if ((state[i] & State.deleted) === 0 && splat.scene.renderSystem.readWorldCenter(splat, i, center)) {
+            if ((state[i] & State.deleted) === 0 && splat.scene.splatRenderData.readWorldCenter(splat, i, center)) {
                 const x = center.x;
                 const y = center.y;
                 const z = center.z;

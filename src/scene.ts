@@ -33,8 +33,14 @@ import { SceneState } from './scene-state';
 import { Splat } from './splat';
 import { SplatOverlay } from './splat-overlay';
 import {
-    createSupersplatSplatRenderBackend,
-    type SplatRenderBackend
+    createSupersplatSplatRenderBackends,
+    type SplatRenderBackends,
+    type SplatRenderDataBackend,
+    type SplatRenderDisplayBackend,
+    type SplatRenderBackend,
+    type SplatRenderLifecycleBackend,
+    type SplatRenderOverlayBackend,
+    type SplatRenderPickingBackend
 } from './splat-render-backend';
 import { Underlay } from './underlay';
 
@@ -169,6 +175,11 @@ class Scene {
     underlay: Underlay;
     eyeLevel: EyeLevel;
     renderSystem: SplatRenderBackend;
+    splatRenderLifecycle: SplatRenderLifecycleBackend;
+    splatRenderDisplay: SplatRenderDisplayBackend;
+    splatRenderData: SplatRenderDataBackend;
+    splatRenderPicking: SplatRenderPickingBackend;
+    splatRenderOverlay: SplatRenderOverlayBackend;
 
     contentRoot: Entity;
     cameraRoot: Entity;
@@ -371,7 +382,13 @@ class Scene {
         // 環境光補助ライト（contentRoot 作成後に生成）
         this.createAmbientFillLights();
 
-        this.renderSystem = createSupersplatSplatRenderBackend(this);
+        const renderBackends: SplatRenderBackends = createSupersplatSplatRenderBackends(this);
+        this.renderSystem = renderBackends.combined;
+        this.splatRenderLifecycle = renderBackends.lifecycle;
+        this.splatRenderDisplay = renderBackends.display;
+        this.splatRenderData = renderBackends.data;
+        this.splatRenderPicking = renderBackends.picking;
+        this.splatRenderOverlay = renderBackends.overlay;
 
         // create elements
         this.camera = new Camera();
@@ -985,7 +1002,7 @@ class Scene {
             height: devH
         };
 
-        this.renderSystem.onPreRender();
+        this.splatRenderLifecycle.onPreRender();
 
         this.forEachElement(e => e.onPreRender());
 

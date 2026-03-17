@@ -14,6 +14,7 @@ import {
     Texture
 } from 'playcanvas';
 
+import type { ProcessorInputLayout } from './data-processor/types';
 import type { Scene } from './scene';
 import { vertexShader, fragmentShader, gsplatCenter } from './shaders/splat-shader';
 import { Splat } from './splat';
@@ -371,17 +372,21 @@ class SplatRenderSystem implements SplatRenderBackend {
     private createProcessorContext(splat: Splat) {
         const entry = this.getEntry(splat);
         const resourceInfo = this.mergedResourceInfo;
+        const inputLayout: ProcessorInputLayout = {
+            centerSource: resourceInfo?.positionTexture ?? null,
+            transformIndexSource: this.transformTexture,
+            transformPaletteSource: this.transformPalette.texture,
+            stateSource: this.stateTexture,
+            globalUv: {
+                textureWidth: resourceInfo?.globalParams[0] ?? 0,
+                textureCapacity: resourceInfo?.globalParams[1] ?? 0
+            }
+        };
         return {
             splat,
             offset: entry?.offset ?? 0,
             count: entry?.count ?? 0,
-            resources: {
-                positionTexture: resourceInfo?.positionTexture ?? null,
-                transformTexture: this.transformTexture,
-                transformPaletteTexture: this.transformPalette.texture,
-                stateTexture: this.stateTexture,
-                globalParams: resourceInfo?.globalParams ?? [0, 0]
-            }
+            inputLayout
         };
     }
 

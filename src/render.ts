@@ -255,8 +255,8 @@ const registerRenderEvents = (scene: Scene, events: Events) => {
                 const lastForward = new Vec3(1, 0, 0);
 
                 const sortAndWait = async () => {
-                    await scene.renderSystem.waitForSorter();
-                    await scene.renderSystem.waitForSorter();
+                    await scene.splatRenderLifecycle.waitForSorter();
+                    await scene.splatRenderLifecycle.waitForSorter();
                 };
 
                 const prepareFrame = async (frameTime: number): Promise<Splat | null> => {

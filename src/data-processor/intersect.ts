@@ -14,7 +14,7 @@ import {
 } from 'playcanvas';
 
 import { buildCameraMatrices, type CameraMatrices } from '../camera-matrices';
-import type { ProcessorContext } from './types';
+import { getProcessorShaderBindings, type ProcessorContext } from './types';
 import { vertexShader, fragmentShader } from '../shaders/intersection-shader';
 
 type MaskOptions = {
@@ -128,13 +128,13 @@ class Intersect {
         }
 
         const {
-            positionTexture: transformA,
-            transformTexture: splatTransform,
-            transformPaletteTexture: transformPalette,
-            stateTexture,
-            globalParams
-        } = ctx.resources;
-        const splatState = stateTexture ?? this.dummyTexture;
+            transformA,
+            splatTransform,
+            transformPalette,
+            splatState: layoutStateTexture,
+            globalSplatParams
+        } = getProcessorShaderBindings(ctx.inputLayout);
+        const splatState = layoutStateTexture ?? this.dummyTexture;
 
         if (!transformA || !splatTransform || !transformPalette) {
             return new Uint8Array(0);
@@ -162,7 +162,7 @@ class Intersect {
             splatState,
             splatOffset: ctx.offset,
             splatCount: ctx.count,
-            globalSplatParams: globalParams,
+            globalSplatParams,
             matrix_model: Mat4.IDENTITY.data,
             matrix_viewProjection: this.viewProjectionMat.data,
             output_params: [resources.texture.width, resources.texture.height]

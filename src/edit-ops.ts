@@ -462,13 +462,13 @@ class AddSplatOp {
 
     async do() {
         await this.scene.add(this.splat);
-        await this.scene.renderSystem.waitForSorter();
+        await this.scene.splatRenderLifecycle.waitForSorter();
         this.scene.forceRender = true;
     }
 
     async undo() {
         this.scene.remove(this.splat);
-        await this.scene.renderSystem.waitForSorter();
+        await this.scene.splatRenderLifecycle.waitForSorter();
         this.scene.forceRender = true;
     }
 
@@ -495,7 +495,7 @@ class SeparateSplatOp {
         this.splat.remove();
         this.splat.swapRuntimeDataWith(this.remainder);
         await this.splat.add();
-        await this.scene.renderSystem.waitForSorter();
+        await this.scene.splatRenderLifecycle.waitForSorter();
         this.scene.boundDirty = true;
         this.scene.forceRender = true;
     }
@@ -503,14 +503,14 @@ class SeparateSplatOp {
     async do() {
         await this.swapOriginalRuntime();
         await this.scene.add(this.copy);
-        await this.scene.renderSystem.waitForSorter();
+        await this.scene.splatRenderLifecycle.waitForSorter();
         this.scene.forceRender = true;
     }
 
     async undo() {
         if (this.copy.scene === this.scene) {
             this.scene.remove(this.copy);
-            await this.scene.renderSystem.waitForSorter();
+            await this.scene.splatRenderLifecycle.waitForSorter();
         }
         await this.swapOriginalRuntime();
     }

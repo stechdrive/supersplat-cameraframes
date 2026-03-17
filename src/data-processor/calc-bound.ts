@@ -15,7 +15,7 @@ import {
     BlendState
 } from 'playcanvas';
 
-import type { ProcessorContext } from './types';
+import { getProcessorShaderBindings, type ProcessorContext } from './types';
 import { vertexShader, fragmentShader } from '../shaders/bound-shader';
 
 const v1 = new Vec3();
@@ -120,12 +120,12 @@ class CalcBound {
 
         const numSplats = ctx.count;
         const {
-            positionTexture: transformA,
-            transformTexture: splatTransform,
-            transformPaletteTexture: transformPalette,
-            stateTexture: splatState,
-            globalParams
-        } = ctx.resources;
+            transformA,
+            splatTransform,
+            transformPalette,
+            splatState,
+            globalSplatParams
+        } = getProcessorShaderBindings(ctx.inputLayout);
 
         if (!transformA || !splatTransform || !transformPalette || !splatState || numSplats === 0) {
             boundingBox.center.set(0, 0, 0);
@@ -147,7 +147,7 @@ class CalcBound {
             splatState,
             splatOffset: ctx.offset,
             splatCount: numSplats,
-            globalSplatParams: globalParams,
+            globalSplatParams,
             mode: onlySelected ? 0 : 1,
             matrix_invModel: invWorld.data
         });

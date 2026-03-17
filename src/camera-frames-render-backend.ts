@@ -260,7 +260,7 @@ const createSupersplatCameraFramesRenderBackend = ({
 
     return {
         syncExportFrustum,
-        waitForSplatSorter: () => scene.renderSystem.waitForSorter(),
+        waitForSplatSorter: () => scene.splatRenderLifecycle.waitForSorter(),
         showExportError,
         restorePreviewAfterExport,
         renderBase,

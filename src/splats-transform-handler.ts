@@ -147,8 +147,8 @@ class SplatsTransformHandler implements TransformHandler {
         });
         transformPalette.endUpdate();
 
-        splat.scene.renderSystem.updateTransformIndices(splat, indices);
-        splat.scene.renderSystem.updateTransform(splat, true);
+        splat.scene.splatRenderDisplay.updateTransformIndices(splat, indices);
+        splat.scene.splatRenderDisplay.updateTransform(splat, true);
 
         this.selectedCount = selectedCount;
         this.selectedIndices = new Uint32Array(selectedIndices);
@@ -181,7 +181,7 @@ class SplatsTransformHandler implements TransformHandler {
         });
         transformPalette.endUpdate();
 
-        this.splat.scene.renderSystem.updateTransform(this.splat, true);
+        this.splat.scene.splatRenderDisplay.updateTransform(this.splat, true);
 
         const world = this.splat.entity.getWorldTransform();
         mat2.copy(world).invert();

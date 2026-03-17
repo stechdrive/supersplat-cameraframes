@@ -146,7 +146,7 @@ class Splat extends Element {
     async updateState(changedState = State.selected) {
         const state = this.splatData.getProp('state') as Uint8Array;
 
-        const result = this.scene.renderSystem.updateState(this);
+        const result = this.scene.splatRenderDisplay.updateState(this);
         if (result) {
             this.numSplats = result.numSplats;
             this.numLocked = result.numLocked;
@@ -167,7 +167,7 @@ class Splat extends Element {
     }
 
     async updatePositions() {
-        const data = await this.scene.renderSystem.calcPositions(this);
+        const data = await this.scene.splatRenderData.calcPositions(this);
         if (data.length === 0) {
             return;
         }
@@ -176,7 +176,7 @@ class Splat extends Element {
         const state = this.splatData.getProp('state') as Uint8Array;
         for (let i = 0; i < this.splatData.numSplats; ++i) {
             if ((state[i] & (State.deleted | State.hidden)) === 0) {
-                this.scene.renderSystem.writeWorldCenter(
+                this.scene.splatRenderData.writeWorldCenter(
                     this,
                     i,
                     data[i * 4 + 0],
@@ -231,7 +231,7 @@ class Splat extends Element {
             const x = localCenters[i * 3 + 0];
             const y = localCenters[i * 3 + 1];
             const z = localCenters[i * 3 + 2];
-            this.scene.renderSystem.writeWorldCenter(
+            this.scene.splatRenderData.writeWorldCenter(
                 this,
                 i,
                 x * transform[0] + y * transform[3] + z * transform[6] + transform[9],
@@ -289,7 +289,7 @@ class Splat extends Element {
             const x = localCenters[idx * 3 + 0];
             const y = localCenters[idx * 3 + 1];
             const z = localCenters[idx * 3 + 2];
-            this.scene.renderSystem.writeWorldCenter(
+            this.scene.splatRenderData.writeWorldCenter(
                 this,
                 idx,
                 x * transform[0] + y * transform[3] + z * transform[6] + transform[9],
@@ -303,7 +303,7 @@ class Splat extends Element {
     }
 
     async updateSorting() {
-        await this.scene.renderSystem.waitForSorter();
+        await this.scene.splatRenderLifecycle.waitForSorter();
         await this.updateLocalBounds();
     }
 
@@ -331,15 +331,15 @@ class Splat extends Element {
             return false;
         }
 
-        return this.scene.renderSystem.readWorldCenter(this, splatId, result);
+        return this.scene.splatRenderData.readWorldCenter(this, splatId, result);
     }
 
     async add() {
         // add the entity to the scene
         this.scene.contentRoot.addChild(this.entity);
 
-        this.scene.renderSystem.add(this);
-        this.scene.renderSystem.updateSplatParams(this);
+        this.scene.splatRenderDisplay.add(this);
+        this.scene.splatRenderDisplay.updateSplatParams(this);
         await this.updateState();
 
         // 標準GSplatコンポーネントは統合レンダラーが吸収するため常時無効化。
@@ -377,7 +377,7 @@ class Splat extends Element {
     }
 
     remove() {
-        this.scene.renderSystem.remove(this);
+        this.scene.splatRenderDisplay.remove(this);
         this.scene.contentRoot.removeChild(this.entity);
         this.scene.boundDirty = true;
     }
@@ -429,14 +429,14 @@ class Splat extends Element {
             entity.setLocalScale(scale);
         }
 
-        this.scene.renderSystem.updateTransform(this, skipCenterUpdate);
+        this.scene.splatRenderDisplay.updateTransform(this, skipCenterUpdate);
         this.updateWorldBound();
         this.scene.events.fire('splat.moved', this);
     }
 
     // calculate both selection and local bounds (async, callers must await)
     async updateLocalBounds(): Promise<void> {
-        await this.scene.renderSystem.calcBound(this, this.selectionBoundStorage, this.localBoundStorage);
+        await this.scene.splatRenderData.calcBound(this, this.selectionBoundStorage, this.localBoundStorage);
         this.updateWorldBound();
     }
 
@@ -458,7 +458,7 @@ class Splat extends Element {
 
     // get world space bound
     get worldBound() {
-        if (!this.scene.renderSystem.hasRenderableData(this) || !this.visible) {
+        if (!this.scene.splatRenderDisplay.hasRenderableData(this) || !this.visible) {
             return null;
         }
         return this.worldBoundStorage;
@@ -482,7 +482,7 @@ class Splat extends Element {
         }
 
         this.updateState(State.hidden).catch(() => {});
-        const renderSystem = this.scene.renderSystem;
+        const renderSystem = this.scene.splatRenderDisplay;
         const needsImmediateRebuild = next && !renderSystem.isSplatActive(this);
         if (!next || needsImmediateRebuild) {
             renderSystem.scheduleRebuildForVisibility(needsImmediateRebuild);
@@ -500,7 +500,7 @@ class Splat extends Element {
         if (!this._tintClr.equals(value)) {
             this._tintClr.set(value.r, value.g, value.b);
             this.scene.events.fire('splat.tintClr', this);
-            this.scene.renderSystem.updateSplatParams(this);
+            this.scene.splatRenderDisplay.updateSplatParams(this);
         }
     }
 
@@ -512,7 +512,7 @@ class Splat extends Element {
         if (value !== this._temperature) {
             this._temperature = value;
             this.scene.events.fire('splat.temperature', this);
-            this.scene.renderSystem.updateSplatParams(this);
+            this.scene.splatRenderDisplay.updateSplatParams(this);
         }
     }
 
@@ -524,7 +524,7 @@ class Splat extends Element {
         if (value !== this._saturation) {
             this._saturation = value;
             this.scene.events.fire('splat.saturation', this);
-            this.scene.renderSystem.updateSplatParams(this);
+            this.scene.splatRenderDisplay.updateSplatParams(this);
         }
     }
 
@@ -536,7 +536,7 @@ class Splat extends Element {
         if (value !== this._brightness) {
             this._brightness = value;
             this.scene.events.fire('splat.brightness', this);
-            this.scene.renderSystem.updateSplatParams(this);
+            this.scene.splatRenderDisplay.updateSplatParams(this);
         }
     }
 
@@ -548,7 +548,7 @@ class Splat extends Element {
         if (value !== this._blackPoint) {
             this._blackPoint = value;
             this.scene.events.fire('splat.blackPoint', this);
-            this.scene.renderSystem.updateSplatParams(this);
+            this.scene.splatRenderDisplay.updateSplatParams(this);
         }
     }
 
@@ -560,7 +560,7 @@ class Splat extends Element {
         if (value !== this._whitePoint) {
             this._whitePoint = value;
             this.scene.events.fire('splat.whitePoint', this);
-            this.scene.renderSystem.updateSplatParams(this);
+            this.scene.splatRenderDisplay.updateSplatParams(this);
         }
     }
 
@@ -572,7 +572,7 @@ class Splat extends Element {
         if (value !== this._transparency) {
             this._transparency = value;
             this.scene.events.fire('splat.transparency', this);
-            this.scene.renderSystem.updateSplatParams(this);
+            this.scene.splatRenderDisplay.updateSplatParams(this);
         }
     }
 
@@ -583,8 +583,8 @@ class Splat extends Element {
     set selectionAlpha(value: number) {
         if (value !== this._selectionAlpha) {
             this._selectionAlpha = value;
-            if (this.scene?.renderSystem) {
-                this.scene.renderSystem.updateSplatParams(this);
+            if (this.scene?.splatRenderDisplay) {
+                this.scene.splatRenderDisplay.updateSplatParams(this);
             }
             if (this.scene) {
                 this.scene.forceRender = true;
