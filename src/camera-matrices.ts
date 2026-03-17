@@ -39,6 +39,7 @@ const worldCoord = new Vec4();
 const nearWorld = new Vec3();
 const farWorld = new Vec3();
 const cameraWorld = new Vec3();
+const cameraAxisPoint = new Vec3();
 const rayPoint = new Vec3();
 const screenRay = new Ray();
 
@@ -168,6 +169,16 @@ const worldToScreenWithProjectionData = (
     return true;
 };
 
+const getOpticalAxisScreenCoordsWithProjectionData = (
+    projectionData: CameraProjectionData,
+    out: Vec3
+) => {
+    const axisDepth = Math.max(projectionData.nearClip * 2, 1);
+    cameraAxisPoint.set(0, 0, -axisDepth);
+    projectionData.viewInv.transformPoint(cameraAxisPoint, cameraWorld);
+    return worldToScreenWithProjectionData(projectionData, cameraWorld, out);
+};
+
 const buildCameraProjectionData = (camera: CameraComponent, out: CameraProjectionData): boolean => {
     out.projectionOverridden = !!camera.calculateProjection;
     out.nearClip = camera.nearClip;
@@ -202,6 +213,7 @@ export {
     buildCameraMatrices,
     buildCameraProjectionData,
     createCameraProjectionData,
+    getOpticalAxisScreenCoordsWithProjectionData,
     screenToWorldWithProjectionData,
     unprojectClipCoordWithProjectionData,
     worldToScreenWithProjectionData,

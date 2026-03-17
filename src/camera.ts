@@ -53,6 +53,7 @@ import {
     buildCameraRay,
     buildCameraProjectionData,
     createCameraProjectionData,
+    getOpticalAxisScreenCoordsWithProjectionData,
     screenToWorldWithProjectionData,
     unprojectClipCoordWithProjectionData,
     worldToScreenWithProjectionData,
@@ -936,26 +937,24 @@ class Camera extends Element {
             return null;
         }
 
-        let xNdc = 0;
-        let yNdc = 0;
-
-        if (this.customFrustum) {
-            const { left, right, bottom, top } = this.customFrustum;
-            const dx = right - left;
-            const dy = top - bottom;
-            if (typeof dx === 'number' && isFinite(dx) && Math.abs(dx) > 1e-6) {
-                xNdc = -(right + left) / dx;
-            }
-            if (typeof dy === 'number' && isFinite(dy) && Math.abs(dy) > 1e-6) {
-                yNdc = -(top + bottom) / dy;
-            }
-            if (!isFinite(xNdc)) xNdc = 0;
-            if (!isFinite(yNdc)) yNdc = 0;
+        const { camera } = this.entity;
+        if (!buildCameraProjectionData(camera, cameraMatricesScratch)) {
+            return {
+                x: w * 0.5,
+                y: h * 0.5
+            };
         }
 
         const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
-        const x = clamp((xNdc * 0.5 + 0.5) * w, 0, w - 1);
-        const y = clamp((0.5 - yNdc * 0.5) * h, 0, h - 1);
+        if (!getOpticalAxisScreenCoordsWithProjectionData(cameraMatricesScratch, vec)) {
+            return {
+                x: w * 0.5,
+                y: h * 0.5
+            };
+        }
+
+        const x = clamp(vec.x * w, 0, w - 1);
+        const y = clamp(vec.y * h, 0, h - 1);
 
         return { x, y };
     }
