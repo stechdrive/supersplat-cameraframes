@@ -21,6 +21,15 @@ type CameraProjectionData = {
 
 type CameraMatrices = CameraProjectionData;
 
+type CameraRayBasis = {
+    nearOrigin: Vec3;
+    nearX: Vec3;
+    nearY: Vec3;
+    farOrigin: Vec3;
+    farX: Vec3;
+    farY: Vec3;
+};
+
 const createCameraProjectionData = (): CameraProjectionData => {
     return {
         projection: new Mat4(),
@@ -34,12 +43,25 @@ const createCameraProjectionData = (): CameraProjectionData => {
     };
 };
 
+const createCameraRayBasis = (): CameraRayBasis => {
+    return {
+        nearOrigin: new Vec3(),
+        nearX: new Vec3(),
+        nearY: new Vec3(),
+        farOrigin: new Vec3(),
+        farX: new Vec3(),
+        farY: new Vec3()
+    };
+};
+
 const clipCoord = new Vec4();
 const worldCoord = new Vec4();
 const nearWorld = new Vec3();
 const farWorld = new Vec3();
 const cameraWorld = new Vec3();
 const cameraAxisPoint = new Vec3();
+const farWorldBR = new Vec3();
+const farWorldTL = new Vec3();
 const rayPoint = new Vec3();
 const screenRay = new Ray();
 
@@ -179,6 +201,50 @@ const getOpticalAxisScreenCoordsWithProjectionData = (
     return worldToScreenWithProjectionData(projectionData, cameraWorld, out);
 };
 
+const buildLegacyCameraRayBasis = (
+    camera: CameraComponent,
+    out: CameraRayBasis
+) => {
+    const points = camera.camera.getFrustumCorners(-100);
+    const worldTransform = camera.entity.getWorldTransform();
+    for (let i = 0; i < points.length; i++) {
+        worldTransform.transformPoint(points[i], points[i]);
+    }
+
+    if (camera.projection === PROJECTION_ORTHOGRAPHIC) {
+        out.nearOrigin.copy(points[3]);
+        out.nearX.sub2(points[0], points[3]);
+        out.nearY.sub2(points[2], points[3]);
+    } else {
+        worldTransform.getTranslation(out.nearOrigin);
+        out.nearX.set(0, 0, 0);
+        out.nearY.set(0, 0, 0);
+    }
+
+    out.farOrigin.copy(points[7]);
+    out.farX.sub2(points[4], points[7]);
+    out.farY.sub2(points[6], points[7]);
+    return true;
+};
+
+const buildProjectionCameraRayBasis = (
+    projectionData: CameraProjectionData,
+    out: CameraRayBasis
+) => {
+    if (!unprojectClipCoordWithProjectionData(projectionData, -1, -1, 1, out.farOrigin) ||
+        !unprojectClipCoordWithProjectionData(projectionData, 1, -1, 1, farWorldBR) ||
+        !unprojectClipCoordWithProjectionData(projectionData, -1, 1, 1, farWorldTL)) {
+        return false;
+    }
+
+    projectionData.viewInv.getTranslation(out.nearOrigin);
+    out.nearX.set(0, 0, 0);
+    out.nearY.set(0, 0, 0);
+    out.farX.sub2(farWorldBR, out.farOrigin);
+    out.farY.sub2(farWorldTL, out.farOrigin);
+    return true;
+};
+
 const buildCameraProjectionData = (camera: CameraComponent, out: CameraProjectionData): boolean => {
     out.projectionOverridden = !!camera.calculateProjection;
     out.nearClip = camera.nearClip;
@@ -212,11 +278,15 @@ export {
     buildCameraRay,
     buildCameraMatrices,
     buildCameraProjectionData,
+    buildLegacyCameraRayBasis,
+    buildProjectionCameraRayBasis,
     createCameraProjectionData,
+    createCameraRayBasis,
     getOpticalAxisScreenCoordsWithProjectionData,
     screenToWorldWithProjectionData,
     unprojectClipCoordWithProjectionData,
     worldToScreenWithProjectionData,
+    type CameraRayBasis,
     type CameraMatrices,
     type CameraProjectionData
 };

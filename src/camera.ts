@@ -52,11 +52,14 @@ import {
 import {
     buildCameraRay,
     buildCameraProjectionData,
+    buildLegacyCameraRayBasis,
+    buildProjectionCameraRayBasis,
     createCameraProjectionData,
+    createCameraRayBasis,
     getOpticalAxisScreenCoordsWithProjectionData,
     screenToWorldWithProjectionData,
-    unprojectClipCoordWithProjectionData,
     worldToScreenWithProjectionData,
+    type CameraRayBasis,
     type CameraProjectionData
 } from './camera-matrices';
 import { MIN_NEAR_CLIP } from './clip-constants';
@@ -78,9 +81,7 @@ const vec = new Vec3();
 const vecb = new Vec3();
 const va = new Vec3();
 const cameraMatricesScratch: CameraProjectionData = createCameraProjectionData();
-const cameraFarBL = new Vec3();
-const cameraFarBR = new Vec3();
-const cameraFarTL = new Vec3();
+const cameraRayBasisScratch: CameraRayBasis = createCameraRayBasis();
 const cameraPos = new Vec3();
 const orbitOffset = new Vec3();
 const orbitForward = new Vec3();
@@ -589,6 +590,14 @@ class Camera extends Element {
             const setRayValid = (value: number) => {
                 scope.resolve('ray_valid').setValue(value);
             };
+            const applyRayBasis = (basis: CameraRayBasis) => {
+                set('near_origin', basis.nearOrigin);
+                set('near_x', basis.nearX);
+                set('near_y', basis.nearY);
+                set('far_origin', basis.farOrigin);
+                set('far_x', basis.farX);
+                set('far_y', basis.farY);
+            };
 
             setRayValid(0);
 
@@ -597,21 +606,10 @@ class Camera extends Element {
 
             if (isOrtho && !customFrustumActive) {
                 // legacy ortho path for stable UX (avoid near-plane pop)
-                const points = camera.camera.getFrustumCorners(-100);
-                const worldTransform = entity.getWorldTransform();
-                for (let i = 0; i < points.length; i++) {
-                    worldTransform.transformPoint(points[i], points[i]);
+                if (buildLegacyCameraRayBasis(camera, cameraRayBasisScratch)) {
+                    applyRayBasis(cameraRayBasisScratch);
+                    setRayValid(1);
                 }
-
-                set('near_origin', points[3]);
-                set('near_x', va.sub2(points[0], points[3]));
-                set('near_y', va.sub2(points[2], points[3]));
-
-                set('far_origin', points[7]);
-                set('far_x', va.sub2(points[4], points[7]));
-                set('far_y', va.sub2(points[6], points[7]));
-
-                setRayValid(1);
                 return;
             }
 
@@ -619,69 +617,25 @@ class Camera extends Element {
             if (!matricesOk) {
                 if (!cameraMatricesScratch.projectionOverridden) {
                     // fallback to legacy when no custom frustum is active
-                    const points = camera.camera.getFrustumCorners(-100);
-                    const worldTransform = entity.getWorldTransform();
-                    for (let i = 0; i < points.length; i++) {
-                        worldTransform.transformPoint(points[i], points[i]);
+                    if (buildLegacyCameraRayBasis(camera, cameraRayBasisScratch)) {
+                        applyRayBasis(cameraRayBasisScratch);
+                        setRayValid(1);
                     }
-
-                    if (camera.projection === PROJECTION_PERSPECTIVE) {
-                        worldTransform.getTranslation(cameraPos);
-                        set('near_origin', cameraPos);
-                        set('near_x', Vec3.ZERO);
-                        set('near_y', Vec3.ZERO);
-                    } else {
-                        set('near_origin', points[3]);
-                        set('near_x', va.sub2(points[0], points[3]));
-                        set('near_y', va.sub2(points[2], points[3]));
-                    }
-
-                    set('far_origin', points[7]);
-                    set('far_x', va.sub2(points[4], points[7]));
-                    set('far_y', va.sub2(points[6], points[7]));
-                    setRayValid(1);
                 }
                 return;
             }
 
-            const okFar = unprojectClipCoordWithProjectionData(cameraMatricesScratch, -1, -1, 1, cameraFarBL) &&
-                unprojectClipCoordWithProjectionData(cameraMatricesScratch, 1, -1, 1, cameraFarBR) &&
-                unprojectClipCoordWithProjectionData(cameraMatricesScratch, -1, 1, 1, cameraFarTL);
-            if (!okFar) {
+            if (!buildProjectionCameraRayBasis(cameraMatricesScratch, cameraRayBasisScratch)) {
                 if (!customFrustumActive) {
-                    const points = camera.camera.getFrustumCorners(-100);
-                    const worldTransform = entity.getWorldTransform();
-                    for (let i = 0; i < points.length; i++) {
-                        worldTransform.transformPoint(points[i], points[i]);
+                    if (buildLegacyCameraRayBasis(camera, cameraRayBasisScratch)) {
+                        applyRayBasis(cameraRayBasisScratch);
+                        setRayValid(1);
                     }
-
-                    if (camera.projection === PROJECTION_PERSPECTIVE) {
-                        worldTransform.getTranslation(cameraPos);
-                        set('near_origin', cameraPos);
-                        set('near_x', Vec3.ZERO);
-                        set('near_y', Vec3.ZERO);
-                    } else {
-                        set('near_origin', points[3]);
-                        set('near_x', va.sub2(points[0], points[3]));
-                        set('near_y', va.sub2(points[2], points[3]));
-                    }
-
-                    set('far_origin', points[7]);
-                    set('far_x', va.sub2(points[4], points[7]));
-                    set('far_y', va.sub2(points[6], points[7]));
-                    setRayValid(1);
                 }
                 return;
             }
 
-            cameraMatricesScratch.viewInv.getTranslation(cameraPos);
-            set('near_origin', cameraPos);
-            set('near_x', Vec3.ZERO);
-            set('near_y', Vec3.ZERO);
-
-            set('far_origin', cameraFarBL);
-            set('far_x', va.sub2(cameraFarBR, cameraFarBL));
-            set('far_y', va.sub2(cameraFarTL, cameraFarBL));
+            applyRayBasis(cameraRayBasisScratch);
             setRayValid(1);
         };
 
