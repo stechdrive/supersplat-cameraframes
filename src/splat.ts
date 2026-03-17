@@ -4,6 +4,7 @@ import {
     Color,
     Entity,
     GSplatData,
+    type GSplatComponent,
     Mat4,
     Quat,
     Vec3,
@@ -19,6 +20,11 @@ import { TransformPalette } from './transform-palette';
 const vec = new Vec3();
 const veca = new Vec3();
 const vecb = new Vec3();
+
+type EngineGsplatComponentState = {
+    enabled?: boolean;
+    unified?: boolean;
+};
 
 const boundingPoints =
     [-1, 1].map((x) => {
@@ -326,6 +332,116 @@ class Splat extends Element {
         return (this.asset.file as any).filename;
     }
 
+    getDirectEngineCompatibilityIssue() {
+        const wholeSplatHidden = !this.visible && this.numHidden === this.numSplats;
+        if (this.numSelected > 0 || this.numLocked > 0 || this.numDeleted > 0 || (this.numHidden > 0 && !wholeSplatHidden)) {
+            return 'per-splat state';
+        }
+
+        if (!this.tintClr.equals(Color.WHITE) ||
+            this.temperature !== 0 ||
+            this.saturation !== 1 ||
+            this.brightness !== 0 ||
+            this.blackPoint !== 0 ||
+            this.whitePoint !== 1 ||
+            this.transparency !== 1 ||
+            this.selectionAlpha !== 1) {
+            return 'color or selection visuals';
+        }
+
+        const indices = this.splatData.getProp('transform') as Uint16Array | undefined;
+        if (indices) {
+            for (let i = 0; i < indices.length; i++) {
+                if (indices[i] !== 0) {
+                    return 'local transform palette';
+                }
+            }
+        }
+
+        return null;
+    }
+
+    isDirectEngineCompatible() {
+        return this.getDirectEngineCompatibilityIssue() === null;
+    }
+
+    private resolveEngineGsplatLayers() {
+        if (this.scene?.worldLayer) {
+            return [this.scene.worldLayer.id];
+        }
+
+        const worldLayer = this.scene?.app.scene.layers.getLayerByName('World');
+        if (worldLayer) {
+            return [worldLayer.id];
+        }
+
+        if (this.scene?.splatLayer) {
+            return [this.scene.splatLayer.id];
+        }
+
+        return [];
+    }
+
+    ensureEngineGsplatComponent(state: EngineGsplatComponentState = {}): GSplatComponent | null {
+        if (!this.scene) {
+            return null;
+        }
+
+        const layers = this.resolveEngineGsplatLayers();
+        let component = this.entity.gsplat;
+        if (!component) {
+            this.entity.addComponent('gsplat', {
+                asset: this.asset,
+                enabled: state.enabled ?? false,
+                layers
+            });
+            component = this.entity.gsplat;
+        }
+
+        if (!component) {
+            return null;
+        }
+
+        component.asset = this.asset;
+        component.layers = layers;
+        component.castShadows = false;
+        component.customAabb = this.localBoundStorage;
+
+        if (state.unified !== undefined) {
+            component.unified = state.unified;
+        }
+        if (state.enabled !== undefined) {
+            component.enabled = state.enabled;
+        }
+
+        return component;
+    }
+
+    syncEngineGsplatComponent(state: EngineGsplatComponentState = {}) {
+        const component = this.entity.gsplat;
+        if (!component || !this.scene) {
+            return null;
+        }
+
+        component.asset = this.asset;
+        component.layers = this.resolveEngineGsplatLayers();
+        component.castShadows = false;
+        component.customAabb = this.localBoundStorage;
+
+        if (state.unified !== undefined) {
+            component.unified = state.unified;
+        }
+        if (state.enabled !== undefined) {
+            component.enabled = state.enabled;
+        }
+
+        return component;
+    }
+
+    disableEngineGsplatComponent() {
+        this.syncEngineGsplatComponent({ enabled: false });
+    }
+
     calcSplatWorldPosition(splatId: number, result: Vec3) {
         if (splatId >= this.splatData.numSplats) {
             return false;
@@ -344,9 +460,10 @@ class Splat extends Element {
 
         // 標準GSplatコンポーネントは統合レンダラーが吸収するため常時無効化。
         // ここを再有効化すると標準レンダー経路が復活してゴーストが再発する。
-        const gsplatComp = this.entity.gsplat;
-        if (gsplatComp) {
-            gsplatComp.enabled = false;
+        if (this.scene.splatRenderCapabilities.resolvedMode === 'unified-display') {
+            this.ensureEngineGsplatComponent({ unified: true, enabled: false });
+        } else {
+            this.disableEngineGsplatComponent();
         }
     }
 
@@ -374,6 +491,9 @@ class Splat extends Element {
             other.transformPalette, this.transformPalette,
             other._localCenters, this._localCenters
         ];
+
+        this.syncEngineGsplatComponent();
+        other.syncEngineGsplatComponent();
     }
 
     remove() {
@@ -437,6 +557,7 @@ class Splat extends Element {
     // calculate both selection and local bounds (async, callers must await)
     async updateLocalBounds(): Promise<void> {
         await this.scene.splatRenderData.calcBound(this, this.selectionBoundStorage, this.localBoundStorage);
+        this.syncEngineGsplatComponent();
         this.updateWorldBound();
     }
 

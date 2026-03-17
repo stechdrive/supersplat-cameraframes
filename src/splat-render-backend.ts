@@ -215,6 +215,128 @@ const createMergedRenderBackendCapabilities = (mode: SplatRenderBackendMode): Sp
     };
 };
 
+const createUnifiedDisplayRenderBackendCapabilities = (): SplatRenderBackendCapabilities => {
+    return {
+        mode: 'unified-display',
+        resolvedMode: 'unified-display',
+        supportsUnifiedDisplay: true,
+        supportsEditorData: true,
+        supportsPicking: true,
+        supportsOverlay: true,
+        supportsStreamLod: false,
+        supportsPerSplatVisualState: false
+    };
+};
+
+const createUnifiedDisplayBackends = (scene: Scene): SplatRenderRoleBackends => {
+    const mergedRenderer = createSupersplatSplatRenderSystemBackends(scene);
+    const sources: Splat[] = [];
+    let engineDirectActive = false;
+    let lastFallbackReason: string | null = null;
+
+    const findFallbackReason = () => {
+        for (const splat of sources) {
+            const issue = splat.getDirectEngineCompatibilityIssue();
+            if (issue) {
+                return `${splat.name || splat.filename}: ${issue}`;
+            }
+        }
+        return null;
+    };
+
+    const syncEngineComponents = () => {
+        const fallbackReason = findFallbackReason();
+        const shouldUseEngineDirect = fallbackReason === null;
+        if (fallbackReason !== lastFallbackReason) {
+            if (fallbackReason) {
+                console.warn(`[SplatRender] unified-display fallback to merged: ${fallbackReason}`);
+            } else if (lastFallbackReason) {
+                console.info('[SplatRender] unified-display direct mode restored.');
+            }
+            lastFallbackReason = fallbackReason;
+        }
+
+        engineDirectActive = shouldUseEngineDirect;
+        mergedRenderer.setMergedDisplayVisible(!shouldUseEngineDirect);
+
+        sources.forEach((splat) => {
+            if (shouldUseEngineDirect) {
+                splat.ensureEngineGsplatComponent({
+                    unified: true,
+                    enabled: splat.visible
+                });
+            } else {
+                splat.disableEngineGsplatComponent();
+            }
+        });
+    };
+
+    const display: SplatRenderDisplayBackend = {
+        add: (splat: Splat) => {
+            if (!sources.includes(splat)) {
+                sources.push(splat);
+            }
+            mergedRenderer.display.add(splat);
+            splat.ensureEngineGsplatComponent({ unified: true, enabled: false });
+            syncEngineComponents();
+        },
+        remove: (splat: Splat) => {
+            const idx = sources.indexOf(splat);
+            if (idx !== -1) {
+                sources.splice(idx, 1);
+            }
+            mergedRenderer.display.remove(splat);
+            splat.disableEngineGsplatComponent();
+            syncEngineComponents();
+        },
+        isSplatActive: (splat: Splat) => mergedRenderer.display.isSplatActive(splat),
+        scheduleRebuildForVisibility: (immediate?: boolean) => {
+            mergedRenderer.display.scheduleRebuildForVisibility(immediate);
+            syncEngineComponents();
+        },
+        hasRenderableData: (splat: Splat) => mergedRenderer.display.hasRenderableData(splat),
+        updateState: (splat: Splat) => {
+            const result = mergedRenderer.display.updateState(splat);
+            if (result) {
+                splat.numSplats = result.numSplats;
+                splat.numLocked = result.numLocked;
+                splat.numSelected = result.numSelected;
+                splat.numDeleted = result.numDeleted;
+                splat.numHidden = result.numHidden;
+                splat.numVisible = result.numVisible;
+            }
+            syncEngineComponents();
+            return result;
+        },
+        updateSplatParams: (splat: Splat) => {
+            mergedRenderer.display.updateSplatParams(splat);
+            syncEngineComponents();
+        },
+        updateTransform: (splat: Splat, skipCenterUpdate?: boolean) => {
+            mergedRenderer.display.updateTransform(splat, skipCenterUpdate);
+            splat.syncEngineGsplatComponent({
+                unified: true,
+                enabled: engineDirectActive && splat.visible
+            });
+            syncEngineComponents();
+        },
+        updateTransformIndices: (splat: Splat, updatedIndices?: Uint16Array) => {
+            mergedRenderer.display.updateTransformIndices(splat, updatedIndices);
+            syncEngineComponents();
+        }
+    };
+
+    syncEngineComponents();
+
+    return {
+        lifecycle: mergedRenderer.lifecycle,
+        display,
+        data: mergedRenderer.data,
+        picking: mergedRenderer.picking,
+        overlay: mergedRenderer.overlay
+    };
+};
+
 const createSupersplatSplatRenderBackends = (scene: Scene): SplatRenderBackends => {
     const requestedMode = scene.config.renderBackend?.mode ?? 'merged';
     let roleBackends: SplatRenderRoleBackends;
@@ -226,9 +348,8 @@ const createSupersplatSplatRenderBackends = (scene: Scene): SplatRenderBackends 
             capabilities = createMergedRenderBackendCapabilities(requestedMode);
             break;
         case 'unified-display':
-            console.warn('[SplatRender] renderBackend.mode=unified-display is not implemented on this branch yet. Falling back to merged.');
-            roleBackends = createSupersplatSplatRenderSystemBackends(scene);
-            capabilities = createMergedRenderBackendCapabilities(requestedMode);
+            roleBackends = createUnifiedDisplayBackends(scene);
+            capabilities = createUnifiedDisplayRenderBackendCapabilities();
             break;
         case 'merged':
         default:

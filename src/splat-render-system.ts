@@ -413,6 +413,7 @@ class SplatRenderSystem {
     private sorterMapping: Uint32Array | null = null;
     private sorterUpdatedHandle: { off: () => void } | null = null;
     private sorterUpdatedSorter: unknown | null = null;
+    private mergedDisplayVisible = true;
     private lifecycleController!: SplatRenderSystemLifecycleController;
     private displayOps!: SplatRenderDisplayBackend;
     private displayController!: SplatRenderSystemDisplayController;
@@ -461,6 +462,11 @@ class SplatRenderSystem {
 
     getDisplayBackend() {
         return this.displayController;
+    }
+
+    setMergedDisplayVisible(visible: boolean) {
+        this.mergedDisplayVisible = visible;
+        this.applyMergedDisplayVisibility();
     }
 
     private getEntry(splat: Splat) {
@@ -811,6 +817,19 @@ class SplatRenderSystem {
         material.update();
     }
 
+    private applyMergedDisplayVisibility() {
+        const gsplat = this.mergedEntity.gsplat;
+        if (!gsplat) {
+            return;
+        }
+
+        if (this.mergedDisplayVisible) {
+            gsplat.show();
+        } else {
+            gsplat.hide();
+        }
+    }
+
     private destroyMerged() {
         this.clearSorterUpdatedHandler();
         if (this.mergedEntity.gsplat) {
@@ -872,6 +891,7 @@ class SplatRenderSystem {
         const splatLayer = this.scene.splatLayer ?? this.scene.app.scene.layers.getLayerByName('Splat');
         if (splatLayer) {
             this.mergedEntity.gsplat.layers = [splatLayer.id];
+            this.applyMergedDisplayVisibility();
             return;
         }
 
@@ -879,6 +899,7 @@ class SplatRenderSystem {
         if (worldLayer) {
             this.mergedEntity.gsplat.layers = [worldLayer.id];
         }
+        this.applyMergedDisplayVisibility();
     }
 
     private getRuntimeDimensions(): SplatRenderRuntimeDimensions {
@@ -943,6 +964,7 @@ class SplatRenderSystem {
 
         this.ensureSorterUpdatedHandler();
         this.rebuildSorterMapping();
+        this.applyMergedDisplayVisibility();
         this.scene.forceRender = true;
         this.materialDirty = false;
         this.scene.boundDirty = true;
@@ -1549,7 +1571,9 @@ class SplatRenderSystemOverlayBackend implements SplatRenderOverlayBackend {
     }
 }
 
-const createSupersplatSplatRenderSystemBackends = (scene: Scene): SplatRenderRoleBackends => {
+const createSupersplatSplatRenderSystemBackends = (scene: Scene): SplatRenderRoleBackends & {
+    setMergedDisplayVisible: (visible: boolean) => void;
+} => {
     const core = new SplatRenderSystem(scene);
 
     return {
@@ -1557,7 +1581,8 @@ const createSupersplatSplatRenderSystemBackends = (scene: Scene): SplatRenderRol
         display: core.getDisplayBackend(),
         data: new SplatRenderSystemDataBackend(core.createDataContext()),
         picking: new SplatRenderSystemPickingBackend(core.createPickingContext()),
-        overlay: new SplatRenderSystemOverlayBackend(core.createOverlayContext())
+        overlay: new SplatRenderSystemOverlayBackend(core.createOverlayContext()),
+        setMergedDisplayVisible: (visible: boolean) => core.setMergedDisplayVisible(visible)
     };
 };
 
