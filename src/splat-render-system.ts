@@ -82,6 +82,9 @@ type SplatRenderSystemDisplayContext = {
     scene: Scene;
     getEntry: (splat: Splat) => SplatRenderEntry | null;
     getBoundCache: (splat: Splat) => BoundCacheEntry | null;
+    setBoundCache: (splat: Splat, entry: BoundCacheEntry) => void;
+    deleteBoundCache: (splat: Splat) => void;
+    deleteEntry: (splat: Splat) => void;
     getMergedInstance: () => any;
     getStateTexture: () => Texture | null;
     getGlobalState: () => Uint8Array | null;
@@ -92,6 +95,8 @@ type SplatRenderSystemDisplayContext = {
     getTransformPalette: () => TransformPalette;
     markSorterCentersDirty: () => void;
     rebuildSorterMapping: () => void;
+    isFrozen: () => boolean;
+    markDirty: () => void;
     rebuild: () => void;
 };
 
@@ -107,6 +112,12 @@ type SplatRenderSystemOverlayContext = {
     getStateTexture: () => Texture | null;
     getTransformTexture: () => Texture | null;
     getTransformPaletteTexture: () => Texture | null;
+};
+
+type SplatRenderSystemDisplayController = SplatRenderDisplayBackend & {
+    getSources: () => Splat[];
+    onPivotStarted: () => void;
+    onPivotEnded: () => void;
 };
 
 const createSplatRenderProcessorContext = (context: SplatRenderSystemDataContext, splat: Splat): ProcessorContext => {
@@ -133,7 +144,6 @@ const createSplatRenderProcessorContext = (context: SplatRenderSystemDataContext
 
 class SplatRenderSystem {
     scene: Scene;
-    sources: Splat[] = [];
     entries = new Map<Splat, SplatRenderEntry>();
     mergedData: GSplatData | null = null;
     mergedResource: GSplatResource | null = null;
@@ -152,17 +162,13 @@ class SplatRenderSystem {
     boundCache = new Map<Splat, BoundCacheEntry>();
     shBands = 0;
     sorterPromiseHandle: Promise<void> | null = null;
-    private visibilityRebuildTimer: number | null = null;
-    private visibilityRebuildPending = false;
-    private visibilityRebuildImmediate = false;
-    private pivotActive = false;
-    private visibilityRebuildDebounceMs = 400;
     private sorterCentersDirty = false;
     private centersUpdateToken = 0;
     private sorterMapping: Uint32Array | null = null;
     private sorterUpdatedHandle: { off: () => void } | null = null;
     private sorterUpdatedSorter: unknown | null = null;
     private displayOps!: SplatRenderDisplayBackend;
+    private displayController!: SplatRenderSystemDisplayController;
 
     constructor(scene: Scene) {
         this.scene = scene;
@@ -170,7 +176,8 @@ class SplatRenderSystem {
 
         this.mergedEntity = new Entity('mergedSplat');
         this.scene.contentRoot.addChild(this.mergedEntity);
-        this.displayOps = createSplatRenderSystemDisplayBackend(this, this.createDisplayContext());
+        this.displayController = createSplatRenderSystemDisplayBackend(this.createDisplayContext());
+        this.displayOps = this.displayController;
 
         // SH バンド変更に追従
         this.scene.events.on('view.bands', (bands: number) => {
@@ -182,18 +189,10 @@ class SplatRenderSystem {
         });
 
         this.scene.events.on('pivot.started', () => {
-            this.pivotActive = true;
-            this.clearVisibilityRebuildTimer();
+            this.displayController.onPivotStarted();
         });
         this.scene.events.on('pivot.ended', () => {
-            this.pivotActive = false;
-            if (this.visibilityRebuildPending) {
-                if (this.visibilityRebuildImmediate) {
-                    this.runVisibilityRebuild();
-                } else {
-                    this.startVisibilityRebuildTimer();
-                }
-            }
+            this.displayController.onPivotEnded();
         });
 
         this.scene.events.on('splat.positionsChanged', (splat: Splat) => {
@@ -202,39 +201,6 @@ class SplatRenderSystem {
             }
             this.markSorterCentersDirty();
         });
-    }
-
-    add(splat: Splat) {
-        if (this.sources.includes(splat)) {
-            return;
-        }
-
-        this.sources.push(splat);
-        this.boundCache.set(splat, {
-            selection: new BoundingBox(),
-            visible: new BoundingBox(),
-            selectionDirty: true,
-            visibleDirty: true
-        });
-        if (this._frozen) {
-            this._dirty = true;
-        } else {
-            this.rebuild();
-        }
-    }
-
-    remove(splat: Splat) {
-        const idx = this.sources.indexOf(splat);
-        if (idx !== -1) {
-            this.sources.splice(idx, 1);
-            this.entries.delete(splat);
-            this.boundCache.delete(splat);
-            if (this._frozen) {
-                this._dirty = true;
-            } else {
-                this.rebuild();
-            }
-        }
     }
 
     private _frozen = false;
@@ -258,68 +224,6 @@ class SplatRenderSystem {
 
     private getEntry(splat: Splat) {
         return this.entries.get(splat) ?? null;
-    }
-
-    scheduleRebuildForVisibility(immediate = false) {
-        const allVisible = this.sources.every(splat => splat.visible);
-        const allActive = this.sources.every(splat => this.isSplatActive(splat));
-        if (allVisible && allActive && !immediate) {
-            this.visibilityRebuildPending = false;
-            this.visibilityRebuildImmediate = false;
-            this.clearVisibilityRebuildTimer();
-            return;
-        }
-
-        this.visibilityRebuildPending = true;
-        if (immediate) {
-            this.visibilityRebuildImmediate = true;
-        }
-        if (this._frozen) {
-            this._dirty = true;
-            this.visibilityRebuildPending = false;
-            this.visibilityRebuildImmediate = false;
-            return;
-        }
-        if (this.pivotActive) {
-            return;
-        }
-        if (this.visibilityRebuildImmediate) {
-            this.runVisibilityRebuild();
-            return;
-        }
-        this.startVisibilityRebuildTimer();
-    }
-
-    private startVisibilityRebuildTimer() {
-        this.clearVisibilityRebuildTimer();
-        this.visibilityRebuildTimer = window.setTimeout(() => {
-            this.visibilityRebuildTimer = null;
-            if (!this.visibilityRebuildPending || this.pivotActive) {
-                return;
-            }
-            this.runVisibilityRebuild();
-        }, this.visibilityRebuildDebounceMs);
-    }
-
-    private runVisibilityRebuild() {
-        this.clearVisibilityRebuildTimer();
-        if (!this.visibilityRebuildPending || this.pivotActive) {
-            return;
-        }
-        this.visibilityRebuildPending = false;
-        this.visibilityRebuildImmediate = false;
-        if (this._frozen) {
-            this._dirty = true;
-            return;
-        }
-        this.rebuild();
-    }
-
-    private clearVisibilityRebuildTimer() {
-        if (this.visibilityRebuildTimer !== null) {
-            window.clearTimeout(this.visibilityRebuildTimer);
-            this.visibilityRebuildTimer = null;
-        }
     }
 
     private markSorterCentersDirty() {
@@ -347,7 +251,7 @@ class SplatRenderSystem {
         this.sorterUpdatedSorter = sorter;
         this.sorterUpdatedHandle = sorter.on('updated', () => {
             this.scene.forceRender = true;
-            this.sources.forEach((s) => {
+            this.displayController.getSources().forEach((s) => {
                 s.changedCounter++;
             });
         });
@@ -409,6 +313,9 @@ class SplatRenderSystem {
             scene: this.scene,
             getEntry: (splat: Splat) => this.getEntry(splat),
             getBoundCache: (splat: Splat) => this.boundCache.get(splat) ?? null,
+            setBoundCache: (splat: Splat, entry: BoundCacheEntry) => this.boundCache.set(splat, entry),
+            deleteBoundCache: (splat: Splat) => this.boundCache.delete(splat),
+            deleteEntry: (splat: Splat) => this.entries.delete(splat),
             getMergedInstance: () => this.mergedEntity.gsplat?.instance,
             getStateTexture: () => this.stateTexture,
             getGlobalState: () => this.globalState,
@@ -419,6 +326,10 @@ class SplatRenderSystem {
             getTransformPalette: () => this.transformPalette,
             markSorterCentersDirty: () => this.markSorterCentersDirty(),
             rebuildSorterMapping: () => this.rebuildSorterMapping(),
+            isFrozen: () => this._frozen,
+            markDirty: () => {
+                this._dirty = true;
+            },
             rebuild: () => this.rebuild()
         };
     }
@@ -732,7 +643,7 @@ class SplatRenderSystem {
         // this is necessary because the sorter (worker) and GPU resources might not be ready
         // immediately after rebuild/add, leading to valid centers being overwritten with 0s
         if (this._needsTransformUpdate && instance.sorter) {
-            this.sources.forEach(splat => this.updateTransform(splat));
+            this.displayController.getSources().forEach(splat => this.updateTransform(splat));
             this._needsTransformUpdate = false;
         }
 
@@ -769,7 +680,7 @@ class SplatRenderSystem {
         this.destroyMerged();
         this.centersUpdateToken++;
 
-        const activeSources = this.sources.filter(splat => splat.visible);
+        const activeSources = this.displayController.getSources().filter(splat => splat.visible);
         if (activeSources.length === 0) {
             console.log('SplatRenderSystem: No sources to rebuild');
             this.destroyMerged();
@@ -1019,7 +930,7 @@ class SplatRenderSystem {
 
         // 各Splatのパラメータと状態を更新・転送
         if (this.paramsTextures && this.paramsStorage) {
-            this.sources.forEach((splat) => {
+            this.displayController.getSources().forEach((splat) => {
                 this.updateSplatParams(splat);
                 this.updateState(splat);
             });
@@ -1082,14 +993,130 @@ class SplatRenderSystemLifecycleBackend implements SplatRenderLifecycleBackend {
 }
 
 function createSplatRenderSystemDisplayBackend(
-    core: SplatRenderSystem,
     context: SplatRenderSystemDisplayContext
-): SplatRenderDisplayBackend {
+): SplatRenderSystemDisplayController {
+    const sources: Splat[] = [];
+    let visibilityRebuildTimer: number | null = null;
+    let visibilityRebuildPending = false;
+    let visibilityRebuildImmediate = false;
+    let pivotActive = false;
+    const visibilityRebuildDebounceMs = 400;
+
+    const clearVisibilityRebuildTimer = () => {
+        if (visibilityRebuildTimer !== null) {
+            window.clearTimeout(visibilityRebuildTimer);
+            visibilityRebuildTimer = null;
+        }
+    };
+
+    const runVisibilityRebuild = () => {
+        clearVisibilityRebuildTimer();
+        if (!visibilityRebuildPending || pivotActive) {
+            return;
+        }
+        visibilityRebuildPending = false;
+        visibilityRebuildImmediate = false;
+        if (context.isFrozen()) {
+            context.markDirty();
+            return;
+        }
+        context.rebuild();
+    };
+
+    const startVisibilityRebuildTimer = () => {
+        clearVisibilityRebuildTimer();
+        visibilityRebuildTimer = window.setTimeout(() => {
+            visibilityRebuildTimer = null;
+            if (!visibilityRebuildPending || pivotActive) {
+                return;
+            }
+            runVisibilityRebuild();
+        }, visibilityRebuildDebounceMs);
+    };
+
     return {
-        add: (splat: Splat) => core.add(splat),
-        remove: (splat: Splat) => core.remove(splat),
+        getSources: () => sources,
+        onPivotStarted: () => {
+            pivotActive = true;
+            clearVisibilityRebuildTimer();
+        },
+        onPivotEnded: () => {
+            pivotActive = false;
+            if (visibilityRebuildPending) {
+                if (visibilityRebuildImmediate) {
+                    runVisibilityRebuild();
+                } else {
+                    startVisibilityRebuildTimer();
+                }
+            }
+        },
+        add: (splat: Splat) => {
+            if (sources.includes(splat)) {
+                return;
+            }
+
+            sources.push(splat);
+            context.setBoundCache(splat, {
+                selection: new BoundingBox(),
+                visible: new BoundingBox(),
+                selectionDirty: true,
+                visibleDirty: true
+            });
+
+            if (context.isFrozen()) {
+                context.markDirty();
+                return;
+            }
+
+            context.rebuild();
+        },
+        remove: (splat: Splat) => {
+            const idx = sources.indexOf(splat);
+            if (idx === -1) {
+                return;
+            }
+
+            sources.splice(idx, 1);
+            context.deleteEntry(splat);
+            context.deleteBoundCache(splat);
+
+            if (context.isFrozen()) {
+                context.markDirty();
+                return;
+            }
+
+            context.rebuild();
+        },
         isSplatActive: (splat: Splat) => !!context.getEntry(splat),
-        scheduleRebuildForVisibility: (immediate?: boolean) => core.scheduleRebuildForVisibility(immediate),
+        scheduleRebuildForVisibility: (immediate = false) => {
+            const allVisible = sources.every(splat => splat.visible);
+            const allActive = sources.every(splat => !!context.getEntry(splat));
+            if (allVisible && allActive && !immediate) {
+                visibilityRebuildPending = false;
+                visibilityRebuildImmediate = false;
+                clearVisibilityRebuildTimer();
+                return;
+            }
+
+            visibilityRebuildPending = true;
+            if (immediate) {
+                visibilityRebuildImmediate = true;
+            }
+            if (context.isFrozen()) {
+                context.markDirty();
+                visibilityRebuildPending = false;
+                visibilityRebuildImmediate = false;
+                return;
+            }
+            if (pivotActive) {
+                return;
+            }
+            if (visibilityRebuildImmediate) {
+                runVisibilityRebuild();
+                return;
+            }
+            startVisibilityRebuildTimer();
+        },
         hasRenderableData: (splat: Splat) => !!context.getEntry(splat),
         updateState: (splat: Splat) => {
             const state = splat.splatData.getProp('state') as Uint8Array;
@@ -1426,7 +1453,7 @@ const createSupersplatSplatRenderSystemBackends = (scene: Scene): Omit<SplatRend
 
     return {
         lifecycle: new SplatRenderSystemLifecycleBackend(core),
-        display: createSplatRenderSystemDisplayBackend(core, core.createDisplayContext()),
+        display: createSplatRenderSystemDisplayBackend(core.createDisplayContext()),
         data: new SplatRenderSystemDataBackend(core.createDataContext()),
         picking: new SplatRenderSystemPickingBackend(core.createPickingContext()),
         overlay: new SplatRenderSystemOverlayBackend(core.createOverlayContext())
