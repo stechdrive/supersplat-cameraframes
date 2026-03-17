@@ -76,6 +76,23 @@ type SplatRenderSystemDataContext = {
     getBoundCache: (splat: Splat) => BoundCacheEntry | null;
 };
 
+type SplatRenderSystemDisplayContext = {
+    scene: Scene;
+    getEntry: (splat: Splat) => SplatRenderEntry | null;
+    getBoundCache: (splat: Splat) => BoundCacheEntry | null;
+    getMergedInstance: () => any;
+    getStateTexture: () => Texture | null;
+    getGlobalState: () => Uint8Array | null;
+    getParamsTextures: () => ParamsTextures | null;
+    getParamsStorage: () => ParamsStorage | null;
+    getTransformTexture: () => Texture | null;
+    getGlobalTransformIndices: () => Uint16Array | null;
+    getTransformPalette: () => TransformPalette;
+    markSorterCentersDirty: () => void;
+    rebuildSorterMapping: () => void;
+    rebuild: () => void;
+};
+
 const createSplatRenderProcessorContext = (context: SplatRenderSystemDataContext, splat: Splat): ProcessorContext => {
     const entry = context.getEntry(splat);
     const resourceInfo = context.getMergedResourceInfo();
@@ -129,6 +146,7 @@ class SplatRenderSystem {
     private sorterMapping: Uint32Array | null = null;
     private sorterUpdatedHandle: { off: () => void } | null = null;
     private sorterUpdatedSorter: unknown | null = null;
+    private displayOps!: SplatRenderDisplayBackend;
 
     constructor(scene: Scene) {
         this.scene = scene;
@@ -136,6 +154,7 @@ class SplatRenderSystem {
 
         this.mergedEntity = new Entity('mergedSplat');
         this.scene.contentRoot.addChild(this.mergedEntity);
+        this.displayOps = createSplatRenderSystemDisplayBackend(this, this.createDisplayContext());
 
         // SH バンド変更に追従
         this.scene.events.on('view.bands', (bands: number) => {
@@ -218,7 +237,7 @@ class SplatRenderSystem {
     }
 
     isSplatActive(splat: Splat) {
-        return this.entries.has(splat);
+        return this.displayOps.isSplatActive(splat);
     }
 
     private getEntry(splat: Splat) {
@@ -392,7 +411,7 @@ class SplatRenderSystem {
     }
 
     hasRenderableData(splat: Splat) {
-        return !!this.getRenderableRange(splat);
+        return this.displayOps.hasRenderableData(splat);
     }
 
     private getRenderableRange(splat: Splat) {
@@ -421,6 +440,25 @@ class SplatRenderSystem {
             getTransformPaletteTexture: () => this.transformPalette.texture,
             getStateTexture: () => this.stateTexture,
             getBoundCache: (splat: Splat) => this.boundCache.get(splat) ?? null
+        };
+    }
+
+    createDisplayContext(): SplatRenderSystemDisplayContext {
+        return {
+            scene: this.scene,
+            getEntry: (splat: Splat) => this.getEntry(splat),
+            getBoundCache: (splat: Splat) => this.boundCache.get(splat) ?? null,
+            getMergedInstance: () => this.mergedEntity.gsplat?.instance,
+            getStateTexture: () => this.stateTexture,
+            getGlobalState: () => this.globalState,
+            getParamsTextures: () => this.paramsTextures,
+            getParamsStorage: () => this.paramsStorage,
+            getTransformTexture: () => this.transformTexture,
+            getGlobalTransformIndices: () => this.globalTransformIndices,
+            getTransformPalette: () => this.transformPalette,
+            markSorterCentersDirty: () => this.markSorterCentersDirty(),
+            rebuildSorterMapping: () => this.rebuildSorterMapping(),
+            rebuild: () => this.rebuild()
         };
     }
 
@@ -579,205 +617,19 @@ class SplatRenderSystem {
     }
 
     updateState(splat: Splat) {
-        const state = splat.splatData.getProp('state') as Uint8Array;
-        const entry = this.getEntry(splat);
-        if (this.stateTexture && this.globalState && entry) {
-            this.globalState.set(state, entry.offset);
-
-            const data = this.stateTexture.lock() as Uint8Array;
-            data.set(state, entry.offset);
-            this.stateTexture.unlock();
-        }
-
-        let numSelected = 0;
-        let numLocked = 0;
-        let numDeleted = 0;
-        let numHidden = 0;
-        for (let i = 0; i < state.length; ++i) {
-            const s = state[i];
-            const isDeleted = (s & State.deleted) !== 0;
-            if (isDeleted) {
-                numDeleted++;
-                continue;
-            }
-            if (s & State.hidden) {
-                numHidden++;
-            }
-            if (s & State.locked) {
-                numLocked++;
-            }
-            if ((s & State.selected) !== 0 && (s & (State.locked | State.hidden)) === 0) {
-                numSelected++;
-            }
-        }
-        const numSplats = state.length - numDeleted;
-        const numVisible = numSplats - numHidden;
-
-        this.rebuildSorterMapping();
-
-        this.boundCache.forEach((entry) => {
-            entry.selectionDirty = true;
-            entry.visibleDirty = true;
-        });
-
-        this.scene.forceRender = true;
-
-        return {
-            numSelected,
-            numLocked,
-            numDeleted,
-            numHidden,
-            numVisible,
-            numSplats
-        };
+        return this.displayOps.updateState(splat);
     }
 
     updateSplatParams(splat: Splat) {
-        if (!this.paramsTextures || !this.paramsStorage) {
-            return;
-        }
-
-        const entry = this.getEntry(splat);
-        if (!entry?.count) {
-            return;
-        }
-        const { offset, count } = entry;
-        const { arr0, arr1, arr2 } = this.paramsStorage;
-
-        const tint = splat.tintClr;
-        const temperature = splat.temperature;
-        const saturation = splat.saturation;
-        const brightness = splat.brightness;
-        const blackPoint = splat.blackPoint;
-        const whitePoint = splat.whitePoint;
-        const transparency = splat.transparency;
-        const selectionAlpha = splat.selectionAlpha;
-
-        for (let i = 0; i < count; i++) {
-            const idx = (offset + i) * 4;
-
-            arr0[idx + 0] = tint.r;
-            arr0[idx + 1] = tint.g;
-            arr0[idx + 2] = tint.b;
-            arr0[idx + 3] = temperature;
-
-            arr1[idx + 0] = saturation;
-            arr1[idx + 1] = brightness;
-            arr1[idx + 2] = blackPoint;
-            arr1[idx + 3] = whitePoint;
-
-            arr2[idx + 0] = transparency;
-            arr2[idx + 1] = selectionAlpha;
-            arr2[idx + 2] = 0;
-            arr2[idx + 3] = 0;
-        }
-
-        const upload = (tex: Texture, data: Float32Array) => {
-            const buf = tex.lock() as Float32Array;
-            buf.set(data);
-            tex.unlock();
-        };
-
-        upload(this.paramsTextures.tex0, arr0);
-        upload(this.paramsTextures.tex1, arr1);
-        upload(this.paramsTextures.tex2, arr2);
+        this.displayOps.updateSplatParams(splat);
     }
 
     updateTransform(splat: Splat, skipCenterUpdate = false) {
-        const entry = this.getEntry(splat);
-        const block = entry?.transformBlock;
-        if (!entry || !block) {
-            return;
-        }
-
-        const world = splat.entity.getWorldTransform();
-        const localPalette = splat.transformPalette;
-        const mat = new Mat4();
-        this.transformPalette.beginUpdate();
-        for (let i = 0; i < block.size; i++) {
-            localPalette.getTransform(i, mat);
-            mat.mul2(world, mat);
-            this.transformPalette.setTransform(block.base + i, mat);
-        }
-        this.transformPalette.endUpdate();
-
-        this.scene.boundDirty = true;
-        const cache = this.boundCache.get(splat);
-        if (cache) {
-            cache.selectionDirty = true;
-            cache.visibleDirty = true;
-        }
-
-        // ソーターの位置情報も更新
-        const instance = this.mergedEntity.gsplat?.instance;
-        if (instance && !skipCenterUpdate) {
-            const { offset, count } = entry;
-
-            // OPTIMIZATION: Use CPU for center updates during interaction to avoid slow readPixels
-            const localCenters = splat.localCenters;
-            const world = splat.entity.getWorldTransform().data;
-            const m0 = world[0], m1 = world[1], m2 = world[2];
-            const m4 = world[4], m5 = world[5], m6 = world[6];
-            const m8 = world[8], m9 = world[9], m10 = world[10];
-            const m12 = world[12], m13 = world[13], m14 = world[14];
-
-            const centers = (instance as any).centers as Float32Array;
-            if (centers && localCenters) {
-                for (let i = 0; i < count; i++) {
-                    const x = localCenters[i * 3 + 0];
-                    const y = localCenters[i * 3 + 1];
-                    const z = localCenters[i * 3 + 2];
-
-                    // Apply World Matrix
-                    centers[(offset + i) * 3 + 0] = x * m0 + y * m4 + z * m8 + m12;
-                    centers[(offset + i) * 3 + 1] = x * m1 + y * m5 + z * m9 + m13;
-                    centers[(offset + i) * 3 + 2] = x * m2 + y * m6 + z * m10 + m14;
-                }
-                if (instance.sorter) {
-                    (instance.sorter as any).centers = centers;
-                }
-                this.markSorterCentersDirty();
-            }
-        }
+        this.displayOps.updateTransform(splat, skipCenterUpdate);
     }
 
     updateTransformIndices(splat: Splat, updatedIndices?: Uint16Array) {
-        if (!this.transformTexture || !this.globalTransformIndices) {
-            return;
-        }
-
-        const indices = updatedIndices ?? (splat.splatData.getProp('transform') as Uint16Array);
-        const entry = this.getEntry(splat);
-        const block = entry?.transformBlock;
-        if (!entry || !block) {
-            return;
-        }
-        const { offset } = entry;
-
-        let maxLocal = 0;
-        for (let i = 0; i < indices.length; i++) {
-            maxLocal = Math.max(maxLocal, indices[i]);
-        }
-        if (maxLocal >= block.size) {
-            this.rebuild();
-            return;
-        }
-
-        const target = this.globalTransformIndices;
-        for (let i = 0; i < indices.length; i++) {
-            target[offset + i] = block.base + indices[i];
-        }
-
-        const data = this.transformTexture.lock() as Uint16Array;
-        data.set(target);
-        this.transformTexture.unlock();
-
-        this.scene.boundDirty = true;
-        const cache = this.boundCache.get(splat);
-        if (cache) {
-            cache.selectionDirty = true;
-            cache.visibleDirty = true;
-        }
+        this.displayOps.updateTransformIndices(splat, updatedIndices);
     }
 
     private rebuildSorterMapping() {
@@ -1250,44 +1102,212 @@ class SplatRenderSystemLifecycleBackend implements SplatRenderLifecycleBackend {
     }
 }
 
-class SplatRenderSystemDisplayBackend implements SplatRenderDisplayBackend {
-    constructor(private readonly core: SplatRenderSystem) {}
+function createSplatRenderSystemDisplayBackend(
+    core: SplatRenderSystem,
+    context: SplatRenderSystemDisplayContext
+): SplatRenderDisplayBackend {
+    return {
+        add: (splat: Splat) => core.add(splat),
+        remove: (splat: Splat) => core.remove(splat),
+        isSplatActive: (splat: Splat) => !!context.getEntry(splat),
+        scheduleRebuildForVisibility: (immediate?: boolean) => core.scheduleRebuildForVisibility(immediate),
+        hasRenderableData: (splat: Splat) => !!context.getEntry(splat),
+        updateState: (splat: Splat) => {
+            const state = splat.splatData.getProp('state') as Uint8Array;
+            const entry = context.getEntry(splat);
+            const stateTexture = context.getStateTexture();
+            const globalState = context.getGlobalState();
+            if (stateTexture && globalState && entry) {
+                globalState.set(state, entry.offset);
 
-    add(splat: Splat) {
-        this.core.add(splat);
-    }
+                const data = stateTexture.lock() as Uint8Array;
+                data.set(state, entry.offset);
+                stateTexture.unlock();
+            }
 
-    remove(splat: Splat) {
-        this.core.remove(splat);
-    }
+            let numSelected = 0;
+            let numLocked = 0;
+            let numDeleted = 0;
+            let numHidden = 0;
+            for (let i = 0; i < state.length; ++i) {
+                const splatState = state[i];
+                const isDeleted = (splatState & State.deleted) !== 0;
+                if (isDeleted) {
+                    numDeleted++;
+                    continue;
+                }
+                if (splatState & State.hidden) {
+                    numHidden++;
+                }
+                if (splatState & State.locked) {
+                    numLocked++;
+                }
+                if ((splatState & State.selected) !== 0 && (splatState & (State.locked | State.hidden)) === 0) {
+                    numSelected++;
+                }
+            }
 
-    isSplatActive(splat: Splat) {
-        return this.core.isSplatActive(splat);
-    }
+            const numSplats = state.length - numDeleted;
+            const numVisible = numSplats - numHidden;
 
-    scheduleRebuildForVisibility(immediate?: boolean) {
-        this.core.scheduleRebuildForVisibility(immediate);
-    }
+            context.rebuildSorterMapping();
+            context.scene.boundDirty = true;
+            context.scene.forceRender = true;
 
-    hasRenderableData(splat: Splat) {
-        return this.core.hasRenderableData(splat);
-    }
+            return {
+                numSelected,
+                numLocked,
+                numDeleted,
+                numHidden,
+                numVisible,
+                numSplats
+            };
+        },
+        updateSplatParams: (splat: Splat) => {
+            const paramsTextures = context.getParamsTextures();
+            const paramsStorage = context.getParamsStorage();
+            if (!paramsTextures || !paramsStorage) {
+                return;
+            }
 
-    updateState(splat: Splat) {
-        return this.core.updateState(splat);
-    }
+            const entry = context.getEntry(splat);
+            if (!entry?.count) {
+                return;
+            }
 
-    updateSplatParams(splat: Splat) {
-        this.core.updateSplatParams(splat);
-    }
+            const { offset, count } = entry;
+            const { arr0, arr1, arr2 } = paramsStorage;
+            const tint = splat.tintClr;
+            const temperature = splat.temperature;
+            const saturation = splat.saturation;
+            const brightness = splat.brightness;
+            const blackPoint = splat.blackPoint;
+            const whitePoint = splat.whitePoint;
+            const transparency = splat.transparency;
+            const selectionAlpha = splat.selectionAlpha;
 
-    updateTransform(splat: Splat, skipCenterUpdate?: boolean) {
-        this.core.updateTransform(splat, skipCenterUpdate);
-    }
+            for (let i = 0; i < count; i++) {
+                const idx = (offset + i) * 4;
 
-    updateTransformIndices(splat: Splat, updatedIndices?: Uint16Array) {
-        this.core.updateTransformIndices(splat, updatedIndices);
-    }
+                arr0[idx + 0] = tint.r;
+                arr0[idx + 1] = tint.g;
+                arr0[idx + 2] = tint.b;
+                arr0[idx + 3] = temperature;
+
+                arr1[idx + 0] = saturation;
+                arr1[idx + 1] = brightness;
+                arr1[idx + 2] = blackPoint;
+                arr1[idx + 3] = whitePoint;
+
+                arr2[idx + 0] = transparency;
+                arr2[idx + 1] = selectionAlpha;
+                arr2[idx + 2] = 0;
+                arr2[idx + 3] = 0;
+            }
+
+            const upload = (texture: Texture, data: Float32Array) => {
+                const buffer = texture.lock() as Float32Array;
+                buffer.set(data);
+                texture.unlock();
+            };
+
+            upload(paramsTextures.tex0, arr0);
+            upload(paramsTextures.tex1, arr1);
+            upload(paramsTextures.tex2, arr2);
+        },
+        updateTransform: (splat: Splat, skipCenterUpdate?: boolean) => {
+            const entry = context.getEntry(splat);
+            const block = entry?.transformBlock;
+            if (!entry || !block) {
+                return;
+            }
+
+            const worldTransform = splat.entity.getWorldTransform();
+            const localPalette = splat.transformPalette;
+            const transformPalette = context.getTransformPalette();
+            const mat = new Mat4();
+            transformPalette.beginUpdate();
+            for (let i = 0; i < block.size; i++) {
+                localPalette.getTransform(i, mat);
+                mat.mul2(worldTransform, mat);
+                transformPalette.setTransform(block.base + i, mat);
+            }
+            transformPalette.endUpdate();
+
+            context.scene.boundDirty = true;
+            const cache = context.getBoundCache(splat);
+            if (cache) {
+                cache.selectionDirty = true;
+                cache.visibleDirty = true;
+            }
+
+            const instance = context.getMergedInstance();
+            if (instance && !skipCenterUpdate) {
+                const { offset, count } = entry;
+                const localCenters = splat.localCenters;
+                const world = worldTransform.data;
+                const m0 = world[0], m1 = world[1], m2 = world[2];
+                const m4 = world[4], m5 = world[5], m6 = world[6];
+                const m8 = world[8], m9 = world[9], m10 = world[10];
+                const m12 = world[12], m13 = world[13], m14 = world[14];
+
+                const centers = instance.centers as Float32Array;
+                if (centers && localCenters) {
+                    for (let i = 0; i < count; i++) {
+                        const x = localCenters[i * 3 + 0];
+                        const y = localCenters[i * 3 + 1];
+                        const z = localCenters[i * 3 + 2];
+
+                        centers[(offset + i) * 3 + 0] = x * m0 + y * m4 + z * m8 + m12;
+                        centers[(offset + i) * 3 + 1] = x * m1 + y * m5 + z * m9 + m13;
+                        centers[(offset + i) * 3 + 2] = x * m2 + y * m6 + z * m10 + m14;
+                    }
+                    if (instance.sorter) {
+                        instance.sorter.centers = centers;
+                    }
+                    context.markSorterCentersDirty();
+                }
+            }
+        },
+        updateTransformIndices: (splat: Splat, updatedIndices?: Uint16Array) => {
+            const transformTexture = context.getTransformTexture();
+            const globalTransformIndices = context.getGlobalTransformIndices();
+            if (!transformTexture || !globalTransformIndices) {
+                return;
+            }
+
+            const indices = updatedIndices ?? (splat.splatData.getProp('transform') as Uint16Array);
+            const entry = context.getEntry(splat);
+            const block = entry?.transformBlock;
+            if (!entry || !block) {
+                return;
+            }
+
+            let maxLocal = 0;
+            for (let i = 0; i < indices.length; i++) {
+                maxLocal = Math.max(maxLocal, indices[i]);
+            }
+            if (maxLocal >= block.size) {
+                context.rebuild();
+                return;
+            }
+
+            for (let i = 0; i < indices.length; i++) {
+                globalTransformIndices[entry.offset + i] = block.base + indices[i];
+            }
+
+            const data = transformTexture.lock() as Uint16Array;
+            data.set(globalTransformIndices);
+            transformTexture.unlock();
+
+            context.scene.boundDirty = true;
+            const cache = context.getBoundCache(splat);
+            if (cache) {
+                cache.selectionDirty = true;
+                cache.visibleDirty = true;
+            }
+        }
+    };
 }
 
 class SplatRenderSystemDataBackend implements SplatRenderDataBackend {
@@ -1394,7 +1414,7 @@ const createSupersplatSplatRenderSystemBackends = (scene: Scene): Omit<SplatRend
 
     return {
         lifecycle: new SplatRenderSystemLifecycleBackend(core),
-        display: new SplatRenderSystemDisplayBackend(core),
+        display: createSplatRenderSystemDisplayBackend(core, core.createDisplayContext()),
         data: new SplatRenderSystemDataBackend(core.createDataContext()),
         picking: new SplatRenderSystemPickingBackend(core),
         overlay: new SplatRenderSystemOverlayBackend(core)

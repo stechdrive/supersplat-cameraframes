@@ -53,6 +53,7 @@
 - backend factory は role 別 wrapper を返し、将来 `display=unified / data=merged` の混成構成を差し込みやすくした
 - `SplatRenderSystem` は merged renderer の core として残し、role backend 実装は別クラスが core を使う形にした
 - `data backend` は delegate ではなく、core から渡す context を使って processor context / bound / position / intersect を自前実装する形にした
+- `display backend` も `state / params / transform` 更新経路は context ベースの自前実装へ寄せた
 
 主な反映:
 
