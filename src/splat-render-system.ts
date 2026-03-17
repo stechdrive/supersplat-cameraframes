@@ -18,7 +18,14 @@ import type { ProcessorInputLayout } from './data-processor/types';
 import type { Scene } from './scene';
 import { vertexShader, fragmentShader, gsplatCenter } from './shaders/splat-shader';
 import { Splat } from './splat';
-import type { SplatRenderBackend } from './splat-render-backend';
+import type {
+    SplatRenderBackends,
+    SplatRenderDataBackend,
+    SplatRenderDisplayBackend,
+    SplatRenderLifecycleBackend,
+    SplatRenderOverlayBackend,
+    SplatRenderPickingBackend
+} from './splat-render-backend';
 import { State } from './splat-state';
 import { TransformPalette } from './transform-palette';
 
@@ -57,7 +64,7 @@ type MergedResourceInfo = {
     colorTextureWidth: number;
 };
 
-class SplatRenderSystem implements SplatRenderBackend {
+class SplatRenderSystem {
     scene: Scene;
     sources: Splat[] = [];
     entries = new Map<Splat, SplatRenderEntry>();
@@ -1188,4 +1195,128 @@ class SplatRenderSystem implements SplatRenderBackend {
     }
 }
 
-export { SplatRenderSystem };
+class SplatRenderSystemLifecycleBackend implements SplatRenderLifecycleBackend {
+    constructor(private readonly core: SplatRenderSystem) {}
+
+    freeze() {
+        this.core.freeze();
+    }
+
+    unfreeze() {
+        this.core.unfreeze();
+    }
+
+    waitForSorter() {
+        return this.core.waitForSorter();
+    }
+
+    onPreRender() {
+        this.core.onPreRender();
+    }
+
+    rebuild() {
+        this.core.rebuild();
+    }
+}
+
+class SplatRenderSystemDisplayBackend implements SplatRenderDisplayBackend {
+    constructor(private readonly core: SplatRenderSystem) {}
+
+    add(splat: Splat) {
+        this.core.add(splat);
+    }
+
+    remove(splat: Splat) {
+        this.core.remove(splat);
+    }
+
+    isSplatActive(splat: Splat) {
+        return this.core.isSplatActive(splat);
+    }
+
+    scheduleRebuildForVisibility(immediate?: boolean) {
+        this.core.scheduleRebuildForVisibility(immediate);
+    }
+
+    hasRenderableData(splat: Splat) {
+        return this.core.hasRenderableData(splat);
+    }
+
+    updateState(splat: Splat) {
+        return this.core.updateState(splat);
+    }
+
+    updateSplatParams(splat: Splat) {
+        this.core.updateSplatParams(splat);
+    }
+
+    updateTransform(splat: Splat, skipCenterUpdate?: boolean) {
+        this.core.updateTransform(splat, skipCenterUpdate);
+    }
+
+    updateTransformIndices(splat: Splat, updatedIndices?: Uint16Array) {
+        this.core.updateTransformIndices(splat, updatedIndices);
+    }
+}
+
+class SplatRenderSystemDataBackend implements SplatRenderDataBackend {
+    constructor(private readonly core: SplatRenderSystem) {}
+
+    readWorldCenter(splat: Splat, localIndex: number, out: { set: (x: number, y: number, z: number) => void }) {
+        return this.core.readWorldCenter(splat, localIndex, out);
+    }
+
+    writeWorldCenter(splat: Splat, localIndex: number, x: number, y: number, z: number) {
+        return this.core.writeWorldCenter(splat, localIndex, x, y, z);
+    }
+
+    calcBound(splat: Splat, selectionBound: BoundingBox, localBound: BoundingBox) {
+        return this.core.calcBound(splat, selectionBound, localBound);
+    }
+
+    getBound(splat: Splat, mode: 'selected' | 'visible') {
+        return this.core.getBound(splat, mode);
+    }
+
+    calcPositions(splat: Splat) {
+        return this.core.calcPositions(splat);
+    }
+
+    intersect(splat: Splat, options: import('./data-processor').IntersectOptions) {
+        return this.core.intersect(splat, options);
+    }
+}
+
+class SplatRenderSystemPickingBackend implements SplatRenderPickingBackend {
+    constructor(private readonly core: SplatRenderSystem) {}
+
+    mapPickId(id: number) {
+        return this.core.mapPickId(id);
+    }
+
+    withPickingBlendDisabled(fn: () => void) {
+        this.core.withPickingBlendDisabled(fn);
+    }
+}
+
+class SplatRenderSystemOverlayBackend implements SplatRenderOverlayBackend {
+    constructor(private readonly core: SplatRenderSystem) {}
+
+    getOverlayBinding(splat: Splat) {
+        return this.core.getOverlayBinding(splat);
+    }
+}
+
+const createSupersplatSplatRenderSystemBackends = (scene: Scene): Omit<SplatRenderBackends, 'combined'> => {
+    const core = new SplatRenderSystem(scene);
+
+    return {
+        lifecycle: new SplatRenderSystemLifecycleBackend(core),
+        display: new SplatRenderSystemDisplayBackend(core),
+        data: new SplatRenderSystemDataBackend(core),
+        picking: new SplatRenderSystemPickingBackend(core),
+        overlay: new SplatRenderSystemOverlayBackend(core)
+    };
+};
+
+export { createSupersplatSplatRenderSystemBackends };

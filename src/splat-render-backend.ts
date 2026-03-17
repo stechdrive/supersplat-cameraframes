@@ -3,7 +3,7 @@ import type { BoundingBox, Entity, Texture } from 'playcanvas';
 import type { IntersectOptions } from './data-processor';
 import type { Scene } from './scene';
 import type { Splat } from './splat';
-import { SplatRenderSystem } from './splat-render-system';
+import { createSupersplatSplatRenderSystemBackends } from './splat-render-system';
 
 type SplatRenderPickMapping = { splat: Splat; local: number };
 
@@ -187,13 +187,13 @@ const createSplatRenderBackends = (
 };
 
 const createSupersplatSplatRenderBackends = (scene: Scene): SplatRenderBackends => {
-    const mergedRenderer = new SplatRenderSystem(scene);
+    const mergedRenderer = createSupersplatSplatRenderSystemBackends(scene);
     return createSplatRenderBackends(
-        mergedRenderer,
-        mergedRenderer,
-        mergedRenderer,
-        mergedRenderer,
-        mergedRenderer
+        mergedRenderer.lifecycle,
+        mergedRenderer.display,
+        mergedRenderer.data,
+        mergedRenderer.picking,
+        mergedRenderer.overlay
     );
 };
 

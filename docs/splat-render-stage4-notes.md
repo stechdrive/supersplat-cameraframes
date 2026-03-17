@@ -51,6 +51,7 @@
 - `mergedResource` の texture / textureDimensions 参照を `mergedResourceInfo` に集約
 - `Scene` は backend bundle を受け取り、call site は `lifecycle / display / data / picking / overlay` の narrow interface を使う
 - backend factory は role 別 wrapper を返し、将来 `display=unified / data=merged` の混成構成を差し込みやすくした
+- `SplatRenderSystem` は merged renderer の core として残し、role backend 実装は別クラスが core を使う形にした
 
 主な反映:
 
@@ -118,7 +119,7 @@
 - `createProcessorContext()` をさらに用途ベースへ寄せる
 - `data-processor` は layout contract だけを見るようにする
 - factory は `SplatRenderSystem` を role backend 群へ束ねるだけに留める
-- 次の段階では `SplatRenderSystem` の内部実装も role 単位に分離していく
+- 次の段階では `SplatRenderSystem` core の内部実装も role 単位に分離していく
 
 ### 3. shader 側は一気に抽象化しない
 
