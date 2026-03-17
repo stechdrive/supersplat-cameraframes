@@ -23,7 +23,9 @@ import type {
     SplatRenderDataBackend,
     SplatRenderDisplayBackend,
     SplatRenderLifecycleBackend,
+    SplatRenderOverlayBinding,
     SplatRenderOverlayBackend,
+    SplatRenderPickMapping,
     SplatRenderPickingBackend
 } from './splat-render-backend';
 import { State } from './splat-state';
@@ -91,6 +93,20 @@ type SplatRenderSystemDisplayContext = {
     markSorterCentersDirty: () => void;
     rebuildSorterMapping: () => void;
     rebuild: () => void;
+};
+
+type SplatRenderSystemPickingContext = {
+    getPickMapping: (id: number) => SplatRenderPickMapping | null;
+    getMaterial: () => any;
+};
+
+type SplatRenderSystemOverlayContext = {
+    getEntry: (splat: Splat) => SplatRenderEntry | null;
+    getNode: () => Entity;
+    getMergedResourceInfo: () => MergedResourceInfo | null;
+    getStateTexture: () => Texture | null;
+    getTransformTexture: () => Texture | null;
+    getTransformPaletteTexture: () => Texture | null;
 };
 
 const createSplatRenderProcessorContext = (context: SplatRenderSystemDataContext, splat: Splat): ProcessorContext => {
@@ -350,11 +366,6 @@ class SplatRenderSystem {
         instance.sorter.setMapping(this.sorterMapping);
     }
 
-    mapPickId(id: number) {
-        const entry = this.globalIdToSplat[id];
-        return entry || null;
-    }
-
     private createMergedResourceInfo(resource: GSplatResource | null) {
         const positionTexture = resource?.getTexture('transformA') ?? null;
         const width = positionTexture?.width ?? resource?.textureDimensions.x ?? 2048;
@@ -371,58 +382,8 @@ class SplatRenderSystem {
         };
     }
 
-    getOverlayBinding(splat: Splat) {
-        const transformATexture = this.mergedResourceInfo?.positionTexture ?? null;
-        const range = this.getRenderableRange(splat);
-        const count = range?.count ?? splat.splatData.numSplats;
-        const offset = range?.offset ?? 0;
-
-        if (!transformATexture || count === 0) {
-            return null;
-        }
-
-        return {
-            node: this.mergedEntity,
-            positionTexture: transformATexture,
-            stateTexture: this.stateTexture,
-            transformTexture: this.transformTexture,
-            transformPaletteTexture: this.transformPalette.texture,
-            offset,
-            count,
-            globalParams: this.mergedResourceInfo?.globalParams ?? [0, 0]
-        };
-    }
-
-    withPickingBlendDisabled(fn: () => void) {
-        const material = this.mergedEntity.gsplat?.instance?.material;
-        if (material) {
-            const oldBlend = material.blendType;
-            material.blendType = BLEND_NONE;
-            material.update();
-            try {
-                fn();
-            } finally {
-                material.blendType = oldBlend;
-                material.update();
-            }
-        } else {
-            fn();
-        }
-    }
-
     hasRenderableData(splat: Splat) {
         return this.displayOps.hasRenderableData(splat);
-    }
-
-    private getRenderableRange(splat: Splat) {
-        const entry = this.getEntry(splat);
-        if (!entry) {
-            return null;
-        }
-        return {
-            offset: entry.offset,
-            count: entry.count
-        };
     }
 
     get centers() {
@@ -459,6 +420,24 @@ class SplatRenderSystem {
             markSorterCentersDirty: () => this.markSorterCentersDirty(),
             rebuildSorterMapping: () => this.rebuildSorterMapping(),
             rebuild: () => this.rebuild()
+        };
+    }
+
+    createPickingContext(): SplatRenderSystemPickingContext {
+        return {
+            getPickMapping: (id: number) => this.globalIdToSplat[id] || null,
+            getMaterial: () => this.mergedEntity.gsplat?.instance?.material
+        };
+    }
+
+    createOverlayContext(): SplatRenderSystemOverlayContext {
+        return {
+            getEntry: (splat: Splat) => this.getEntry(splat),
+            getNode: () => this.mergedEntity,
+            getMergedResourceInfo: () => this.mergedResourceInfo,
+            getStateTexture: () => this.stateTexture,
+            getTransformTexture: () => this.transformTexture,
+            getTransformPaletteTexture: () => this.transformPalette.texture
         };
     }
 
@@ -1390,22 +1369,55 @@ class SplatRenderSystemDataBackend implements SplatRenderDataBackend {
 }
 
 class SplatRenderSystemPickingBackend implements SplatRenderPickingBackend {
-    constructor(private readonly core: SplatRenderSystem) {}
+    constructor(private readonly context: SplatRenderSystemPickingContext) {}
 
     mapPickId(id: number) {
-        return this.core.mapPickId(id);
+        return this.context.getPickMapping(id);
     }
 
     withPickingBlendDisabled(fn: () => void) {
-        this.core.withPickingBlendDisabled(fn);
+        const material = this.context.getMaterial();
+        if (material) {
+            const oldBlend = material.blendType;
+            material.blendType = BLEND_NONE;
+            material.update();
+            try {
+                fn();
+            } finally {
+                material.blendType = oldBlend;
+                material.update();
+            }
+            return;
+        }
+
+        fn();
     }
 }
 
 class SplatRenderSystemOverlayBackend implements SplatRenderOverlayBackend {
-    constructor(private readonly core: SplatRenderSystem) {}
+    constructor(private readonly context: SplatRenderSystemOverlayContext) {}
 
     getOverlayBinding(splat: Splat) {
-        return this.core.getOverlayBinding(splat);
+        const resourceInfo = this.context.getMergedResourceInfo();
+        const positionTexture = resourceInfo?.positionTexture ?? null;
+        const entry = this.context.getEntry(splat);
+        const offset = entry?.offset ?? 0;
+        const count = entry?.count ?? splat.splatData.numSplats;
+
+        if (!positionTexture || count === 0) {
+            return null;
+        }
+
+        return {
+            node: this.context.getNode(),
+            positionTexture,
+            stateTexture: this.context.getStateTexture(),
+            transformTexture: this.context.getTransformTexture(),
+            transformPaletteTexture: this.context.getTransformPaletteTexture(),
+            offset,
+            count,
+            globalParams: resourceInfo?.globalParams ?? [0, 0]
+        } satisfies SplatRenderOverlayBinding;
     }
 }
 
@@ -1416,8 +1428,8 @@ const createSupersplatSplatRenderSystemBackends = (scene: Scene): Omit<SplatRend
         lifecycle: new SplatRenderSystemLifecycleBackend(core),
         display: createSplatRenderSystemDisplayBackend(core, core.createDisplayContext()),
         data: new SplatRenderSystemDataBackend(core.createDataContext()),
-        picking: new SplatRenderSystemPickingBackend(core),
-        overlay: new SplatRenderSystemOverlayBackend(core)
+        picking: new SplatRenderSystemPickingBackend(core.createPickingContext()),
+        overlay: new SplatRenderSystemOverlayBackend(core.createOverlayContext())
     };
 };
 

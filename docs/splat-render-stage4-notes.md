@@ -54,6 +54,7 @@
 - `SplatRenderSystem` は merged renderer の core として残し、role backend 実装は別クラスが core を使う形にした
 - `data backend` は delegate ではなく、core から渡す context を使って processor context / bound / position / intersect を自前実装する形にした
 - `display backend` も `state / params / transform` 更新経路は context ベースの自前実装へ寄せた
+- `picking / overlay` も context ベースに切り出し、core の `globalIdToSplat` / merged material / merged texture 群を直接 backend へ渡す形にした
 
 主な反映:
 
