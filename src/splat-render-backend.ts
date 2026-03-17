@@ -2,6 +2,7 @@ import type { BoundingBox, Entity, Texture } from 'playcanvas';
 
 import type { IntersectOptions } from './data-processor';
 import type { Scene } from './scene';
+import type { SplatRenderBackendMode } from './scene-config';
 import type { Splat } from './splat';
 import { createSupersplatSplatRenderSystemBackends } from './splat-render-system';
 
@@ -72,13 +73,30 @@ type SplatRenderBackend =
     SplatRenderPickingBackend &
     SplatRenderOverlayBackend;
 
-type SplatRenderBackends = {
-    combined: SplatRenderBackend;
+type SplatRenderBackendResolvedMode = Exclude<SplatRenderBackendMode, 'auto'>;
+
+type SplatRenderBackendCapabilities = {
+    mode: SplatRenderBackendMode;
+    resolvedMode: SplatRenderBackendResolvedMode;
+    supportsUnifiedDisplay: boolean;
+    supportsEditorData: boolean;
+    supportsPicking: boolean;
+    supportsOverlay: boolean;
+    supportsStreamLod: boolean;
+    supportsPerSplatVisualState: boolean;
+};
+
+type SplatRenderRoleBackends = {
     lifecycle: SplatRenderLifecycleBackend;
     display: SplatRenderDisplayBackend;
     data: SplatRenderDataBackend;
     picking: SplatRenderPickingBackend;
     overlay: SplatRenderOverlayBackend;
+};
+
+type SplatRenderBackends = SplatRenderRoleBackends & {
+    combined: SplatRenderBackend;
+    capabilities: SplatRenderBackendCapabilities;
 };
 
 const wrapSplatRenderLifecycleBackend = (backend: SplatRenderLifecycleBackend): SplatRenderLifecycleBackend => {
@@ -164,20 +182,18 @@ const combineSplatRenderBackends = (
 };
 
 const createSplatRenderBackends = (
-    lifecycleBackend: SplatRenderLifecycleBackend,
-    displayBackend: SplatRenderDisplayBackend,
-    dataBackend: SplatRenderDataBackend,
-    pickingBackend: SplatRenderPickingBackend,
-    overlayBackend: SplatRenderOverlayBackend
+    roleBackends: SplatRenderRoleBackends,
+    capabilities: SplatRenderBackendCapabilities
 ): SplatRenderBackends => {
-    const lifecycle = wrapSplatRenderLifecycleBackend(lifecycleBackend);
-    const display = wrapSplatRenderDisplayBackend(displayBackend);
-    const data = wrapSplatRenderDataBackend(dataBackend);
-    const picking = wrapSplatRenderPickingBackend(pickingBackend);
-    const overlay = wrapSplatRenderOverlayBackend(overlayBackend);
+    const lifecycle = wrapSplatRenderLifecycleBackend(roleBackends.lifecycle);
+    const display = wrapSplatRenderDisplayBackend(roleBackends.display);
+    const data = wrapSplatRenderDataBackend(roleBackends.data);
+    const picking = wrapSplatRenderPickingBackend(roleBackends.picking);
+    const overlay = wrapSplatRenderOverlayBackend(roleBackends.overlay);
 
     return {
         combined: combineSplatRenderBackends(lifecycle, display, data, picking, overlay),
+        capabilities,
         lifecycle,
         display,
         data,
@@ -186,19 +202,48 @@ const createSplatRenderBackends = (
     };
 };
 
+const createMergedRenderBackendCapabilities = (mode: SplatRenderBackendMode): SplatRenderBackendCapabilities => {
+    return {
+        mode,
+        resolvedMode: 'merged',
+        supportsUnifiedDisplay: false,
+        supportsEditorData: true,
+        supportsPicking: true,
+        supportsOverlay: true,
+        supportsStreamLod: false,
+        supportsPerSplatVisualState: true
+    };
+};
+
 const createSupersplatSplatRenderBackends = (scene: Scene): SplatRenderBackends => {
-    const mergedRenderer = createSupersplatSplatRenderSystemBackends(scene);
-    return createSplatRenderBackends(
-        mergedRenderer.lifecycle,
-        mergedRenderer.display,
-        mergedRenderer.data,
-        mergedRenderer.picking,
-        mergedRenderer.overlay
-    );
+    const requestedMode = scene.config.renderBackend?.mode ?? 'merged';
+    let roleBackends: SplatRenderRoleBackends;
+    let capabilities: SplatRenderBackendCapabilities;
+
+    switch (requestedMode) {
+        case 'auto':
+            roleBackends = createSupersplatSplatRenderSystemBackends(scene);
+            capabilities = createMergedRenderBackendCapabilities(requestedMode);
+            break;
+        case 'unified-display':
+            console.warn('[SplatRender] renderBackend.mode=unified-display is not implemented on this branch yet. Falling back to merged.');
+            roleBackends = createSupersplatSplatRenderSystemBackends(scene);
+            capabilities = createMergedRenderBackendCapabilities(requestedMode);
+            break;
+        case 'merged':
+        default:
+            roleBackends = createSupersplatSplatRenderSystemBackends(scene);
+            capabilities = createMergedRenderBackendCapabilities('merged');
+            break;
+    }
+
+    return createSplatRenderBackends(roleBackends, capabilities);
 };
 
 export { createSupersplatSplatRenderBackends };
 export type {
+    SplatRenderBackendCapabilities,
+    SplatRenderBackendResolvedMode,
     SplatRenderBackends,
     SplatRenderDataBackend,
     SplatRenderDisplayBackend,
@@ -208,5 +253,6 @@ export type {
     SplatRenderOverlayBackend,
     SplatRenderPickMapping,
     SplatRenderPickingBackend,
+    SplatRenderRoleBackends,
     SplatRenderStateSummary
 };

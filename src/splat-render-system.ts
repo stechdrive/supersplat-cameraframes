@@ -19,14 +19,14 @@ import type { Scene } from './scene';
 import { vertexShader, fragmentShader, gsplatCenter } from './shaders/splat-shader';
 import { Splat } from './splat';
 import type {
-    SplatRenderBackends,
     SplatRenderDataBackend,
     SplatRenderDisplayBackend,
     SplatRenderLifecycleBackend,
     SplatRenderOverlayBinding,
     SplatRenderOverlayBackend,
     SplatRenderPickMapping,
-    SplatRenderPickingBackend
+    SplatRenderPickingBackend,
+    SplatRenderRoleBackends
 } from './splat-render-backend';
 import { State } from './splat-state';
 import { TransformPalette } from './transform-palette';
@@ -1549,7 +1549,7 @@ class SplatRenderSystemOverlayBackend implements SplatRenderOverlayBackend {
     }
 }
 
-const createSupersplatSplatRenderSystemBackends = (scene: Scene): Omit<SplatRenderBackends, 'combined'> => {
+const createSupersplatSplatRenderSystemBackends = (scene: Scene): SplatRenderRoleBackends => {
     const core = new SplatRenderSystem(scene);
 
     return {

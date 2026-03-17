@@ -35,6 +35,7 @@ import { SplatOverlay } from './splat-overlay';
 import {
     createSupersplatSplatRenderBackends,
     type SplatRenderBackends,
+    type SplatRenderBackendCapabilities,
     type SplatRenderDataBackend,
     type SplatRenderDisplayBackend,
     type SplatRenderBackend,
@@ -180,6 +181,7 @@ class Scene {
     splatRenderData: SplatRenderDataBackend;
     splatRenderPicking: SplatRenderPickingBackend;
     splatRenderOverlay: SplatRenderOverlayBackend;
+    splatRenderCapabilities: SplatRenderBackendCapabilities;
 
     contentRoot: Entity;
     cameraRoot: Entity;
@@ -389,6 +391,7 @@ class Scene {
         this.splatRenderData = renderBackends.data;
         this.splatRenderPicking = renderBackends.picking;
         this.splatRenderOverlay = renderBackends.overlay;
+        this.splatRenderCapabilities = renderBackends.capabilities;
 
         // create elements
         this.camera = new Camera();

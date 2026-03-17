@@ -22,6 +22,8 @@
 - shader 側はまだ merged renderer 前提の uniform 名を維持し、data-processor 内部でだけ橋渡しする
 - `SplatRenderBackend` は役割別 contract へ分割し、将来 backend を差し替える境界を細かくする
 - backend factory は、同一インスタンスをそのまま配る形ではなく、役割別 wrapper と合成 backend を返す
+- mainline には `renderBackend.mode` と `capabilities` を入れ、既定は `merged` のまま維持する
+- `unified-display` は mainline ではまだ実装せず、安全に `merged` へフォールバックさせる
 
 ## Stage 2 / Stage 3 でやったこと
 
@@ -59,6 +61,7 @@
 - `lifecycle backend` も controller 化し、`freeze / dirty / needsTransformUpdate / waitForSorter / preRender` の state を core 直持ちしない形にした
 - `rebuild()` は `build artifacts` と `runtime state` の helper を使う形に分け、merged data/resource と runtime texture 初期化のまとまりを明示した
 - `rebuild()` の後段も `apply build artifacts / apply runtime state / populate runtime / sync runtime textures / finalize` に分けた
+- backend factory は `renderBackend.mode` に応じて backend を選択し、`capabilities.mode / resolvedMode` で要求値と実際の backend を区別できるようにした
 
 主な反映:
 
@@ -120,6 +123,7 @@
 - `SplatRenderBackend` は `lifecycle / display / data / picking / overlay` の contract に分解する
 - `Scene` は単一 backend を直接 new するのではなく、backend bundle を受け取る形へ寄せる
 - 将来は `display=unified / data=merged / picking=adapter` のような混成構成を factory で表現する
+- mainline ではここを Stage 4 の停止線とし、以後の unified 実験は別ブランチで `display backend` 差し替えとして進める
 
 ### 2. `SplatRenderSystem` をその contract の 1 実装にする
 

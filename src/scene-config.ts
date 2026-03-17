@@ -1,4 +1,5 @@
 type Color = { r: number, g: number, b: number, a: number };
+type SplatRenderBackendMode = 'merged' | 'unified-display' | 'auto';
 
 const DEFAULT_BG_CLR: Color = { r: 0, g: 0, b: 0, a: 1 };
 const DEFAULT_SELECTED_CLR: Color = { r: 1, g: 1, b: 0, a: 1 };
@@ -41,6 +42,9 @@ const sceneConfig = {
         fpvSpeed: 1,
         fpvWheelSpeed: 0.5,
         fpvLookSensitivity: 0.002
+    },
+    renderBackend: {
+        mode: 'merged' as SplatRenderBackendMode
     },
     debug: {
         showBound: false,
@@ -173,3 +177,4 @@ const getSceneConfig = (overrides: any[]) => {
 };
 
 export { SceneConfig, getSceneConfig };
+export type { SplatRenderBackendMode };
