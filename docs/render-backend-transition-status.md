@@ -68,6 +68,7 @@ projection contract の抽出は別レーンで継続している。
   - camera uniform 用 ray basis の組み立てを helper 化
   - legacy fallback 条件を `resolveCameraRayBasis()` に集約
   - `screenToWorld / getRay` の projection/fallback 解決を helper 化
+  - current matrix fallback を `resolveCameraProjectionData()` に集約
 - 目的
   - custom frustum を renderer の偶発的な実装詳細ではなく、projection override として明示する
   - 将来 unified backend や upstream 実装が入っても、camera 側の境界で吸収しやすくする

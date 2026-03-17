@@ -17,8 +17,8 @@ import {
 } from 'playcanvas';
 
 import {
-    buildCameraProjectionData,
     createCameraProjectionData,
+    resolveCameraProjectionData,
     type CameraProjectionData
 } from './camera-matrices';
 import { ElementType, Element } from './element';
@@ -182,9 +182,8 @@ class SplatOverlay extends Element {
         // 修正: シェーダ側の自動ユニフォーム依存を廃止し、明示的にメインカメラの行列を渡す。
         // これにより、postrender 時に他のカメラ（ピッカー等）の行列が残っている可能性やタイミングのズレを排除する。
         const cameraComponent = this.scene.camera.camera;
-        if (!buildCameraProjectionData(cameraComponent, this.cameraMatrices)) {
-            this.cameraMatrices.view.copy(cameraComponent.viewMatrix);
-            this.cameraMatrices.projection.copy(cameraComponent.projectionMatrix);
+        if (!resolveCameraProjectionData(cameraComponent, this.cameraMatrices, { fallbackToCurrentMatrices: true })) {
+            return;
         }
         material.setParameter('view_matrix', this.cameraMatrices.view.data);
         material.setParameter('projection_matrix', this.cameraMatrices.projection.data);

@@ -16,8 +16,8 @@ import {
 } from 'playcanvas';
 
 import {
-    buildCameraProjectionData,
     createCameraProjectionData,
+    resolveCameraProjectionData,
     type CameraProjectionData
 } from './camera-matrices';
 import { Element, ElementType } from './element';
@@ -80,12 +80,8 @@ class EyeLevel extends Element {
                 // Eye-level overlay fills the screen in orthographic projection.
                 return;
             }
-            if (!buildCameraProjectionData(cameraComponent, cameraMatrices)) {
-                cameraMatrices.viewProjection.mul2(cameraComponent.projectionMatrix, cameraComponent.viewMatrix);
-                cameraMatrices.invViewProjection.copy(cameraMatrices.viewProjection);
-                if (!cameraMatrices.invViewProjection.invert()) {
-                    return;
-                }
+            if (!resolveCameraProjectionData(cameraComponent, cameraMatrices, { fallbackToCurrentMatrices: true })) {
+                return;
             }
 
             device.setBlendState(blendState);

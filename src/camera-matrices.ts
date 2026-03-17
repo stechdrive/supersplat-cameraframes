@@ -277,6 +277,41 @@ const buildCameraProjectionData = (camera: CameraComponent, out: CameraProjectio
     return true;
 };
 
+const buildCurrentCameraProjectionData = (camera: CameraComponent, out: CameraProjectionData): boolean => {
+    out.projectionOverridden = !!camera.calculateProjection;
+    out.nearClip = camera.nearClip;
+    out.farClip = camera.farClip;
+
+    out.projection.copy(camera.projectionMatrix);
+    out.view.copy(camera.viewMatrix);
+    out.viewInv.copy(out.view);
+    if (!out.viewInv.invert()) {
+        out.viewInv.setTRS(camera.entity.getPosition(), camera.entity.getRotation(), Vec3.ONE);
+    }
+
+    out.viewProjection.mul2(out.projection, out.view);
+    out.invViewProjection.copy(out.viewProjection);
+    if (!out.invViewProjection.invert()) {
+        return false;
+    }
+    return true;
+};
+
+const resolveCameraProjectionData = (
+    camera: CameraComponent,
+    out: CameraProjectionData,
+    options?: { fallbackToCurrentMatrices?: boolean }
+) => {
+    if (buildCameraProjectionData(camera, out)) {
+        return true;
+    }
+
+    if (options?.fallbackToCurrentMatrices === true) {
+        return buildCurrentCameraProjectionData(camera, out);
+    }
+    return false;
+};
+
 const buildCameraRayWithProjectionData = (
     camera: CameraComponent,
     projectionData: CameraProjectionData,
@@ -286,7 +321,7 @@ const buildCameraRayWithProjectionData = (
     clientHeight: number,
     out: Ray
 ) => {
-    if (!buildCameraProjectionData(camera, projectionData)) {
+    if (!resolveCameraProjectionData(camera, projectionData)) {
         return false;
     }
 
@@ -303,7 +338,7 @@ const screenToWorldWithCameraProjectionData = (
     clientHeight: number,
     out: Vec3
 ) => {
-    if (!buildCameraProjectionData(camera, projectionData)) {
+    if (!resolveCameraProjectionData(camera, projectionData)) {
         if (!projectionData.projectionOverridden) {
             camera.screenToWorld(screenX, screenY, cameraZ, out);
             return true;
@@ -346,8 +381,10 @@ export {
     buildCameraRayWithProjectionData,
     buildCameraMatrices,
     buildCameraProjectionData,
+    buildCurrentCameraProjectionData,
     buildLegacyCameraRayBasis,
     buildProjectionCameraRayBasis,
+    resolveCameraProjectionData,
     resolveCameraRayBasis,
     createCameraProjectionData,
     createCameraRayBasis,

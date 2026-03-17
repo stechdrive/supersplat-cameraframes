@@ -50,14 +50,13 @@ import {
     resolveCameraPositionWorldFromState
 } from './camera-frames-camera-state';
 import {
-    buildCameraProjectionData,
     buildCameraRayWithProjectionData,
     createCameraProjectionData,
     createCameraRayBasis,
     getOpticalAxisScreenCoordsWithProjectionData,
+    resolveCameraProjectionData,
     resolveCameraRayBasis,
     screenToWorldWithCameraProjectionData,
-    screenToWorldWithProjectionData,
     worldToScreenWithProjectionData,
     type CameraRayBasis,
     type CameraProjectionData
@@ -434,9 +433,7 @@ class Camera extends Element {
     // transform the world space coordinate to normalized screen coordinate
     worldToScreen(world: Vec3, screen: Vec3) {
         const camera = this.camera;
-        if (!buildCameraProjectionData(camera, cameraMatricesScratch)) {
-            cameraMatricesScratch.viewProjection.mul2(camera.projectionMatrix, camera.viewMatrix);
-        }
+        resolveCameraProjectionData(camera, cameraMatricesScratch, { fallbackToCurrentMatrices: true });
         if (!worldToScreenWithProjectionData(cameraMatricesScratch, world, screen)) {
             screen.set(0, 0, 0);
         }
@@ -866,7 +863,7 @@ class Camera extends Element {
         }
 
         const { camera } = this.entity;
-        if (!buildCameraProjectionData(camera, cameraMatricesScratch)) {
+        if (!resolveCameraProjectionData(camera, cameraMatricesScratch)) {
             return {
                 x: w * 0.5,
                 y: h * 0.5

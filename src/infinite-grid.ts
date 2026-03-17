@@ -18,8 +18,8 @@ import {
 } from 'playcanvas';
 
 import {
-    buildCameraProjectionData,
     createCameraProjectionData,
+    resolveCameraProjectionData,
     type CameraProjectionData
 } from './camera-matrices';
 import { Element, ElementType } from './element';
@@ -99,12 +99,8 @@ class InfiniteGrid extends Element {
                 view_position[1] = p.y;
                 view_position[2] = p.z;
 
-                if (!buildCameraProjectionData(cameraComponent, cameraMatrices)) {
-                    cameraMatrices.viewProjection.mul2(cameraComponent.projectionMatrix, cameraComponent.viewMatrix);
-                    cameraMatrices.invViewProjection.copy(cameraMatrices.viewProjection);
-                    if (!cameraMatrices.invViewProjection.invert()) {
-                        return;
-                    }
+                if (!resolveCameraProjectionData(cameraComponent, cameraMatrices, { fallbackToCurrentMatrices: true })) {
+                    return;
                 }
 
                 resolve(device.scope, {
