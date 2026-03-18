@@ -247,6 +247,43 @@ const configureUnifiedDisplaySceneGsplat = (scene: Scene) => {
     }
 };
 
+const roundProjectionSignatureValue = (value: number | null | undefined) => {
+    if (!(typeof value === 'number' && isFinite(value))) {
+        return 'null';
+    }
+    return `${Math.round(value * 1e6) / 1e6}`;
+};
+
+const getUnifiedDisplayProjectionSignature = (scene: Scene) => {
+    const cameraElement = scene.camera;
+    if (!cameraElement?.camera) {
+        return 'camera-unavailable';
+    }
+    const camera = cameraElement.camera;
+    const targetSize = cameraElement.targetSize;
+    const customFrustum = cameraElement.getCustomFrustum();
+
+    return [
+        `proj=${camera.projection}`,
+        `fov=${roundProjectionSignatureValue(camera.fov)}`,
+        `hFov=${camera.horizontalFov ? 1 : 0}`,
+        `aspect=${roundProjectionSignatureValue(camera.aspectRatio)}`,
+        `near=${roundProjectionSignatureValue(camera.nearClip)}`,
+        `far=${roundProjectionSignatureValue(camera.farClip)}`,
+        `ortho=${cameraElement.ortho ? 1 : 0}`,
+        `nearOverride=${roundProjectionSignatureValue(cameraElement.getNearOverride())}`,
+        `target=${targetSize ? `${roundProjectionSignatureValue(targetSize.width)}x${roundProjectionSignatureValue(targetSize.height)}` : 'null'}`,
+        `frustum=${customFrustum ? [
+            roundProjectionSignatureValue(customFrustum.left),
+            roundProjectionSignatureValue(customFrustum.right),
+            roundProjectionSignatureValue(customFrustum.bottom),
+            roundProjectionSignatureValue(customFrustum.top),
+            roundProjectionSignatureValue(customFrustum.near),
+            roundProjectionSignatureValue(customFrustum.far)
+        ].join(',') : 'null'}`
+    ].join('|');
+};
+
 const createUnifiedDisplayBackends = (scene: Scene): SplatRenderRoleBackends => {
     configureUnifiedDisplaySceneGsplat(scene);
 
@@ -257,6 +294,7 @@ const createUnifiedDisplayBackends = (scene: Scene): SplatRenderRoleBackends => 
     let lastFallbackReason: string | null = null;
     let pendingDirectForceRenderFrames = 0;
     let lastUnifiedStateLog = '';
+    let lastProjectionRefreshSignature = '';
 
     const markUnifiedDisplayDirty = () => {
         scene.app.scene.gsplat.dirty = true;
@@ -350,6 +388,23 @@ const createUnifiedDisplayBackends = (scene: Scene): SplatRenderRoleBackends => 
         kickEngineDirectPlacements();
     };
 
+    const refreshForProjectionChange = () => {
+        const projectionSignature = getUnifiedDisplayProjectionSignature(scene);
+        if (projectionSignature === lastProjectionRefreshSignature) {
+            return;
+        }
+
+        const hadPreviousSignature = lastProjectionRefreshSignature.length > 0;
+        lastProjectionRefreshSignature = projectionSignature;
+
+        if (hadPreviousSignature) {
+            if (debugUnifiedState) {
+                console.info(`[SplatRender] unified-display projection changed ${projectionSignature}`);
+            }
+            scheduleDirectRefresh(36);
+        }
+    };
+
     const findFallbackReason = () => {
         for (const splat of sources) {
             const issue = splat.getDirectEngineCompatibilityIssue();
@@ -377,6 +432,7 @@ const createUnifiedDisplayBackends = (scene: Scene): SplatRenderRoleBackends => 
         mergedRenderer.setMergedDisplayVisible(!shouldUseEngineDirect);
         if (!shouldUseEngineDirect) {
             pendingDirectForceRenderFrames = 0;
+            lastProjectionRefreshSignature = '';
         }
 
         sources.forEach((splat) => {
@@ -391,6 +447,7 @@ const createUnifiedDisplayBackends = (scene: Scene): SplatRenderRoleBackends => 
         });
 
         if (shouldUseEngineDirect) {
+            lastProjectionRefreshSignature = getUnifiedDisplayProjectionSignature(scene);
             scheduleDirectRefresh(directModeChanged ? 36 : 24);
         }
     };
@@ -459,6 +516,7 @@ const createUnifiedDisplayBackends = (scene: Scene): SplatRenderRoleBackends => 
             waitForSorter: () => mergedRenderer.lifecycle.waitForSorter(),
             onPreRender: () => {
                 if (engineDirectActive) {
+                    refreshForProjectionChange();
                     logUnifiedDisplayState();
                     if (pendingDirectForceRenderFrames > 0) {
                         pendingDirectForceRenderFrames--;
