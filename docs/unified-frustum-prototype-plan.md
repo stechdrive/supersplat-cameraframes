@@ -85,3 +85,21 @@
 
 - `display-only unified` の入口自体は成立する
 - custom frustum 以前に、prototype adapter 側で direct engine `gsplat` へ何の bounds を渡すかが重要
+
+## 2026-03-18 時点の追加所見
+
+- `CAMERA_FRAMES OFF -> ON` 復帰直後の表示崩れは、projection 変化に対して unified-display 側の refresh が足りていなかったのが主因だった
+- `customFrustum / nearOverride / targetSize / aspect / projection種別` を監視して direct refresh を走らせることで改善した
+- 現在の prototype baseline は
+  - `render-backend.mode=unified-display`
+  - `render-backend.unified-culling=false`
+  である
+- 次の論点は、baseline を崩さずに `culling` を再導入したとき custom frustum と両立するかどうか
+
+### 現時点の安全境界
+
+- perspective camera:
+  - unified-display を継続評価してよい
+- orthographic camera:
+  - 3DGS 本体の compositing / clipping がまだ安定しない
+  - prototype では merged fallback を安全境界とする

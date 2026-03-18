@@ -45,7 +45,8 @@ const sceneConfig = {
     },
     renderBackend: {
         mode: 'merged' as SplatRenderBackendMode,
-        debugState: false
+        debugState: false,
+        unifiedCulling: false
     },
     debug: {
         showBound: false,

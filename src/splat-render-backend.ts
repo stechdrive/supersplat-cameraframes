@@ -228,22 +228,28 @@ const createUnifiedDisplayRenderBackendCapabilities = (): SplatRenderBackendCapa
     };
 };
 
+const resolveUnifiedDisplayRadialSorting = (scene: Scene) => {
+    return scene.camera?.ortho !== true;
+};
+
 const configureUnifiedDisplaySceneGsplat = (scene: Scene) => {
     const gsplat = scene.app.scene.gsplat;
+    const useUnifiedCulling = scene.config.renderBackend?.unifiedCulling === true;
+    const useRadialSorting = resolveUnifiedDisplayRadialSorting(scene);
     const needsUpdate =
-        gsplat.culling !== false ||
-        gsplat.radialSorting !== true ||
+        gsplat.culling !== useUnifiedCulling ||
+        gsplat.radialSorting !== useRadialSorting ||
         gsplat.colorUpdateAngle !== 0 ||
         gsplat.colorUpdateDistance !== 0;
 
-    gsplat.culling = false;
-    gsplat.radialSorting = true;
+    gsplat.culling = useUnifiedCulling;
+    gsplat.radialSorting = useRadialSorting;
     gsplat.colorUpdateAngle = 0;
     gsplat.colorUpdateDistance = 0;
 
     if (needsUpdate) {
         gsplat.dirty = true;
-        console.info('[SplatRender] unified-display scene.gsplat configured: culling=false, radialSorting=true, colorUpdateAngle=0, colorUpdateDistance=0');
+        console.info(`[SplatRender] unified-display scene.gsplat configured: culling=${useUnifiedCulling}, radialSorting=${useRadialSorting}, colorUpdateAngle=0, colorUpdateDistance=0`);
     }
 };
 
@@ -406,6 +412,10 @@ const createUnifiedDisplayBackends = (scene: Scene): SplatRenderRoleBackends => 
     };
 
     const findFallbackReason = () => {
+        if (scene.camera?.ortho === true) {
+            return 'orthographic camera';
+        }
+
         for (const splat of sources) {
             const issue = splat.getDirectEngineCompatibilityIssue();
             if (issue) {
@@ -515,7 +525,9 @@ const createUnifiedDisplayBackends = (scene: Scene): SplatRenderRoleBackends => 
             unfreeze: () => mergedRenderer.lifecycle.unfreeze(),
             waitForSorter: () => mergedRenderer.lifecycle.waitForSorter(),
             onPreRender: () => {
+                syncEngineComponents();
                 if (engineDirectActive) {
+                    configureUnifiedDisplaySceneGsplat(scene);
                     refreshForProjectionChange();
                     logUnifiedDisplayState();
                     if (pendingDirectForceRenderFrames > 0) {
