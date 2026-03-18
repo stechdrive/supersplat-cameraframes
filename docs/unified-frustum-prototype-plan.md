@@ -14,6 +14,8 @@
 - branch: `codex/unified-frustum-prototype`
 - baseline: `camera-frames`
 - reference only: `codex/unified-display-prototype`
+- handoff:
+  - `docs/unified-frustum-prototype-handoff.md`
 
 旧 `codex/unified-display-prototype` は破棄せず、既知の崩れ方と試行ログの参照用として残す。
 ただし新しい実験はそこへ継ぎ足さず、`camera-frames` の stable から clean にやり直す。
