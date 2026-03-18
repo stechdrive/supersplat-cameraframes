@@ -232,6 +232,22 @@ const resolveUnifiedDisplayRadialSorting = (scene: Scene) => {
     return scene.camera?.ortho !== true;
 };
 
+const isUnifiedDisplayWindowActive = () => {
+    if (typeof document === 'undefined') {
+        return true;
+    }
+
+    if (document.visibilityState && document.visibilityState !== 'visible') {
+        return false;
+    }
+
+    if (typeof document.hasFocus === 'function' && !document.hasFocus()) {
+        return false;
+    }
+
+    return true;
+};
+
 const configureUnifiedDisplaySceneGsplat = (scene: Scene) => {
     const gsplat = scene.app.scene.gsplat;
     const useUnifiedCulling = scene.config.renderBackend?.unifiedCulling === true;
@@ -301,6 +317,7 @@ const createUnifiedDisplayBackends = (scene: Scene): SplatRenderRoleBackends => 
     let pendingDirectForceRenderFrames = 0;
     let lastUnifiedStateLog = '';
     let lastProjectionRefreshSignature = '';
+    let pendingDirectRestoreFrames = 0;
 
     const markUnifiedDisplayDirty = () => {
         scene.app.scene.gsplat.dirty = true;
@@ -412,6 +429,10 @@ const createUnifiedDisplayBackends = (scene: Scene): SplatRenderRoleBackends => 
     };
 
     const findFallbackReason = () => {
+        if (!isUnifiedDisplayWindowActive()) {
+            return 'window unfocused';
+        }
+
         if (scene.camera?.ortho === true) {
             return 'orthographic camera';
         }
@@ -425,17 +446,25 @@ const createUnifiedDisplayBackends = (scene: Scene): SplatRenderRoleBackends => 
         return null;
     };
 
-    const syncEngineComponents = () => {
+    const syncEngineComponents = (options?: { refreshDirect?: boolean }) => {
         const fallbackReason = findFallbackReason();
         const shouldUseEngineDirect = fallbackReason === null;
         const directModeChanged = engineDirectActive !== shouldUseEngineDirect;
         if (fallbackReason !== lastFallbackReason) {
             if (fallbackReason) {
                 console.warn(`[SplatRender] unified-display fallback to merged: ${fallbackReason}`);
+                pendingDirectRestoreFrames = 6;
             } else if (lastFallbackReason) {
-                console.info('[SplatRender] unified-display direct mode restored.');
+                if (debugUnifiedState) {
+                    console.info(`[SplatRender] unified-display restore armed in ${pendingDirectRestoreFrames} frames.`);
+                }
             }
             lastFallbackReason = fallbackReason;
+        }
+
+        if (shouldUseEngineDirect && !engineDirectActive && pendingDirectRestoreFrames > 0) {
+            pendingDirectRestoreFrames--;
+            return;
         }
 
         engineDirectActive = shouldUseEngineDirect;
@@ -457,8 +486,14 @@ const createUnifiedDisplayBackends = (scene: Scene): SplatRenderRoleBackends => 
         });
 
         if (shouldUseEngineDirect) {
+            pendingDirectRestoreFrames = 0;
+            if (directModeChanged) {
+                console.info('[SplatRender] unified-display direct mode restored.');
+            }
             lastProjectionRefreshSignature = getUnifiedDisplayProjectionSignature(scene);
-            scheduleDirectRefresh(directModeChanged ? 36 : 24);
+            if (directModeChanged || options?.refreshDirect) {
+                scheduleDirectRefresh(directModeChanged ? 36 : 24);
+            }
         }
     };
 
@@ -469,7 +504,7 @@ const createUnifiedDisplayBackends = (scene: Scene): SplatRenderRoleBackends => 
             }
             mergedRenderer.display.add(splat);
             splat.ensureEngineGsplatComponent({ unified: true, enabled: false });
-            syncEngineComponents();
+            syncEngineComponents({ refreshDirect: true });
         },
         remove: (splat: Splat) => {
             const idx = sources.indexOf(splat);
@@ -478,12 +513,12 @@ const createUnifiedDisplayBackends = (scene: Scene): SplatRenderRoleBackends => 
             }
             mergedRenderer.display.remove(splat);
             splat.disableEngineGsplatComponent();
-            syncEngineComponents();
+            syncEngineComponents({ refreshDirect: true });
         },
         isSplatActive: (splat: Splat) => mergedRenderer.display.isSplatActive(splat),
         scheduleRebuildForVisibility: (immediate?: boolean) => {
             mergedRenderer.display.scheduleRebuildForVisibility(immediate);
-            syncEngineComponents();
+            syncEngineComponents({ refreshDirect: true });
         },
         hasRenderableData: (splat: Splat) => mergedRenderer.display.hasRenderableData(splat),
         updateState: (splat: Splat) => {
@@ -496,12 +531,12 @@ const createUnifiedDisplayBackends = (scene: Scene): SplatRenderRoleBackends => 
                 splat.numHidden = result.numHidden;
                 splat.numVisible = result.numVisible;
             }
-            syncEngineComponents();
+            syncEngineComponents({ refreshDirect: true });
             return result;
         },
         updateSplatParams: (splat: Splat) => {
             mergedRenderer.display.updateSplatParams(splat);
-            syncEngineComponents();
+            syncEngineComponents({ refreshDirect: true });
         },
         updateTransform: (splat: Splat, skipCenterUpdate?: boolean) => {
             mergedRenderer.display.updateTransform(splat, skipCenterUpdate);
@@ -509,11 +544,11 @@ const createUnifiedDisplayBackends = (scene: Scene): SplatRenderRoleBackends => 
                 unified: true,
                 enabled: engineDirectActive && splat.visible
             });
-            syncEngineComponents();
+            syncEngineComponents({ refreshDirect: true });
         },
         updateTransformIndices: (splat: Splat, updatedIndices?: Uint16Array) => {
             mergedRenderer.display.updateTransformIndices(splat, updatedIndices);
-            syncEngineComponents();
+            syncEngineComponents({ refreshDirect: true });
         }
     };
 
