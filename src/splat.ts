@@ -39,6 +39,7 @@ const engineGsplatStateInfoParam = 'cameraFramesStateInfo';
 const engineGsplatTransformTextureParam = 'cameraFramesTransformTexture';
 const engineGsplatTransformPaletteTextureParam = 'cameraFramesTransformPaletteTexture';
 const engineGsplatUseTransformPaletteParam = 'cameraFramesUseTransformPalette';
+const engineGsplatSelectionAlphaParam = 'cameraFramesSelectionAlpha';
 const engineGsplatSelectedColorParam = 'cameraFramesSelectedColor';
 const engineGsplatLockedColorParam = 'cameraFramesLockedColor';
 
@@ -127,6 +128,7 @@ uniform sampler2D cameraFramesStateTexture;
 uniform highp usampler2D cameraFramesTransformTexture;
 uniform sampler2D cameraFramesTransformPaletteTexture;
 uniform float cameraFramesUseTransformPalette;
+uniform float cameraFramesSelectionAlpha;
 uniform uvec2 cameraFramesStateInfo;
 uniform vec4 cameraFramesSelectedColor;
 uniform vec4 cameraFramesLockedColor;
@@ -312,7 +314,8 @@ void modifySplatColor(vec3 center, inout vec4 color) {
     if ((state & 2u) != 0u) {
         color *= cameraFramesLockedColor;
     } else if ((state & 1u) != 0u) {
-        color.rgb = mix(color.rgb, cameraFramesSelectedColor.rgb * 0.8, cameraFramesSelectedColor.a);
+        float selectedAlpha = cameraFramesSelectedColor.a * cameraFramesSelectionAlpha;
+        color.rgb = mix(color.rgb, cameraFramesSelectedColor.rgb * 0.8, selectedAlpha);
     }
 }
 `,
@@ -328,6 +331,7 @@ var cameraFramesStateTexture: texture_2d<f32>;
 var cameraFramesTransformTexture: texture_2d<u32>;
 var cameraFramesTransformPaletteTexture: texture_2d<f32>;
 uniform cameraFramesUseTransformPalette: f32;
+uniform cameraFramesSelectionAlpha: f32;
 uniform cameraFramesStateInfo: vec2u;
 uniform cameraFramesSelectedColor: vec4f;
 uniform cameraFramesLockedColor: vec4f;
@@ -521,7 +525,8 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
     if ((state & 2u) != 0u) {
         *color = (*color) * uniform.cameraFramesLockedColor;
     } else if ((state & 1u) != 0u) {
-        (*color).rgb = mix((*color).rgb, uniform.cameraFramesSelectedColor.rgb * 0.8, vec3f(uniform.cameraFramesSelectedColor.a));
+        let selectedAlpha = uniform.cameraFramesSelectedColor.a * uniform.cameraFramesSelectionAlpha;
+        (*color).rgb = mix((*color).rgb, uniform.cameraFramesSelectedColor.rgb * 0.8, vec3f(selectedAlpha));
     }
 }
 `
@@ -912,6 +917,7 @@ class Splat extends Element {
             roundEngineGsplatVisualValue(this.blackPoint),
             roundEngineGsplatVisualValue(this.whitePoint),
             roundEngineGsplatVisualValue(this.transparency),
+            roundEngineGsplatVisualValue(this.selectionAlpha),
             hasLocalTransformPalette ? '1' : '0',
             `${visualBinding?.width ?? 0}`,
             `${visualBinding?.offset ?? 0}`,
@@ -950,6 +956,7 @@ class Splat extends Element {
         component.deleteParameter(engineGsplatTransformTextureParam);
         component.deleteParameter(engineGsplatTransformPaletteTextureParam);
         component.deleteParameter(engineGsplatUseTransformPaletteParam);
+        component.deleteParameter(engineGsplatSelectionAlphaParam);
         component.deleteParameter(engineGsplatSelectedColorParam);
         component.deleteParameter(engineGsplatLockedColorParam);
     }
@@ -987,6 +994,7 @@ class Splat extends Element {
             component.setParameter(engineGsplatTransformTextureParam, visualBinding.transformTexture);
             component.setParameter(engineGsplatTransformPaletteTextureParam, visualBinding.transformPaletteTexture);
             component.setParameter(engineGsplatUseTransformPaletteParam, hasLocalTransformPalette ? 1 : 0);
+            component.setParameter(engineGsplatSelectionAlphaParam, this.selectionAlpha);
             component.setParameter(engineGsplatSelectedColorParam, [
                 visualBinding.selectedClr.r,
                 visualBinding.selectedClr.g,
@@ -1007,6 +1015,7 @@ class Splat extends Element {
             component.deleteParameter(engineGsplatTransformTextureParam);
             component.deleteParameter(engineGsplatTransformPaletteTextureParam);
             component.deleteParameter(engineGsplatUseTransformPaletteParam);
+            component.deleteParameter(engineGsplatSelectionAlphaParam);
             component.deleteParameter(engineGsplatSelectedColorParam);
             component.deleteParameter(engineGsplatLockedColorParam);
         } else {
@@ -1025,10 +1034,6 @@ class Splat extends Element {
 
         if (this.hasPerSplatStateVisuals() && !visualBinding) {
             return 'per-splat state';
-        }
-
-        if (this.selectionAlpha !== 1) {
-            return 'selection visuals';
         }
 
         if (this.hasLocalTransformPalette() && !visualBinding) {
