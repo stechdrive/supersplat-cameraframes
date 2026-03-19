@@ -80,11 +80,3 @@ To test a locale locally:
 - `http://localhost:3000/?lng=ja`
 
 Locale files live in [static/locales](./static/locales).
-
-## Acknowledgements
-
-This fork builds on top of SuperSplat and the PlayCanvas ecosystem. The image below shows the upstream SuperSplat contributors:
-
-<a href="https://github.com/playcanvas/supersplat/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=playcanvas/supersplat" />
-</a>
