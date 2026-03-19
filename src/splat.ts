@@ -26,6 +26,86 @@ type EngineGsplatComponentState = {
     unified?: boolean;
 };
 
+const engineGsplatColorAdjustTintParam = 'cameraFramesTint';
+const engineGsplatColorAdjustTemperatureParam = 'cameraFramesTemperature';
+const engineGsplatColorAdjustSaturationParam = 'cameraFramesSaturation';
+const engineGsplatColorAdjustBrightnessParam = 'cameraFramesBrightness';
+const engineGsplatColorAdjustBlackPointParam = 'cameraFramesBlackPoint';
+const engineGsplatColorAdjustWhitePointParam = 'cameraFramesWhitePoint';
+const engineGsplatColorAdjustTransparencyParam = 'cameraFramesTransparency';
+
+const roundEngineGsplatVisualValue = (value: number) => {
+    if (!isFinite(value)) {
+        return 'null';
+    }
+    return `${Math.round(value * 1e6) / 1e6}`;
+};
+
+const unifiedEngineGsplatColorAdjustModifier = {
+    glsl: /* glsl */`
+uniform vec3 cameraFramesTint;
+uniform float cameraFramesTemperature;
+uniform float cameraFramesSaturation;
+uniform float cameraFramesBrightness;
+uniform float cameraFramesBlackPoint;
+uniform float cameraFramesWhitePoint;
+uniform float cameraFramesTransparency;
+
+vec3 cameraFramesApplySaturation(vec3 color, float saturation) {
+    float grey = dot(color, vec3(0.299, 0.587, 0.114));
+    return vec3(grey) + (color - vec3(grey)) * saturation;
+}
+
+void modifySplatCenter(inout vec3 center) {}
+
+void modifySplatRotationScale(vec3 originalCenter, vec3 modifiedCenter, inout vec4 rotation, inout vec3 scale) {}
+
+void modifySplatColor(vec3 center, inout vec4 color) {
+    float offset = -cameraFramesBlackPoint + cameraFramesBrightness;
+    float scaleBase = 1.0 / max(1e-6, cameraFramesWhitePoint - cameraFramesBlackPoint);
+    vec3 tintScale = vec3(
+        scaleBase * cameraFramesTint.r * (1.0 + cameraFramesTemperature),
+        scaleBase * cameraFramesTint.g,
+        scaleBase * cameraFramesTint.b * (1.0 - cameraFramesTemperature)
+    );
+
+    color.rgb = cameraFramesApplySaturation(color.rgb * tintScale + vec3(offset), cameraFramesSaturation);
+    color.a = clamp(color.a * cameraFramesTransparency, 0.0, 1.0);
+}
+`,
+    wgsl: /* wgsl */`
+uniform cameraFramesTint: vec3f;
+uniform cameraFramesTemperature: f32;
+uniform cameraFramesSaturation: f32;
+uniform cameraFramesBrightness: f32;
+uniform cameraFramesBlackPoint: f32;
+uniform cameraFramesWhitePoint: f32;
+uniform cameraFramesTransparency: f32;
+
+fn cameraFramesApplySaturation(color: vec3f, saturation: f32) -> vec3f {
+    let grey = dot(color, vec3f(0.299, 0.587, 0.114));
+    return vec3f(grey) + (color - vec3f(grey)) * saturation;
+}
+
+fn modifySplatCenter(center: ptr<function, vec3f>) {}
+
+fn modifySplatRotationScale(originalCenter: vec3f, modifiedCenter: vec3f, rotation: ptr<function, vec4f>, scale: ptr<function, vec3f>) {}
+
+fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
+    let offset = -uniform.cameraFramesBlackPoint + uniform.cameraFramesBrightness;
+    let scaleBase = 1.0 / max(1e-6, uniform.cameraFramesWhitePoint - uniform.cameraFramesBlackPoint);
+    let tintScale = vec3f(
+        scaleBase * uniform.cameraFramesTint.r * (1.0 + uniform.cameraFramesTemperature),
+        scaleBase * uniform.cameraFramesTint.g,
+        scaleBase * uniform.cameraFramesTint.b * (1.0 - uniform.cameraFramesTemperature)
+    );
+
+    (*color).rgb = cameraFramesApplySaturation((*color).rgb * tintScale + vec3f(offset), uniform.cameraFramesSaturation);
+    (*color).a = clamp((*color).a * uniform.cameraFramesTransparency, 0.0, 1.0);
+}
+`
+} as const;
+
 const boundingPoints =
     [-1, 1].map((x) => {
         return [-1, 1].map((y) => {
@@ -67,6 +147,8 @@ class Splat extends Element {
     _blackPoint = 0;
     _whitePoint = 1;
     _transparency = 1;
+    _engineGsplatVisualSignature = '';
+    _engineGsplatVisualSyncComponent: GSplatComponent | null = null;
 
     _localCenters: Float32Array | null = null;
 
@@ -332,21 +414,67 @@ class Splat extends Element {
         return (this.asset.file as any).filename;
     }
 
+    private getEngineGsplatVisualSignature(useUnifiedColorAdjustments: boolean) {
+        return [
+            useUnifiedColorAdjustments ? 'unified' : 'inactive',
+            roundEngineGsplatVisualValue(this.tintClr.r),
+            roundEngineGsplatVisualValue(this.tintClr.g),
+            roundEngineGsplatVisualValue(this.tintClr.b),
+            roundEngineGsplatVisualValue(this.temperature),
+            roundEngineGsplatVisualValue(this.saturation),
+            roundEngineGsplatVisualValue(this.brightness),
+            roundEngineGsplatVisualValue(this.blackPoint),
+            roundEngineGsplatVisualValue(this.whitePoint),
+            roundEngineGsplatVisualValue(this.transparency)
+        ].join('|');
+    }
+
+    private clearEngineGsplatColorAdjustments(component: GSplatComponent) {
+        component.setWorkBufferModifier(null);
+        component.deleteParameter(engineGsplatColorAdjustTintParam);
+        component.deleteParameter(engineGsplatColorAdjustTemperatureParam);
+        component.deleteParameter(engineGsplatColorAdjustSaturationParam);
+        component.deleteParameter(engineGsplatColorAdjustBrightnessParam);
+        component.deleteParameter(engineGsplatColorAdjustBlackPointParam);
+        component.deleteParameter(engineGsplatColorAdjustWhitePointParam);
+        component.deleteParameter(engineGsplatColorAdjustTransparencyParam);
+    }
+
+    private syncEngineGsplatVisuals(component: GSplatComponent) {
+        const useUnifiedColorAdjustments =
+            this.scene?.splatRenderCapabilities.resolvedMode === 'unified-display' &&
+            component.unified === true;
+        const signature = this.getEngineGsplatVisualSignature(useUnifiedColorAdjustments);
+
+        if (this._engineGsplatVisualSyncComponent === component && this._engineGsplatVisualSignature === signature) {
+            return;
+        }
+
+        if (useUnifiedColorAdjustments) {
+            component.setWorkBufferModifier(unifiedEngineGsplatColorAdjustModifier);
+            component.setParameter(engineGsplatColorAdjustTintParam, [this.tintClr.r, this.tintClr.g, this.tintClr.b]);
+            component.setParameter(engineGsplatColorAdjustTemperatureParam, this.temperature);
+            component.setParameter(engineGsplatColorAdjustSaturationParam, this.saturation);
+            component.setParameter(engineGsplatColorAdjustBrightnessParam, this.brightness);
+            component.setParameter(engineGsplatColorAdjustBlackPointParam, this.blackPoint);
+            component.setParameter(engineGsplatColorAdjustWhitePointParam, this.whitePoint);
+            component.setParameter(engineGsplatColorAdjustTransparencyParam, this.transparency);
+        } else {
+            this.clearEngineGsplatColorAdjustments(component);
+        }
+
+        this._engineGsplatVisualSyncComponent = component;
+        this._engineGsplatVisualSignature = signature;
+    }
+
     getDirectEngineCompatibilityIssue() {
         const wholeSplatHidden = !this.visible && this.numHidden === this.numSplats;
         if (this.numSelected > 0 || this.numLocked > 0 || this.numDeleted > 0 || (this.numHidden > 0 && !wholeSplatHidden)) {
             return 'per-splat state';
         }
 
-        if (!this.tintClr.equals(Color.WHITE) ||
-            this.temperature !== 0 ||
-            this.saturation !== 1 ||
-            this.brightness !== 0 ||
-            this.blackPoint !== 0 ||
-            this.whitePoint !== 1 ||
-            this.transparency !== 1 ||
-            this.selectionAlpha !== 1) {
-            return 'color or selection visuals';
+        if (this.selectionAlpha !== 1) {
+            return 'selection visuals';
         }
 
         const indices = this.splatData.getProp('transform') as Uint16Array | undefined;
@@ -420,6 +548,7 @@ class Splat extends Element {
         if (state.enabled !== undefined) {
             component.enabled = state.enabled;
         }
+        this.syncEngineGsplatVisuals(component);
 
         return component;
     }
@@ -441,6 +570,7 @@ class Splat extends Element {
         if (state.enabled !== undefined) {
             component.enabled = state.enabled;
         }
+        this.syncEngineGsplatVisuals(component);
 
         return component;
     }
