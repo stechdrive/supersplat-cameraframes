@@ -2,7 +2,7 @@
 
 ![CAMERA FRAMES screenshot](./static/images/screenshot-cameraframes.jpg)
 
-CAMERA FRAMES is a fork of [PlayCanvas SuperSplat](https://github.com/playcanvas/supersplat) focused on animation layout workflows. It lets you compose shots on an A4-like master sheet, place multiple camera frames for PAN / TU / TB style instructions, and export PNG / PSD layouts that match the preview.
+CAMERA FRAMES is a fork of [PlayCanvas SuperSplat](https://github.com/playcanvas/supersplat) focused on Japanese animation layout workflows. It lets you compose shots on an A4-like master sheet, place multiple camera frames for PAN / TU / TB style instructions, and export PNG / PSD layouts that match the preview.
 
 CAMERA FRAMES は、[PlayCanvas SuperSplat](https://github.com/playcanvas/supersplat) をベースに、アニメーション制作のレイアウト用途へ寄せて拡張した fork です。A4 相当の基準紙上で構図を作り、複数の撮影フレームを置き、プレビューと一致する PNG / PSD を書き出せます。
 
@@ -41,7 +41,7 @@ Upstream links:
 - SuperSplat editor: [https://superspl.at/editor](https://superspl.at/editor)
 - SuperSplat user guide: [PlayCanvas documentation](https://developer.playcanvas.com/user-manual/gaussian-splatting/editing/supersplat/)
 
-If you want the general-purpose upstream editor, use the upstream project. If you want the layout-focused fork with CAMERA FRAMES, use this repository.
+If you want the general-purpose upstream editor, use the upstream project. If you want a fork focused on Japanese animation layout workflows with CAMERA FRAMES, use this repository.
 
 ## Local Development
 
