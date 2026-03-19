@@ -152,14 +152,17 @@ const createId = (prefix: string) => {
     return `${prefix}-${Date.now().toString(16)}-${Math.random().toString(16).slice(2)}`;
 };
 
-const createPackageFingerprint = (file: Blob | ArrayBuffer, name?: string | null) => {
-    if (file instanceof File) {
-        return `file:${name ?? file.name ?? ''}:${file.size}:${file.lastModified}`;
+const hashString = (value: string) => {
+    let hash = 0x811c9dc5;
+    for (let i = 0; i < value.length; i++) {
+        hash ^= value.charCodeAt(i);
+        hash = Math.imul(hash, 0x01000193);
     }
-    if (file instanceof Blob) {
-        return `blob:${name ?? ''}:${file.size}`;
-    }
-    return `buffer:${name ?? ''}:${file.byteLength}`;
+    return (hash >>> 0).toString(16).padStart(8, '0');
+};
+
+const createPackageFingerprint = (name: string | null | undefined, size: number, documentJson: string) => {
+    return `doc:${name ?? ''}:${size}:${hashString(documentJson)}`;
 };
 
 const resolveDocumentAssetId = (entry: any, kind: TrackedAssetKind, index: number) => {
@@ -756,10 +759,13 @@ const registerDocEvents = (scene: Scene, events: Events) => {
             currentPackageFingerprint = null;
             if (options.handle) {
                 try {
-                    currentPackageFingerprint = createPackageFingerprint(await options.handle.getFile(), options.handle.name);
+                    const savedFile = await options.handle.getFile();
+                    currentPackageFingerprint = createPackageFingerprint(options.handle.name, savedFile.size, documentJson);
                 } catch (error) {
                     console.warn('failed to refresh package fingerprint after save', error);
                 }
+            } else if (options.filename) {
+                currentPackageFingerprint = createPackageFingerprint(options.filename, documentJson.length, documentJson);
             }
 
             await projectSaveStateStore.clear(currentProjectId);
@@ -936,7 +942,11 @@ const registerDocEvents = (scene: Scene, events: Events) => {
             }
 
             const packageDocument = normalizeDocument(rawDocument);
-            const packageFingerprint = createPackageFingerprint(blob, sourceName ?? null);
+            const packageFingerprint = createPackageFingerprint(
+                sourceName ?? null,
+                blob.size,
+                new TextDecoder().decode(docData)
+            );
             let projectId = packageDocument.projectId;
             let workingRecord = projectId ?
                 await projectSaveStateStore.load(projectId) :

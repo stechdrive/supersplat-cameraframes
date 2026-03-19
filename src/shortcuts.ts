@@ -49,9 +49,21 @@ class Shortcuts {
     constructor(events: Events) {
         const shortcuts = this.shortcuts;
 
+        const shouldIgnoreTarget = (target: EventTarget | null) => {
+            const element = target instanceof HTMLElement ? target : null;
+            if (!element) {
+                return false;
+            }
+            if (element.isContentEditable) {
+                return true;
+            }
+            return !!element.closest('input, textarea, select, [contenteditable="true"]');
+        };
+
         const handleEvent = (e: KeyboardEvent, down: boolean, capture: boolean) => {
-            // skip if focus is elsewhere (input fields, modals, etc.)
-            if (e.target !== document.body) return;
+            if (shouldIgnoreTarget(e.target)) {
+                return;
+            }
 
             const isCtrlKey = e.code.startsWith('Control');
             const isShiftKey = e.code.startsWith('Shift');
