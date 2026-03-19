@@ -344,12 +344,13 @@ const main = async () => {
         fpvReadyHandle.off();
         if (events.functions.has('cameraHistory.suppress')) {
             events.invoke('cameraHistory.suppress', () => {
-                events.fire('camera.setNavMode', 'fpv');
+                events.fire('camera.setNavMode', 'fpv', { source: 'bootstrap' });
             });
         } else {
-            events.fire('camera.setNavMode', 'fpv');
+            events.fire('camera.setNavMode', 'fpv', { source: 'bootstrap' });
         }
         events.fire('cameraFrames.setEnabled', true);
+        events.fire('app.bootstrapComplete');
     });
 
     // load async models

@@ -348,6 +348,7 @@ const registerDocEvents = (scene: Scene, events: Events) => {
     let currentPackageFingerprint: string | null = null;
     let stateDirty = false;
     let packageDirty = false;
+    let bootstrapDirtyTrackingReady = false;
     let suppressDirtyTracking = 0;
     let elementAssetIds = new WeakMap<object, string>();
 
@@ -413,7 +414,7 @@ const registerDocEvents = (scene: Scene, events: Events) => {
     };
 
     const markDirty = (options?: { splats?: Splat[] }) => {
-        if (suppressDirtyTracking > 0) {
+        if (suppressDirtyTracking > 0 || !bootstrapDirtyTrackingReady) {
             return;
         }
         stateDirty = true;
@@ -430,6 +431,30 @@ const registerDocEvents = (scene: Scene, events: Events) => {
         const splats = ((events.invoke('scene.allSplats') as Splat[] | undefined) ?? []).length;
         const models = scene.getElementsByType(ElementType.model).length;
         return splats > 0 || models > 0 || !!docName || stateDirty || packageDirty || !!currentProjectId;
+    };
+
+    const finalizeBootstrapDirtyTracking = () => {
+        if (bootstrapDirtyTrackingReady) {
+            return;
+        }
+
+        bootstrapDirtyTrackingReady = true;
+
+        const splats = ((events.invoke('scene.allSplats') as Splat[] | undefined) ?? []).length;
+        const models = scene.getElementsByType(ElementType.model).length;
+        const hasSceneContent = splats > 0 || models > 0;
+        const hasDocumentContext = !!docName || !!currentProjectId;
+
+        if (!hasDocumentContext && hasSceneContent) {
+            stateDirty = true;
+            packageDirty = true;
+            return;
+        }
+
+        if (!hasDocumentContext && !hasSceneContent) {
+            stateDirty = false;
+            packageDirty = false;
+        }
     };
 
     const getResetConfirmation = async () => {
@@ -1230,6 +1255,7 @@ const registerDocEvents = (scene: Scene, events: Events) => {
     events.function('doc.packageDirty', () => packageDirty);
     events.function('doc.hasUnsavedChanges', () => stateDirty || packageDirty);
     events.function('doc.hasUnloadWarning', () => stateDirty || (!currentProjectId && packageDirty));
+    events.on('app.bootstrapComplete', finalizeBootstrapDirtyTracking);
 
     events.on('edit.apply', (op: EditOp) => {
         const dirtySplats = new Set<Splat>();
