@@ -219,6 +219,7 @@ export const renderModelLayersWithOcclusion = async (
     [
         worldLayer,
         scene.splatLayer,
+        scene.selectionVolumeLayer,
         scene.overlayLayer,
         scene.debugLayer,
         scene.gizmoLayer,

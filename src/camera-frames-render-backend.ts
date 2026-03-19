@@ -159,6 +159,7 @@ const createSupersplatCameraFramesRenderBackend = ({
         const layersToDisable = [
             worldLayer,
             scene.splatLayer,
+            scene.selectionVolumeLayer,
             scene.overlayLayer,
             scene.debugLayer,
             scene.gizmoLayer,

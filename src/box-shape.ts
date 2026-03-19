@@ -46,6 +46,8 @@ class BoxShape extends Element {
             BLENDEQUATION_ADD, BLENDMODE_SRC_ALPHA, BLENDMODE_ONE_MINUS_SRC_ALPHA,
             BLENDEQUATION_ADD, BLENDMODE_ONE, BLENDMODE_ONE_MINUS_SRC_ALPHA
         );
+        material.depthTest = true;
+        material.depthWrite = true;
         material.update();
 
         this.pivot.render.meshInstances[0].material = material;
@@ -75,6 +77,12 @@ class BoxShape extends Element {
     }
 
     onPreRender() {
+        const useDirectPass = this.scene.camera.isSelectionVolumeDirectPassActive();
+        const targetLayerId = useDirectPass ? this.scene.selectionVolumeLayer.id : this.scene.worldLayer.id;
+        if (this.pivot.render.layers.length !== 1 || this.pivot.render.layers[0] !== targetLayerId) {
+            this.pivot.render.layers = [targetLayerId];
+        }
+
         this.pivot.setLocalScale(this._lenX, this._lenY, this._lenZ);
         this.pivot.getWorldTransform().getTranslation(v);
         this.material.setParameter('boxCen', [v.x, v.y, v.z]);
@@ -90,6 +98,13 @@ class BoxShape extends Element {
             height = targetSize?.height ?? device.height;
         }
         device.scope.resolve('targetSize').setValue([width, height]);
+
+        const selectionDepth = useDirectPass ? this.scene.camera.prepareSelectionVolumeDepth() : null;
+        this.material.setParameter('sceneDepthValid', selectionDepth ? 1 : 0);
+        this.material.setParameter('sceneDepthTexSize', selectionDepth ? [selectionDepth.width, selectionDepth.height] : [1, 1]);
+        if (selectionDepth?.texture) {
+            this.material.setParameter('sceneDepthTex', selectionDepth.texture);
+        }
     }
 
     moved() {

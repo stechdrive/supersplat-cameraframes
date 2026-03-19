@@ -41,6 +41,7 @@ const fragmentShader = /* glsl */ `
     }
 
     uniform sampler2D blueNoiseTex32;
+    uniform sampler2D sceneDepthTex;
     uniform mat4 matrix_viewProjection;
     uniform vec4 sphere;
 
@@ -53,7 +54,19 @@ const fragmentShader = /* glsl */ `
     uniform vec3 far_y;
 
     uniform vec2 targetSize;
+    uniform vec2 sceneDepthTexSize;
     uniform float ray_valid;
+    uniform float sceneDepthValid;
+
+    float uint2float(vec4 value) {
+        uint intBits =
+            (uint(value.r * 255.0) << 24u) |
+            (uint(value.g * 255.0) << 16u) |
+            (uint(value.b * 255.0) << 8u) |
+            uint(value.a * 255.0);
+
+        return uintBitsToFloat(intBits);
+    }
 
     bool writeDepth(float alpha) {
         vec2 uv = fract(gl_FragCoord.xy / 32.0);
@@ -68,6 +81,21 @@ const fragmentShader = /* glsl */ `
         float size = 0.03;
         return fract(ae.x / spacing) < size ||
                fract(ae.y / spacing) < size;
+    }
+
+    bool occludedByScene(float depth) {
+        if (sceneDepthValid < 0.5) {
+            return false;
+        }
+
+        vec2 uv = gl_FragCoord.xy / sceneDepthTexSize;
+        vec4 depthSample = texture2D(sceneDepthTex, uv);
+        if (all(greaterThanEqual(depthSample, vec4(0.999999)))) {
+            return false;
+        }
+
+        float sceneDepth = uint2float(depthSample);
+        return sceneDepth < depth - 1e-6;
     }
 
     void main() {
@@ -92,11 +120,19 @@ const fragmentShader = /* glsl */ `
         bool back = strips(backPos - sphere.xyz);
 
         if (front) {
+            float frontDepth = calcDepth(frontPos, matrix_viewProjection);
+            if (occludedByScene(frontDepth)) {
+                discard;
+            }
             gl_FragColor = vec4(1.0, 1.0, 1.0, 0.6);
-            gl_FragDepth = writeDepth(0.6) ? calcDepth(frontPos, matrix_viewProjection) : 1.0;
+            gl_FragDepth = writeDepth(0.6) ? frontDepth : 1.0;
         } else if (back) {
+            float backDepth = calcDepth(backPos, matrix_viewProjection);
+            if (occludedByScene(backDepth)) {
+                discard;
+            }
             gl_FragColor = vec4(0.0, 0.0, 0.0, 0.6);
-            gl_FragDepth = writeDepth(0.6) ? calcDepth(backPos, matrix_viewProjection) : 1.0;
+            gl_FragDepth = writeDepth(0.6) ? backDepth : 1.0;
         } else {
             discard;
         }

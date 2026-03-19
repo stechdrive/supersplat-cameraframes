@@ -95,6 +95,7 @@ class Scene {
     shadowLayer: Layer;
     debugLayer: Layer;
     exportOverlayLayer: Layer;
+    selectionVolumeLayer: Layer;
     overlayLayer: Layer;
     gizmoLayer: Layer;
     modelLightingLayer: Layer;
@@ -326,6 +327,14 @@ class Scene {
             transparentSortMode: SORTMODE_NONE
         });
 
+        this.selectionVolumeLayer = new Layer({
+            enabled: true,
+            name: 'Selection Volume',
+            clearDepthBuffer: false,
+            opaqueSortMode: SORTMODE_NONE,
+            transparentSortMode: SORTMODE_NONE
+        });
+
         // overlay layer
         this.overlayLayer = new Layer({
             name: 'Overlay',
@@ -359,7 +368,8 @@ class Scene {
         // NOTE: Overlay/Gizmo は World(Transparent=gsplat) の後ろに来る必要がある。
         // Gizmo(clearDepthBuffer) が World の透明パス直前に入ると、GLB の深度が消えて見えなくなる。
         this.insertLayerAfter(this.splatLayer, worldLayer);
-        this.insertLayerAfter(this.overlayLayer, this.splatLayer);
+        this.insertLayerAfter(this.selectionVolumeLayer, this.splatLayer);
+        this.insertLayerAfter(this.overlayLayer, this.selectionVolumeLayer);
         this.insertLayerAfter(this.gizmoLayer, this.overlayLayer);
 
         // Ambient fallback (環境マップ未設定時の視認性確保)

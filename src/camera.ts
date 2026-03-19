@@ -148,6 +148,7 @@ class Camera extends Element {
 
     picker: Picker;
     modelPicker: ModelPicker;
+    selectionDepthPicker: ModelPicker;
 
     mainCamera: Entity;
 
@@ -160,6 +161,7 @@ class Camera extends Element {
     clearPass: RenderPass;
     mainPass: RenderPassForward;
     splatPass: RenderPassForward;
+    selectionPass: RenderPassForward;
     gizmoPass: RenderPassForward;
     finalPass: SimpleRenderPass;
 
@@ -193,6 +195,10 @@ class Camera extends Element {
 
     private nearOverride: number | null = null;
     private nearOverrideTransient = false;
+    private selectionDepthFrame = -1;
+    private selectionDepthTexture: Texture | null = null;
+    private selectionDepthWidth = 0;
+    private selectionDepthHeight = 0;
     private lastClipLog: {
         near: number;
         far: number;
@@ -484,6 +490,7 @@ class Camera extends Element {
         pushLayer(scene.referenceBackLayer);
         pushLayer(scene.worldLayer);
         pushLayer(scene.splatLayer);
+        pushLayer(scene.selectionVolumeLayer);
         pushLayer(scene.referenceFrontLayer);
         pushLayer(scene.overlayLayer);
         pushLayer(scene.gizmoLayer);
@@ -506,6 +513,7 @@ class Camera extends Element {
         this.clearPass = new RenderPass(device);
         this.mainPass = new RenderPassForward(device, composition, app.scene, renderer);
         this.splatPass = new RenderPassForward(device, composition, app.scene, renderer);
+        this.selectionPass = new RenderPassForward(device, composition, app.scene, renderer);
         this.gizmoPass = new RenderPassForward(device, composition, app.scene, renderer);
         this.finalPass = new SimpleRenderPass(device,
             new ShaderQuad(device, vertexShader, fragmentShader, 'final-blit'), {
@@ -571,6 +579,7 @@ class Camera extends Element {
         const { width, height } = scene.targetSize;
         this.picker = new Picker(scene);
         this.modelPicker = new ModelPicker(scene.app, Math.max(1, width), Math.max(1, height));
+        this.selectionDepthPicker = new ModelPicker(scene.app, Math.max(1, width), Math.max(1, height), true);
 
         scene.events.on('scene.boundChanged', this.onBoundChanged, this);
 
@@ -650,6 +659,7 @@ class Camera extends Element {
         this.clearPass?.destroy();
         this.mainPass?.destroy();
         this.splatPass?.destroy();
+        this.selectionPass?.destroy();
         this.gizmoPass?.destroy();
         this.finalPass?.destroy();
         this.camera.renderPasses = null;
@@ -660,6 +670,8 @@ class Camera extends Element {
         this.picker = null;
         this.modelPicker?.destroy?.();
         this.modelPicker = null;
+        this.selectionDepthPicker?.destroy?.();
+        this.selectionDepthPicker = null;
 
         scene.events.off('scene.boundChanged', this.onBoundChanged, this);
     }
@@ -789,6 +801,10 @@ class Camera extends Element {
             this.splatPass.init(this.splatTarget);
             addLayer(this.splatPass, scene.splatLayer);
 
+            // configure selection pass - after splats, preserve world depth
+            this.selectionPass.init(this.mainTarget);
+            addLayer(this.selectionPass, scene.selectionVolumeLayer);
+
             // configure gizmo pass - clears depth/stencil only
             this.gizmoPass.init(this.colorTarget);
             [
@@ -806,7 +822,7 @@ class Camera extends Element {
             this.finalPass.init(null);
 
             // assign render passes to camera
-            this.camera.renderPasses = [this.clearPass, this.mainPass, this.splatPass, this.gizmoPass, this.finalPass];
+            this.camera.renderPasses = [this.clearPass, this.mainPass, this.splatPass, this.selectionPass, this.gizmoPass, this.finalPass];
         } else {
             // resize existing render targets
             const { splatTarget, colorTarget, workTarget } = this;
@@ -819,6 +835,9 @@ class Camera extends Element {
 
         if (this.modelPicker) {
             this.modelPicker.resize(width, height);
+        }
+        if (this.selectionDepthPicker) {
+            this.selectionDepthPicker.resize(width, height);
         }
 
         if (!this.lockFraming) {
@@ -1821,6 +1840,61 @@ class Camera extends Element {
             return null;
         }
         return this.intersect(normalized.x, normalized.y);
+    }
+
+    isSelectionVolumeDirectPassActive() {
+        if (!this.renderOverlays || this.scene.splatRenderCapabilities.resolvedMode !== 'unified-display') {
+            return false;
+        }
+
+        const splats = this.scene.getElementsByType(ElementType.splat) as Splat[];
+        return splats.some(splat => splat.visible && splat.entity.gsplat?.enabled);
+    }
+
+    prepareSelectionVolumeDepth() {
+        if (!this.isSelectionVolumeDirectPassActive() || !this.selectionDepthPicker || !this.scene.worldLayer) {
+            this.selectionDepthFrame = -1;
+            this.selectionDepthTexture = null;
+            this.selectionDepthWidth = 0;
+            this.selectionDepthHeight = 0;
+            return null;
+        }
+
+        const renderTarget = this.mainTarget ?? this.entity.camera.renderTarget;
+        const width = renderTarget?.width ?? this.targetSize?.width ?? this.scene.targetSize.width ?? this.scene.graphicsDevice.width;
+        const height = renderTarget?.height ?? this.targetSize?.height ?? this.scene.targetSize.height ?? this.scene.graphicsDevice.height;
+
+        if (!(width > 0 && height > 0)) {
+            this.selectionDepthFrame = -1;
+            this.selectionDepthTexture = null;
+            this.selectionDepthWidth = 0;
+            this.selectionDepthHeight = 0;
+            return null;
+        }
+
+        if (
+            this.selectionDepthFrame !== this.scene.app.frame ||
+            this.selectionDepthWidth !== width ||
+            this.selectionDepthHeight !== height ||
+            !this.selectionDepthTexture
+        ) {
+            this.selectionDepthPicker.resize(width, height);
+            this.selectionDepthPicker.prepare(this.entity.camera, this.scene.app.scene, [this.scene.worldLayer]);
+            this.selectionDepthFrame = this.scene.app.frame;
+            this.selectionDepthTexture = (this.selectionDepthPicker as any).depthBuffer ?? null;
+            this.selectionDepthWidth = width;
+            this.selectionDepthHeight = height;
+        }
+
+        if (!this.selectionDepthTexture) {
+            return null;
+        }
+
+        return {
+            texture: this.selectionDepthTexture,
+            width: this.selectionDepthWidth,
+            height: this.selectionDepthHeight
+        };
     }
 
     // intersect the scene at the normalized screen location (0-1 range) and focus the camera on this location
