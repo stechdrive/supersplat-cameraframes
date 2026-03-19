@@ -1,9 +1,24 @@
-import { ZipFileSystem, ZipReadFileSystem } from '@playcanvas/splat-transform';
+import { MemoryFileSystem, ZipFileSystem, ZipReadFileSystem } from '@playcanvas/splat-transform';
 
+import {
+    type EditOp,
+    DeleteSelectionOp,
+    MultiOp,
+    ResetOp,
+    SeparateSplatOp,
+    SplatsTransformOp
+} from './edit-ops';
 import { ElementType } from './element';
 import { Events } from './events';
 import { BrowserFileSystem, BlobReadSource, MappedReadFileSystem } from './io';
 import { Model } from './model';
+import {
+    projectSaveStateStore,
+    type WorkingAssetKind,
+    type WorkingAssetRecord,
+    type WorkingProjectRecord,
+    type WorkingReferenceImageAssetRecord
+} from './project-save-state';
 import { recentFiles } from './recent-files';
 import { normalizeReferenceImageFilename } from './reference-image-filename';
 import { Scene } from './scene';
@@ -12,15 +27,13 @@ import { serializePly } from './splat-serialize';
 import { Transform } from './transform';
 import { formatInteger, localize } from './ui/localization';
 
-// NOTE: This fork extends the upstream ssproj format, but we keep the on-disk
-// `document.json.version` as 0 to maximize the chance that upstream can load it.
 const DOC_VERSION = 4;
+const WORKING_STATE_VERSION = 1;
 const SUPPORTED_DOC_VERSIONS = new Set([0, 1, 2, 3, 4]);
-const ZIP64_MARGIN_BYTES = 1800n * 1024n * 1024n;   // ~1.8 GiB safety margin
+const ZIP64_MARGIN_BYTES = 1800n * 1024n * 1024n;
 const ZIP32_LIMIT = 0xffffffffn;
 const ZIP_ENTRY_OVERHEAD = 256n;
 
-// ts compiler and vscode find this type, but eslint does not
 type FilePickerAcceptType = unknown;
 
 const SuperFileType: FilePickerAcceptType[] = [{
@@ -31,9 +44,71 @@ const SuperFileType: FilePickerAcceptType[] = [{
 }];
 
 type FileSelectorCallback = (fileList: File) => void;
+type TrackedAssetKind = 'splat' | 'model';
 
-// helper class to show a file selector dialog.
-// used when showOpenFilePicker is not available.
+type SerializedAssetEntry = {
+    id: string;
+    kind: WorkingAssetKind;
+    filename: string;
+    packagePath: string | null;
+    element: Splat | Model;
+};
+
+type SerializedSceneState = {
+    splats: Splat[];
+    models: Model[];
+    splatDocs: any[];
+    modelDocs: any[];
+    assetEntries: SerializedAssetEntry[];
+    cameraState: any;
+    viewState: any;
+    poseSetsState: any;
+    timelineState: any;
+    cameraFramesState: any;
+    referenceImagesState: any;
+    referenceImageAssets: WorkingReferenceImageAssetRecord[];
+    lightingState: any;
+};
+
+type NormalizedDocument = {
+    version: number;
+    schemaVersion: number | null;
+    projectId: string | null;
+    packageRevision: number | null;
+    zip64?: boolean;
+    camera?: any;
+    view?: any;
+    poseSets?: any;
+    timeline?: any;
+    cameraFrames?: any;
+    referenceImages?: any;
+    lighting?: any;
+    splats: Array<any & { assetId: string; filename: string; }>;
+    models: Array<any & { assetId: string; filename: string; }>;
+};
+
+type WorkingSnapshotDocument = {
+    version: 0;
+    schemaVersion: number;
+    workingStateVersion: number;
+    projectId: string;
+    basePackageRevision: number | null;
+    basePackageFingerprint: string | null;
+    camera: any;
+    view: any;
+    poseSets: any;
+    timeline: any;
+    cameraFrames: any;
+    referenceImages?: any;
+    splats: Array<any & { assetId: string; filename: string; }>;
+    models: Array<any & { assetId: string; filename: string; }>;
+    lighting: any;
+};
+
+type LoadResult = {
+    loaded: boolean;
+};
+
 class FileSelector {
     show: (callbackFunc: FileSelectorCallback) => void;
 
@@ -65,18 +140,116 @@ class FileSelector {
 
 const hasFileSystemAccess = () => !!window.showSaveFilePicker;
 
+const createId = (prefix: string) => {
+    try {
+        const uuid = (globalThis.crypto as any)?.randomUUID?.();
+        if (typeof uuid === 'string' && uuid) {
+            return `${prefix}-${uuid}`;
+        }
+    } catch {
+        // ignore
+    }
+    return `${prefix}-${Date.now().toString(16)}-${Math.random().toString(16).slice(2)}`;
+};
+
+const createPackageFingerprint = (file: Blob | ArrayBuffer, name?: string | null) => {
+    if (file instanceof File) {
+        return `file:${name ?? file.name ?? ''}:${file.size}:${file.lastModified}`;
+    }
+    if (file instanceof Blob) {
+        return `blob:${name ?? ''}:${file.size}`;
+    }
+    return `buffer:${name ?? ''}:${file.byteLength}`;
+};
+
+const resolveDocumentAssetId = (entry: any, kind: TrackedAssetKind, index: number) => {
+    if (typeof entry?.assetId === 'string' && entry.assetId) {
+        return entry.assetId;
+    }
+    return `legacy-${kind}-${index}`;
+};
+
+const resolveDocumentSplatFilename = (entry: any, index: number) => {
+    return (typeof entry?.filename === 'string' && entry.filename) ? entry.filename : `splat_${index}.ply`;
+};
+
+const resolveDocumentModelFilename = (entry: any, index: number) => {
+    return (typeof entry?.filename === 'string' && entry.filename) ? entry.filename : `models/model_${index}.glb`;
+};
+
+const normalizeDocument = (document: any): NormalizedDocument => {
+    const source = (document && typeof document === 'object') ? document : {};
+    const splats = Array.isArray(source.splats) ? source.splats : [];
+    const models = Array.isArray(source.models) ? source.models : [];
+
+    return {
+        version: (typeof source.version === 'number' && isFinite(source.version)) ? source.version : 0,
+        schemaVersion: (typeof source.schemaVersion === 'number' && isFinite(source.schemaVersion)) ? source.schemaVersion : null,
+        projectId: (typeof source.projectId === 'string' && source.projectId) ? source.projectId : null,
+        packageRevision: (typeof source.packageRevision === 'number' && isFinite(source.packageRevision)) ? source.packageRevision : null,
+        zip64: source.zip64 === true,
+        camera: source.camera ?? null,
+        view: source.view ?? null,
+        poseSets: source.poseSets ?? [],
+        timeline: source.timeline ?? {},
+        cameraFrames: source.cameraFrames ?? null,
+        referenceImages: source.referenceImages ?? source.referenceImage ?? null,
+        lighting: source.lighting ?? null,
+        splats: splats.map((entry: any, index: number) => ({
+            ...(entry ?? {}),
+            assetId: resolveDocumentAssetId(entry, 'splat', index),
+            filename: resolveDocumentSplatFilename(entry, index)
+        })),
+        models: models.map((entry: any, index: number) => ({
+            ...(entry ?? {}),
+            assetId: resolveDocumentAssetId(entry, 'model', index),
+            filename: resolveDocumentModelFilename(entry, index)
+        }))
+    };
+};
+
+const isWorkingRecordCompatible = (
+    record: WorkingProjectRecord | null,
+    packageRevision: number | null,
+    packageFingerprint: string | null
+) => {
+    if (!record) {
+        return false;
+    }
+
+    if ((record.packageRevision ?? null) !== (packageRevision ?? null)) {
+        return false;
+    }
+
+    if (record.packageFingerprint && packageFingerprint && record.packageFingerprint !== packageFingerprint) {
+        return false;
+    }
+
+    if (record.packageRevision === null && packageRevision === null) {
+        return !!record.packageFingerprint && !!packageFingerprint && record.packageFingerprint === packageFingerprint;
+    }
+
+    return true;
+};
+
 const estimateSplatPlySize = (splat: Splat) => {
     const element = splat.splatData.getElement('vertex');
     const internalProps = new Set(['state', 'transform']);
     const props = element.properties.filter((p: any) => p.storage && !internalProps.has(p.name));
     const perPointBytes = props.reduce((sum: bigint, p: any) => sum + BigInt(p.byteSize ?? 4), 0n);
     const gaussianCount = BigInt(Math.max(0, splat.numSplats - splat.numDeleted));
-    // Add a small header estimate (a few hundred bytes).
     const headerBytes = 256n + BigInt(props.length * 32);
     return headerBytes + perPointBytes * gaussianCount;
 };
 
-const estimateDocumentSize = (documentData: any, splats: Splat[], models: Model[], resolveBlob: (model: Model) => Blob | null, referenceImagesBytes: bigint = 0n, referenceImagesEntryCount: bigint = 0n) => {
+const estimateDocumentSize = (
+    documentData: any,
+    splats: Splat[],
+    models: Model[],
+    resolveBlob: (model: Model) => Blob | null,
+    referenceImagesBytes: bigint = 0n,
+    referenceImagesEntryCount: bigint = 0n
+) => {
     const encoder = new TextEncoder();
     const docSize = BigInt(encoder.encode(JSON.stringify(documentData)).length);
     const splatSize = splats.reduce((sum, splat) => sum + estimateSplatPlySize(splat), 0n);
@@ -91,38 +264,640 @@ const estimateDocumentSize = (documentData: any, splats: Splat[], models: Model[
     };
 };
 
+const serializeSplatToBlob = async (splat: Splat) => {
+    const memFs = new MemoryFileSystem();
+    await serializePly([splat], {
+        keepStateData: false,
+        keepWorldTransform: true,
+        keepColorTint: true
+    }, memFs);
+    const data = memFs.results.get('output.ply');
+    if (!data) {
+        throw new Error(`Failed to serialize splat '${splat.name}'`);
+    }
+    const copy = new Uint8Array(data.byteLength);
+    copy.set(data);
+    return new Blob([copy], { type: 'application/octet-stream' });
+};
+
+const writeBlobToZip = async (zipFs: ZipFileSystem, filename: string, source: Blob | ReadableStream<Uint8Array>) => {
+    const writer = await zipFs.createWriter(filename);
+    const reader = (source instanceof Blob ? source.stream() : source).getReader();
+    while (true) {
+        const { value, done } = await reader.read();
+        if (done) {
+            break;
+        }
+        if (value) {
+            await writer.write(value);
+        }
+    }
+    await writer.close();
+};
+
+const cleanupWritableStream = async (stream?: FileSystemWritableFileStream | null, reason?: unknown) => {
+    if (!stream) {
+        return;
+    }
+
+    const writable = stream as FileSystemWritableFileStream & {
+        abort?: (reason?: unknown) => Promise<void>;
+    };
+    try {
+        if (typeof writable.abort === 'function') {
+            await writable.abort(reason);
+        } else {
+            await writable.close();
+        }
+    } catch (cleanupError) {
+        console.warn('failed to cleanup writable stream after save failure', cleanupError);
+    }
+};
+
+const getDirtySplatsFromOp = (op: EditOp, dirtySplats: Set<Splat>) => {
+    if (op instanceof MultiOp) {
+        op.ops.forEach(child => getDirtySplatsFromOp(child, dirtySplats));
+        return;
+    }
+
+    if (op instanceof DeleteSelectionOp || op instanceof ResetOp || op instanceof SplatsTransformOp) {
+        if ((op as any).splat instanceof Splat) {
+            dirtySplats.add((op as any).splat);
+        }
+        return;
+    }
+
+    if (op instanceof SeparateSplatOp && (op as any).splat instanceof Splat) {
+        dirtySplats.add((op as any).splat);
+    }
+};
+
 const registerDocEvents = (scene: Scene, events: Events) => {
-    // construct the file selector
     const fileSelector = window.showOpenFilePicker ? null : new FileSelector();
 
-    // this file handle is updated as the current document is loaded and saved
     let documentFileHandle: FileSystemFileHandle = null;
+    let docName: string = null;
+    let currentProjectId: string | null = null;
+    let currentPackageRevision: number | null = null;
+    let currentPackageFingerprint: string | null = null;
+    let stateDirty = false;
+    let packageDirty = false;
+    let suppressDirtyTracking = 0;
+    let elementAssetIds = new WeakMap<object, string>();
 
-    // show the user a reset confirmation popup
+    const assetKinds = new Map<string, TrackedAssetKind>();
+    const packageAssetIds = new Set<string>();
+    const packageAssetPaths = new Map<string, string>();
+    const dirtySplatAssetIds = new Set<string>();
+    const workingOverrideAssetIds = new Set<string>();
+
+    const setDocName = (name: string) => {
+        if (name !== docName) {
+            docName = name;
+            events.fire('doc.name', docName);
+        }
+    };
+
+    const withDirtyTrackingSuspended = async <T>(fn: () => Promise<T> | T) => {
+        suppressDirtyTracking++;
+        try {
+            return await fn();
+        } finally {
+            suppressDirtyTracking--;
+        }
+    };
+
+    const clearTrackingState = () => {
+        elementAssetIds = new WeakMap<object, string>();
+        assetKinds.clear();
+        packageAssetIds.clear();
+        packageAssetPaths.clear();
+        dirtySplatAssetIds.clear();
+        workingOverrideAssetIds.clear();
+    };
+
+    const resetDocContext = () => {
+        currentProjectId = null;
+        currentPackageRevision = null;
+        currentPackageFingerprint = null;
+        stateDirty = false;
+        packageDirty = false;
+        clearTrackingState();
+    };
+
+    const getOrAssignElementAssetId = (element: Splat | Model, kind: TrackedAssetKind) => {
+        const existing = elementAssetIds.get(element);
+        if (existing) {
+            assetKinds.set(existing, kind);
+            return existing;
+        }
+        const next = createId(`asset-${kind}`);
+        elementAssetIds.set(element, next);
+        assetKinds.set(next, kind);
+        return next;
+    };
+
+    const rememberLoadedAsset = (element: Splat | Model, kind: TrackedAssetKind, assetId: string, packagePath?: string | null) => {
+        elementAssetIds.set(element, assetId);
+        assetKinds.set(assetId, kind);
+        if (packagePath) {
+            packageAssetIds.add(assetId);
+            packageAssetPaths.set(assetId, packagePath);
+        }
+    };
+
+    const markDirty = (options?: { splats?: Splat[] }) => {
+        if (suppressDirtyTracking > 0) {
+            return;
+        }
+        stateDirty = true;
+        packageDirty = true;
+        options?.splats?.forEach((splat) => {
+            const assetId = elementAssetIds.get(splat);
+            if (assetId) {
+                dirtySplatAssetIds.add(assetId);
+            }
+        });
+    };
+
+    const needsResetConfirmation = () => {
+        const splats = ((events.invoke('scene.allSplats') as Splat[] | undefined) ?? []).length;
+        const models = scene.getElementsByType(ElementType.model).length;
+        return splats > 0 || models > 0 || !!docName || stateDirty || packageDirty || !!currentProjectId;
+    };
+
     const getResetConfirmation = async () => {
+        const messageKey = stateDirty ?
+            'doc.unsaved-message' :
+            packageDirty ?
+                'doc.package-outdated-message' :
+                'doc.reset-message';
+
         const result = await events.invoke('showPopup', {
             type: 'yesno',
             header: localize('doc.reset'),
-            message: localize(events.invoke('scene.dirty') ? 'doc.unsaved-message' : 'doc.reset-message')
+            message: localize(messageKey)
         });
 
-        if (result.action !== 'yes') {
-            return false;
-        }
-
-        return true;
+        return result.action === 'yes';
     };
 
-    // reset the scene
-    const resetScene = () => {
-        events.fire('scene.clear');
-        events.fire('camera.reset');
+    const resetScene = async () => {
+        await withDirtyTrackingSuspended(() => {
+            events.fire('scene.clear');
+            events.fire('camera.reset');
+        });
         events.fire('doc.setName', null);
         documentFileHandle = null;
+        resetDocContext();
     };
 
-    // load the document from the given file
-    const loadDocument = async (file: Blob | ArrayBuffer) => {
+    const getModelBlob = async (model: Model) => {
+        const stored = scene.assetLoader.getSourceBlob(model);
+        if (stored instanceof Blob) {
+            return stored;
+        }
+
+        const file = model.asset?.file as any;
+        if (file?.contents instanceof Blob) {
+            return file.contents;
+        }
+        if (file?.contents instanceof Response) {
+            return await file.contents.clone().blob();
+        }
+        if (file?.url) {
+            const response = await fetch(file.url);
+            if (!response.ok) {
+                throw new Error(`Failed to fetch model data: ${response.status} ${response.statusText}`);
+            }
+            return await response.blob();
+        }
+
+        throw new Error(`Model source not available for '${model.name}'`);
+    };
+
+    const resolveWorkingSplatFilename = (splat: Splat, assetId: string, index: number) => {
+        return packageAssetPaths.get(assetId) ?? splat.filename ?? `splat_${index}.ply`;
+    };
+
+    const resolveWorkingModelFilename = (model: Model, assetId: string, index: number) => {
+        return packageAssetPaths.get(assetId) ??
+            ((model.asset?.file as any)?.filename ?? model.name ?? `model_${index}.glb`);
+    };
+
+    const collectSerializedSceneState = (mode: 'working' | 'package'): SerializedSceneState => {
+        const splats = (events.invoke('scene.allSplats') as Splat[] | null) ?? [];
+        const models = scene.getElementsByType(ElementType.model) as Model[];
+        const referenceImagesState = events.invoke('docSerialize.referenceImages');
+        const referenceImagesAssetsRaw = (events.invoke('referenceImages.docAssets') as Array<{ path: string; blob: Blob; }> | null) ?? [];
+        const referenceImageAssets = referenceImagesAssetsRaw
+        .filter(asset => !!asset?.blob && typeof asset?.path === 'string' && asset.path.length > 0)
+        .map(asset => ({
+            path: asset.path,
+            blob: asset.blob
+        }));
+
+        const assetEntries: SerializedAssetEntry[] = [];
+        const splatDocs = splats.map((splat, index) => {
+            const assetId = getOrAssignElementAssetId(splat, 'splat');
+            const filename = mode === 'package' ? `splat_${index}.ply` : resolveWorkingSplatFilename(splat, assetId, index);
+            assetEntries.push({
+                id: assetId,
+                kind: 'splat',
+                filename,
+                packagePath: packageAssetPaths.get(assetId) ?? null,
+                element: splat
+            });
+            return {
+                ...splat.docSerialize(),
+                assetId,
+                filename
+            };
+        });
+
+        const modelDocs = models.map((model, index) => {
+            const assetId = getOrAssignElementAssetId(model, 'model');
+            const filename = mode === 'package' ? `models/model_${index}.glb` : resolveWorkingModelFilename(model, assetId, index);
+            assetEntries.push({
+                id: assetId,
+                kind: 'model',
+                filename,
+                packagePath: packageAssetPaths.get(assetId) ?? null,
+                element: model
+            });
+            return {
+                ...model.docSerialize(),
+                assetId,
+                filename
+            };
+        });
+
+        return {
+            splats,
+            models,
+            splatDocs,
+            modelDocs,
+            assetEntries,
+            cameraState: scene.camera.docSerialize(),
+            viewState: events.invoke('docSerialize.view'),
+            poseSetsState: events.invoke('docSerialize.poseSets'),
+            timelineState: events.invoke('docSerialize.timeline'),
+            cameraFramesState: events.invoke('docSerialize.cameraFrames'),
+            referenceImagesState,
+            referenceImageAssets,
+            lightingState: scene.docSerializeLighting()
+        };
+    };
+
+    const buildWorkingSnapshotDocument = (serialized: SerializedSceneState): WorkingSnapshotDocument => {
+        return {
+            version: 0,
+            schemaVersion: DOC_VERSION,
+            workingStateVersion: WORKING_STATE_VERSION,
+            projectId: currentProjectId ?? createId('project'),
+            basePackageRevision: currentPackageRevision,
+            basePackageFingerprint: currentPackageFingerprint,
+            camera: serialized.cameraState,
+            view: serialized.viewState,
+            poseSets: serialized.poseSetsState,
+            timeline: serialized.timelineState,
+            cameraFrames: serialized.cameraFramesState,
+            referenceImages: serialized.referenceImagesState ?? undefined,
+            splats: serialized.splatDocs,
+            models: serialized.modelDocs,
+            lighting: serialized.lightingState
+        };
+    };
+
+    const saveWorkingState = async () => {
+        if (!currentProjectId) {
+            return false;
+        }
+        if (!stateDirty) {
+            return true;
+        }
+
+        events.fire('startSpinner');
+        try {
+            const serialized = collectSerializedSceneState('working');
+            const previousRecord = await projectSaveStateStore.load(currentProjectId);
+            const previousAssets = new Map<string, WorkingAssetRecord>();
+            previousRecord?.assets?.forEach(asset => previousAssets.set(asset.id, asset));
+
+            const assets: WorkingAssetRecord[] = [];
+
+            for (const entry of serialized.assetEntries) {
+                const inPackage = packageAssetIds.has(entry.id);
+                const previous = previousAssets.get(entry.id) ?? null;
+
+                if (entry.kind === 'model') {
+                    if (inPackage) {
+                        continue;
+                    }
+                    assets.push({
+                        id: entry.id,
+                        kind: entry.kind,
+                        blob: previous?.blob ?? await getModelBlob(entry.element as Model)
+                    });
+                    continue;
+                }
+
+                const isDirtySplat = dirtySplatAssetIds.has(entry.id);
+                const needsOverride = !inPackage || isDirtySplat || workingOverrideAssetIds.has(entry.id);
+                if (!needsOverride) {
+                    continue;
+                }
+
+                assets.push({
+                    id: entry.id,
+                    kind: entry.kind,
+                    blob: (isDirtySplat || !previous?.blob) ?
+                        await serializeSplatToBlob(entry.element as Splat) :
+                        previous.blob
+                });
+            }
+
+            const record: WorkingProjectRecord = {
+                projectId: currentProjectId,
+                savedAt: Date.now(),
+                packageRevision: currentPackageRevision,
+                packageFingerprint: currentPackageFingerprint,
+                snapshot: buildWorkingSnapshotDocument(serialized),
+                assets,
+                referenceImageAssets: serialized.referenceImageAssets
+            };
+
+            await projectSaveStateStore.save(record);
+            await projectSaveStateStore.setProjectLink(currentPackageFingerprint, currentProjectId);
+
+            stateDirty = false;
+            dirtySplatAssetIds.clear();
+            workingOverrideAssetIds.clear();
+            assets.forEach(asset => workingOverrideAssetIds.add(asset.id));
+            events.fire('doc.saved');
+            return true;
+        } catch (error) {
+            console.error('saveWorkingState failed', error);
+            await events.invoke('showPopup', {
+                type: 'error',
+                header: localize('doc.save-failed'),
+                message: `'${(error as Error)?.message ?? error}'`
+            });
+            return false;
+        } finally {
+            events.fire('stopSpinner');
+        }
+    };
+
+    const savePackageDocument = async (options: {
+        stream?: FileSystemWritableFileStream;
+        filename?: string;
+        handle?: FileSystemFileHandle | null;
+    }): Promise<boolean> => {
+        events.fire('startSpinner');
+        let saveStep = 'init';
+        let saved = false;
+        let jsonLength = 0;
+
+        try {
+            const nextProjectId = currentProjectId ?? createId('project');
+            const nextPackageRevision = (currentPackageRevision ?? 0) + 1;
+            const serialized = collectSerializedSceneState('package');
+            const modelBlobs = await Promise.all(serialized.models.map(model => getModelBlob(model)));
+            const modelBlobMap = new Map<Model, Blob>();
+            serialized.models.forEach((model, index) => {
+                modelBlobMap.set(model, modelBlobs[index]);
+            });
+
+            const referenceImagesBytes = serialized.referenceImageAssets.reduce((sum, asset) => {
+                return sum + BigInt(asset?.blob?.size ?? 0);
+            }, 0n);
+            const referenceImagesEntryCount = BigInt(serialized.referenceImageAssets.length);
+
+            const createDocumentPayload = (zip64: boolean) => ({
+                version: 0,
+                schemaVersion: DOC_VERSION,
+                ...(zip64 ? { zip64: true } : {}),
+                projectId: nextProjectId,
+                packageRevision: nextPackageRevision,
+                camera: serialized.cameraState,
+                view: serialized.viewState,
+                poseSets: serialized.poseSetsState,
+                timeline: serialized.timelineState,
+                cameraFrames: serialized.cameraFramesState,
+                referenceImages: serialized.referenceImagesState ?? undefined,
+                splats: serialized.splatDocs,
+                models: serialized.modelDocs,
+                lighting: serialized.lightingState
+            });
+
+            saveStep = 'estimate document size';
+            const provisionalDoc = createDocumentPayload(true);
+            const estimate = estimateDocumentSize(
+                provisionalDoc,
+                serialized.splats,
+                serialized.models,
+                model => modelBlobMap.get(model) ?? null,
+                referenceImagesBytes,
+                referenceImagesEntryCount
+            );
+            const useZip64 = estimate.total >= ZIP64_MARGIN_BYTES || estimate.total > ZIP32_LIMIT;
+            const document = createDocumentPayload(useZip64);
+
+            if (!options.stream && useZip64 && !hasFileSystemAccess()) {
+                await events.invoke('showPopup', {
+                    type: 'error',
+                    header: localize('doc.save-failed'),
+                    message: 'この環境では大容量プロジェクトの保存に対応していません。File System Access API 対応ブラウザで保存してください。'
+                });
+                return false;
+            }
+
+            saveStep = 'create writer';
+            const browserFs = new BrowserFileSystem(options.filename ?? 'scene.ssproj', options.stream);
+            const browserWriter = await browserFs.createWriter(options.filename ?? 'scene.ssproj');
+            const zipFs = new ZipFileSystem(browserWriter);
+
+            saveStep = 'write document.json';
+            const documentJson = JSON.stringify(document);
+            jsonLength = documentJson.length;
+            const docWriter = await zipFs.createWriter('document.json');
+            await docWriter.write(new TextEncoder().encode(documentJson));
+            await docWriter.close();
+
+            for (let i = 0; i < serialized.splats.length; i++) {
+                saveStep = `write splat_${i}.ply`;
+                await serializePly([serialized.splats[i]], {
+                    keepStateData: false,
+                    keepWorldTransform: true,
+                    keepColorTint: true
+                }, zipFs, serialized.splatDocs[i].filename);
+            }
+
+            for (let i = 0; i < serialized.models.length; i++) {
+                saveStep = `write model_${i}.glb`;
+                await writeBlobToZip(zipFs, serialized.modelDocs[i].filename, modelBlobs[i]);
+            }
+
+            for (const asset of serialized.referenceImageAssets) {
+                if (!asset?.blob || typeof asset?.path !== 'string' || !asset.path) {
+                    continue;
+                }
+                saveStep = `write ${asset.path}`;
+                await writeBlobToZip(zipFs, asset.path, asset.blob);
+            }
+
+            saveStep = 'finalize zip';
+            await zipFs.close();
+            saved = true;
+
+            currentProjectId = nextProjectId;
+            currentPackageRevision = nextPackageRevision;
+            currentPackageFingerprint = null;
+            if (options.handle) {
+                try {
+                    currentPackageFingerprint = createPackageFingerprint(await options.handle.getFile(), options.handle.name);
+                } catch (error) {
+                    console.warn('failed to refresh package fingerprint after save', error);
+                }
+            }
+
+            await projectSaveStateStore.clear(currentProjectId);
+            await projectSaveStateStore.setProjectLink(currentPackageFingerprint, currentProjectId);
+
+            stateDirty = false;
+            packageDirty = false;
+            dirtySplatAssetIds.clear();
+            workingOverrideAssetIds.clear();
+            packageAssetIds.clear();
+            packageAssetPaths.clear();
+            serialized.splatDocs.forEach((doc) => {
+                packageAssetIds.add(doc.assetId);
+                packageAssetPaths.set(doc.assetId, doc.filename);
+            });
+            serialized.modelDocs.forEach((doc) => {
+                packageAssetIds.add(doc.assetId);
+                packageAssetPaths.set(doc.assetId, doc.filename);
+            });
+
+            if (options.handle) {
+                documentFileHandle = options.handle;
+                recentFiles.add(options.handle);
+                events.fire('doc.setName', options.handle.name);
+            } else if (options.filename) {
+                documentFileHandle = null;
+                events.fire('doc.setName', options.filename);
+            }
+
+            events.fire('doc.saved');
+            return true;
+        } catch (error) {
+            const errorName = (error as Error & { name?: string })?.name;
+            const errorMessage = (error as Error)?.message ?? `${error}`;
+            const fullMessage = `${saveStep}${errorName ? ` | ${errorName}` : ''} | ${errorMessage}`;
+            console.error('savePackageDocument failed', {
+                saveStep,
+                jsonLength,
+                error
+            });
+            await events.invoke('showPopup', {
+                type: 'error',
+                header: localize('doc.save-failed'),
+                message: `'${fullMessage}'`
+            });
+            return false;
+        } finally {
+            if (!saved && options.stream) {
+                await cleanupWritableStream(options.stream);
+            }
+            events.fire('stopSpinner');
+        }
+    };
+
+    const readZipBlobsForReferenceImages = async (
+        zipFs: ZipReadFileSystem,
+        docState: any,
+        blobs: Map<string, Blob>
+    ) => {
+        const readZipBlob = async (path: string) => {
+            const source = await zipFs.createSource(path);
+            try {
+                const data = await source.read().readAll();
+                return new Blob([new Uint8Array(data)]);
+            } finally {
+                source.close();
+            }
+        };
+
+        if (docState?.assets && Array.isArray(docState.assets)) {
+            for (const asset of docState.assets) {
+                const assetId = asset?.id;
+                const filename = asset?.source?.filename;
+                if (typeof assetId !== 'string' || !assetId || typeof filename !== 'string' || !filename) {
+                    continue;
+                }
+                const safeName = normalizeReferenceImageFilename(filename);
+                const refPath = `reference-images/assets/${assetId}/${safeName}`;
+                if (blobs.has(refPath)) {
+                    continue;
+                }
+                try {
+                    blobs.set(refPath, await readZipBlob(refPath));
+                } catch (error) {
+                    console.warn(`reference image missing: ${refPath}`, error);
+                }
+            }
+        }
+
+        if (docState?.items && Array.isArray(docState.items)) {
+            for (const item of docState.items) {
+                const id = item?.id;
+                const filename = item?.source?.filename;
+                if (typeof id !== 'string' || !id || typeof filename !== 'string' || !filename) {
+                    continue;
+                }
+                const safeName = normalizeReferenceImageFilename(filename);
+                const refPath = `reference-images/${id}/${safeName}`;
+                if (blobs.has(refPath)) {
+                    continue;
+                }
+                try {
+                    blobs.set(refPath, await readZipBlob(refPath));
+                } catch (error) {
+                    console.warn(`reference image missing: ${refPath}`, error);
+                }
+            }
+            return;
+        }
+
+        if (docState?.source?.filename) {
+            const safeName = normalizeReferenceImageFilename(docState.source.filename);
+            const refPath = `reference-image/${safeName}`;
+            if (blobs.has(refPath)) {
+                return;
+            }
+            try {
+                blobs.set(refPath, await readZipBlob(refPath));
+            } catch (error) {
+                console.warn(`reference image missing: ${refPath}`, error);
+            }
+        }
+    };
+
+    const loadSplatFromBlob = async (filename: string, blob: Blob) => {
+        const fs = new MappedReadFileSystem();
+        fs.addFile(filename, blob);
+        const splat = await scene.assetLoader.load(filename, fs, false, blob, true);
+        if (!(splat instanceof Splat)) {
+            throw new Error(`document contains a non-splat asset: ${filename}`);
+        }
+        if (splat.numSplats === 0) {
+            throw new Error(`loaded splat has no points: ${filename}`);
+        }
+        return splat;
+    };
+
+    const loadDocument = async (file: Blob | ArrayBuffer, sourceName?: string | null): Promise<LoadResult> => {
         events.fire('startSpinner');
 
         const blob = (file instanceof Blob) ? file : new Blob([file]);
@@ -140,161 +915,173 @@ const registerDocEvents = (scene: Scene, events: Events) => {
         };
 
         try {
-            // read document.json via streaming (only reads what's needed)
             const docSource = await zipFs.createSource('document.json');
             const docData = await docSource.read().readAll();
             docSource.close();
-            let document: any;
+
+            let rawDocument: any;
             try {
-                document = JSON.parse(new TextDecoder().decode(docData));
+                rawDocument = JSON.parse(new TextDecoder().decode(docData));
             } catch {
                 throw new Error('document.json is not valid JSON');
             }
 
-            const docVersion = (typeof document?.version === 'number' && isFinite(document.version)) ? document.version : 0;
+            const docVersion = (typeof rawDocument?.version === 'number' && isFinite(rawDocument.version)) ? rawDocument.version : 0;
             if (!SUPPORTED_DOC_VERSIONS.has(docVersion)) {
                 throw new Error(`Unsupported document version: ${docVersion}`);
             }
 
-            if (!Array.isArray(document?.splats)) {
+            if (!Array.isArray(rawDocument?.splats)) {
                 throw new Error('Invalid document: splats are missing');
             }
 
-            // stage assets before mutating current scene
-            const loadSplatFromZip = async (filename: string) => {
-                try {
-                    // ssproj内のPLYはmorton順で保存されているため再ソートしない
-                    const splat = await scene.assetLoader.load(filename, zipFs, false, true);
-                    if (!(splat instanceof Splat)) {
-                        throw new Error('document contains a non-splat asset');
-                    }
-                    if (splat.numSplats === 0) {
-                        throw new Error('loaded splat has no points');
-                    }
-                    return splat;
-                } catch (error) {
+            const packageDocument = normalizeDocument(rawDocument);
+            const packageFingerprint = createPackageFingerprint(blob, sourceName ?? null);
+            let projectId = packageDocument.projectId;
+            let workingRecord = projectId ?
+                await projectSaveStateStore.load(projectId) :
+                await projectSaveStateStore.loadByFingerprint(packageFingerprint);
+
+            if (!projectId && workingRecord?.projectId) {
+                projectId = workingRecord.projectId;
+            }
+            if (!projectId) {
+                projectId = createId('project');
+            }
+
+            await projectSaveStateStore.setProjectLink(packageFingerprint, projectId);
+
+            if (workingRecord && workingRecord.projectId !== projectId) {
+                workingRecord = null;
+            }
+
+            const useWorkingState = isWorkingRecordCompatible(workingRecord, packageDocument.packageRevision, packageFingerprint);
+            const effectiveDocument = useWorkingState ? normalizeDocument(workingRecord?.snapshot) : packageDocument;
+            const workingAssets = new Map<string, WorkingAssetRecord>();
+            const workingReferenceImageAssets = new Map<string, Blob>();
+            workingRecord?.assets?.forEach((asset) => {
+                workingAssets.set(asset.id, asset);
+            });
+            workingRecord?.referenceImageAssets?.forEach((asset) => {
+                if (asset?.blob && typeof asset?.path === 'string' && asset.path) {
+                    workingReferenceImageAssets.set(asset.path, asset.blob);
+                }
+            });
+
+            const packageAssetPathById = new Map<string, string>();
+            packageDocument.splats.forEach(entry => packageAssetPathById.set(entry.assetId, entry.filename));
+            packageDocument.models.forEach(entry => packageAssetPathById.set(entry.assetId, entry.filename));
+
+            const stagedSplats: Array<{ splat: Splat; settings: any; assetId: string; packagePath: string | null; }> = [];
+            for (let i = 0; i < effectiveDocument.splats.length; ++i) {
+                const splatSettings = effectiveDocument.splats[i];
+                const assetId = splatSettings.assetId;
+                const filename = splatSettings.filename;
+                const packagePath = packageAssetPathById.get(assetId) ?? null;
+                const override = workingAssets.get(assetId);
+
+                let splat: Splat;
+                if (override?.blob) {
+                    splat = await loadSplatFromBlob(filename, override.blob);
+                } else {
                     try {
-                        const blob = await readZipBlob(filename);
-                        const fallbackFs = new MappedReadFileSystem();
-                        fallbackFs.addFile(filename, blob);
-                        const splat = await scene.assetLoader.load(filename, fallbackFs, false, blob, true);
-                        if (!(splat instanceof Splat)) {
+                        const loaded = await scene.assetLoader.load(filename, zipFs, false, true);
+                        if (!(loaded instanceof Splat)) {
                             throw new Error('document contains a non-splat asset');
                         }
-                        if (splat.numSplats === 0) {
+                        if (loaded.numSplats === 0) {
                             throw new Error('loaded splat has no points');
                         }
-                        return splat;
-                    } catch (fallbackError) {
-                        const primaryMessage = error instanceof Error ? error.message : `${error}`;
-                        const fallbackMessage = fallbackError instanceof Error ? fallbackError.message : `${fallbackError}`;
-                        throw new Error(`Failed to load splat '${filename}': ${primaryMessage}. Fallback failed: ${fallbackMessage}`);
-                    }
-                }
-            };
-
-            const stagedSplats: { splat: Splat, settings: any }[] = [];
-            for (let i = 0; i < document.splats.length; ++i) {
-                const filename = `splat_${i}.ply`;
-                const splatSettings = document.splats[i];
-                const splat = await loadSplatFromZip(filename);
-                stagedSplats.push({ splat, settings: splatSettings });
-            }
-
-            const stagedModels: { model: Model, settings: any }[] = [];
-            const modelDocs = Array.isArray(document?.models) ? document.models : [];
-            for (let i = 0; i < modelDocs.length; ++i) {
-                const modelDoc = modelDocs[i] ?? {};
-                const modelPath = typeof modelDoc.filename === 'string' ? modelDoc.filename : `models/model_${i}.glb`;
-                const contents = await readZipBlob(modelPath);
-                const loaded = await scene.assetLoader.loadModel(modelPath.split('/').pop() ?? modelPath, contents);
-                if (!(loaded instanceof Model)) {
-                    throw new Error('document contains a non-model asset');
-                }
-                stagedModels.push({ model: loaded as Model, settings: modelDoc });
-            }
-
-            // at this point staging succeeded, apply to scene
-            resetScene();
-
-            scene.splatRenderLifecycle.freeze();
-            for (const { model, settings } of stagedModels) {
-                await scene.add(model);
-                model.docDeserialize(settings ?? {});
-            }
-            for (const { splat, settings } of stagedSplats) {
-                await scene.add(splat);
-                splat.docDeserialize(settings ?? {});
-            }
-            scene.splatRenderLifecycle.unfreeze();
-
-            // FIXME: trigger scene bound calc in a better way
-            const tmp = scene.bound;
-            if (tmp === null) {
-                console.error('this should never fire');
-            }
-
-            events.invoke('docDeserialize.timeline', document.timeline ?? {});
-            events.invoke('docDeserialize.poseSets', document.poseSets ?? [], document.camera?.fov);
-            events.invoke('docDeserialize.view', document.view ?? {});
-            events.invoke('docDeserialize.cameraFrames', document.cameraFrames ?? null);
-            scene.camera.docDeserialize(document.camera ?? null);
-            scene.docDeserializeLighting(document.lighting ?? null);
-            const referenceDocState = document.referenceImages ?? document.referenceImage ?? null;
-            const referenceBlobs = new Map<string, Blob>();
-            if (referenceDocState?.assets && Array.isArray(referenceDocState.assets)) {
-                for (const asset of referenceDocState.assets) {
-                    const assetId = asset?.id;
-                    const filename = asset?.source?.filename;
-                    if (typeof assetId !== 'string' || !assetId || typeof filename !== 'string' || !filename) {
-                        continue;
-                    }
-                    const safeName = normalizeReferenceImageFilename(filename);
-                    const refPath = `reference-images/assets/${assetId}/${safeName}`;
-                    try {
-                        referenceBlobs.set(refPath, await readZipBlob(refPath));
+                        splat = loaded;
                     } catch (error) {
-                        console.warn(`reference image missing: ${refPath}`, error);
+                        const fallbackBlob = await readZipBlob(filename);
+                        splat = await loadSplatFromBlob(filename, fallbackBlob);
+                        console.warn(`fallback splat load used for '${filename}'`, error);
                     }
                 }
+
+                stagedSplats.push({ splat, settings: splatSettings, assetId, packagePath });
             }
-            if (referenceDocState?.items && Array.isArray(referenceDocState.items)) {
-                for (const item of referenceDocState.items) {
-                    const id = item?.id;
-                    const filename = item?.source?.filename;
-                    if (typeof id !== 'string' || !id || typeof filename !== 'string' || !filename) {
-                        continue;
-                    }
-                    const refPath = `reference-images/${id}/${filename}`;
-                    try {
-                        referenceBlobs.set(refPath, await readZipBlob(refPath));
-                    } catch (error) {
-                        console.warn(`reference image missing: ${refPath}`, error);
-                    }
+
+            const stagedModels: Array<{ model: Model; settings: any; assetId: string; packagePath: string | null; }> = [];
+            for (let i = 0; i < effectiveDocument.models.length; ++i) {
+                const modelSettings = effectiveDocument.models[i];
+                const assetId = modelSettings.assetId;
+                const filename = modelSettings.filename;
+                const packagePath = packageAssetPathById.get(assetId) ?? null;
+                const override = workingAssets.get(assetId);
+                const modelBlob = override?.blob ?? await readZipBlob(filename);
+                const model = await scene.assetLoader.loadModel(filename.split('/').pop() ?? filename, modelBlob);
+                if (!(model instanceof Model)) {
+                    throw new Error(`document contains a non-model asset: ${filename}`);
                 }
-            } else if (referenceDocState?.source?.filename) {
-                const refPath = `reference-image/${referenceDocState.source.filename}`;
+                stagedModels.push({ model, settings: modelSettings, assetId, packagePath });
+            }
+
+            await resetScene();
+
+            packageAssetIds.clear();
+            packageAssetPaths.clear();
+            packageDocument.splats.forEach((entry) => {
+                packageAssetIds.add(entry.assetId);
+                packageAssetPaths.set(entry.assetId, entry.filename);
+            });
+            packageDocument.models.forEach((entry) => {
+                packageAssetIds.add(entry.assetId);
+                packageAssetPaths.set(entry.assetId, entry.filename);
+            });
+
+            await withDirtyTrackingSuspended(async () => {
+                scene.splatRenderLifecycle.freeze();
                 try {
-                    referenceBlobs.set(refPath, await readZipBlob(refPath));
-                } catch (error) {
-                    console.warn(`reference image missing: ${refPath}`, error);
+                    for (const { model, settings, assetId, packagePath } of stagedModels) {
+                        await scene.add(model);
+                        rememberLoadedAsset(model, 'model', assetId, packagePath);
+                        model.docDeserialize(settings ?? {});
+                    }
+                    for (const { splat, settings, assetId, packagePath } of stagedSplats) {
+                        await scene.add(splat);
+                        rememberLoadedAsset(splat, 'splat', assetId, packagePath);
+                        splat.docDeserialize(settings ?? {});
+                    }
+                } finally {
+                    scene.splatRenderLifecycle.unfreeze();
                 }
-            }
-            const referenceLoadReport = await events.invoke('docDeserialize.referenceImages', referenceDocState, referenceBlobs) as {
-                missingItems?: number;
-            } | null;
-            if (referenceLoadReport?.missingItems) {
-                await events.invoke('showPopup', {
-                    type: 'info',
-                    header: localize('panel.reference-image.title'),
-                    message: localize('doc.reference-images.missing', {
-                        count: formatInteger(referenceLoadReport.missingItems)
-                    })
-                });
-            }
-            events.fire('cameraFrames.syncReferenceImages');
 
-            // refresh the pivot to reflect the loaded transform
+                const _tmpBound = scene.bound;
+                if (_tmpBound === null) {
+                    console.error('scene bound should not be null after document load');
+                }
+
+                events.invoke('docDeserialize.timeline', effectiveDocument.timeline ?? {});
+                events.invoke('docDeserialize.poseSets', effectiveDocument.poseSets ?? [], effectiveDocument.camera?.fov);
+                events.invoke('docDeserialize.view', effectiveDocument.view ?? {});
+                events.invoke('docDeserialize.cameraFrames', effectiveDocument.cameraFrames ?? null);
+                scene.camera.docDeserialize(effectiveDocument.camera ?? null);
+                scene.docDeserializeLighting(effectiveDocument.lighting ?? null);
+
+                const referenceDocState = effectiveDocument.referenceImages ?? null;
+                const referenceBlobs = new Map<string, Blob>(workingReferenceImageAssets);
+                await readZipBlobsForReferenceImages(zipFs, packageDocument.referenceImages, referenceBlobs);
+                if (useWorkingState) {
+                    await readZipBlobsForReferenceImages(zipFs, referenceDocState, referenceBlobs);
+                }
+
+                const referenceLoadReport = await events.invoke('docDeserialize.referenceImages', referenceDocState, referenceBlobs) as {
+                    missingItems?: number;
+                } | null;
+                if (referenceLoadReport?.missingItems) {
+                    await events.invoke('showPopup', {
+                        type: 'info',
+                        header: localize('panel.reference-image.title'),
+                        message: localize('doc.reference-images.missing', {
+                            count: formatInteger(referenceLoadReport.missingItems)
+                        })
+                    });
+                }
+                events.fire('cameraFrames.syncReferenceImages');
+            });
+
             const currentSelection = events.invoke('selection');
             if (currentSelection) {
                 const pivot = events.invoke('pivot');
@@ -304,257 +1091,133 @@ const registerDocEvents = (scene: Scene, events: Events) => {
                 pivot.place(transform);
             }
 
+            currentProjectId = projectId;
+            currentPackageRevision = packageDocument.packageRevision;
+            currentPackageFingerprint = packageFingerprint;
+            stateDirty = false;
+            packageDirty = !!useWorkingState;
+            dirtySplatAssetIds.clear();
+            workingOverrideAssetIds.clear();
+            if (useWorkingState) {
+                workingRecord?.assets?.forEach((asset) => {
+                    workingOverrideAssetIds.add(asset.id);
+                });
+            }
+
             scene.scheduleViewportRefresh();
+            return { loaded: true };
         } catch (error) {
+            console.error('loadDocument failed', error);
             await events.invoke('showPopup', {
                 type: 'error',
                 header: localize('doc.load-failed'),
-                message: `'${error.message ?? error}'`
+                message: `'${(error as Error)?.message ?? error}'`
             });
+            return { loaded: false };
         } finally {
-            // Clean up resources
             zipFs.close();
             events.fire('stopSpinner');
         }
     };
 
-    const getModelBlob = async (model: Model) => {
-        const stored = scene.assetLoader.getSourceBlob(model);
-        if (stored instanceof Blob) {
-            return stored;
+    events.function('doc.stateDirty', () => stateDirty);
+    events.function('doc.packageDirty', () => packageDirty);
+    events.function('doc.hasUnsavedChanges', () => stateDirty || packageDirty);
+
+    events.on('edit.apply', (op: EditOp) => {
+        const dirtySplats = new Set<Splat>();
+        getDirtySplatsFromOp(op, dirtySplats);
+        markDirty({ splats: [...dirtySplats] });
+    });
+
+    [
+        'camera.transform',
+        'camera.fov',
+        'camera.navMode',
+        'camera.ortho',
+        'camera.overlay',
+        'camera.mode',
+        'camera.bound',
+        'camera.showPoses',
+        'camera.splatSize',
+        'camera.flySpeed',
+        'camera.tonemapping',
+        'bgClr',
+        'selectedClr',
+        'unselectedClr',
+        'lockedClr',
+        'view.outlineSelection',
+        'view.centersUseGaussianColor',
+        'view.bands',
+        'grid.visible',
+        'eyeLevel.visible',
+        'timeline.frames',
+        'timeline.frameRate',
+        'timeline.frame',
+        'timeline.smoothness',
+        'cameraFrames.stateChanged',
+        'referenceImages.stateChanged',
+        'referenceImage.stateChanged',
+        'lighting.ambientChanged',
+        'modelLight.state',
+        'model.name',
+        'model.visibility',
+        'model.moved',
+        'splat.name',
+        'splat.visibility',
+        'splat.moved',
+        'splat.tintClr',
+        'splat.temperature',
+        'splat.saturation',
+        'splat.brightness',
+        'splat.blackPoint',
+        'splat.whitePoint',
+        'splat.transparency'
+    ].forEach((eventName) => {
+        events.on(eventName, () => {
+            markDirty();
+        });
+    });
+
+    events.on('scene.elementAdded', (element: Splat | Model) => {
+        if (element instanceof Splat) {
+            getOrAssignElementAssetId(element, 'splat');
+            markDirty({ splats: [element] });
+        } else if (element instanceof Model) {
+            getOrAssignElementAssetId(element, 'model');
+            markDirty();
         }
+    });
 
-        const file = model.asset?.file as any;
+    events.on('scene.elementRemoved', () => {
+        markDirty();
+    });
 
-        if (file?.contents instanceof Blob) {
-            return file.contents;
-        }
+    events.on('scene.clear', () => {
+        clearTrackingState();
+        stateDirty = false;
+        packageDirty = false;
+    });
 
-        if (file?.contents instanceof Response) {
-            return await file.contents.clone().blob();
-        }
-
-        if (file?.url) {
-            const response = await fetch(file.url);
-            if (!response.ok) {
-                throw new Error(`Failed to fetch model data: ${response.status} ${response.statusText}`);
-            }
-            return await response.blob();
-        }
-
-        throw new Error(`Model source not available for '${model.name}'`);
-    };
-
-    const writeBlobToZip = async (zipFs: ZipFileSystem, filename: string, source: Blob | ReadableStream<Uint8Array>) => {
-        const writer = await zipFs.createWriter(filename);
-        const reader = (source instanceof Blob ? source.stream() : source).getReader();
-        while (true) {
-            const { value, done } = await reader.read();
-            if (done) {
-                break;
-            }
-            if (value) {
-                await writer.write(value);
-            }
-        }
-        await writer.close();
-    };
-
-    const cleanupWritableStream = async (stream?: FileSystemWritableFileStream | null, reason?: unknown) => {
-        if (!stream) {
-            return;
-        }
-
-        const writable = stream as FileSystemWritableFileStream & {
-            abort?: (reason?: unknown) => Promise<void>;
-        };
-        try {
-            if (typeof writable.abort === 'function') {
-                await writable.abort(reason);
-            } else {
-                await writable.close();
-            }
-        } catch (cleanupError) {
-            console.warn('failed to cleanup writable stream after save failure', cleanupError);
-        }
-    };
-
-    const saveDocument = async (options: { stream?: FileSystemWritableFileStream, filename?: string }): Promise<boolean> => {
-        events.fire('startSpinner');
-        let saveStep = 'init';
-        let saved = false;
-        let splatCount = 0;
-        let modelCount = 0;
-        let cameraPresetCount = 0;
-        let referenceImageAssetCount = 0;
-        let documentJsonLength = 0;
-
-        try {
-            saveStep = 'collect scene data';
-            const splats = events.invoke('scene.allSplats') as Splat[];
-            const models = scene.getElementsByType(ElementType.model) as Model[];
-            splatCount = splats.length;
-            modelCount = models.length;
-            saveStep = 'serialize reference images';
-            const referenceImagesState = events.invoke('docSerialize.referenceImages');
-            const referenceImagesAssets = (events.invoke('referenceImages.docAssets') as Array<{ path: string; blob: Blob }> | null) ?? [];
-            referenceImageAssetCount = referenceImagesAssets.length;
-            const referenceImagesBytes = referenceImagesAssets.reduce((sum, a) => sum + BigInt(a?.blob?.size ?? 0), 0n);
-            const referenceImagesEntryCount = BigInt(referenceImagesAssets.length);
-
-            saveStep = 'serialize models';
-            const modelDocs = models.map((model, i) => {
-                const serialized = model.docSerialize();
-                return {
-                    ...serialized,
-                    filename: `models/model_${i}.glb`
-                };
-            });
-
-            saveStep = 'serialize camera';
-            const cameraState = scene.camera.docSerialize();
-            saveStep = 'serialize view';
-            const viewState = events.invoke('docSerialize.view');
-            saveStep = 'serialize pose sets';
-            const poseSetsState = events.invoke('docSerialize.poseSets');
-            saveStep = 'serialize timeline';
-            const timelineState = events.invoke('docSerialize.timeline');
-            saveStep = 'serialize camera frames';
-            const cameraFramesState = events.invoke('docSerialize.cameraFrames');
-            cameraPresetCount = Array.isArray(cameraFramesState?.cameraPresets) ? cameraFramesState.cameraPresets.length : 0;
-            saveStep = 'serialize splat metadata';
-            const splatDocs = splats.map(s => s.docSerialize());
-            saveStep = 'serialize lighting';
-            const lightingState = scene.docSerializeLighting();
-
-            const createDocumentPayload = (zip64: boolean) => ({
-                // keep version compatible with upstream (playcanvas/supersplat)
-                version: 0,
-                // internal schema marker for this fork (upstream will ignore unknown keys)
-                schemaVersion: DOC_VERSION,
-                ...(zip64 ? { zip64: true } : {}),
-                camera: cameraState,
-                view: viewState,
-                poseSets: poseSetsState,
-                timeline: timelineState,
-                cameraFrames: cameraFramesState,
-                referenceImages: referenceImagesState ?? undefined,
-                splats: splatDocs,
-                models: modelDocs,
-                lighting: lightingState
-            });
-
-            // Use a provisional payload to decide if ZIP64 is needed.
-            saveStep = 'estimate document size';
-            const provisionalDoc = createDocumentPayload(true);
-            const estimate = estimateDocumentSize(provisionalDoc, splats, models, model => scene.assetLoader.getSourceBlob(model), referenceImagesBytes, referenceImagesEntryCount);
-            const useZip64 = estimate.total >= ZIP64_MARGIN_BYTES || estimate.total > ZIP32_LIMIT;
-            const document = createDocumentPayload(useZip64);
-
-            if (!options.stream && useZip64 && !hasFileSystemAccess()) {
-                await events.invoke('showPopup', {
-                    type: 'error',
-                    header: localize('doc.save-failed'),
-                    message: 'この環境では大容量プロジェクトの保存に対応していません。File System Access API 対応ブラウザで保存してください。'
-                });
-                return false;
-            }
-
-            const serializeSettings = {
-                // even though we support saving selection state, we disable that for now
-                // because including a uint8 array in the document PLY results in slow loading
-                // path.
-                keepStateData: false,
-                keepWorldTransform: true,
-                keepColorTint: true
-            };
-
-            // Create browser filesystem and zip filesystem
-            saveStep = 'create writer';
-            const browserFs = new BrowserFileSystem(options.filename, options.stream);
-            const browserWriter = await browserFs.createWriter(options.filename);
-            const zipFs = new ZipFileSystem(browserWriter);
-
-            // Write document.json
-            saveStep = 'write document.json';
-            saveStep = 'stringify document.json';
-            const documentJson = JSON.stringify(document);
-            documentJsonLength = documentJson.length;
-            saveStep = 'write document.json';
-            const docWriter = await zipFs.createWriter('document.json');
-            await docWriter.write(new TextEncoder().encode(documentJson));
-            await docWriter.close();
-
-            // Write each splat as PLY
-            for (let i = 0; i < splats.length; ++i) {
-                saveStep = `write splat_${i}.ply`;
-                await serializePly([splats[i]], serializeSettings, zipFs, `splat_${i}.ply`);
-            }
-            for (let i = 0; i < models.length; ++i) {
-                saveStep = `write model_${i}.glb`;
-                const blob = await getModelBlob(models[i]);
-                await writeBlobToZip(zipFs, modelDocs[i].filename, blob);
-            }
-            for (const asset of referenceImagesAssets) {
-                if (!asset?.blob || typeof asset?.path !== 'string' || !asset.path) {
-                    continue;
-                }
-                saveStep = `write ${asset.path}`;
-                await writeBlobToZip(zipFs, asset.path, asset.blob);
-            }
-            saveStep = 'finalize zip';
-            await zipFs.close();
-            saved = true;
-            return true;
-        } catch (error) {
-            const errorName = (error as Error & { name?: string })?.name;
-            const errorMessage = (error as Error)?.message ?? `${error}`;
-            const fullMessage = `${saveStep}${errorName ? ` | ${errorName}` : ''} | ${errorMessage}`;
-            console.error('saveDocument failed', {
-                saveStep,
-                splatCount,
-                modelCount,
-                cameraPresetCount,
-                referenceImageAssetCount,
-                documentJsonLength,
-                error
-            });
-            await events.invoke('showPopup', {
-                type: 'error',
-                header: localize('doc.save-failed'),
-                message: `'${fullMessage}'`
-            });
-            return false;
-        } finally {
-            if (!saved && options.stream) {
-                // Ensure failed saves release the file lock so the next save can recover.
-                await cleanupWritableStream(options.stream);
-            }
-            events.fire('stopSpinner');
-        }
-    };
-
-    // handle user requesting a new document
     events.function('doc.new', async () => {
-        if (!await getResetConfirmation()) {
+        if (needsResetConfirmation() && !await getResetConfirmation()) {
             return false;
         }
-        resetScene();
+        await resetScene();
         return true;
     });
 
-    // handle document file being dropped
-    // NOTE: on chrome it's possible to get the FileSystemFileHandle from the DataTransferItem
-    // (which would result in more seamless user experience), but this is not yet supported in
-    // other browsers.
     events.function('doc.load', async (file: File | Blob | ArrayBuffer, handle?: FileSystemFileHandle) => {
-        if (!events.invoke('scene.empty') && !await getResetConfirmation()) {
+        if (needsResetConfirmation() && !await getResetConfirmation()) {
             return false;
         }
 
-        await loadDocument(file);
+        const fileName = (file as File)?.name ?? handle?.name ?? null;
+        const result = await loadDocument(file, fileName);
+        if (!result.loaded) {
+            return false;
+        }
 
-        const fileName = (file as File)?.name ?? handle?.name;
         if (fileName) {
             events.fire('doc.setName', fileName);
         }
@@ -562,50 +1225,64 @@ const registerDocEvents = (scene: Scene, events: Events) => {
         if (handle) {
             documentFileHandle = handle;
             recentFiles.add(handle);
+        } else {
+            documentFileHandle = null;
         }
+
+        return true;
     });
 
     events.function('doc.open', async () => {
-        if (!events.invoke('scene.empty') && !await getResetConfirmation()) {
+        if (needsResetConfirmation() && !await getResetConfirmation()) {
             return false;
         }
 
         if (fileSelector) {
             fileSelector.show(async (file?: File) => {
-                if (file) {
-                    await loadDocument(file);
-                    events.fire('doc.setName', file.name);
+                if (!file) {
+                    return;
                 }
+                const result = await loadDocument(file, file.name);
+                if (!result.loaded) {
+                    return;
+                }
+                documentFileHandle = null;
+                events.fire('doc.setName', file.name);
             });
-        } else {
-            try {
-                const fileHandles = await window.showOpenFilePicker({
-                    id: 'SuperSplatDocumentOpen',
-                    multiple: false,
-                    types: SuperFileType
-                });
+            return true;
+        }
 
-                if (fileHandles?.length === 1) {
-                    const fileHandle = fileHandles[0];
+        try {
+            const fileHandles = await window.showOpenFilePicker({
+                id: 'SuperSplatDocumentOpen',
+                multiple: false,
+                types: SuperFileType
+            });
 
-                    // null file handle incase loadDocument fails
-                    await loadDocument(await fileHandle.getFile());
-
-                    // store file handle for subsequent saves
-                    documentFileHandle = fileHandle;
-                    events.fire('doc.setName', fileHandle.name);
-                    recentFiles.add(fileHandle);
-                }
-            } catch (error) {
-                if (error.name !== 'AbortError') {
-                    console.error(error);
-                }
+            if (fileHandles?.length !== 1) {
+                return false;
             }
+
+            const fileHandle = fileHandles[0];
+            const result = await loadDocument(await fileHandle.getFile(), fileHandle.name);
+            if (!result.loaded) {
+                return false;
+            }
+
+            documentFileHandle = fileHandle;
+            events.fire('doc.setName', fileHandle.name);
+            recentFiles.add(fileHandle);
+            return true;
+        } catch (error) {
+            if ((error as Error)?.name !== 'AbortError') {
+                console.error(error);
+            }
+            return false;
         }
     });
 
     events.function('doc.openRecent', async (fileHandle: FileSystemFileHandle) => {
-        if (!events.invoke('scene.empty') && !await getResetConfirmation()) {
+        if (needsResetConfirmation() && !await getResetConfirmation()) {
             return false;
         }
 
@@ -616,100 +1293,95 @@ const registerDocEvents = (scene: Scene, events: Events) => {
                 }
             }
 
-            await loadDocument(await fileHandle.getFile());
+            const result = await loadDocument(await fileHandle.getFile(), fileHandle.name);
+            if (!result.loaded) {
+                return false;
+            }
 
-            // store file handle for subsequent saves
             documentFileHandle = fileHandle;
             events.fire('doc.setName', fileHandle.name);
             recentFiles.add(fileHandle);
+            return true;
         } catch (error) {
-            if (error.name !== 'AbortError') {
+            if ((error as Error)?.name !== 'AbortError') {
                 console.error(error);
                 await events.invoke('showPopup', {
                     type: 'error',
                     header: localize('popup.error-loading'),
-                    message: `${error.message ?? error}`
+                    message: `${(error as Error)?.message ?? error}`
                 });
             }
+            return false;
         }
     });
 
     events.function('doc.save', async () => {
+        if (!currentProjectId) {
+            return await events.invoke('doc.savePackageAs');
+        }
+        return await saveWorkingState();
+    });
+
+    events.function('doc.savePackage', async () => {
         if (documentFileHandle) {
             try {
-                const saved = await saveDocument({
-                    stream: await documentFileHandle.createWritable()
+                return await savePackageDocument({
+                    stream: await documentFileHandle.createWritable(),
+                    handle: documentFileHandle
                 });
-                if (saved) {
-                    events.fire('doc.saved');
-                }
             } catch (error) {
-                if (error.name !== 'AbortError' && error.name !== 'NotAllowedError') {
+                if ((error as Error)?.name !== 'AbortError' && (error as Error)?.name !== 'NotAllowedError') {
                     console.error(error);
                     await events.invoke('showPopup', {
                         type: 'error',
                         header: localize('doc.save-failed'),
-                        message: `'${error.message ?? error}'`
+                        message: `'${(error as Error)?.message ?? error}'`
                     });
                 }
+                return false;
             }
-        } else {
-            await events.invoke('doc.saveAs');
         }
+        return await events.invoke('doc.savePackageAs');
     });
 
-    events.function('doc.saveAs', async () => {
+    events.function('doc.savePackageAs', async () => {
         if (window.showSaveFilePicker) {
             try {
+                const suggestedName = docName && docName.endsWith('.ssproj') ? docName : 'scene.ssproj';
                 const handle = await window.showSaveFilePicker({
                     id: 'SuperSplatDocumentSave',
                     types: SuperFileType,
-                    suggestedName: 'scene.ssproj'
+                    suggestedName
                 });
-                const saved = await saveDocument({ stream: await handle.createWritable() });
-                if (!saved) {
-                    return;
-                }
-                documentFileHandle = handle;
-                events.fire('doc.setName', handle.name);
-                events.fire('doc.saved');
-                recentFiles.add(handle);
+                return await savePackageDocument({
+                    stream: await handle.createWritable(),
+                    handle
+                });
             } catch (error) {
-                if (error.name !== 'AbortError') {
+                if ((error as Error)?.name !== 'AbortError') {
                     console.error(error);
                     await events.invoke('showPopup', {
                         type: 'error',
                         header: localize('doc.save-failed'),
-                        message: `'${error.message ?? error}'`
+                        message: `'${(error as Error)?.message ?? error}'`
                     });
                 }
-            }
-        } else {
-            const saved = await saveDocument({
-                filename: 'scene.ssproj'
-            });
-            if (saved) {
-                events.fire('doc.saved');
+                return false;
             }
         }
+
+        const fallbackName = docName && docName.endsWith('.ssproj') ? docName : 'scene.ssproj';
+        return await savePackageDocument({
+            filename: fallbackName
+        });
     });
 
-    // doc name
-
-    let docName: string = null;
-
-    const setDocName = (name: string) => {
-        if (name !== docName) {
-            docName = name;
-            events.fire('doc.name', docName);
-        }
-    };
-
-    events.function('doc.name', () => {
-        return docName;
+    events.function('doc.saveAs', async () => {
+        return await events.invoke('doc.savePackageAs');
     });
 
-    events.on('doc.setName', (name) => {
+    events.function('doc.name', () => docName);
+    events.on('doc.setName', (name: string) => {
         setDocName(name);
     });
 };

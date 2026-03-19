@@ -53,6 +53,8 @@ const defaultShortcuts: Record<string, ShortcutBinding> = {
     // Other
     'edit.undo': { keys: ['z'], ctrl: 'required', repeat: true, capture: true },
     'edit.redo': { keys: ['z'], ctrl: 'required', shift: 'required', repeat: true, capture: true },
+    'doc.save': { keys: ['s'], ctrl: 'required', capture: true },
+    'doc.savePackage': { keys: ['s'], ctrl: 'required', shift: 'required', capture: true },
     'dataPanel.toggle': { keys: ['d'], ctrl: 'required', capture: true },
     'timelinePanel.toggle': { keys: ['t'], ctrl: 'required', capture: true },
 

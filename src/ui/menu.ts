@@ -187,13 +187,20 @@ class Menu extends Container {
         }, {
             text: localize('menu.file.save'),
             icon: createSvg(sceneSave),
-            isEnabled: () => events.invoke('doc.name'),
+            extra: shortcutManager.formatShortcut('doc.save'),
+            isEnabled: () => true,
             onSelect: async () => await events.invoke('doc.save')
         }, {
-            text: localize('menu.file.save-as', { ellipsis: true }),
+            text: localize('menu.file.save-package'),
+            icon: createSvg(sceneSave),
+            extra: shortcutManager.formatShortcut('doc.savePackage'),
+            isEnabled: () => true,
+            onSelect: async () => await events.invoke('doc.savePackage')
+        }, {
+            text: localize('menu.file.save-package-as', { ellipsis: true }),
             icon: createSvg(sceneSave),
             isEnabled: () => true,
-            onSelect: async () => await events.invoke('doc.saveAs')
+            onSelect: async () => await events.invoke('doc.savePackageAs')
         }, {
             // separator
         }, {

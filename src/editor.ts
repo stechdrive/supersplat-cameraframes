@@ -54,12 +54,9 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
         return splats;
     };
 
-    let lastExportCursor = 0;
-
     // add unsaved changes warning message.
     window.addEventListener('beforeunload', (e) => {
         if (!events.invoke('scene.dirty')) {
-            // if the undo cursor matches last export, then we have no unsaved changes
             return undefined;
         }
 
@@ -75,7 +72,6 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
     events.on('scene.clear', () => {
         scene.clear();
         editHistory.clear();
-        lastExportCursor = 0;
     });
 
     // When a splat is removed from the scene, remove all edit operations that reference it
@@ -86,11 +82,8 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
     });
 
     events.function('scene.dirty', () => {
-        return editHistory.cursor !== lastExportCursor;
-    });
-
-    events.on('doc.saved', () => {
-        lastExportCursor = editHistory.cursor;
+        const docDirty = events.invoke('doc.hasUnsavedChanges');
+        return typeof docDirty === 'boolean' ? docDirty : editHistory.cursor > 0;
     });
 
     // force render on some events
