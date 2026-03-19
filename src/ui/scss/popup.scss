@@ -106,11 +106,18 @@
             display: flex;
             flex-direction: row;
             justify-content: center;
-            margin: 6px;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin: 6px 10px 10px;
 
             .popup-button {
                 height: 40px;
-                width: 120px;
+                min-width: 120px;
+                width: auto;
+                max-width: 100%;
+                padding: 0 14px;
+                white-space: nowrap;
+                flex: 0 1 auto;
                 border-radius: 4px;
                 background-color: $bcg-darker;
 

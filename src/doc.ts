@@ -505,6 +505,10 @@ const registerDocEvents = (scene: Scene, events: Events) => {
                             action: 'save-state'
                         },
                         {
+                            label: localize('doc.transition.discard'),
+                            action: 'discard'
+                        },
+                        {
                             label: localize('popup.cancel'),
                             action: 'cancel'
                         }
@@ -516,6 +520,8 @@ const registerDocEvents = (scene: Scene, events: Events) => {
                         return await events.invoke('doc.savePackage');
                     case 'save-state':
                         return await events.invoke('doc.save');
+                    case 'discard':
+                        return true;
                     default:
                         return false;
                 }
