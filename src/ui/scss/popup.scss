@@ -126,6 +126,19 @@
                     background-color: $clr-hilight;
                 }
             }
+
+            &.button-grid {
+                display: grid;
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                justify-content: stretch;
+
+                .popup-button {
+                    width: 100%;
+                    min-width: 0;
+                    max-width: none;
+                    flex: initial;
+                }
+            }
         }
     }
 }

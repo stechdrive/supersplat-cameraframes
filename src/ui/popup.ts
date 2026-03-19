@@ -146,6 +146,10 @@ class Popup extends Container {
             ['error', 'info', 'yesno', 'okcancel'].forEach((t) => {
                 text.class[t === type ? 'add' : 'remove'](t);
             });
+            buttons.class.remove('button-grid');
+            if (hasCustomButtons && customActions.length >= 4) {
+                buttons.class.add('button-grid');
+            }
 
             // configure based on message type
             okButton.hidden = hasCustomButtons || type === 'yesno';
@@ -209,6 +213,7 @@ class Popup extends Container {
 
         this.hide = () => {
             this.hidden = true;
+            buttons.class.remove('button-grid');
             clearCustomButtons();
         };
 
