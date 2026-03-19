@@ -24,6 +24,7 @@ import { normalizeReferenceImageFilename } from './reference-image-filename';
 import { Scene } from './scene';
 import { Splat } from './splat';
 import { serializePly } from './splat-serialize';
+import { State } from './splat-state';
 import { Transform } from './transform';
 import { formatInteger, localize } from './ui/localization';
 
@@ -33,6 +34,8 @@ const SUPPORTED_DOC_VERSIONS = new Set([0, 1, 2, 3, 4]);
 const ZIP64_MARGIN_BYTES = 1800n * 1024n * 1024n;
 const ZIP32_LIMIT = 0xffffffffn;
 const ZIP_ENTRY_OVERHEAD = 256n;
+const hiddenStateMask = (State as { hidden?: number }).hidden ?? 0;
+const trackedPerSplatStateMask = State.deleted | State.locked | hiddenStateMask;
 
 type FilePickerAcceptType = unknown;
 
@@ -1140,6 +1143,16 @@ const registerDocEvents = (scene: Scene, events: Events) => {
         markDirty({ splats: [...dirtySplats] });
     });
 
+    events.on('splat.stateChanged', (splat: Splat, changedState = State.selected) => {
+        if ((changedState & trackedPerSplatStateMask) !== 0) {
+            markDirty({ splats: [splat] });
+        }
+    });
+
+    events.on('splat.positionsChanged', (splat: Splat) => {
+        markDirty({ splats: [splat] });
+    });
+
     [
         'camera.transform',
         'camera.fov',
@@ -1332,6 +1345,10 @@ const registerDocEvents = (scene: Scene, events: Events) => {
         return await saveWorkingState();
     });
 
+    events.on('doc.save', async () => {
+        await events.invoke('doc.save');
+    });
+
     events.function('doc.savePackage', async () => {
         if (documentFileHandle) {
             try {
@@ -1352,6 +1369,10 @@ const registerDocEvents = (scene: Scene, events: Events) => {
             }
         }
         return await events.invoke('doc.savePackageAs');
+    });
+
+    events.on('doc.savePackage', async () => {
+        await events.invoke('doc.savePackage');
     });
 
     events.function('doc.savePackageAs', async () => {

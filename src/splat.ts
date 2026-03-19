@@ -680,7 +680,7 @@ class Splat extends Element {
             await this.updateLocalBounds();
         }
         this.scene.forceRender = true;
-        this.scene.events.fire('splat.stateChanged', this);
+        this.scene.events.fire('splat.stateChanged', this, changedState);
     }
 
     async updatePositions() {
