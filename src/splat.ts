@@ -5,6 +5,7 @@ import {
     Entity,
     GSplatData,
     type GSplatComponent,
+    type Texture,
     Mat4,
     Quat,
     Vec3,
@@ -33,6 +34,10 @@ const engineGsplatColorAdjustBrightnessParam = 'cameraFramesBrightness';
 const engineGsplatColorAdjustBlackPointParam = 'cameraFramesBlackPoint';
 const engineGsplatColorAdjustWhitePointParam = 'cameraFramesWhitePoint';
 const engineGsplatColorAdjustTransparencyParam = 'cameraFramesTransparency';
+const engineGsplatStateTextureParam = 'cameraFramesStateTexture';
+const engineGsplatStateInfoParam = 'cameraFramesStateInfo';
+const engineGsplatSelectedColorParam = 'cameraFramesSelectedColor';
+const engineGsplatLockedColorParam = 'cameraFramesLockedColor';
 
 const roundEngineGsplatVisualValue = (value: number) => {
     if (!isFinite(value)) {
@@ -106,6 +111,125 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
 `
 } as const;
 
+const unifiedEngineGsplatVisualStateModifier = {
+    glsl: /* glsl */`
+uniform vec3 cameraFramesTint;
+uniform float cameraFramesTemperature;
+uniform float cameraFramesSaturation;
+uniform float cameraFramesBrightness;
+uniform float cameraFramesBlackPoint;
+uniform float cameraFramesWhitePoint;
+uniform float cameraFramesTransparency;
+uniform sampler2D cameraFramesStateTexture;
+uniform uvec2 cameraFramesStateInfo;
+uniform vec4 cameraFramesSelectedColor;
+uniform vec4 cameraFramesLockedColor;
+
+vec3 cameraFramesApplySaturation(vec3 color, float saturation) {
+    float grey = dot(color, vec3(0.299, 0.587, 0.114));
+    return vec3(grey) + (color - vec3(grey)) * saturation;
+}
+
+uint cameraFramesReadState() {
+    uint stateWidth = max(cameraFramesStateInfo.x, 1u);
+    uint stateIndex = cameraFramesStateInfo.y + splat.index;
+    ivec2 stateUv = ivec2(int(stateIndex % stateWidth), int(stateIndex / stateWidth));
+    return uint(texelFetch(cameraFramesStateTexture, stateUv, 0).r * 255.0 + 0.5) & 15u;
+}
+
+void modifySplatCenter(inout vec3 center) {}
+
+void modifySplatRotationScale(vec3 originalCenter, vec3 modifiedCenter, inout vec4 rotation, inout vec3 scale) {
+    if ((cameraFramesReadState() & 12u) != 0u) {
+        scale = vec3(0.0);
+    }
+}
+
+void modifySplatColor(vec3 center, inout vec4 color) {
+    uint state = cameraFramesReadState();
+    float offset = -cameraFramesBlackPoint + cameraFramesBrightness;
+    float scaleBase = 1.0 / max(1e-6, cameraFramesWhitePoint - cameraFramesBlackPoint);
+    vec3 tintScale = vec3(
+        scaleBase * cameraFramesTint.r * (1.0 + cameraFramesTemperature),
+        scaleBase * cameraFramesTint.g,
+        scaleBase * cameraFramesTint.b * (1.0 - cameraFramesTemperature)
+    );
+
+    color.rgb = cameraFramesApplySaturation(color.rgb * tintScale + vec3(offset), cameraFramesSaturation);
+    color.a = clamp(color.a * cameraFramesTransparency, 0.0, 1.0);
+
+    if ((state & 12u) != 0u) {
+        color.a = 0.0;
+        return;
+    }
+
+    if ((state & 2u) != 0u) {
+        color *= cameraFramesLockedColor;
+    } else if ((state & 1u) != 0u) {
+        color.rgb = mix(color.rgb, cameraFramesSelectedColor.rgb * 0.8, cameraFramesSelectedColor.a);
+    }
+}
+`,
+    wgsl: /* wgsl */`
+uniform cameraFramesTint: vec3f;
+uniform cameraFramesTemperature: f32;
+uniform cameraFramesSaturation: f32;
+uniform cameraFramesBrightness: f32;
+uniform cameraFramesBlackPoint: f32;
+uniform cameraFramesWhitePoint: f32;
+uniform cameraFramesTransparency: f32;
+var cameraFramesStateTexture: texture_2d<f32>;
+uniform cameraFramesStateInfo: vec2u;
+uniform cameraFramesSelectedColor: vec4f;
+uniform cameraFramesLockedColor: vec4f;
+
+fn cameraFramesApplySaturation(color: vec3f, saturation: f32) -> vec3f {
+    let grey = dot(color, vec3f(0.299, 0.587, 0.114));
+    return vec3f(grey) + (color - vec3f(grey)) * saturation;
+}
+
+fn cameraFramesReadState() -> u32 {
+    let stateWidth = max(uniform.cameraFramesStateInfo.x, 1u);
+    let stateIndex = uniform.cameraFramesStateInfo.y + splat.index;
+    let stateUv = vec2i(i32(stateIndex % stateWidth), i32(stateIndex / stateWidth));
+    return u32(textureLoad(cameraFramesStateTexture, stateUv, 0).r * 255.0 + 0.5) & 15u;
+}
+
+fn modifySplatCenter(center: ptr<function, vec3f>) {}
+
+fn modifySplatRotationScale(originalCenter: vec3f, modifiedCenter: vec3f, rotation: ptr<function, vec4f>, scale: ptr<function, vec3f>) {
+    if ((cameraFramesReadState() & 12u) != 0u) {
+        *scale = vec3f(0.0);
+    }
+}
+
+fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
+    let state = cameraFramesReadState();
+    let offset = -uniform.cameraFramesBlackPoint + uniform.cameraFramesBrightness;
+    let scaleBase = 1.0 / max(1e-6, uniform.cameraFramesWhitePoint - uniform.cameraFramesBlackPoint);
+    let tintScale = vec3f(
+        scaleBase * uniform.cameraFramesTint.r * (1.0 + uniform.cameraFramesTemperature),
+        scaleBase * uniform.cameraFramesTint.g,
+        scaleBase * uniform.cameraFramesTint.b * (1.0 - uniform.cameraFramesTemperature)
+    );
+
+    (*color).rgb = cameraFramesApplySaturation((*color).rgb * tintScale + vec3f(offset), uniform.cameraFramesSaturation);
+    (*color).a = clamp((*color).a * uniform.cameraFramesTransparency, 0.0, 1.0);
+
+    if ((state & 12u) != 0u) {
+        (*color).a = 0.0;
+        return;
+    }
+
+    if ((state & 2u) != 0u) {
+        *color = (*color) * uniform.cameraFramesLockedColor;
+    } else if ((state & 1u) != 0u) {
+        (*color).rgb = mix((*color).rgb, uniform.cameraFramesSelectedColor.rgb * 0.8, vec3f(uniform.cameraFramesSelectedColor.a));
+    }
+}
+`
+} as const;
+
 const boundingPoints =
     [-1, 1].map((x) => {
         return [-1, 1].map((y) => {
@@ -149,6 +273,7 @@ class Splat extends Element {
     _transparency = 1;
     _engineGsplatVisualSignature = '';
     _engineGsplatVisualSyncComponent: GSplatComponent | null = null;
+    _engineGsplatVisualStateTexture: Texture | null = null;
 
     _localCenters: Float32Array | null = null;
 
@@ -414,9 +539,51 @@ class Splat extends Element {
         return (this.asset.file as any).filename;
     }
 
-    private getEngineGsplatVisualSignature(useUnifiedColorAdjustments: boolean) {
+    private hasWholeSplatColorAdjustments() {
+        return !this.tintClr.equals(Color.WHITE) ||
+            this.temperature !== 0 ||
+            this.saturation !== 1 ||
+            this.brightness !== 0 ||
+            this.blackPoint !== 0 ||
+            this.whitePoint !== 1 ||
+            this.transparency !== 1;
+    }
+
+    private hasPerSplatStateVisuals() {
+        const wholeSplatHidden = !this.visible && this.numHidden === this.numSplats;
+        return this.numSelected > 0 ||
+            this.numLocked > 0 ||
+            this.numDeleted > 0 ||
+            (this.numHidden > 0 && !wholeSplatHidden);
+    }
+
+    private resolveUnifiedEnginePerSplatStateBinding() {
+        if (this.scene?.splatRenderCapabilities.resolvedMode !== 'unified-display') {
+            return null;
+        }
+
+        const overlayBinding = this.scene.splatRenderOverlay.getOverlayBinding(this);
+        const stateTexture = overlayBinding?.stateTexture;
+        const width = overlayBinding?.globalParams[0] ?? 0;
+        if (!stateTexture || width <= 0) {
+            return null;
+        }
+
+        return {
+            stateTexture,
+            width,
+            offset: overlayBinding.offset,
+            selectedClr: this.scene.events.invoke('selectedClr') as Color,
+            lockedClr: this.scene.events.invoke('lockedClr') as Color
+        };
+    }
+
+    private getEngineGsplatVisualSignature(
+        mode: 'inactive' | 'color' | 'state',
+        perSplatStateBinding: ReturnType<Splat['resolveUnifiedEnginePerSplatStateBinding']>
+    ) {
         return [
-            useUnifiedColorAdjustments ? 'unified' : 'inactive',
+            mode,
             roundEngineGsplatVisualValue(this.tintClr.r),
             roundEngineGsplatVisualValue(this.tintClr.g),
             roundEngineGsplatVisualValue(this.tintClr.b),
@@ -425,11 +592,31 @@ class Splat extends Element {
             roundEngineGsplatVisualValue(this.brightness),
             roundEngineGsplatVisualValue(this.blackPoint),
             roundEngineGsplatVisualValue(this.whitePoint),
-            roundEngineGsplatVisualValue(this.transparency)
+            roundEngineGsplatVisualValue(this.transparency),
+            `${perSplatStateBinding?.width ?? 0}`,
+            `${perSplatStateBinding?.offset ?? 0}`,
+            roundEngineGsplatVisualValue(perSplatStateBinding?.selectedClr?.r),
+            roundEngineGsplatVisualValue(perSplatStateBinding?.selectedClr?.g),
+            roundEngineGsplatVisualValue(perSplatStateBinding?.selectedClr?.b),
+            roundEngineGsplatVisualValue(perSplatStateBinding?.selectedClr?.a),
+            roundEngineGsplatVisualValue(perSplatStateBinding?.lockedClr?.r),
+            roundEngineGsplatVisualValue(perSplatStateBinding?.lockedClr?.g),
+            roundEngineGsplatVisualValue(perSplatStateBinding?.lockedClr?.b),
+            roundEngineGsplatVisualValue(perSplatStateBinding?.lockedClr?.a)
         ].join('|');
     }
 
-    private clearEngineGsplatColorAdjustments(component: GSplatComponent) {
+    private applyEngineGsplatColorAdjustments(component: GSplatComponent) {
+        component.setParameter(engineGsplatColorAdjustTintParam, [this.tintClr.r, this.tintClr.g, this.tintClr.b]);
+        component.setParameter(engineGsplatColorAdjustTemperatureParam, this.temperature);
+        component.setParameter(engineGsplatColorAdjustSaturationParam, this.saturation);
+        component.setParameter(engineGsplatColorAdjustBrightnessParam, this.brightness);
+        component.setParameter(engineGsplatColorAdjustBlackPointParam, this.blackPoint);
+        component.setParameter(engineGsplatColorAdjustWhitePointParam, this.whitePoint);
+        component.setParameter(engineGsplatColorAdjustTransparencyParam, this.transparency);
+    }
+
+    private clearEngineGsplatVisualAdjustments(component: GSplatComponent) {
         component.setWorkBufferModifier(null);
         component.deleteParameter(engineGsplatColorAdjustTintParam);
         component.deleteParameter(engineGsplatColorAdjustTemperatureParam);
@@ -438,38 +625,67 @@ class Splat extends Element {
         component.deleteParameter(engineGsplatColorAdjustBlackPointParam);
         component.deleteParameter(engineGsplatColorAdjustWhitePointParam);
         component.deleteParameter(engineGsplatColorAdjustTransparencyParam);
+        component.deleteParameter(engineGsplatStateTextureParam);
+        component.deleteParameter(engineGsplatStateInfoParam);
+        component.deleteParameter(engineGsplatSelectedColorParam);
+        component.deleteParameter(engineGsplatLockedColorParam);
     }
 
     private syncEngineGsplatVisuals(component: GSplatComponent) {
-        const useUnifiedColorAdjustments =
+        const usingUnifiedDisplay =
             this.scene?.splatRenderCapabilities.resolvedMode === 'unified-display' &&
             component.unified === true;
-        const signature = this.getEngineGsplatVisualSignature(useUnifiedColorAdjustments);
+        const hasWholeSplatColorAdjustments = this.hasWholeSplatColorAdjustments();
+        const hasPerSplatStateVisuals = this.hasPerSplatStateVisuals();
+        const perSplatStateBinding = hasPerSplatStateVisuals ? this.resolveUnifiedEnginePerSplatStateBinding() : null;
+        const mode: 'inactive' | 'color' | 'state' =
+            usingUnifiedDisplay ?
+                (perSplatStateBinding ? 'state' : (hasWholeSplatColorAdjustments ? 'color' : 'inactive')) :
+                'inactive';
+        const signature = this.getEngineGsplatVisualSignature(mode, perSplatStateBinding);
+        const stateTexture = perSplatStateBinding?.stateTexture ?? null;
 
-        if (this._engineGsplatVisualSyncComponent === component && this._engineGsplatVisualSignature === signature) {
+        if (this._engineGsplatVisualSyncComponent === component &&
+            this._engineGsplatVisualSignature === signature &&
+            this._engineGsplatVisualStateTexture === stateTexture) {
             return;
         }
 
-        if (useUnifiedColorAdjustments) {
+        if (mode === 'state' && perSplatStateBinding) {
+            component.setWorkBufferModifier(unifiedEngineGsplatVisualStateModifier);
+            this.applyEngineGsplatColorAdjustments(component);
+            component.setParameter(engineGsplatStateTextureParam, perSplatStateBinding.stateTexture);
+            component.setParameter(engineGsplatStateInfoParam, [perSplatStateBinding.width, perSplatStateBinding.offset]);
+            component.setParameter(engineGsplatSelectedColorParam, [
+                perSplatStateBinding.selectedClr.r,
+                perSplatStateBinding.selectedClr.g,
+                perSplatStateBinding.selectedClr.b,
+                perSplatStateBinding.selectedClr.a
+            ]);
+            component.setParameter(engineGsplatLockedColorParam, [
+                perSplatStateBinding.lockedClr.r,
+                perSplatStateBinding.lockedClr.g,
+                perSplatStateBinding.lockedClr.b,
+                perSplatStateBinding.lockedClr.a
+            ]);
+        } else if (mode === 'color') {
             component.setWorkBufferModifier(unifiedEngineGsplatColorAdjustModifier);
-            component.setParameter(engineGsplatColorAdjustTintParam, [this.tintClr.r, this.tintClr.g, this.tintClr.b]);
-            component.setParameter(engineGsplatColorAdjustTemperatureParam, this.temperature);
-            component.setParameter(engineGsplatColorAdjustSaturationParam, this.saturation);
-            component.setParameter(engineGsplatColorAdjustBrightnessParam, this.brightness);
-            component.setParameter(engineGsplatColorAdjustBlackPointParam, this.blackPoint);
-            component.setParameter(engineGsplatColorAdjustWhitePointParam, this.whitePoint);
-            component.setParameter(engineGsplatColorAdjustTransparencyParam, this.transparency);
+            this.applyEngineGsplatColorAdjustments(component);
+            component.deleteParameter(engineGsplatStateTextureParam);
+            component.deleteParameter(engineGsplatStateInfoParam);
+            component.deleteParameter(engineGsplatSelectedColorParam);
+            component.deleteParameter(engineGsplatLockedColorParam);
         } else {
-            this.clearEngineGsplatColorAdjustments(component);
+            this.clearEngineGsplatVisualAdjustments(component);
         }
 
         this._engineGsplatVisualSyncComponent = component;
         this._engineGsplatVisualSignature = signature;
+        this._engineGsplatVisualStateTexture = stateTexture;
     }
 
     getDirectEngineCompatibilityIssue() {
-        const wholeSplatHidden = !this.visible && this.numHidden === this.numSplats;
-        if (this.numSelected > 0 || this.numLocked > 0 || this.numDeleted > 0 || (this.numHidden > 0 && !wholeSplatHidden)) {
+        if (this.hasPerSplatStateVisuals() && !this.resolveUnifiedEnginePerSplatStateBinding()) {
             return 'per-splat state';
         }
 
