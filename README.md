@@ -81,9 +81,9 @@ To test a locale locally:
 
 Locale files live in [static/locales](./static/locales).
 
-## Contributors
+## Acknowledgements
 
-This fork builds on top of SuperSplat and the PlayCanvas ecosystem. Thanks to the upstream maintainers and contributors:
+This fork builds on top of SuperSplat and the PlayCanvas ecosystem. The image below shows the upstream SuperSplat contributors:
 
 <a href="https://github.com/playcanvas/supersplat/graphs/contributors">
   <img src="https://contrib.rocks/image?repo=playcanvas/supersplat" />
