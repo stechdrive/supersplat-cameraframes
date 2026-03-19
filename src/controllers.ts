@@ -94,6 +94,7 @@ class PointerController {
         // mouse state
         let pressedButton = -1;  // no button pressed, otherwise 0, 1, or 2
         let x: number, y: number;
+        let activeMousePointerId: number | null = null;
         // fpv-only middle-drag tracking
         let mmbX = 0, mmbY = 0, mmbActive = false;
         let isPivoting = false;
@@ -102,15 +103,22 @@ class PointerController {
         let touches: { id: number, x: number, y: number}[] = [];
         let midx: number, midy: number, midlen: number;
 
-        const releaseMouseInteraction = (event: PointerEvent) => {
+        const resetMouseInteractionState = () => {
             pressedButton = -1;
             isPivoting = false;
-            if (target.hasPointerCapture(event.pointerId)) {
-                target.releasePointerCapture(event.pointerId);
+            activeMousePointerId = null;
+            mmbActive = false;
+        };
+
+        const releaseMouseInteraction = (event?: Pick<PointerEvent, 'pointerId'> | null) => {
+            const pointerId = event?.pointerId ?? activeMousePointerId;
+            if (pointerId !== null && target.hasPointerCapture(pointerId)) {
+                target.releasePointerCapture(pointerId);
             }
-            if (document.pointerLockElement === target && isFpvNav()) {
+            if (document.pointerLockElement === target) {
                 document.exitPointerLock?.();
             }
+            resetMouseInteractionState();
         };
 
         const pointerdown = (event: PointerEvent) => {
@@ -123,6 +131,7 @@ class PointerController {
                 const pivotDrag = isFpvNav() && isCtrlLike(modState) && event.button === 0;
                 target.setPointerCapture(event.pointerId);
                 pressedButton = event.button;
+                activeMousePointerId = event.pointerId;
                 x = event.offsetX;
                 y = event.offsetY;
                 isPivoting = false;
@@ -431,6 +440,29 @@ class PointerController {
             }
         };
 
+        const visibilitychange = () => {
+            if (document.visibilityState !== 'visible') {
+                releaseMouseInteraction();
+                clearAllKeys();
+            }
+        };
+
+        const pointerlockchange = () => {
+            if (document.pointerLockElement !== target) {
+                const pointerId = activeMousePointerId;
+                if (pointerId !== null && target.hasPointerCapture(pointerId)) {
+                    target.releasePointerCapture(pointerId);
+                }
+                resetMouseInteractionState();
+            }
+        };
+
+        const lostpointercapture = (event: PointerEvent) => {
+            if (activeMousePointerId !== null && event.pointerId === activeMousePointerId) {
+                releaseMouseInteraction(event);
+            }
+        };
+
         // Helper to switch to fly mode when a fly key is pressed
         const handleFlyKey = (down: boolean) => {
             if (down && camera.controlMode !== 'fly' && !isFpvNav()) {
@@ -557,7 +589,14 @@ class PointerController {
         wrap(target, 'dblclick', dblclick);
         wrap(document, 'keydown', keydown);
         wrap(document, 'keyup', keyup);
-        wrap(window, 'blur', clearAllKeys);
+        wrap(target, 'pointercancel', pointerup);
+        wrap(target, 'lostpointercapture', lostpointercapture);
+        wrap(window, 'blur', () => {
+            clearAllKeys();
+            releaseMouseInteraction();
+        });
+        wrap(document, 'visibilitychange', visibilitychange);
+        wrap(document, 'pointerlockchange', pointerlockchange);
 
         this.destroy = () => {
             destroy?.();
