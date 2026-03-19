@@ -36,6 +36,9 @@ const engineGsplatColorAdjustWhitePointParam = 'cameraFramesWhitePoint';
 const engineGsplatColorAdjustTransparencyParam = 'cameraFramesTransparency';
 const engineGsplatStateTextureParam = 'cameraFramesStateTexture';
 const engineGsplatStateInfoParam = 'cameraFramesStateInfo';
+const engineGsplatTransformTextureParam = 'cameraFramesTransformTexture';
+const engineGsplatTransformPaletteTextureParam = 'cameraFramesTransformPaletteTexture';
+const engineGsplatUseTransformPaletteParam = 'cameraFramesUseTransformPalette';
 const engineGsplatSelectedColorParam = 'cameraFramesSelectedColor';
 const engineGsplatLockedColorParam = 'cameraFramesLockedColor';
 
@@ -111,7 +114,7 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
 `
 } as const;
 
-const unifiedEngineGsplatVisualStateModifier = {
+const unifiedEngineGsplatVisualModifier = {
     glsl: /* glsl */`
 uniform vec3 cameraFramesTint;
 uniform float cameraFramesTemperature;
@@ -121,6 +124,9 @@ uniform float cameraFramesBlackPoint;
 uniform float cameraFramesWhitePoint;
 uniform float cameraFramesTransparency;
 uniform sampler2D cameraFramesStateTexture;
+uniform highp usampler2D cameraFramesTransformTexture;
+uniform sampler2D cameraFramesTransformPaletteTexture;
+uniform float cameraFramesUseTransformPalette;
 uniform uvec2 cameraFramesStateInfo;
 uniform vec4 cameraFramesSelectedColor;
 uniform vec4 cameraFramesLockedColor;
@@ -130,19 +136,159 @@ vec3 cameraFramesApplySaturation(vec3 color, float saturation) {
     return vec3(grey) + (color - vec3(grey)) * saturation;
 }
 
-uint cameraFramesReadState() {
-    uint stateWidth = max(cameraFramesStateInfo.x, 1u);
-    uint stateIndex = cameraFramesStateInfo.y + splat.index;
-    ivec2 stateUv = ivec2(int(stateIndex % stateWidth), int(stateIndex / stateWidth));
-    return uint(texelFetch(cameraFramesStateTexture, stateUv, 0).r * 255.0 + 0.5) & 15u;
+uint cameraFramesGlobalWidth() {
+    return max(cameraFramesStateInfo.x, 1u);
 }
 
-void modifySplatCenter(inout vec3 center) {}
+uint cameraFramesGlobalIndex() {
+    return cameraFramesStateInfo.y + splat.index;
+}
+
+ivec2 cameraFramesGlobalUv() {
+    uint width = cameraFramesGlobalWidth();
+    uint index = cameraFramesGlobalIndex();
+    return ivec2(int(index % width), int(index / width));
+}
+
+uint cameraFramesReadState() {
+    return uint(texelFetch(cameraFramesStateTexture, cameraFramesGlobalUv(), 0).r * 255.0 + 0.5) & 15u;
+}
+
+uint cameraFramesReadTransformIndex() {
+    return texelFetch(cameraFramesTransformTexture, cameraFramesGlobalUv(), 0).r;
+}
+
+mat4 cameraFramesReadWorldTransform() {
+    uint transformIndex = cameraFramesReadTransformIndex();
+    if (transformIndex == 0u) {
+        return matrix_model;
+    }
+
+    int u = int(transformIndex % 512u) * 3;
+    int v = int(transformIndex / 512u);
+
+    mat4 t;
+    t[0] = texelFetch(cameraFramesTransformPaletteTexture, ivec2(u, v), 0);
+    t[1] = texelFetch(cameraFramesTransformPaletteTexture, ivec2(u + 1, v), 0);
+    t[2] = texelFetch(cameraFramesTransformPaletteTexture, ivec2(u + 2, v), 0);
+    t[3] = vec4(0.0, 0.0, 0.0, 1.0);
+    return transpose(t);
+}
+
+mat3 cameraFramesQuatToMat3(vec4 q) {
+    vec4 q2 = q + q;
+    float xx = q.x * q2.x;
+    float yy = q.y * q2.y;
+    float zz = q.z * q2.z;
+    float xy = q.x * q2.y;
+    float xz = q.x * q2.z;
+    float yz = q.y * q2.z;
+    float wx = q.w * q2.x;
+    float wy = q.w * q2.y;
+    float wz = q.w * q2.z;
+
+    return mat3(
+        1.0 - (yy + zz), xy + wz, xz - wy,
+        xy - wz, 1.0 - (xx + zz), yz + wx,
+        xz + wy, yz - wx, 1.0 - (xx + yy)
+    );
+}
+
+vec4 cameraFramesMat3ToQuat(mat3 m) {
+    float trace = m[0][0] + m[1][1] + m[2][2];
+    vec4 q;
+
+    if (trace > 0.0) {
+        float s = sqrt(trace + 1.0) * 2.0;
+        q = vec4(
+            (m[1][2] - m[2][1]) / s,
+            (m[2][0] - m[0][2]) / s,
+            (m[0][1] - m[1][0]) / s,
+            0.25 * s
+        );
+    } else if (m[0][0] > m[1][1] && m[0][0] > m[2][2]) {
+        float s = sqrt(1.0 + m[0][0] - m[1][1] - m[2][2]) * 2.0;
+        q = vec4(
+            0.25 * s,
+            (m[0][1] + m[1][0]) / s,
+            (m[2][0] + m[0][2]) / s,
+            (m[1][2] - m[2][1]) / s
+        );
+    } else if (m[1][1] > m[2][2]) {
+        float s = sqrt(1.0 + m[1][1] - m[0][0] - m[2][2]) * 2.0;
+        q = vec4(
+            (m[0][1] + m[1][0]) / s,
+            0.25 * s,
+            (m[1][2] + m[2][1]) / s,
+            (m[2][0] - m[0][2]) / s
+        );
+    } else {
+        float s = sqrt(1.0 + m[2][2] - m[0][0] - m[1][1]) * 2.0;
+        q = vec4(
+            (m[2][0] + m[0][2]) / s,
+            (m[1][2] + m[2][1]) / s,
+            0.25 * s,
+            (m[0][1] - m[1][0]) / s
+        );
+    }
+
+    if (q.w < 0.0) {
+        q = -q;
+    }
+    return normalize(q);
+}
+
+vec3 cameraFramesSafeNormalize(vec3 value, vec3 fallback) {
+    float valueLength = length(value);
+    return valueLength > 1e-6 ? value / valueLength : fallback;
+}
+
+vec3 cameraFramesFallbackOrtho(vec3 axis) {
+    vec3 referenceAxis = abs(axis.x) < 0.9 ? vec3(1.0, 0.0, 0.0) : vec3(0.0, 1.0, 0.0);
+    return cameraFramesSafeNormalize(cross(referenceAxis, axis), vec3(0.0, 0.0, 1.0));
+}
+
+void modifySplatCenter(inout vec3 center) {
+    if (cameraFramesUseTransformPalette > 0.5) {
+        center = (cameraFramesReadWorldTransform() * vec4(getCenter(), 1.0)).xyz;
+    }
+}
 
 void modifySplatRotationScale(vec3 originalCenter, vec3 modifiedCenter, inout vec4 rotation, inout vec3 scale) {
-    if ((cameraFramesReadState() & 12u) != 0u) {
+    uint state = cameraFramesReadState();
+    if ((state & 12u) != 0u) {
         scale = vec3(0.0);
+        return;
     }
+
+    if (cameraFramesUseTransformPalette <= 0.5) {
+        return;
+    }
+
+    mat3 linear = mat3(cameraFramesReadWorldTransform());
+    vec4 sourceRotation = getRotation().yzwx;
+    vec3 sourceScale = getScale();
+    mat3 sourceBasis = cameraFramesQuatToMat3(sourceRotation);
+
+    vec3 axis0 = linear * (sourceBasis[0] * sourceScale.x);
+    vec3 axis1 = linear * (sourceBasis[1] * sourceScale.y);
+    vec3 axis2 = linear * (sourceBasis[2] * sourceScale.z);
+
+    vec3 basis0 = cameraFramesSafeNormalize(axis0, vec3(1.0, 0.0, 0.0));
+    vec3 axis1Ortho = axis1 - basis0 * dot(basis0, axis1);
+    vec3 basis1 = cameraFramesSafeNormalize(axis1Ortho, cameraFramesFallbackOrtho(basis0));
+    vec3 basis2 = normalize(cross(basis0, basis1));
+    if (dot(basis2, axis2) < 0.0) {
+        basis2 = -basis2;
+    }
+
+    scale = vec3(length(axis0), length(axis1Ortho), abs(dot(axis2, basis2)));
+    if (scale.x <= 1e-6 || scale.y <= 1e-6 || scale.z <= 1e-6) {
+        scale = vec3(0.0);
+        return;
+    }
+
+    rotation = cameraFramesMat3ToQuat(mat3(basis0, basis1, basis2));
 }
 
 void modifySplatColor(vec3 center, inout vec4 color) {
@@ -179,6 +325,9 @@ uniform cameraFramesBlackPoint: f32;
 uniform cameraFramesWhitePoint: f32;
 uniform cameraFramesTransparency: f32;
 var cameraFramesStateTexture: texture_2d<f32>;
+var cameraFramesTransformTexture: texture_2d<u32>;
+var cameraFramesTransformPaletteTexture: texture_2d<f32>;
+uniform cameraFramesUseTransformPalette: f32;
 uniform cameraFramesStateInfo: vec2u;
 uniform cameraFramesSelectedColor: vec4f;
 uniform cameraFramesLockedColor: vec4f;
@@ -188,19 +337,167 @@ fn cameraFramesApplySaturation(color: vec3f, saturation: f32) -> vec3f {
     return vec3f(grey) + (color - vec3f(grey)) * saturation;
 }
 
-fn cameraFramesReadState() -> u32 {
-    let stateWidth = max(uniform.cameraFramesStateInfo.x, 1u);
-    let stateIndex = uniform.cameraFramesStateInfo.y + splat.index;
-    let stateUv = vec2i(i32(stateIndex % stateWidth), i32(stateIndex / stateWidth));
-    return u32(textureLoad(cameraFramesStateTexture, stateUv, 0).r * 255.0 + 0.5) & 15u;
+fn cameraFramesGlobalWidth() -> u32 {
+    return max(uniform.cameraFramesStateInfo.x, 1u);
 }
 
-fn modifySplatCenter(center: ptr<function, vec3f>) {}
+fn cameraFramesGlobalIndex() -> u32 {
+    return uniform.cameraFramesStateInfo.y + splat.index;
+}
+
+fn cameraFramesGlobalUv() -> vec2i {
+    let width = cameraFramesGlobalWidth();
+    let index = cameraFramesGlobalIndex();
+    return vec2i(i32(index % width), i32(index / width));
+}
+
+fn cameraFramesReadState() -> u32 {
+    return u32(textureLoad(cameraFramesStateTexture, cameraFramesGlobalUv(), 0).r * 255.0 + 0.5) & 15u;
+}
+
+fn cameraFramesReadTransformIndex() -> u32 {
+    return textureLoad(cameraFramesTransformTexture, cameraFramesGlobalUv(), 0).r;
+}
+
+fn cameraFramesReadWorldTransform() -> mat4x4f {
+    let transformIndex = cameraFramesReadTransformIndex();
+    if (transformIndex == 0u) {
+        return uniform.matrix_model;
+    }
+
+    let u = i32(transformIndex % 512u) * 3;
+    let v = i32(transformIndex / 512u);
+
+    var t: mat4x4f;
+    t[0] = textureLoad(cameraFramesTransformPaletteTexture, vec2i(u, v), 0);
+    t[1] = textureLoad(cameraFramesTransformPaletteTexture, vec2i(u + 1, v), 0);
+    t[2] = textureLoad(cameraFramesTransformPaletteTexture, vec2i(u + 2, v), 0);
+    t[3] = vec4f(0.0, 0.0, 0.0, 1.0);
+    return transpose(t);
+}
+
+fn cameraFramesQuatToMat3(q: vec4f) -> mat3x3f {
+    let q2 = q + q;
+    let xx = q.x * q2.x;
+    let yy = q.y * q2.y;
+    let zz = q.z * q2.z;
+    let xy = q.x * q2.y;
+    let xz = q.x * q2.z;
+    let yz = q.y * q2.z;
+    let wx = q.w * q2.x;
+    let wy = q.w * q2.y;
+    let wz = q.w * q2.z;
+
+    return mat3x3f(
+        vec3f(1.0 - (yy + zz), xy - wz, xz + wy),
+        vec3f(xy + wz, 1.0 - (xx + zz), yz - wx),
+        vec3f(xz - wy, yz + wx, 1.0 - (xx + yy))
+    );
+}
+
+fn cameraFramesMat3ToQuat(m: mat3x3f) -> vec4f {
+    let trace = m[0][0] + m[1][1] + m[2][2];
+    var q: vec4f;
+
+    if (trace > 0.0) {
+        let s = sqrt(trace + 1.0) * 2.0;
+        q = vec4f(
+            (m[1][2] - m[2][1]) / s,
+            (m[2][0] - m[0][2]) / s,
+            (m[0][1] - m[1][0]) / s,
+            0.25 * s
+        );
+    } else if (m[0][0] > m[1][1] && m[0][0] > m[2][2]) {
+        let s = sqrt(1.0 + m[0][0] - m[1][1] - m[2][2]) * 2.0;
+        q = vec4f(
+            0.25 * s,
+            (m[0][1] + m[1][0]) / s,
+            (m[2][0] + m[0][2]) / s,
+            (m[1][2] - m[2][1]) / s
+        );
+    } else if (m[1][1] > m[2][2]) {
+        let s = sqrt(1.0 + m[1][1] - m[0][0] - m[2][2]) * 2.0;
+        q = vec4f(
+            (m[0][1] + m[1][0]) / s,
+            0.25 * s,
+            (m[1][2] + m[2][1]) / s,
+            (m[2][0] - m[0][2]) / s
+        );
+    } else {
+        let s = sqrt(1.0 + m[2][2] - m[0][0] - m[1][1]) * 2.0;
+        q = vec4f(
+            (m[2][0] + m[0][2]) / s,
+            (m[1][2] + m[2][1]) / s,
+            0.25 * s,
+            (m[0][1] - m[1][0]) / s
+        );
+    }
+
+    if (q.w < 0.0) {
+        q = -q;
+    }
+    return normalize(q);
+}
+
+fn cameraFramesSafeNormalize(value: vec3f, fallback: vec3f) -> vec3f {
+    let valueLength = length(value);
+    if (valueLength > 1e-6) {
+        return value / valueLength;
+    }
+    return fallback;
+}
+
+fn cameraFramesFallbackOrtho(axis: vec3f) -> vec3f {
+    let referenceAxis = if abs(axis.x) < 0.9 {
+        vec3f(1.0, 0.0, 0.0)
+    } else {
+        vec3f(0.0, 1.0, 0.0)
+    };
+    return cameraFramesSafeNormalize(cross(referenceAxis, axis), vec3f(0.0, 0.0, 1.0));
+}
+
+fn modifySplatCenter(center: ptr<function, vec3f>) {
+    if (uniform.cameraFramesUseTransformPalette > 0.5) {
+        *center = (cameraFramesReadWorldTransform() * vec4f(getCenter(), 1.0)).xyz;
+    }
+}
 
 fn modifySplatRotationScale(originalCenter: vec3f, modifiedCenter: vec3f, rotation: ptr<function, vec4f>, scale: ptr<function, vec3f>) {
-    if ((cameraFramesReadState() & 12u) != 0u) {
+    let state = cameraFramesReadState();
+    if ((state & 12u) != 0u) {
         *scale = vec3f(0.0);
+        return;
     }
+
+    if (uniform.cameraFramesUseTransformPalette <= 0.5) {
+        return;
+    }
+
+    let worldTransform = cameraFramesReadWorldTransform();
+    let linear = mat3x3f(worldTransform[0].xyz, worldTransform[1].xyz, worldTransform[2].xyz);
+    let sourceRotation = getRotation().yzwx;
+    let sourceScale = getScale();
+    let sourceBasis = cameraFramesQuatToMat3(sourceRotation);
+
+    let axis0 = linear * (sourceBasis[0] * sourceScale.x);
+    let axis1 = linear * (sourceBasis[1] * sourceScale.y);
+    let axis2 = linear * (sourceBasis[2] * sourceScale.z);
+
+    let basis0 = cameraFramesSafeNormalize(axis0, vec3f(1.0, 0.0, 0.0));
+    let axis1Ortho = axis1 - basis0 * dot(basis0, axis1);
+    let basis1 = cameraFramesSafeNormalize(axis1Ortho, cameraFramesFallbackOrtho(basis0));
+    var basis2 = normalize(cross(basis0, basis1));
+    if (dot(basis2, axis2) < 0.0) {
+        basis2 = -basis2;
+    }
+
+    *scale = vec3f(length(axis0), length(axis1Ortho), abs(dot(axis2, basis2)));
+    if ((*scale).x <= 1e-6 || (*scale).y <= 1e-6 || (*scale).z <= 1e-6) {
+        *scale = vec3f(0.0);
+        return;
+    }
+
+    *rotation = cameraFramesMat3ToQuat(mat3x3f(basis0, basis1, basis2));
 }
 
 fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
@@ -274,6 +571,8 @@ class Splat extends Element {
     _engineGsplatVisualSignature = '';
     _engineGsplatVisualSyncComponent: GSplatComponent | null = null;
     _engineGsplatVisualStateTexture: Texture | null = null;
+    _engineGsplatVisualTransformTexture: Texture | null = null;
+    _engineGsplatVisualTransformPaletteTexture: Texture | null = null;
 
     _localCenters: Float32Array | null = null;
 
@@ -557,20 +856,39 @@ class Splat extends Element {
             (this.numHidden > 0 && !wholeSplatHidden);
     }
 
-    private resolveUnifiedEnginePerSplatStateBinding() {
+    private hasLocalTransformPalette() {
+        const indices = this.splatData.getProp('transform') as Uint16Array | undefined;
+        if (!indices) {
+            return false;
+        }
+
+        for (let i = 0; i < indices.length; i++) {
+            if (indices[i] !== 0) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private resolveUnifiedEngineVisualBinding() {
         if (this.scene?.splatRenderCapabilities.resolvedMode !== 'unified-display') {
             return null;
         }
 
         const overlayBinding = this.scene.splatRenderOverlay.getOverlayBinding(this);
         const stateTexture = overlayBinding?.stateTexture;
+        const transformTexture = overlayBinding?.transformTexture;
+        const transformPaletteTexture = overlayBinding?.transformPaletteTexture;
         const width = overlayBinding?.globalParams[0] ?? 0;
-        if (!stateTexture || width <= 0) {
+        if (!stateTexture || !transformTexture || !transformPaletteTexture || width <= 0) {
             return null;
         }
 
         return {
             stateTexture,
+            transformTexture,
+            transformPaletteTexture,
             width,
             offset: overlayBinding.offset,
             selectedClr: this.scene.events.invoke('selectedClr') as Color,
@@ -579,8 +897,9 @@ class Splat extends Element {
     }
 
     private getEngineGsplatVisualSignature(
-        mode: 'inactive' | 'color' | 'state',
-        perSplatStateBinding: ReturnType<Splat['resolveUnifiedEnginePerSplatStateBinding']>
+        mode: 'inactive' | 'color' | 'visual',
+        visualBinding: ReturnType<Splat['resolveUnifiedEngineVisualBinding']>,
+        hasLocalTransformPalette: boolean
     ) {
         return [
             mode,
@@ -593,16 +912,17 @@ class Splat extends Element {
             roundEngineGsplatVisualValue(this.blackPoint),
             roundEngineGsplatVisualValue(this.whitePoint),
             roundEngineGsplatVisualValue(this.transparency),
-            `${perSplatStateBinding?.width ?? 0}`,
-            `${perSplatStateBinding?.offset ?? 0}`,
-            roundEngineGsplatVisualValue(perSplatStateBinding?.selectedClr?.r),
-            roundEngineGsplatVisualValue(perSplatStateBinding?.selectedClr?.g),
-            roundEngineGsplatVisualValue(perSplatStateBinding?.selectedClr?.b),
-            roundEngineGsplatVisualValue(perSplatStateBinding?.selectedClr?.a),
-            roundEngineGsplatVisualValue(perSplatStateBinding?.lockedClr?.r),
-            roundEngineGsplatVisualValue(perSplatStateBinding?.lockedClr?.g),
-            roundEngineGsplatVisualValue(perSplatStateBinding?.lockedClr?.b),
-            roundEngineGsplatVisualValue(perSplatStateBinding?.lockedClr?.a)
+            hasLocalTransformPalette ? '1' : '0',
+            `${visualBinding?.width ?? 0}`,
+            `${visualBinding?.offset ?? 0}`,
+            roundEngineGsplatVisualValue(visualBinding?.selectedClr?.r),
+            roundEngineGsplatVisualValue(visualBinding?.selectedClr?.g),
+            roundEngineGsplatVisualValue(visualBinding?.selectedClr?.b),
+            roundEngineGsplatVisualValue(visualBinding?.selectedClr?.a),
+            roundEngineGsplatVisualValue(visualBinding?.lockedClr?.r),
+            roundEngineGsplatVisualValue(visualBinding?.lockedClr?.g),
+            roundEngineGsplatVisualValue(visualBinding?.lockedClr?.b),
+            roundEngineGsplatVisualValue(visualBinding?.lockedClr?.a)
         ].join('|');
     }
 
@@ -627,6 +947,9 @@ class Splat extends Element {
         component.deleteParameter(engineGsplatColorAdjustTransparencyParam);
         component.deleteParameter(engineGsplatStateTextureParam);
         component.deleteParameter(engineGsplatStateInfoParam);
+        component.deleteParameter(engineGsplatTransformTextureParam);
+        component.deleteParameter(engineGsplatTransformPaletteTextureParam);
+        component.deleteParameter(engineGsplatUseTransformPaletteParam);
         component.deleteParameter(engineGsplatSelectedColorParam);
         component.deleteParameter(engineGsplatLockedColorParam);
     }
@@ -637,42 +960,53 @@ class Splat extends Element {
             component.unified === true;
         const hasWholeSplatColorAdjustments = this.hasWholeSplatColorAdjustments();
         const hasPerSplatStateVisuals = this.hasPerSplatStateVisuals();
-        const perSplatStateBinding = hasPerSplatStateVisuals ? this.resolveUnifiedEnginePerSplatStateBinding() : null;
-        const mode: 'inactive' | 'color' | 'state' =
+        const hasLocalTransformPalette = this.hasLocalTransformPalette();
+        const visualBinding = (hasPerSplatStateVisuals || hasLocalTransformPalette) ? this.resolveUnifiedEngineVisualBinding() : null;
+        const mode: 'inactive' | 'color' | 'visual' =
             usingUnifiedDisplay ?
-                (perSplatStateBinding ? 'state' : (hasWholeSplatColorAdjustments ? 'color' : 'inactive')) :
+                (visualBinding ? 'visual' : (hasWholeSplatColorAdjustments ? 'color' : 'inactive')) :
                 'inactive';
-        const signature = this.getEngineGsplatVisualSignature(mode, perSplatStateBinding);
-        const stateTexture = perSplatStateBinding?.stateTexture ?? null;
+        const signature = this.getEngineGsplatVisualSignature(mode, visualBinding, hasLocalTransformPalette);
+        const stateTexture = visualBinding?.stateTexture ?? null;
+        const transformTexture = visualBinding?.transformTexture ?? null;
+        const transformPaletteTexture = visualBinding?.transformPaletteTexture ?? null;
 
         if (this._engineGsplatVisualSyncComponent === component &&
             this._engineGsplatVisualSignature === signature &&
-            this._engineGsplatVisualStateTexture === stateTexture) {
+            this._engineGsplatVisualStateTexture === stateTexture &&
+            this._engineGsplatVisualTransformTexture === transformTexture &&
+            this._engineGsplatVisualTransformPaletteTexture === transformPaletteTexture) {
             return;
         }
 
-        if (mode === 'state' && perSplatStateBinding) {
-            component.setWorkBufferModifier(unifiedEngineGsplatVisualStateModifier);
+        if (mode === 'visual' && visualBinding) {
+            component.setWorkBufferModifier(unifiedEngineGsplatVisualModifier);
             this.applyEngineGsplatColorAdjustments(component);
-            component.setParameter(engineGsplatStateTextureParam, perSplatStateBinding.stateTexture);
-            component.setParameter(engineGsplatStateInfoParam, [perSplatStateBinding.width, perSplatStateBinding.offset]);
+            component.setParameter(engineGsplatStateTextureParam, visualBinding.stateTexture);
+            component.setParameter(engineGsplatStateInfoParam, [visualBinding.width, visualBinding.offset]);
+            component.setParameter(engineGsplatTransformTextureParam, visualBinding.transformTexture);
+            component.setParameter(engineGsplatTransformPaletteTextureParam, visualBinding.transformPaletteTexture);
+            component.setParameter(engineGsplatUseTransformPaletteParam, hasLocalTransformPalette ? 1 : 0);
             component.setParameter(engineGsplatSelectedColorParam, [
-                perSplatStateBinding.selectedClr.r,
-                perSplatStateBinding.selectedClr.g,
-                perSplatStateBinding.selectedClr.b,
-                perSplatStateBinding.selectedClr.a
+                visualBinding.selectedClr.r,
+                visualBinding.selectedClr.g,
+                visualBinding.selectedClr.b,
+                visualBinding.selectedClr.a
             ]);
             component.setParameter(engineGsplatLockedColorParam, [
-                perSplatStateBinding.lockedClr.r,
-                perSplatStateBinding.lockedClr.g,
-                perSplatStateBinding.lockedClr.b,
-                perSplatStateBinding.lockedClr.a
+                visualBinding.lockedClr.r,
+                visualBinding.lockedClr.g,
+                visualBinding.lockedClr.b,
+                visualBinding.lockedClr.a
             ]);
         } else if (mode === 'color') {
             component.setWorkBufferModifier(unifiedEngineGsplatColorAdjustModifier);
             this.applyEngineGsplatColorAdjustments(component);
             component.deleteParameter(engineGsplatStateTextureParam);
             component.deleteParameter(engineGsplatStateInfoParam);
+            component.deleteParameter(engineGsplatTransformTextureParam);
+            component.deleteParameter(engineGsplatTransformPaletteTextureParam);
+            component.deleteParameter(engineGsplatUseTransformPaletteParam);
             component.deleteParameter(engineGsplatSelectedColorParam);
             component.deleteParameter(engineGsplatLockedColorParam);
         } else {
@@ -682,10 +1016,14 @@ class Splat extends Element {
         this._engineGsplatVisualSyncComponent = component;
         this._engineGsplatVisualSignature = signature;
         this._engineGsplatVisualStateTexture = stateTexture;
+        this._engineGsplatVisualTransformTexture = transformTexture;
+        this._engineGsplatVisualTransformPaletteTexture = transformPaletteTexture;
     }
 
     getDirectEngineCompatibilityIssue() {
-        if (this.hasPerSplatStateVisuals() && !this.resolveUnifiedEnginePerSplatStateBinding()) {
+        const visualBinding = this.resolveUnifiedEngineVisualBinding();
+
+        if (this.hasPerSplatStateVisuals() && !visualBinding) {
             return 'per-splat state';
         }
 
@@ -693,13 +1031,8 @@ class Splat extends Element {
             return 'selection visuals';
         }
 
-        const indices = this.splatData.getProp('transform') as Uint16Array | undefined;
-        if (indices) {
-            for (let i = 0; i < indices.length; i++) {
-                if (indices[i] !== 0) {
-                    return 'local transform palette';
-                }
-            }
+        if (this.hasLocalTransformPalette() && !visualBinding) {
+            return 'local transform palette';
         }
 
         return null;

@@ -464,6 +464,7 @@ const createUnifiedDisplayBackends = (scene: Scene): SplatRenderRoleBackends => 
 
         if (shouldUseEngineDirect && !engineDirectActive && pendingDirectRestoreFrames > 0) {
             pendingDirectRestoreFrames--;
+            scene.forceRender = true;
             return;
         }
 
