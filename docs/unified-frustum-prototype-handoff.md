@@ -1,6 +1,6 @@
 # Unified Frustum Prototype Handoff
 
-最終更新: 2026-03-19
+最終更新: 2026-03-20
 
 ## 目的
 
@@ -15,10 +15,18 @@
 - experiment branch:
   - `codex/unified-frustum-prototype`
 - 現在の最新 commit:
-  - `42e01ae fix(selection): keep box and sphere selection in world space`
+  - `b79fa67 fix(selection): occlude selection volumes against unified display depth`
 
 直近の重要 commit:
 
+- `b79fa67 fix(selection): occlude selection volumes against unified display depth`
+  - `box / sphere` 選択枠を `selection pass` に分離しつつ、direct mode では `worldLayer` depth を参照して 3DGS / GLB と前後判定するようにした
+  - `merged fallback` 中は従来どおり `worldLayer` 描画へ戻すため、safe path を壊さない
+- `124e259 fix(render): keep unified display active during splat transforms`
+  - partial splat transform 中も `selectionAlpha` を unified-display 側へ載せて merged fallback を減らした
+  - `Move / Rotate / Scale` の drag 中も perspective では direct mode を維持できるようにした
+- `247e5ba fix(render): restore unified display after partial splat transforms`
+  - partial transform 確定後、追加入力なしでも direct mode に戻るよう restore 待機フレーム中の force render を補った
 - `42e01ae fix(selection): keep box and sphere selection in world space`
   - `box / sphere` 選択は screen-space clip 判定に依存させず、world-space volume として処理するよう修正
   - `CAMERA_FRAMES` の custom frustum 下でも、選択結果自体は camera angle に引きずられにくくなった
@@ -113,9 +121,11 @@
   - `deleted`
   - partial `hidden`
   も unified-display 側で吸収するようにした
-- ただし次はまだ merged fallback を維持している
-  - `selectionAlpha != 1`
-  - local transform palette
+- `selectionAlpha`
+- local transform palette
+  も unified-display 側へ載せた
+- perspective 中は partial splat transform の drag でも direct mode を維持できる
+- 現在の perspective fallback は主に camera mode / window state 側
 
 ### 6. `box / sphere` 選択の結果ズレは修正済み
 
@@ -123,15 +133,19 @@
 - 原因の一部は、world-space の `box / sphere` 選択でも screen-space clip 判定を通していたこと
 - `42e01ae` で選択結果そのもののズレは抑えられた
 
-### 7. 未解決の残件: `box / sphere` 選択枠の表示と 3DGS 遮蔽
+### 7. `box / sphere` 選択枠の表示と 3DGS 遮蔽も修正済み
 
-- 残っているのは選択結果ではなく display 側の問題
-- `CAMERA_FRAMES` ON で camera angle によって
+- `42e01ae` で選択結果の world-space 化は完了していた
+- 残っていたのは display 側で、`CAMERA_FRAMES` ON の custom frustum 下で
   - 箱/球の枠線表示
-  - 枠線と 3DGS の相互遮蔽
-  が不自然に見える
-- box / sphere の debug shape は `worldLayer`、3DGS は `splatLayer` なので、厳密な depth 一致にはなっていない
-- これは現時点では baseline blocker ではないが、custom frustum 対応の残件として記録しておく
+  - 枠線と 3DGS / GLB の前後関係
+  が角度によって不自然に見えることだった
+- `b79fa67` で
+  - selection volume 専用 layer / pass を追加
+  - direct mode 中は `worldLayer` の depth texture を picker で 1 frame ごとに取得
+  - `box / sphere` shader でその depth を参照して occlusion 判定
+  するようにして改善した
+- 実機確認では、選択結果のズレも、枠線と 3DGS 遮蔽の不自然さも解消できている
 
 ## 再開時に見るべきファイル
 
@@ -149,16 +163,6 @@
 - `requestAnimationFrame handler took ...ms`
 - service worker の `installing / waiting / activating`
 
-## 既知の残件
-
-- `box / sphere` 選択枠の表示と 3DGS 遮蔽
-  - 選択結果のズレは `42e01ae` で修正済み
-  - ただし枠線表示そのものは、`CAMERA_FRAMES` custom frustum 下で角度により occlusion が不自然になる
-  - 調査対象は
-    - debug shape shader の ray / depth 再構成
-    - `worldLayer` と `splatLayer` の見え方差
-    - targetSize / custom frustum 同期
-
 ## いまの判断
 
 現時点では、prototype は次の停止線まで来ている。
@@ -175,14 +179,14 @@
 
 優先順は次。
 
-1. local transform palette を direct mode で扱えるか検証
-   - 現在の perspective fallback 主因
-   - 選択 splat の移動 / 回転 / 拡大縮小中も unified-display を維持できるか見る
-2. `box / sphere` 選択枠の表示バグ
-   - 選択結果は直ったので、残るのは display/occlusion のみ
-   - custom frustum と debug shape 表示の整合を切り分ける
-3. unified culling の再評価
+1. `camera-frames` への staged merge 準備
+   - current prototype の safe boundary を保ったまま stable へ戻せる単位に分ける
+   - baseline と manual test 観点を merge 前提で整理する
+2. unified culling の再評価
    - baseline を壊さない条件でだけ再開する
+3. orthographic を unified で成立させる価値の再評価
+   - 今の安全境界は `orthographic camera -> merged fallback`
+   - 実運用上この境界で十分かを先に判断する
 4. Engine patch の必要性再評価
    - custom frustum や ortho を unified 側で持つ価値があるかを判断する
 
