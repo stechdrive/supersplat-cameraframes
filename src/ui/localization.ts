@@ -44,5 +44,5 @@ const formatInteger = (value: number): string => {
     }).format(Math.round(value));
 };
 
-export { localizeInit, localize, formatInteger };
+export { localizeInit, localize, getLocale, formatInteger };
 export type { LocalizeOptions };

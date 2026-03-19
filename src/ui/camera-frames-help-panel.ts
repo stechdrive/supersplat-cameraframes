@@ -1,16 +1,21 @@
 import { Container, Element, Label } from '@playcanvas/pcui';
 
 import { Events } from '../events';
-import { localize } from './localization';
+import { getLocale, localize } from './localization';
 import closeSvg from './svg/close.svg';
 import helpSvg from './svg/help.svg';
 import openSvg from './svg/open.svg';
 
-const HELP_MANUAL_PATH = 'help/camera_frames_manual.html';
+const HELP_MANUAL_PATH_JA = 'help/camera_frames_manual.html';
+const HELP_MANUAL_PATH_EN = 'help/camera_frames_manual_en.html';
 const HELP_DOCK_GAP_PX = 18;
 const HELP_DOCK_RIGHT_PX = 102;
 const HELP_DOCK_VERTICAL_MARGIN_PX = 24;
 const HELP_DOCK_SNAP_PX = 24;
+
+const getHelpManualPath = () => {
+    return getLocale().toLowerCase().startsWith('ja') ? HELP_MANUAL_PATH_JA : HELP_MANUAL_PATH_EN;
+};
 
 const createSvg = (svgString: string) => {
     let markup = svgString;
@@ -74,10 +79,11 @@ class CameraFramesHelpPanel extends Container {
         iframe.title = localize('panel.camera-frames.help.iframe-title');
 
         const ensureManualLoaded = () => {
-            if (manualLoaded) {
+            const nextPath = getHelpManualPath();
+            if (manualLoaded && iframe.src.endsWith(nextPath)) {
                 return;
             }
-            iframe.src = HELP_MANUAL_PATH;
+            iframe.src = nextPath;
             manualLoaded = true;
         };
 
@@ -184,7 +190,7 @@ class CameraFramesHelpPanel extends Container {
         ['pointerdown', 'pointerup', 'click'].forEach((evt) => {
             openButton.dom.addEventListener(evt, (e: Event) => e.stopPropagation());
         });
-        openButton.on('click', () => window.open(HELP_MANUAL_PATH, '_blank')?.focus());
+        openButton.on('click', () => window.open(getHelpManualPath(), '_blank')?.focus());
 
         const closeButton = new Container({ class: ['panel-header-button', 'camera-frames-help-close'] });
         closeButton.dom.appendChild(createSvg(closeSvg));
@@ -264,4 +270,4 @@ class CameraFramesHelpPanel extends Container {
     }
 }
 
-export { CameraFramesHelpPanel, HELP_MANUAL_PATH };
+export { CameraFramesHelpPanel, getHelpManualPath };

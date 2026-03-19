@@ -18,6 +18,7 @@ const versionedAssets = [
 const staticAssets = [
     './index.js.map',
     './help/camera_frames_manual.html',
+    './help/camera_frames_manual_en.html',
     './static/icons/logo-192.png',
     './static/icons/logo-512.png',
     './static/images/header.webp',

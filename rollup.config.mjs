@@ -91,6 +91,7 @@ const application = {
                 },
                 { src: 'src/manifest.json' },
                 { src: 'docs/camera_frames_manual.html', dest: 'help' },
+                { src: 'docs/camera_frames_manual_en.html', dest: 'help' },
                 { src: 'static/images', dest: 'static' },
                 { src: 'static/icons', dest: 'static' },
                 { src: 'static/lib', dest: 'static' },
