@@ -433,6 +433,99 @@ const registerDocEvents = (scene: Scene, events: Events) => {
     };
 
     const getResetConfirmation = async () => {
+        if (stateDirty || packageDirty) {
+            if (!currentProjectId) {
+                const result = await events.invoke('showPopup', {
+                    type: 'info',
+                    header: localize('doc.reset'),
+                    message: localize('doc.transition.unsaved-no-project-message'),
+                    buttons: [
+                        {
+                            label: localize('doc.transition.save-package'),
+                            action: 'save-package'
+                        },
+                        {
+                            label: localize('doc.transition.discard'),
+                            action: 'discard'
+                        },
+                        {
+                            label: localize('popup.cancel'),
+                            action: 'cancel'
+                        }
+                    ]
+                });
+
+                switch (result.action) {
+                    case 'save-package':
+                        return await events.invoke('doc.savePackage');
+                    case 'discard':
+                        return true;
+                    default:
+                        return false;
+                }
+            }
+
+            if (stateDirty) {
+                const result = await events.invoke('showPopup', {
+                    type: 'info',
+                    header: localize('doc.reset'),
+                    message: localize('doc.transition.unsaved-message'),
+                    buttons: [
+                        {
+                            label: localize('doc.transition.save-package'),
+                            action: 'save-package'
+                        },
+                        {
+                            label: localize('doc.transition.save-state'),
+                            action: 'save-state'
+                        },
+                        {
+                            label: localize('popup.cancel'),
+                            action: 'cancel'
+                        }
+                    ]
+                });
+
+                switch (result.action) {
+                    case 'save-package':
+                        return await events.invoke('doc.savePackage');
+                    case 'save-state':
+                        return await events.invoke('doc.save');
+                    default:
+                        return false;
+                }
+            }
+
+            const result = await events.invoke('showPopup', {
+                type: 'info',
+                header: localize('doc.reset'),
+                message: localize('doc.transition.package-outdated-message'),
+                buttons: [
+                    {
+                        label: localize('doc.transition.save-package'),
+                        action: 'save-package'
+                    },
+                    {
+                        label: localize('doc.transition.continue-with-working-state'),
+                        action: 'continue-with-working-state'
+                    },
+                    {
+                        label: localize('popup.cancel'),
+                        action: 'cancel'
+                    }
+                ]
+            });
+
+            switch (result.action) {
+                case 'save-package':
+                    return await events.invoke('doc.savePackage');
+                case 'continue-with-working-state':
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
         const messageKey = stateDirty ?
             'doc.unsaved-message' :
             packageDirty ?
@@ -1136,6 +1229,7 @@ const registerDocEvents = (scene: Scene, events: Events) => {
     events.function('doc.stateDirty', () => stateDirty);
     events.function('doc.packageDirty', () => packageDirty);
     events.function('doc.hasUnsavedChanges', () => stateDirty || packageDirty);
+    events.function('doc.hasUnloadWarning', () => stateDirty || (!currentProjectId && packageDirty));
 
     events.on('edit.apply', (op: EditOp) => {
         const dirtySplats = new Set<Splat>();

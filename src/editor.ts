@@ -56,7 +56,7 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
 
     // add unsaved changes warning message.
     window.addEventListener('beforeunload', (e) => {
-        if (!events.invoke('scene.dirty')) {
+        if (!events.invoke('doc.hasUnloadWarning')) {
             return undefined;
         }
 

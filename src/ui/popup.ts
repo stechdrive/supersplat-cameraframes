@@ -8,6 +8,10 @@ interface ShowOptions {
     message: string;
     header?: string;
     link?: string;
+    buttons?: Array<{
+        label: string;
+        action: string;
+    }>;
 }
 
 class Popup extends Container {
@@ -95,6 +99,12 @@ class Popup extends Container {
         let noFn: () => void;
         let containerFn: () => void;
         let copyFn: () => void;
+        let customButtons: Button[] = [];
+
+        const clearCustomButtons = () => {
+            customButtons.forEach(button => button.destroy());
+            customButtons = [];
+        };
 
         okButton.on('click', () => {
             okFn();
@@ -125,20 +135,23 @@ class Popup extends Container {
         });
 
         this.show = (options: ShowOptions) => {
+            clearCustomButtons();
+
             header.text = options.header;
             text.text = options.message;
 
-            const { type, link } = options;
+            const { type, link, buttons: customActions } = options;
+            const hasCustomButtons = Array.isArray(customActions) && customActions.length > 0;
 
             ['error', 'info', 'yesno', 'okcancel'].forEach((t) => {
                 text.class[t === type ? 'add' : 'remove'](t);
             });
 
             // configure based on message type
-            okButton.hidden = type === 'yesno';
-            cancelButton.hidden = type !== 'okcancel';
-            yesButton.hidden = type !== 'yesno';
-            noButton.hidden = type !== 'yesno';
+            okButton.hidden = hasCustomButtons || type === 'yesno';
+            cancelButton.hidden = hasCustomButtons || type !== 'okcancel';
+            yesButton.hidden = hasCustomButtons || type !== 'yesno';
+            noButton.hidden = hasCustomButtons || type !== 'yesno';
             this.hidden = false;
 
             linkRow.hidden = link === undefined;
@@ -151,6 +164,19 @@ class Popup extends Container {
             this.dom.focus();
 
             return new Promise<{action: string, value?: string}>((resolve) => {
+                customActions?.forEach(({ label, action }) => {
+                    const button = new Button({
+                        class: 'popup-button',
+                        text: label
+                    });
+                    button.on('click', () => {
+                        this.hide();
+                        resolve({ action });
+                    });
+                    buttons.append(button);
+                    customButtons.push(button);
+                });
+
                 okFn = () => {
                     this.hide();
                     resolve({
@@ -183,6 +209,7 @@ class Popup extends Container {
 
         this.hide = () => {
             this.hidden = true;
+            clearCustomButtons();
         };
 
         this.destroy = () => {
