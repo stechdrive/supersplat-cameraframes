@@ -6,11 +6,13 @@ const MAX_WORKING_PROJECTS = 16;
 const MAX_WORKING_STATE_BYTES = 512 * 1024 * 1024;
 
 type WorkingAssetKind = 'splat' | 'model';
+type WorkingAssetStorage = 'source' | 'snapshot';
 
 type WorkingAssetRecord = {
     id: string;
     kind: WorkingAssetKind;
     blob: Blob;
+    storage?: WorkingAssetStorage;
 };
 
 type WorkingReferenceImageAssetRecord = {
@@ -334,6 +336,7 @@ const projectSaveStateStore = new ProjectSaveStateStore();
 export { projectSaveStateStore };
 export type {
     WorkingAssetKind,
+    WorkingAssetStorage,
     WorkingAssetRecord,
     WorkingReferenceImageAssetRecord,
     WorkingProjectRecord,

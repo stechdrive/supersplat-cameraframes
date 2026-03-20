@@ -137,7 +137,7 @@ class EntityTransformHandler implements TransformHandler {
         }
 
         if (changed && this.target instanceof Splat) {
-            this.target.updatePositions().catch(() => {});
+            this.target.updatePositions('object-transform').catch(() => {});
         }
 
         this.top = null;

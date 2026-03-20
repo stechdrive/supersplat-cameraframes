@@ -683,7 +683,7 @@ class Splat extends Element {
         this.scene.events.fire('splat.stateChanged', this, changedState);
     }
 
-    async updatePositions() {
+    async updatePositions(reason: 'snapshot' | 'object-transform' = 'snapshot') {
         const data = await this.scene.splatRenderData.calcPositions(this);
         if (data.length === 0) {
             return;
@@ -705,7 +705,7 @@ class Splat extends Element {
 
         await this.updateSorting();
         this.scene.forceRender = true;
-        this.scene.events.fire('splat.positionsChanged', this);
+        this.scene.events.fire('splat.positionsChanged', this, reason);
     }
 
     updatePositionsPartial(selectedCount: number) {
@@ -758,7 +758,7 @@ class Splat extends Element {
         }
 
         this.scene.forceRender = true;
-        this.scene.events.fire('splat.positionsChanged', this);
+        this.scene.events.fire('splat.positionsChanged', this, 'snapshot');
     }
 
     updatePositionsForIndices(indices: Uint32Array) {
@@ -816,7 +816,7 @@ class Splat extends Element {
         }
 
         this.scene.forceRender = true;
-        this.scene.events.fire('splat.positionsChanged', this);
+        this.scene.events.fire('splat.positionsChanged', this, 'snapshot');
     }
 
     async updateSorting() {

@@ -16,6 +16,7 @@ import {
     projectSaveStateStore,
     type WorkingAssetKind,
     type WorkingAssetRecord,
+    type WorkingAssetStorage,
     type WorkingProjectRecord,
     type WorkingReferenceImageAssetRecord
 } from './project-save-state';
@@ -55,6 +56,16 @@ type SerializedAssetEntry = {
     filename: string;
     packagePath: string | null;
     element: Splat | Model;
+};
+
+type PackageAssetSaveMode = 'copy-package-entry' | 'copy-blob' | 'serialize-ply';
+
+type PackageAssetSavePlan = {
+    entry: SerializedAssetEntry;
+    outputPath: string;
+    mode: PackageAssetSaveMode;
+    sourcePath?: string;
+    blob?: Blob;
 };
 
 type SerializedSceneState = {
@@ -263,6 +274,7 @@ const estimateSplatPlySize = (splat: Splat) => {
 const estimateDocumentSize = (
     documentData: any,
     splats: Splat[],
+    resolveSplatSize: (splat: Splat, index: number) => bigint,
     models: Model[],
     resolveBlob: (model: Model) => Blob | null,
     referenceImagesBytes: bigint = 0n,
@@ -270,7 +282,7 @@ const estimateDocumentSize = (
 ) => {
     const encoder = new TextEncoder();
     const docSize = BigInt(encoder.encode(JSON.stringify(documentData)).length);
-    const splatSize = splats.reduce((sum, splat) => sum + estimateSplatPlySize(splat), 0n);
+    const splatSize = splats.reduce((sum, splat, index) => sum + resolveSplatSize(splat, index), 0n);
     const modelSize = models.reduce((sum, model) => sum + BigInt(resolveBlob(model)?.size ?? 0), 0n);
     const entryCount = BigInt(1 + splats.length + models.length) + referenceImagesEntryCount;
     const overhead = entryCount * ZIP_ENTRY_OVERHEAD;
@@ -358,6 +370,7 @@ const registerDocEvents = (scene: Scene, events: Events) => {
     let currentProjectId: string | null = null;
     let currentPackageRevision: number | null = null;
     let currentPackageFingerprint: string | null = null;
+    let currentPackageBlob: Blob | null = null;
     let stateDirty = false;
     let packageDirty = false;
     let bootstrapDirtyTrackingReady = false;
@@ -368,6 +381,7 @@ const registerDocEvents = (scene: Scene, events: Events) => {
     const packageAssetIds = new Set<string>();
     const packageAssetPaths = new Map<string, string>();
     const dirtySplatAssetIds = new Set<string>();
+    const splatSnapshotAssetIds = new Set<string>();
     const workingOverrideAssetIds = new Set<string>();
 
     const emitDocStatusChanged = () => {
@@ -411,6 +425,7 @@ const registerDocEvents = (scene: Scene, events: Events) => {
         packageAssetIds.clear();
         packageAssetPaths.clear();
         dirtySplatAssetIds.clear();
+        splatSnapshotAssetIds.clear();
         workingOverrideAssetIds.clear();
     };
 
@@ -418,6 +433,7 @@ const registerDocEvents = (scene: Scene, events: Events) => {
         currentProjectId = null;
         currentPackageRevision = null;
         currentPackageFingerprint = null;
+        currentPackageBlob = null;
         setDirtyFlags(false, false);
         clearTrackingState();
     };
@@ -443,14 +459,22 @@ const registerDocEvents = (scene: Scene, events: Events) => {
         }
     };
 
-    const markDirty = (options?: { splats?: Splat[] }) => {
+    const markDirty = () => {
         if (suppressDirtyTracking > 0 || !bootstrapDirtyTrackingReady) {
             return;
         }
-        options?.splats?.forEach((splat) => {
+        setDirtyFlags(true, true);
+    };
+
+    const markSplatSnapshotDirty = (splats: Splat[]) => {
+        if (suppressDirtyTracking > 0 || !bootstrapDirtyTrackingReady) {
+            return;
+        }
+        splats.forEach((splat) => {
             const assetId = elementAssetIds.get(splat);
             if (assetId) {
                 dirtySplatAssetIds.add(assetId);
+                splatSnapshotAssetIds.add(assetId);
             }
         });
         setDirtyFlags(true, true);
@@ -633,6 +657,72 @@ const registerDocEvents = (scene: Scene, events: Events) => {
         throw new Error(`Model source not available for '${model.name}'`);
     };
 
+    const getSplatSourceBlob = async (splat: Splat) => {
+        const stored = scene.assetLoader.getSourceBlob(splat);
+        if (stored instanceof Blob) {
+            return stored;
+        }
+
+        const file = splat.asset?.file as any;
+        if (file?.contents instanceof Blob) {
+            return file.contents;
+        }
+        if (file?.contents instanceof Response) {
+            return await file.contents.clone().blob();
+        }
+
+        return null;
+    };
+
+    const splitPathExt = (path: string) => {
+        const normalized = path.replace(/\\/g, '/');
+        const slash = normalized.lastIndexOf('/');
+        const dot = normalized.lastIndexOf('.');
+        const hasExt = dot > slash;
+        return {
+            normalized,
+            base: hasExt ? normalized.slice(0, dot) : normalized,
+            ext: hasExt ? normalized.slice(dot) : ''
+        };
+    };
+
+    const ensureUniquePackagePath = (usedPaths: Set<string>, preferredPath: string | null | undefined, fallbackPath: string) => {
+        const candidateRaw = (typeof preferredPath === 'string' && preferredPath.trim().length > 0) ? preferredPath : fallbackPath;
+        const { normalized, base, ext } = splitPathExt(candidateRaw);
+        let candidate = normalized;
+        let suffix = 1;
+        while (usedPaths.has(candidate)) {
+            candidate = `${base}_${suffix}${ext}`;
+            suffix++;
+        }
+        usedPaths.add(candidate);
+        return candidate;
+    };
+
+    const resolveSplatPackagePath = (entry: SerializedAssetEntry, index: number, preserveSource: boolean) => {
+        if (!preserveSource) {
+            return `splat_${index}.ply`;
+        }
+
+        if (entry.packagePath) {
+            return entry.packagePath;
+        }
+
+        const sourceName = (entry.element as Splat).filename;
+        const { ext } = splitPathExt(sourceName ?? '');
+        return `splat_${index}${ext || '.ply'}`;
+    };
+
+    const resolveModelPackagePath = (entry: SerializedAssetEntry, index: number) => {
+        if (entry.packagePath) {
+            return entry.packagePath;
+        }
+
+        const sourceName = ((entry.element as Model).asset?.file as any)?.filename ?? entry.filename;
+        const { ext } = splitPathExt(sourceName ?? '');
+        return `models/model_${index}${ext || '.glb'}`;
+    };
+
     const resolveWorkingSplatFilename = (splat: Splat, assetId: string, index: number) => {
         return packageAssetPaths.get(assetId) ?? splat.filename ?? `splat_${index}.ply`;
     };
@@ -724,6 +814,97 @@ const registerDocEvents = (scene: Scene, events: Events) => {
             models: serialized.modelDocs,
             lighting: serialized.lightingState
         };
+    };
+
+    const buildPackageAssetSavePlans = async (serialized: SerializedSceneState) => {
+        const assetPlanById = new Map<string, PackageAssetSavePlan>();
+        const usedPaths = new Set<string>();
+        serialized.referenceImageAssets.forEach((asset) => {
+            if (typeof asset?.path === 'string' && asset.path) {
+                usedPaths.add(asset.path.replace(/\\/g, '/'));
+            }
+        });
+
+        let splatIndex = 0;
+        let modelIndex = 0;
+
+        for (const entry of serialized.assetEntries) {
+            if (entry.kind === 'model') {
+                const blob = await getModelBlob(entry.element as Model);
+                const outputPath = ensureUniquePackagePath(
+                    usedPaths,
+                    resolveModelPackagePath(entry, modelIndex),
+                    `models/model_${modelIndex}.glb`
+                );
+
+                assetPlanById.set(entry.id, {
+                    entry,
+                    outputPath,
+                    mode: 'copy-blob',
+                    blob
+                });
+                modelIndex++;
+                continue;
+            }
+
+            const assetId = entry.id;
+            const sourceBlob = await getSplatSourceBlob(entry.element as Splat);
+            const hasSnapshotOverride = splatSnapshotAssetIds.has(assetId);
+            const canCopyPackageEntry =
+                !hasSnapshotOverride &&
+                !!entry.packagePath &&
+                currentPackageBlob instanceof Blob;
+            const canCopySourceBlob = !hasSnapshotOverride && sourceBlob instanceof Blob;
+
+            let mode: PackageAssetSaveMode = 'serialize-ply';
+            let outputPath = `splat_${splatIndex}.ply`;
+            let blob: Blob | undefined;
+            let sourcePath: string | undefined;
+
+            if (canCopyPackageEntry) {
+                mode = 'copy-package-entry';
+                sourcePath = entry.packagePath ?? undefined;
+                outputPath = resolveSplatPackagePath(entry, splatIndex, true);
+            } else if (canCopySourceBlob) {
+                mode = 'copy-blob';
+                blob = sourceBlob ?? undefined;
+                outputPath = resolveSplatPackagePath(entry, splatIndex, true);
+            } else {
+                outputPath = resolveSplatPackagePath(entry, splatIndex, false);
+            }
+
+            outputPath = ensureUniquePackagePath(usedPaths, outputPath, `splat_${splatIndex}.ply`);
+
+            assetPlanById.set(assetId, {
+                entry,
+                outputPath,
+                mode,
+                ...(blob ? { blob } : {}),
+                ...(sourcePath ? { sourcePath } : {})
+            });
+            splatIndex++;
+        }
+
+        serialized.splatDocs.forEach((doc) => {
+            const plan = assetPlanById.get(doc.assetId);
+            if (plan) {
+                doc.filename = plan.outputPath;
+            }
+        });
+        serialized.modelDocs.forEach((doc) => {
+            const plan = assetPlanById.get(doc.assetId);
+            if (plan) {
+                doc.filename = plan.outputPath;
+            }
+        });
+        serialized.assetEntries.forEach((entry) => {
+            const plan = assetPlanById.get(entry.id);
+            if (plan) {
+                entry.filename = plan.outputPath;
+            }
+        });
+
+        return assetPlanById;
     };
 
     const runWorkingStateCleanup = async (keepProjectId?: string | null) => {
@@ -835,7 +1016,8 @@ const registerDocEvents = (scene: Scene, events: Events) => {
                     assets.push({
                         id: entry.id,
                         kind: entry.kind,
-                        blob: previous?.blob ?? await getModelBlob(entry.element as Model)
+                        blob: previous?.blob ?? await getModelBlob(entry.element as Model),
+                        storage: 'source'
                     });
                     continue;
                 }
@@ -846,12 +1028,30 @@ const registerDocEvents = (scene: Scene, events: Events) => {
                     continue;
                 }
 
+                const previousStorage = previous?.storage ?? 'snapshot';
+                const sourceBlob = await getSplatSourceBlob(entry.element as Splat);
+                let blob: Blob;
+                let storage: WorkingAssetStorage = 'snapshot';
+
+                if (isDirtySplat || splatSnapshotAssetIds.has(entry.id)) {
+                    blob = await serializeSplatToBlob(entry.element as Splat);
+                } else if (previous?.blob && previousStorage === 'source') {
+                    blob = previous.blob;
+                    storage = 'source';
+                } else if (sourceBlob instanceof Blob) {
+                    blob = sourceBlob;
+                    storage = 'source';
+                } else if (previous?.blob) {
+                    blob = previous.blob;
+                } else {
+                    blob = await serializeSplatToBlob(entry.element as Splat);
+                }
+
                 assets.push({
                     id: entry.id,
                     kind: entry.kind,
-                    blob: (isDirtySplat || !previous?.blob) ?
-                        await serializeSplatToBlob(entry.element as Splat) :
-                        previous.blob
+                    blob,
+                    storage
                 });
             }
 
@@ -897,15 +1097,21 @@ const registerDocEvents = (scene: Scene, events: Events) => {
         let saveStep = 'init';
         let saved = false;
         let jsonLength = 0;
+        let sourcePackageZip: ZipReadFileSystem | null = null;
+        let sourcePackageBlobSource: BlobReadSource | null = null;
 
         try {
             const nextProjectId = currentProjectId ?? createId('project');
             const nextPackageRevision = (currentPackageRevision ?? 0) + 1;
             const serialized = collectSerializedSceneState('package');
-            const modelBlobs = await Promise.all(serialized.models.map(model => getModelBlob(model)));
+            const assetPlanById = await buildPackageAssetSavePlans(serialized);
             const modelBlobMap = new Map<Model, Blob>();
             serialized.models.forEach((model, index) => {
-                modelBlobMap.set(model, modelBlobs[index]);
+                const doc = serialized.modelDocs[index];
+                const plan = assetPlanById.get(doc.assetId);
+                if (plan?.blob) {
+                    modelBlobMap.set(model, plan.blob);
+                }
             });
 
             const referenceImagesBytes = serialized.referenceImageAssets.reduce((sum, asset) => {
@@ -935,6 +1141,14 @@ const registerDocEvents = (scene: Scene, events: Events) => {
             const estimate = estimateDocumentSize(
                 provisionalDoc,
                 serialized.splats,
+                (splat, index) => {
+                    const doc = serialized.splatDocs[index];
+                    const plan = assetPlanById.get(doc.assetId);
+                    if (!plan || plan.mode === 'serialize-ply' || !(plan.blob instanceof Blob)) {
+                        return estimateSplatPlySize(splat);
+                    }
+                    return BigInt(plan.blob.size);
+                },
                 serialized.models,
                 model => modelBlobMap.get(model) ?? null,
                 referenceImagesBytes,
@@ -952,6 +1166,23 @@ const registerDocEvents = (scene: Scene, events: Events) => {
                 return false;
             }
 
+            const readSourcePackageEntry = async (path: string) => {
+                if (!(currentPackageBlob instanceof Blob)) {
+                    throw new Error(`Package source not available for '${path}'`);
+                }
+                if (!sourcePackageBlobSource || !sourcePackageZip) {
+                    sourcePackageBlobSource = new BlobReadSource(currentPackageBlob);
+                    sourcePackageZip = new ZipReadFileSystem(sourcePackageBlobSource);
+                }
+                const source = await sourcePackageZip.createSource(path);
+                try {
+                    const data = await source.read().readAll();
+                    return new Blob([new Uint8Array(data)]);
+                } finally {
+                    source.close();
+                }
+            };
+
             saveStep = 'create writer';
             const browserFs = new BrowserFileSystem(options.filename ?? 'scene.ssproj', options.stream);
             const browserWriter = await browserFs.createWriter(options.filename ?? 'scene.ssproj');
@@ -965,17 +1196,34 @@ const registerDocEvents = (scene: Scene, events: Events) => {
             await docWriter.close();
 
             for (let i = 0; i < serialized.splats.length; i++) {
-                saveStep = `write splat_${i}.ply`;
-                await serializePly([serialized.splats[i]], {
-                    keepStateData: false,
-                    keepWorldTransform: true,
-                    keepColorTint: true
-                }, zipFs, serialized.splatDocs[i].filename);
+                const doc = serialized.splatDocs[i];
+                const plan = assetPlanById.get(doc.assetId);
+                if (!plan) {
+                    throw new Error(`Missing package save plan for splat '${doc.assetId}'`);
+                }
+
+                saveStep = `write ${plan.outputPath}`;
+                if (plan.mode === 'serialize-ply') {
+                    await serializePly([serialized.splats[i]], {
+                        keepStateData: false,
+                        keepWorldTransform: true,
+                        keepColorTint: true
+                    }, zipFs, plan.outputPath);
+                } else if (plan.mode === 'copy-package-entry') {
+                    await writeBlobToZip(zipFs, plan.outputPath, await readSourcePackageEntry(plan.sourcePath ?? plan.outputPath));
+                } else {
+                    await writeBlobToZip(zipFs, plan.outputPath, plan.blob ?? await getSplatSourceBlob(serialized.splats[i]));
+                }
             }
 
             for (let i = 0; i < serialized.models.length; i++) {
-                saveStep = `write model_${i}.glb`;
-                await writeBlobToZip(zipFs, serialized.modelDocs[i].filename, modelBlobs[i]);
+                const doc = serialized.modelDocs[i];
+                const plan = assetPlanById.get(doc.assetId);
+                if (!plan?.blob) {
+                    throw new Error(`Missing package save plan for model '${doc.assetId}'`);
+                }
+                saveStep = `write ${plan.outputPath}`;
+                await writeBlobToZip(zipFs, plan.outputPath, plan.blob);
             }
 
             for (const asset of serialized.referenceImageAssets) {
@@ -996,11 +1244,14 @@ const registerDocEvents = (scene: Scene, events: Events) => {
             if (options.handle) {
                 try {
                     const savedFile = await options.handle.getFile();
+                    currentPackageBlob = savedFile;
                     currentPackageFingerprint = createPackageFingerprint(options.handle.name, savedFile.size, documentJson);
                 } catch (error) {
                     console.warn('failed to refresh package fingerprint after save', error);
+                    currentPackageBlob = null;
                 }
             } else if (options.filename) {
+                currentPackageBlob = null;
                 currentPackageFingerprint = createPackageFingerprint(options.filename, documentJson.length, documentJson);
             }
 
@@ -1010,6 +1261,7 @@ const registerDocEvents = (scene: Scene, events: Events) => {
 
             setDirtyFlags(false, false);
             dirtySplatAssetIds.clear();
+            splatSnapshotAssetIds.clear();
             workingOverrideAssetIds.clear();
             packageAssetIds.clear();
             packageAssetPaths.clear();
@@ -1049,6 +1301,8 @@ const registerDocEvents = (scene: Scene, events: Events) => {
             });
             return false;
         } finally {
+            sourcePackageZip?.close();
+            sourcePackageBlobSource?.close();
             if (!saved && options.stream) {
                 await cleanupWritableStream(options.stream);
             }
@@ -1340,11 +1594,16 @@ const registerDocEvents = (scene: Scene, events: Events) => {
             currentProjectId = projectId;
             currentPackageRevision = packageDocument.packageRevision;
             currentPackageFingerprint = packageFingerprint;
+            currentPackageBlob = blob;
             dirtySplatAssetIds.clear();
+            splatSnapshotAssetIds.clear();
             workingOverrideAssetIds.clear();
             if (useWorkingState) {
                 workingRecord?.assets?.forEach((asset) => {
                     workingOverrideAssetIds.add(asset.id);
+                    if (asset.kind === 'splat' && asset.storage !== 'source') {
+                        splatSnapshotAssetIds.add(asset.id);
+                    }
                 });
             }
             setDirtyFlags(false, !!useWorkingState);
@@ -1384,17 +1643,25 @@ const registerDocEvents = (scene: Scene, events: Events) => {
     events.on('edit.apply', (op: EditOp) => {
         const dirtySplats = new Set<Splat>();
         getDirtySplatsFromOp(op, dirtySplats);
-        markDirty({ splats: [...dirtySplats] });
+        if (dirtySplats.size > 0) {
+            markSplatSnapshotDirty([...dirtySplats]);
+        } else {
+            markDirty();
+        }
     });
 
     events.on('splat.stateChanged', (splat: Splat, changedState = State.selected) => {
         if ((changedState & trackedPerSplatStateMask) !== 0) {
-            markDirty({ splats: [splat] });
+            markSplatSnapshotDirty([splat]);
         }
     });
 
-    events.on('splat.positionsChanged', (splat: Splat) => {
-        markDirty({ splats: [splat] });
+    events.on('splat.positionsChanged', (splat: Splat, reason: 'snapshot' | 'object-transform' = 'snapshot') => {
+        if (reason === 'object-transform') {
+            markDirty();
+            return;
+        }
+        markSplatSnapshotDirty([splat]);
     });
 
     [
@@ -1449,7 +1716,7 @@ const registerDocEvents = (scene: Scene, events: Events) => {
     events.on('scene.elementAdded', (element: Splat | Model) => {
         if (element instanceof Splat) {
             getOrAssignElementAssetId(element, 'splat');
-            markDirty({ splats: [element] });
+            markDirty();
         } else if (element instanceof Model) {
             getOrAssignElementAssetId(element, 'model');
             markDirty();
