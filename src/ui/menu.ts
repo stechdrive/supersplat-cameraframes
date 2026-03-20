@@ -51,6 +51,12 @@ const getOpenRecentItems = async (events: Events) => {
     return items;
 };
 
+type DocStatus = {
+    name?: string | null;
+    stateDirty?: boolean;
+    packageDirty?: boolean;
+};
+
 class Menu extends Container {
     constructor(events: Events, args = {}) {
         args = {
@@ -59,6 +65,10 @@ class Menu extends Container {
         };
 
         super(args);
+
+        const menuStrip = new Container({
+            id: 'menu-strip'
+        });
 
         const menubar = new Container({
             id: 'menu-bar'
@@ -120,6 +130,65 @@ class Menu extends Container {
         buttonsContainer.append(arrow);
 
         menubar.append(buttonsContainer);
+
+        const docChip = new Container({
+            id: 'doc-chip'
+        });
+
+        const docChipName = new Label({
+            id: 'doc-chip-name'
+        });
+
+        const docChipDirty = new Label({
+            id: 'doc-chip-dirty',
+            text: '*',
+            hidden: true
+        });
+
+        const docChipPackage = new Label({
+            id: 'doc-chip-package',
+            text: 'PKG',
+            hidden: true
+        });
+
+        docChip.append(docChipName);
+        docChip.append(docChipDirty);
+        docChip.append(docChipPackage);
+
+        const updateDocChip = (status?: DocStatus) => {
+            const resolvedStatus = status ?? (
+                events.functions.has('doc.status') ?
+                    events.invoke('doc.status') as DocStatus :
+                    null
+            );
+
+            const displayName = (typeof resolvedStatus?.name === 'string' && resolvedStatus.name.length > 0) ?
+                resolvedStatus.name :
+                localize('doc.status.untitled');
+            const hasStateDirty = resolvedStatus?.stateDirty === true;
+            const hasPackageDirty = resolvedStatus?.packageDirty === true;
+
+            docChipName.text = displayName;
+            docChipDirty.hidden = !hasStateDirty;
+            docChipPackage.hidden = !hasPackageDirty;
+
+            const titleLines = [displayName];
+            if (hasStateDirty) {
+                titleLines.push(localize('doc.status.tooltip.working-dirty'));
+            }
+            if (hasPackageDirty) {
+                titleLines.push(localize('doc.status.tooltip.package-dirty'));
+            }
+            docChip.dom.title = titleLines.join('\n');
+        };
+
+        events.on('doc.name', () => updateDocChip());
+        events.on('doc.statusChanged', (status: DocStatus) => updateDocChip(status));
+        events.on('app.bootstrapComplete', () => updateDocChip());
+        updateDocChip();
+
+        menuStrip.append(menubar);
+        menuStrip.append(docChip);
 
         // Get the shortcut manager for displaying keyboard shortcuts
         const shortcutManager: ShortcutManager = events.invoke('shortcutManager');
@@ -341,7 +410,7 @@ class Menu extends Container {
             onSelect: () => events.fire('show.about')
         }]);
 
-        this.append(menubar);
+        this.append(menuStrip);
         this.append(fileMenuPanel);
         this.append(openRecentMenuPanel);
         this.append(exportMenuPanel);

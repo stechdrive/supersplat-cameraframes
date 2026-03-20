@@ -358,11 +358,30 @@ const registerDocEvents = (scene: Scene, events: Events) => {
     const dirtySplatAssetIds = new Set<string>();
     const workingOverrideAssetIds = new Set<string>();
 
+    const emitDocStatusChanged = () => {
+        events.fire('doc.statusChanged', {
+            name: docName,
+            stateDirty,
+            packageDirty
+        });
+    };
+
     const setDocName = (name: string) => {
         if (name !== docName) {
             docName = name;
             events.fire('doc.name', docName);
+            emitDocStatusChanged();
         }
+    };
+
+    const setDirtyFlags = (nextStateDirty: boolean, nextPackageDirty: boolean) => {
+        if (stateDirty === nextStateDirty && packageDirty === nextPackageDirty) {
+            return;
+        }
+
+        stateDirty = nextStateDirty;
+        packageDirty = nextPackageDirty;
+        emitDocStatusChanged();
     };
 
     const withDirtyTrackingSuspended = async <T>(fn: () => Promise<T> | T) => {
@@ -387,8 +406,7 @@ const registerDocEvents = (scene: Scene, events: Events) => {
         currentProjectId = null;
         currentPackageRevision = null;
         currentPackageFingerprint = null;
-        stateDirty = false;
-        packageDirty = false;
+        setDirtyFlags(false, false);
         clearTrackingState();
     };
 
@@ -417,14 +435,13 @@ const registerDocEvents = (scene: Scene, events: Events) => {
         if (suppressDirtyTracking > 0 || !bootstrapDirtyTrackingReady) {
             return;
         }
-        stateDirty = true;
-        packageDirty = true;
         options?.splats?.forEach((splat) => {
             const assetId = elementAssetIds.get(splat);
             if (assetId) {
                 dirtySplatAssetIds.add(assetId);
             }
         });
+        setDirtyFlags(true, true);
     };
 
     const needsResetConfirmation = () => {
@@ -446,14 +463,12 @@ const registerDocEvents = (scene: Scene, events: Events) => {
         const hasDocumentContext = !!docName || !!currentProjectId;
 
         if (!hasDocumentContext && hasSceneContent) {
-            stateDirty = true;
-            packageDirty = true;
+            setDirtyFlags(true, true);
             return;
         }
 
         if (!hasDocumentContext && !hasSceneContent) {
-            stateDirty = false;
-            packageDirty = false;
+            setDirtyFlags(false, false);
         }
     };
 
@@ -760,10 +775,10 @@ const registerDocEvents = (scene: Scene, events: Events) => {
             await projectSaveStateStore.save(record);
             await projectSaveStateStore.setProjectLink(currentPackageFingerprint, currentProjectId);
 
-            stateDirty = false;
             dirtySplatAssetIds.clear();
             workingOverrideAssetIds.clear();
             assets.forEach(asset => workingOverrideAssetIds.add(asset.id));
+            setDirtyFlags(false, true);
             events.fire('doc.saved');
             return true;
         } catch (error) {
@@ -898,8 +913,7 @@ const registerDocEvents = (scene: Scene, events: Events) => {
             await projectSaveStateStore.clear(currentProjectId);
             await projectSaveStateStore.setProjectLink(currentPackageFingerprint, currentProjectId);
 
-            stateDirty = false;
-            packageDirty = false;
+            setDirtyFlags(false, false);
             dirtySplatAssetIds.clear();
             workingOverrideAssetIds.clear();
             packageAssetIds.clear();
@@ -1231,8 +1245,6 @@ const registerDocEvents = (scene: Scene, events: Events) => {
             currentProjectId = projectId;
             currentPackageRevision = packageDocument.packageRevision;
             currentPackageFingerprint = packageFingerprint;
-            stateDirty = false;
-            packageDirty = !!useWorkingState;
             dirtySplatAssetIds.clear();
             workingOverrideAssetIds.clear();
             if (useWorkingState) {
@@ -1240,6 +1252,7 @@ const registerDocEvents = (scene: Scene, events: Events) => {
                     workingOverrideAssetIds.add(asset.id);
                 });
             }
+            setDirtyFlags(false, !!useWorkingState);
 
             scene.scheduleViewportRefresh();
             return { loaded: true };
@@ -1261,6 +1274,11 @@ const registerDocEvents = (scene: Scene, events: Events) => {
     events.function('doc.packageDirty', () => packageDirty);
     events.function('doc.hasUnsavedChanges', () => stateDirty || packageDirty);
     events.function('doc.hasUnloadWarning', () => stateDirty || (!currentProjectId && packageDirty));
+    events.function('doc.status', () => ({
+        name: docName,
+        stateDirty,
+        packageDirty
+    }));
     events.on('app.bootstrapComplete', finalizeBootstrapDirtyTracking);
 
     events.on('edit.apply', (op: EditOp) => {
@@ -1344,8 +1362,7 @@ const registerDocEvents = (scene: Scene, events: Events) => {
 
     events.on('scene.clear', () => {
         clearTrackingState();
-        stateDirty = false;
-        packageDirty = false;
+        setDirtyFlags(false, false);
     });
 
     events.function('doc.new', async () => {
