@@ -178,6 +178,35 @@ class Camera extends Element {
     // framing lock (CAMERA FRAMES 用): true のときオートフィットを抑止
     lockFraming = false;
     lockFovAxis: 'vertical' | 'horizontal' | undefined = undefined;
+
+    private syncCameraLayers() {
+        const { scene } = this;
+        if (!scene) {
+            return;
+        }
+
+        const layerIds: number[] = [];
+        const pushLayer = (layer?: Layer | null) => {
+            if (layer && !layerIds.includes(layer.id)) {
+                layerIds.push(layer.id);
+            }
+        };
+
+        pushLayer(scene.backgroundLayer);
+        pushLayer(scene.shadowLayer);
+        pushLayer(scene.modelLightingLayer);
+        pushLayer(scene.debugLayer);
+        pushLayer(scene.exportOverlayLayer);
+        pushLayer(scene.referenceBackLayer);
+        pushLayer(scene.worldLayer);
+        pushLayer(scene.splatLayer);
+        pushLayer(scene.selectionVolumeLayer);
+        pushLayer(scene.referenceFrontLayer);
+        pushLayer(scene.overlayLayer);
+        pushLayer(scene.gizmoLayer);
+
+        this.entity.camera.layers = layerIds;
+    }
     navMode: 'orbit' | 'fpv' = 'orbit';
     private fpvPosition = new Vec3(0, 0, 0);
     fpvSpeed = 1;
@@ -475,26 +504,9 @@ class Camera extends Element {
 
         scene.cameraRoot.addChild(this.entity);
 
-        // configure camera to render all layers
-        const layerIds: number[] = [];
-        const pushLayer = (layer?: Layer | null) => {
-            if (layer && !layerIds.includes(layer.id)) {
-                layerIds.push(layer.id);
-            }
-        };
-        pushLayer(scene.backgroundLayer);
-        pushLayer(scene.shadowLayer);
-        pushLayer(scene.modelLightingLayer);
-        pushLayer(scene.debugLayer);
-        pushLayer(scene.exportOverlayLayer);
-        pushLayer(scene.referenceBackLayer);
-        pushLayer(scene.worldLayer);
-        pushLayer(scene.splatLayer);
-        pushLayer(scene.selectionVolumeLayer);
-        pushLayer(scene.referenceFrontLayer);
-        pushLayer(scene.overlayLayer);
-        pushLayer(scene.gizmoLayer);
-        this.entity.camera.layers = layerIds;
+        // Reference layers are created lazily by the reference image renderer.
+        // Keep the camera's layer list in sync so render-pass addLayer asserts do not fire.
+        this.syncCameraLayers();
 
         const debugRender = (scene.config as any)?.camera?.debugRender;
         if (debugRender) {
@@ -701,6 +713,7 @@ class Camera extends Element {
     // handle the viewer canvas resizing
     rebuildRenderTargets() {
         const { scene } = this;
+        this.syncCameraLayers();
         const size = this.targetSize ?? scene.targetSize;
         const width = size?.width ?? 0;
         const height = size?.height ?? 0;
