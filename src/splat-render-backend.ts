@@ -229,7 +229,11 @@ const createUnifiedDisplayRenderBackendCapabilities = (): SplatRenderBackendCapa
 };
 
 const resolveUnifiedDisplayRadialSorting = (scene: Scene) => {
-    return scene.camera?.ortho !== true;
+    // Engine unified's orthographic linear sorting does not currently provide
+    // usable front/back slicing for CAMERA_FRAMES layout work. Keep radial
+    // sorting enabled so camera depth moves continue to affect the displayed
+    // slice similarly to the merged renderer.
+    return true;
 };
 
 const configureUnifiedDisplaySceneGsplat = (scene: Scene) => {
@@ -272,6 +276,7 @@ const getUnifiedDisplayProjectionSignature = (scene: Scene) => {
     return [
         `proj=${camera.projection}`,
         `fov=${roundProjectionSignatureValue(camera.fov)}`,
+        `orthoHeight=${roundProjectionSignatureValue(camera.orthoHeight)}`,
         `hFov=${camera.horizontalFov ? 1 : 0}`,
         `aspect=${roundProjectionSignatureValue(camera.aspectRatio)}`,
         `near=${roundProjectionSignatureValue(camera.nearClip)}`,
@@ -413,10 +418,6 @@ const createUnifiedDisplayBackends = (scene: Scene): SplatRenderRoleBackends => 
     };
 
     const findFallbackReason = () => {
-        if (scene.camera?.ortho === true) {
-            return 'orthographic camera';
-        }
-
         for (const splat of sources) {
             const issue = splat.getDirectEngineCompatibilityIssue();
             if (issue) {
