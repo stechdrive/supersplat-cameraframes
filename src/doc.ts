@@ -168,6 +168,18 @@ const createPackageFingerprint = (name: string | null | undefined, size: number,
     return `doc:${name ?? ''}:${size}:${hashString(documentJson)}`;
 };
 
+const formatStorageSize = (bytes: number) => {
+    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    let value = Math.max(0, bytes);
+    let unitIndex = 0;
+    while (value >= 1024 && unitIndex < units.length - 1) {
+        value /= 1024;
+        unitIndex++;
+    }
+    const digits = value >= 10 || unitIndex === 0 ? 0 : 1;
+    return `${value.toFixed(digits)} ${units[unitIndex]}`;
+};
+
 const resolveDocumentAssetId = (entry: any, kind: TrackedAssetKind, index: number) => {
     if (typeof entry?.assetId === 'string' && entry.assetId) {
         return entry.assetId;
@@ -714,6 +726,87 @@ const registerDocEvents = (scene: Scene, events: Events) => {
         };
     };
 
+    const runWorkingStateCleanup = async (keepProjectId?: string | null) => {
+        try {
+            const result = await projectSaveStateStore.cleanup({
+                keepProjectIds: keepProjectId ? [keepProjectId] : []
+            });
+            if (result.removedProjects > 0 || result.removedLinks > 0) {
+                console.info('cleaned local working state', result);
+            }
+        } catch (error) {
+            console.warn('working state cleanup failed', error);
+        }
+    };
+
+    const clearLocalWorkingState = async () => {
+        const stats = await projectSaveStateStore.getStats();
+        if (stats.projectCount === 0) {
+            await events.invoke('showPopup', {
+                type: 'info',
+                header: localize('doc.cleanup.header'),
+                message: localize('doc.cleanup.empty-message')
+            });
+            return true;
+        }
+
+        const hasCurrentUnsavedState = stateDirty || packageDirty;
+        const result = await events.invoke('showPopup', {
+            type: 'info',
+            header: localize('doc.cleanup.header'),
+            message: localize(
+                hasCurrentUnsavedState ?
+                    'doc.cleanup.confirm-message-current' :
+                    'doc.cleanup.confirm-message',
+                {
+                    count: formatInteger(stats.projectCount),
+                    size: formatStorageSize(stats.totalBytes)
+                }
+            ),
+            buttons: [
+                {
+                    label: localize('doc.cleanup.clear'),
+                    action: 'clear'
+                },
+                {
+                    label: localize('popup.cancel'),
+                    action: 'cancel'
+                }
+            ]
+        });
+
+        if (result.action !== 'clear') {
+            return false;
+        }
+
+        events.fire('startSpinner');
+        try {
+            const cleanup = await projectSaveStateStore.clearAll();
+            if (stateDirty || packageDirty) {
+                setDirtyFlags(stateDirty || packageDirty, packageDirty);
+            }
+            await events.invoke('showPopup', {
+                type: 'info',
+                header: localize('doc.cleanup.header'),
+                message: localize('doc.cleanup.success', {
+                    count: formatInteger(cleanup.removedProjects),
+                    size: formatStorageSize(cleanup.freedBytes)
+                })
+            });
+            return true;
+        } catch (error) {
+            console.error('clearLocalWorkingState failed', error);
+            await events.invoke('showPopup', {
+                type: 'error',
+                header: localize('doc.cleanup.failed'),
+                message: `'${(error as Error)?.message ?? error}'`
+            });
+            return false;
+        } finally {
+            events.fire('stopSpinner');
+        }
+    };
+
     const saveWorkingState = async () => {
         if (!currentProjectId) {
             return false;
@@ -774,6 +867,7 @@ const registerDocEvents = (scene: Scene, events: Events) => {
 
             await projectSaveStateStore.save(record);
             await projectSaveStateStore.setProjectLink(currentPackageFingerprint, currentProjectId);
+            await runWorkingStateCleanup(currentProjectId);
 
             dirtySplatAssetIds.clear();
             workingOverrideAssetIds.clear();
@@ -912,6 +1006,7 @@ const registerDocEvents = (scene: Scene, events: Events) => {
 
             await projectSaveStateStore.clear(currentProjectId);
             await projectSaveStateStore.setProjectLink(currentPackageFingerprint, currentProjectId);
+            await runWorkingStateCleanup(currentProjectId);
 
             setDirtyFlags(false, false);
             dirtySplatAssetIds.clear();
@@ -1253,6 +1348,9 @@ const registerDocEvents = (scene: Scene, events: Events) => {
                 });
             }
             setDirtyFlags(false, !!useWorkingState);
+            runWorkingStateCleanup(projectId).catch((error) => {
+                console.warn('working state cleanup failed after load', error);
+            });
 
             scene.scheduleViewportRefresh();
             return { loaded: true };
@@ -1274,6 +1372,8 @@ const registerDocEvents = (scene: Scene, events: Events) => {
     events.function('doc.packageDirty', () => packageDirty);
     events.function('doc.hasUnsavedChanges', () => stateDirty || packageDirty);
     events.function('doc.hasUnloadWarning', () => stateDirty || (!currentProjectId && packageDirty));
+    events.function('doc.localWorkingStateStats', async () => await projectSaveStateStore.getStats());
+    events.function('doc.clearLocalWorkingState', async () => await clearLocalWorkingState());
     events.function('doc.status', () => ({
         name: docName,
         stateDirty,

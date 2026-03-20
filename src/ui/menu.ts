@@ -271,6 +271,16 @@ class Menu extends Container {
             isEnabled: () => true,
             onSelect: async () => await events.invoke('doc.savePackageAs')
         }, {
+            text: localize('menu.file.clear-working-state', { ellipsis: true }),
+            icon: createSvg(selectDelete),
+            isEnabled: async () => {
+                const stats = await events.invoke('doc.localWorkingStateStats') as {
+                    projectCount?: number;
+                } | null;
+                return (stats?.projectCount ?? 0) > 0;
+            },
+            onSelect: async () => await events.invoke('doc.clearLocalWorkingState')
+        }, {
             // separator
         }, {
             text: localize('menu.file.import', { ellipsis: true }),
