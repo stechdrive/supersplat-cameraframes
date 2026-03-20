@@ -392,19 +392,19 @@ class EditorUI {
         topContainer.append(spinner);
 
         let spinnerCount = 0;
+        let progressVisible = false;
+        const refreshSpinnerVisibility = () => {
+            spinner.hidden = spinnerCount === 0 || progressVisible;
+        };
 
         events.on('startSpinner', () => {
             spinnerCount++;
-            if (spinnerCount === 1) {
-                spinner.hidden = false;
-            }
+            refreshSpinnerVisibility();
         });
 
         events.on('stopSpinner', () => {
             spinnerCount = Math.max(0, spinnerCount - 1);
-            if (spinnerCount === 0) {
-                spinner.hidden = true;
-            }
+            refreshSpinnerVisibility();
         });
 
         // progress
@@ -414,6 +414,8 @@ class EditorUI {
         topContainer.append(progress);
 
         events.on('progressStart', (header: string, cancellable?: boolean) => {
+            progressVisible = true;
+            refreshSpinnerVisibility();
             progress.hidden = false;
             progress.setHeader(header);
             progress.setText('');
@@ -432,9 +434,11 @@ class EditorUI {
         });
 
         events.on('progressEnd', () => {
+            progressVisible = false;
             progress.hidden = true;
             progress.showCancelButton(false);
             progress.onCancel = null;
+            refreshSpinnerVisibility();
         });
 
         // initialize canvas to correct size before creating graphics device etc

@@ -1,4 +1,4 @@
-import { Button, Container, Label } from '@playcanvas/pcui';
+import { Button, Container, Element, Label } from '@playcanvas/pcui';
 
 import { localize } from './localization';
 import { Tooltips } from './tooltips';
@@ -9,13 +9,25 @@ interface ShowOptions {
     header?: string;
     link?: string;
     select?: {
+        id?: string;
         label: string;
         value: string;
+        presentation?: 'buttons' | 'dropdown';
         options: Array<{
             label: string;
             value: string;
         }>;
     };
+    selects?: Array<{
+        id: string;
+        label: string;
+        value: string;
+        presentation?: 'buttons' | 'dropdown';
+        options: Array<{
+            label: string;
+            value: string;
+        }>;
+    }>;
     buttons?: Array<{
         label: string;
         action: string;
@@ -49,20 +61,9 @@ class Popup extends Container {
             id: 'popup-text'
         });
 
-        const selectLabel = new Label({
-            id: 'popup-select-label'
+        const selectRows = new Container({
+            id: 'popup-select-rows'
         });
-
-        const selectOptions = new Container({
-            id: 'popup-select-options'
-        });
-
-        const selectRow = new Container({
-            id: 'popup-select-row'
-        });
-
-        selectRow.append(selectLabel);
-        selectRow.append(selectOptions);
 
         const linkText = new Label({
             id: 'popup-link-text'
@@ -111,7 +112,7 @@ class Popup extends Container {
 
         dialog.append(header);
         dialog.append(text);
-        dialog.append(selectRow);
+        dialog.append(selectRows);
         dialog.append(linkRow);
         dialog.append(buttons);
 
@@ -125,12 +126,15 @@ class Popup extends Container {
         let copyFn: () => void;
         let customButtons: Button[] = [];
         let selectButtons: Button[] = [];
+        let selectRowsList: Container[] = [];
 
         const clearCustomButtons = () => {
             customButtons.forEach(button => button.destroy());
             customButtons = [];
             selectButtons.forEach(button => button.destroy());
             selectButtons = [];
+            selectRowsList.forEach(row => row.destroy());
+            selectRowsList = [];
         };
 
         okButton.on('click', () => {
@@ -169,6 +173,7 @@ class Popup extends Container {
 
             const { type, link, buttons: customActions, select } = options;
             const hasCustomButtons = Array.isArray(customActions) && customActions.length > 0;
+            const selects = options.selects ?? (select ? [{ ...select, id: 'value' }] : []);
 
             ['error', 'info', 'yesno', 'okcancel'].forEach((t) => {
                 text.class[t === type ? 'add' : 'remove'](t);
@@ -185,32 +190,71 @@ class Popup extends Container {
             noButton.hidden = hasCustomButtons || type !== 'yesno';
             this.hidden = false;
 
-            let selectedValue = select?.value ?? '';
+            const selectedValues: Record<string, string> = {};
+            selects.forEach((item) => {
+                selectedValues[item.id] = item.value;
+            });
 
-            selectRow.hidden = !select;
-            if (select) {
-                selectLabel.text = select.label;
+            selectRows.hidden = selects.length === 0;
+            selects.forEach((item) => {
+                const selectLabel = new Label({
+                    class: 'popup-select-label',
+                    text: item.label
+                });
+                const selectRow = new Container({
+                    class: 'popup-select-row'
+                });
+                selectRow.append(selectLabel);
+                selectRows.append(selectRow);
+                selectRowsList.push(selectRow);
+
+                if (item.presentation === 'dropdown') {
+                    const selectInput = new Element({
+                        dom: 'select',
+                        class: 'popup-select-dropdown'
+                    });
+                    item.options.forEach(({ label, value }) => {
+                        const option = document.createElement('option');
+                        option.textContent = label;
+                        option.value = value;
+                        selectInput.dom.appendChild(option);
+                    });
+                    (selectInput.dom as HTMLSelectElement).value = selectedValues[item.id];
+                    selectInput.dom.addEventListener('change', () => {
+                        selectedValues[item.id] = (selectInput.dom as HTMLSelectElement).value;
+                    });
+                    selectRow.append(selectInput);
+                    return;
+                }
+
+                const selectOptions = new Container({
+                    class: 'popup-select-options'
+                });
+                selectRow.append(selectOptions);
+
+                const rowButtons: Button[] = [];
                 const refreshSelectButtons = () => {
-                    selectButtons.forEach((button, index) => {
-                        button.class[selectedValue === select.options[index].value ? 'add' : 'remove']('selected');
+                    rowButtons.forEach((button, index) => {
+                        button.class[selectedValues[item.id] === item.options[index].value ? 'add' : 'remove']('selected');
                     });
                 };
 
-                select.options.forEach(({ label, value }) => {
+                item.options.forEach(({ label, value }) => {
                     const button = new Button({
                         class: 'popup-select-option',
                         text: label
                     });
                     button.on('click', () => {
-                        selectedValue = value;
+                        selectedValues[item.id] = value;
                         refreshSelectButtons();
                     });
                     selectOptions.append(button);
                     selectButtons.push(button);
+                    rowButtons.push(button);
                 });
 
                 refreshSelectButtons();
-            }
+            });
 
             linkRow.hidden = link === undefined;
             if (link !== undefined) {
@@ -221,7 +265,7 @@ class Popup extends Container {
             // take keyboard focus so shortcuts stop working
             this.dom.focus();
 
-            return new Promise<{action: string, value?: string}>((resolve) => {
+            return new Promise<{action: string, value?: string, values?: Record<string, string>}>((resolve) => {
                 customActions?.forEach(({ label, action }) => {
                     const button = new Button({
                         class: 'popup-button',
@@ -231,7 +275,8 @@ class Popup extends Container {
                         this.hide();
                         resolve({
                             action,
-                            value: select ? selectedValue : undefined
+                            value: selects[0] ? selectedValues[selects[0].id] : undefined,
+                            values: selects.length > 0 ? { ...selectedValues } : undefined
                         });
                     });
                     buttons.append(button);
@@ -242,28 +287,32 @@ class Popup extends Container {
                     this.hide();
                     resolve({
                         action: 'ok',
-                        value: select ? selectedValue : undefined
+                        value: selects[0] ? selectedValues[selects[0].id] : undefined,
+                        values: selects.length > 0 ? { ...selectedValues } : undefined
                     });
                 };
                 cancelFn = () => {
                     this.hide();
                     resolve({
                         action: 'cancel',
-                        value: select ? selectedValue : undefined
+                        value: selects[0] ? selectedValues[selects[0].id] : undefined,
+                        values: selects.length > 0 ? { ...selectedValues } : undefined
                     });
                 };
                 yesFn = () => {
                     this.hide();
                     resolve({
                         action: 'yes',
-                        value: select ? selectedValue : undefined
+                        value: selects[0] ? selectedValues[selects[0].id] : undefined,
+                        values: selects.length > 0 ? { ...selectedValues } : undefined
                     });
                 };
                 noFn = () => {
                     this.hide();
                     resolve({
                         action: 'no',
-                        value: select ? selectedValue : undefined
+                        value: selects[0] ? selectedValues[selects[0].id] : undefined,
+                        values: selects.length > 0 ? { ...selectedValues } : undefined
                     });
                 };
                 containerFn = () => {

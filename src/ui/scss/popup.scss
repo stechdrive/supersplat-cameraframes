@@ -71,36 +71,57 @@
             }
         }
 
-        #popup-select-row {
+        #popup-select-rows {
             display: flex;
             flex-direction: column;
             gap: 6px;
             margin: 0 14px 12px;
 
-            #popup-select-label {
-                color: $text-primary;
-                font-size: 12px;
-                text-align: left;
-            }
+            .popup-select-row {
+                display: flex;
+                flex-direction: column;
+                gap: 6px;
 
-            #popup-select-options {
-                display: grid;
-                grid-template-columns: repeat(2, minmax(0, 1fr));
-                gap: 8px;
+                .popup-select-label {
+                    color: $text-primary;
+                    font-size: 12px;
+                    text-align: left;
+                }
 
-                .popup-select-option {
-                    height: 40px;
+                .popup-select-dropdown {
                     width: 100%;
+                    height: 36px;
+                    padding: 0 10px;
+                    border: 1px solid $bcg-dark;
                     border-radius: 4px;
                     background-color: $bcg-darker;
                     color: $text-primary;
+                    outline: none;
 
-                    &:hover {
-                        background-color: $clr-hilight;
+                    &:focus {
+                        border-color: $clr-hilight;
                     }
+                }
 
-                    &.selected {
-                        background-color: $clr-hilight;
+                .popup-select-options {
+                    display: grid;
+                    grid-template-columns: repeat(2, minmax(0, 1fr));
+                    gap: 8px;
+
+                    .popup-select-option {
+                        height: 40px;
+                        width: 100%;
+                        border-radius: 4px;
+                        background-color: $bcg-darker;
+                        color: $text-primary;
+
+                        &:hover {
+                            background-color: $clr-hilight;
+                        }
+
+                        &.selected {
+                            background-color: $clr-hilight;
+                        }
                     }
                 }
             }

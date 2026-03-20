@@ -198,6 +198,7 @@ class Menu extends Container {
             }
             return await canUseWebGPU();
         };
+        const hasProjectSplats = () => (((events.invoke('scene.allSplats') as any[])?.length ?? 0) > 0);
 
         const exportMenuPanel = new MenuPanel([{
             text: localize('menu.file.export.ply'),
@@ -270,6 +271,11 @@ class Menu extends Container {
             icon: createSvg(sceneSave),
             isEnabled: () => true,
             onSelect: async () => await events.invoke('doc.savePackageAs')
+        }, {
+            text: localize('menu.file.save-package-sog-all', { ellipsis: true }),
+            icon: createSvg(sceneSave),
+            isEnabled: hasProjectSplats,
+            onSelect: async () => await events.invoke('doc.savePackageSogAll')
         }, {
             text: localize('menu.file.clear-working-state', { ellipsis: true }),
             icon: createSvg(selectDelete),

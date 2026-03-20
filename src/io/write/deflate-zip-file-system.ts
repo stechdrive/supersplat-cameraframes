@@ -39,16 +39,40 @@ const createDataDescriptor = (entry: ZipEntryRecord) => {
     return data;
 };
 
+const yieldToBrowser = async () => {
+    await new Promise<void>((resolve) => {
+        setTimeout(resolve);
+    });
+};
+
+const createCooperativeYield = (budgetMs = 16) => {
+    let lastYieldAt = performance.now();
+    return async (force = false) => {
+        const now = performance.now();
+        if (force || now - lastYieldAt >= budgetMs) {
+            await yieldToBrowser();
+            lastYieldAt = performance.now();
+        }
+    };
+};
+
 class DeflateZipEntryWriter implements Writer {
     private readonly writeChunk: (data: Uint8Array) => Promise<void>;
+    private readonly cooperativeYield: (force?: boolean) => Promise<void>;
     private readonly entry: ZipEntryRecord;
     private readonly useCompression: boolean;
     private readonly compressionWriter: any;
     private readonly pumpPromise: Promise<void> | null;
     private closed = false;
 
-    constructor(writeChunk: (data: Uint8Array) => Promise<void>, entry: ZipEntryRecord, useCompression: boolean) {
+    constructor(
+        writeChunk: (data: Uint8Array) => Promise<void>,
+        entry: ZipEntryRecord,
+        useCompression: boolean,
+        cooperativeYield: (force?: boolean) => Promise<void>
+    ) {
         this.writeChunk = writeChunk;
+        this.cooperativeYield = cooperativeYield;
         this.entry = entry;
         this.useCompression = useCompression;
 
@@ -67,6 +91,7 @@ class DeflateZipEntryWriter implements Writer {
                     }
                     this.entry.compressedSize += value.byteLength;
                     await this.writeChunk(value);
+                    await this.cooperativeYield();
                 }
             })();
         } else {
@@ -85,11 +110,13 @@ class DeflateZipEntryWriter implements Writer {
 
         if (this.useCompression) {
             await this.compressionWriter!.write(data);
+            await this.cooperativeYield();
             return;
         }
 
         this.entry.compressedSize += data.byteLength;
         await this.writeChunk(data);
+        await this.cooperativeYield();
     }
 
     async close(): Promise<void> {
@@ -117,6 +144,7 @@ class DeflateZipFileSystem implements FileSystem {
     private activeEntry: DeflateZipEntryWriter | null = null;
     private bytesWritten = 0;
     private writeQueue = Promise.resolve();
+    private readonly cooperativeYield = createCooperativeYield();
 
     constructor(writer: Writer) {
         this.writer = writer;
@@ -166,7 +194,12 @@ class DeflateZipFileSystem implements FileSystem {
 
         this.entries.push(entry);
         await this.enqueueWrite(this.createLocalHeader(entry));
-        this.activeEntry = new DeflateZipEntryWriter(data => this.enqueueWrite(data), entry, this.useCompression);
+        this.activeEntry = new DeflateZipEntryWriter(
+            data => this.enqueueWrite(data),
+            entry,
+            this.useCompression,
+            this.cooperativeYield
+        );
         return this.activeEntry;
     }
 
@@ -198,6 +231,7 @@ class DeflateZipFileSystem implements FileSystem {
             view.setUint32(42, entry.offset, true);
             cdr.set(entry.filename, 46);
             await this.enqueueWrite(cdr);
+            await this.cooperativeYield();
         }
 
         const centralDirectorySize = this.bytesWritten - centralDirectoryOffset;
@@ -211,6 +245,7 @@ class DeflateZipFileSystem implements FileSystem {
         await this.enqueueWrite(eocd);
 
         await this.writeQueue;
+        await this.cooperativeYield(true);
         await this.writer.close();
     }
 }

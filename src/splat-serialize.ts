@@ -3,6 +3,7 @@ import {
     DataTable,
     logger as splatTransformLogger,
     MemoryFileSystem,
+    WebPCodec,
     writeHtml,
     writeSog as writeSogInternal,
     ZipFileSystem,
@@ -27,6 +28,7 @@ import { version } from '../package.json';
 import { Events } from './events';
 import { ProgressWriter } from './io';
 import { SHRotation } from './sh-utils';
+import { serializeSogInWorker } from './sog-serialize-worker-client';
 import { Splat } from './splat';
 import { State } from './splat-state';
 
@@ -1162,6 +1164,7 @@ const serializeSplat = async (splats: Splat[], options: SerializeSettings, fs: F
 // Cached WebGPU device for SOG compression
 let cachedGpuDevice: WebgpuGraphicsDevice | null = null;
 let cachedBackbuffer: Texture | null = null;
+WebPCodec.wasmUrl ??= new URL('./static/lib/webp/webp.wasm', import.meta.url).toString();
 
 const createGpuDevice = async (): Promise<WebgpuGraphicsDevice> => {
     if (cachedGpuDevice) {
@@ -1272,8 +1275,14 @@ const extractDataTable = (splats: Splat[], settings: SerializeSettings): DataTab
     return dataTable;
 };
 
+const yieldToBrowser = async () => {
+    await new Promise<void>((resolve) => {
+        setTimeout(resolve);
+    });
+};
+
 // Create a logger that bridges splat-transform progress to supersplat's events
-const createProgressLogger = (header: string, events?: Events): Logger => ({
+const createProgressLogger = (events?: Events): Logger => ({
     log: () => {},
     warn: console.warn,
     error: console.error,
@@ -1281,20 +1290,12 @@ const createProgressLogger = (header: string, events?: Events): Logger => ({
     output: () => {},
     onProgress: (node: ProgressNode) => {
         if (node.depth === 0) {
-            if (node.step === 0) {
-                // begin() was called
-                events?.fire('progressStart', header);
-            } else {
+            if (node.step > 0) {
                 // Fire update with 0% progress for this step
                 events?.fire('progressUpdate', {
                     text: `Step ${node.step} of ${node.totalSteps}: ${node.stepName ?? ''}`,
                     progress: 0
                 });
-
-                // Final step = done
-                if (node.step === node.totalSteps) {
-                    events?.fire('progressEnd');
-                }
             }
         } else {
             // Nested level - update progress bar with sub-step progress
@@ -1308,42 +1309,55 @@ const createProgressLogger = (header: string, events?: Events): Logger => ({
 const serializeViewer = async (splats: Splat[], serializeSettings: SerializeSettings, options: ViewerExportSettings, fs: FileSystem): Promise<void> => {
     const { experienceSettings, events } = options;
 
-    splatTransformLogger.setLogger(createProgressLogger('Exporting HTML', events));
+    if (events) {
+        events.fire('progressStart', 'Exporting HTML');
+        events.fire('progressUpdate', {
+            text: 'Exporting HTML',
+            progress: 0
+        });
+        await yieldToBrowser();
+    }
 
-    // Extract splat data to DataTable
-    const dataTable = extractDataTable(splats, serializeSettings);
+    splatTransformLogger.setLogger(createProgressLogger(events));
 
-    if (options.type === 'html') {
-        // Bundled HTML - writeHtml handles everything
-        await writeHtml({
-            filename: 'output.html',
-            dataTable,
-            viewerSettingsJson: experienceSettings,
-            bundle: true,
-            iterations: 10,
-            createDevice: createGpuDevice
-        }, fs);
-    } else {
-        // Package - use unbundled mode into a MemoryFileSystem, then ZIP
-        const memFs = new MemoryFileSystem();
-        await writeHtml({
-            filename: 'index.html',
-            dataTable,
-            viewerSettingsJson: experienceSettings,
-            bundle: false,
-            iterations: 10,
-            createDevice: createGpuDevice
-        }, memFs);
+    try {
+        // Extract splat data to DataTable
+        const dataTable = extractDataTable(splats, serializeSettings);
 
-        // Create ZIP from memory filesystem results
-        const zipWriter = await fs.createWriter('output.zip');
-        const zipFs = new ZipFileSystem(zipWriter);
-        for (const [filename, data] of memFs.results.entries()) {
-            const writer = await zipFs.createWriter(filename);
-            await writer.write(data);
-            await writer.close();
+        if (options.type === 'html') {
+            // Bundled HTML - writeHtml handles everything
+            await writeHtml({
+                filename: 'output.html',
+                dataTable,
+                viewerSettingsJson: experienceSettings,
+                bundle: true,
+                iterations: 10,
+                createDevice: createGpuDevice
+            }, fs);
+        } else {
+            // Package - use unbundled mode into a MemoryFileSystem, then ZIP
+            const memFs = new MemoryFileSystem();
+            await writeHtml({
+                filename: 'index.html',
+                dataTable,
+                viewerSettingsJson: experienceSettings,
+                bundle: false,
+                iterations: 10,
+                createDevice: createGpuDevice
+            }, memFs);
+
+            // Create ZIP from memory filesystem results
+            const zipWriter = await fs.createWriter('output.zip');
+            const zipFs = new ZipFileSystem(zipWriter);
+            for (const [filename, data] of memFs.results.entries()) {
+                const writer = await zipFs.createWriter(filename);
+                await writer.write(data);
+                await writer.close();
+            }
+            await zipFs.close();
         }
-        await zipFs.close();
+    } finally {
+        events?.fire('progressEnd');
     }
 };
 
@@ -1353,24 +1367,65 @@ type SogSettings = SerializeSettings & {
     iterations: number;
     events?: Events;
     progressHeader?: string;
+    embeddedProgress?: boolean;
+    offloadToWorker?: boolean;
 };
 
 const serializeSog = async (splats: Splat[], settings: SogSettings, fs: FileSystem, filename = 'output.sog'): Promise<void> => {
-    const { iterations = 10, events, progressHeader = 'Exporting SOG' } = settings;
+    const {
+        iterations = 10,
+        events,
+        progressHeader = 'Exporting SOG',
+        embeddedProgress = false,
+        offloadToWorker = false
+    } = settings;
 
-    splatTransformLogger.setLogger(createProgressLogger(progressHeader, events));
+    if (events) {
+        if (!embeddedProgress) {
+            events.fire('progressStart', progressHeader);
+        }
+        events.fire('progressUpdate', {
+            text: progressHeader,
+            progress: 0
+        });
+        await yieldToBrowser();
+    }
 
-    // Extract splat data to DataTable
-    const dataTable = extractDataTable(splats, settings);
+    try {
+        if (offloadToWorker) {
+            try {
+                const dataTable = extractDataTable(splats, settings);
+                const data = await serializeSogInWorker({
+                    filename,
+                    dataTable,
+                    iterations,
+                    onProgress: update => events?.fire('progressUpdate', update)
+                });
 
-    // Call splat-transform's writeSog
-    await writeSogInternal({
-        filename,
-        dataTable,
-        bundle: true,
-        iterations,
-        createDevice: createGpuDevice
-    }, fs);
+                const writer = await fs.createWriter(filename);
+                await writer.write(data);
+                await writer.close();
+                return;
+            } catch (error) {
+                console.warn('Worker SOG serialization failed, falling back to main thread', error);
+            }
+        }
+
+        splatTransformLogger.setLogger(createProgressLogger(events));
+
+        const dataTable = extractDataTable(splats, settings);
+        await writeSogInternal({
+            filename,
+            dataTable,
+            bundle: true,
+            iterations,
+            createDevice: createGpuDevice
+        }, fs);
+    } finally {
+        if (events && !embeddedProgress) {
+            events.fire('progressEnd');
+        }
+    }
 };
 
 export {

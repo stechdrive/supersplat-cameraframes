@@ -35,6 +35,8 @@ const SUPPORTED_DOC_VERSIONS = new Set([0, 1, 2, 3, 4]);
 const ZIP64_MARGIN_BYTES = 1800n * 1024n * 1024n;
 const ZIP32_LIMIT = 0xffffffffn;
 const ZIP_ENTRY_OVERHEAD = 256n;
+const DEFAULT_PACKAGE_SOG_MAX_SH_BANDS = 2;
+const DEFAULT_PACKAGE_SOG_ITERATIONS = 10;
 const hiddenStateMask = (State as { hidden?: number }).hidden ?? 0;
 const trackedPerSplatStateMask = State.deleted | State.locked | hiddenStateMask;
 
@@ -88,6 +90,9 @@ type SerializedSceneState = {
 type SavePackageContext = {
     serialized: SerializedSceneState;
     editedSplatFormat: EditedSplatPackageFormat;
+    saveAllSplatsAsSog: boolean;
+    sogMaxSHBands: number;
+    sogIterations: number;
 };
 
 type NormalizedDocument = {
@@ -323,13 +328,22 @@ const serializeSplatToBlob = async (splat: Splat) => {
     return new Blob([copy], { type: 'application/octet-stream' });
 };
 
-const serializeSplatToSogBlob = async (splat: Splat, events?: Events, progressHeader?: string) => {
+const serializeSplatToSogBlob = async (
+    splat: Splat,
+    sogMaxSHBands: number,
+    sogIterations: number,
+    events?: Events,
+    progressHeader?: string
+) => {
     const memFs = new MemoryFileSystem();
     await serializeSog([splat], {
         keepStateData: false,
         keepWorldTransform: true,
         keepColorTint: true,
-        iterations: 10,
+        maxSHBands: sogMaxSHBands,
+        iterations: sogIterations,
+        embeddedProgress: true,
+        offloadToWorker: true,
         ...(events ? { events } : {}),
         ...(progressHeader ? { progressHeader } : {})
     }, memFs);
@@ -342,9 +356,37 @@ const serializeSplatToSogBlob = async (splat: Splat, events?: Events, progressHe
     return new Blob([copy], { type: 'application/octet-stream' });
 };
 
-const writeBlobToZip = async (zipFs: { createWriter(filename: string): Promise<{ write(data: Uint8Array): void | Promise<void>; close(): void | Promise<void>; }>; }, filename: string, source: Blob | ReadableStream<Uint8Array>) => {
+const yieldToBrowser = async () => {
+    await new Promise<void>((resolve) => {
+        setTimeout(resolve);
+    });
+};
+
+type CooperativeYield = (force?: boolean) => Promise<void>;
+
+const createCooperativeYield = (budgetMs = 16): CooperativeYield => {
+    let lastYieldAt = performance.now();
+    return async (force = false) => {
+        const now = performance.now();
+        if (force || now - lastYieldAt >= budgetMs) {
+            await yieldToBrowser();
+            lastYieldAt = performance.now();
+        }
+    };
+};
+
+const writeBlobToZip = async (
+    zipFs: { createWriter(filename: string): Promise<{ write(data: Uint8Array): void | Promise<void>; close(): void | Promise<void>; }>; },
+    filename: string,
+    source: Blob | ReadableStream<Uint8Array>,
+    progress?: (loaded: number, total: number) => void,
+    cooperativeYield?: CooperativeYield
+) => {
     const writer = await zipFs.createWriter(filename);
     const reader = (source instanceof Blob ? source.stream() : source).getReader();
+    const total = source instanceof Blob ? source.size : 0;
+    let loaded = 0;
+    progress?.(0, total);
     while (true) {
         const { value, done } = await reader.read();
         if (done) {
@@ -352,6 +394,9 @@ const writeBlobToZip = async (zipFs: { createWriter(filename: string): Promise<{
         }
         if (value) {
             await writer.write(value);
+            loaded += value.byteLength;
+            progress?.(loaded, total);
+            await cooperativeYield?.();
         }
     }
     await writer.close();
@@ -416,6 +461,7 @@ const registerDocEvents = (scene: Scene, events: Events) => {
     const splatSnapshotAssetIds = new Set<string>();
     const workingOverrideAssetIds = new Set<string>();
     let preferredEditedSplatPackageFormat: EditedSplatPackageFormat = 'ply';
+    let preferredPackageSogMaxSHBands = DEFAULT_PACKAGE_SOG_MAX_SH_BANDS;
 
     const emitDocStatusChanged = () => {
         events.fire('doc.statusChanged', {
@@ -736,17 +782,26 @@ const registerDocEvents = (scene: Scene, events: Events) => {
         entry: SerializedAssetEntry,
         index: number,
         preserveSource: boolean,
-        fallbackFormat: EditedSplatPackageFormat = 'ply'
+        fallbackFormat: EditedSplatPackageFormat = 'ply',
+        forcedFormat?: EditedSplatPackageFormat
     ) => {
         if (!preserveSource) {
             return `splat_${index}.${fallbackFormat}`;
         }
 
         if (entry.packagePath) {
+            if (forcedFormat) {
+                const { base } = splitPathExt(entry.packagePath);
+                return `${base}.${forcedFormat}`;
+            }
             return entry.packagePath;
         }
 
         const sourceName = (entry.element as Splat).filename;
+        if (forcedFormat) {
+            const { base } = splitPathExt(sourceName ?? '');
+            return base ? `${base}.${forcedFormat}` : `splat_${index}.${forcedFormat}`;
+        }
         const { ext } = splitPathExt(sourceName ?? '');
         return `splat_${index}${ext || '.ply'}`;
     };
@@ -856,12 +911,16 @@ const registerDocEvents = (scene: Scene, events: Events) => {
 
     const buildPackageAssetSavePlans = async (
         serialized: SerializedSceneState,
-        editedSplatFormat: EditedSplatPackageFormat
+        editedSplatFormat: EditedSplatPackageFormat,
+        saveAllSplatsAsSog: boolean,
+        sogMaxSHBands: number,
+        sogIterations: number
     ) => {
+        const maybeYield = createCooperativeYield();
         const assetPlanById = new Map<string, PackageAssetSavePlan>();
         let usedSogFallback = false;
-        const totalEditedSplats = serialized.assetEntries.reduce((sum, entry) => {
-            return sum + ((entry.kind === 'splat' && splatSnapshotAssetIds.has(entry.id)) ? 1 : 0);
+        const totalSogSplats = serialized.assetEntries.reduce((sum, entry) => {
+            return sum + ((entry.kind === 'splat' && (saveAllSplatsAsSog || splatSnapshotAssetIds.has(entry.id))) ? 1 : 0);
         }, 0);
         const usedPaths = new Set<string>();
         serialized.referenceImageAssets.forEach((asset) => {
@@ -875,6 +934,7 @@ const registerDocEvents = (scene: Scene, events: Events) => {
         let editedSplatIndex = 0;
 
         for (const entry of serialized.assetEntries) {
+            await maybeYield();
             if (entry.kind === 'model') {
                 const blob = await getModelBlob(entry.element as Model);
                 const outputPath = ensureUniquePackagePath(
@@ -896,11 +956,13 @@ const registerDocEvents = (scene: Scene, events: Events) => {
             const assetId = entry.id;
             const sourceBlob = await getSplatSourceBlob(entry.element as Splat);
             const hasSnapshotOverride = splatSnapshotAssetIds.has(assetId);
+            const shouldSerializeToSog = editedSplatFormat === 'sog' && (saveAllSplatsAsSog || hasSnapshotOverride);
             const canCopyPackageEntry =
+                !saveAllSplatsAsSog &&
                 !hasSnapshotOverride &&
                 !!entry.packagePath &&
                 currentPackageBlob instanceof Blob;
-            const canCopySourceBlob = !hasSnapshotOverride && sourceBlob instanceof Blob;
+            const canCopySourceBlob = !saveAllSplatsAsSog && !hasSnapshotOverride && sourceBlob instanceof Blob;
 
             let mode: PackageAssetSaveMode = 'serialize-ply';
             let outputPath = `splat_${splatIndex}.${editedSplatFormat}`;
@@ -916,16 +978,28 @@ const registerDocEvents = (scene: Scene, events: Events) => {
                 blob = sourceBlob ?? undefined;
                 outputPath = resolveSplatPackagePath(entry, splatIndex, true);
             } else {
-                if (editedSplatFormat === 'sog') {
+                if (shouldSerializeToSog) {
                     try {
                         editedSplatIndex++;
                         const progressHeader = localize('doc.save-package-options.sog-progress', {
                             current: formatInteger(editedSplatIndex),
-                            total: formatInteger(totalEditedSplats)
+                            total: formatInteger(totalSogSplats)
                         });
-                        blob = await serializeSplatToSogBlob(entry.element as Splat, events, progressHeader);
+                        events.fire('progressUpdate', {
+                            text: progressHeader,
+                            progress: totalSogSplats > 0 ? 100 * ((editedSplatIndex - 1) / totalSogSplats) : 0
+                        });
+                        await maybeYield(true);
+                        blob = await serializeSplatToSogBlob(
+                            entry.element as Splat,
+                            sogMaxSHBands,
+                            sogIterations,
+                            events,
+                            progressHeader
+                        );
+                        await maybeYield(true);
                         mode = 'copy-blob';
-                        outputPath = resolveSplatPackagePath(entry, splatIndex, false, 'sog');
+                        outputPath = resolveSplatPackagePath(entry, splatIndex, saveAllSplatsAsSog, 'sog', 'sog');
                     } catch (error) {
                         usedSogFallback = true;
                         console.warn(`SOG package pre-serialization failed for '${entry.filename}', falling back to PLY`, error);
@@ -937,7 +1011,7 @@ const registerDocEvents = (scene: Scene, events: Events) => {
                 }
             }
 
-            const defaultOutputPath = blob && editedSplatFormat === 'sog' ? `splat_${splatIndex}.sog` : `splat_${splatIndex}.ply`;
+            const defaultOutputPath = blob && shouldSerializeToSog ? `splat_${splatIndex}.sog` : `splat_${splatIndex}.ply`;
             outputPath = ensureUniquePackagePath(usedPaths, outputPath, defaultOutputPath);
 
             assetPlanById.set(assetId, {
@@ -1204,8 +1278,74 @@ const registerDocEvents = (scene: Scene, events: Events) => {
         }
     };
 
-    const resolveSavePackageContext = async (): Promise<SavePackageContext | null> => {
+    const resolveSavePackageContext = async (mode: 'default' | 'all-sog' = 'default'): Promise<SavePackageContext | null> => {
         const serialized = collectSerializedSceneState('package');
+        const totalSplats = serialized.assetEntries.reduce((sum, entry) => {
+            return sum + (entry.kind === 'splat' ? 1 : 0);
+        }, 0);
+        const shBandOptions = [3, 2, 1, 0].map(value => ({
+            label: localize(`doc.save-package-options.sog-sh-bands.${value}`),
+            value: `${value}`
+        }));
+
+        if (mode === 'all-sog') {
+            if (totalSplats === 0) {
+                return {
+                    serialized,
+                    editedSplatFormat: 'ply',
+                    saveAllSplatsAsSog: false,
+                    sogMaxSHBands: preferredPackageSogMaxSHBands,
+                    sogIterations: DEFAULT_PACKAGE_SOG_ITERATIONS
+                };
+            }
+
+            if (!await canSerializeSog()) {
+                await events.invoke('showPopup', {
+                    type: 'error',
+                    header: localize('doc.save-failed'),
+                    message: localize('doc.save-package-options.sog-unavailable')
+                });
+                return null;
+            }
+
+            const result = await events.invoke('showPopup', {
+                type: 'info',
+                header: localize('doc.save-package-options.header'),
+                message: localize('doc.save-package-options.all-sog-message'),
+                selects: [{
+                    id: 'sogMaxSHBands',
+                    label: localize('doc.save-package-options.sog-sh-bands'),
+                    value: `${preferredPackageSogMaxSHBands}`,
+                    presentation: 'dropdown',
+                    options: shBandOptions
+                }],
+                buttons: [
+                    {
+                        label: localize('doc.transition.save-package'),
+                        action: 'save'
+                    },
+                    {
+                        label: localize('popup.cancel'),
+                        action: 'cancel'
+                    }
+                ]
+            });
+
+            if (result.action !== 'save') {
+                return null;
+            }
+
+            preferredEditedSplatPackageFormat = 'sog';
+            preferredPackageSogMaxSHBands = Number.parseInt(result.values?.sogMaxSHBands ?? `${preferredPackageSogMaxSHBands}`, 10) || DEFAULT_PACKAGE_SOG_MAX_SH_BANDS;
+            return {
+                serialized,
+                editedSplatFormat: 'sog',
+                saveAllSplatsAsSog: true,
+                sogMaxSHBands: preferredPackageSogMaxSHBands,
+                sogIterations: DEFAULT_PACKAGE_SOG_ITERATIONS
+            };
+        }
+
         const hasEditedSplats = serialized.assetEntries.some((entry) => {
             return entry.kind === 'splat' && splatSnapshotAssetIds.has(entry.id);
         });
@@ -1213,7 +1353,10 @@ const registerDocEvents = (scene: Scene, events: Events) => {
         if (!hasEditedSplats) {
             return {
                 serialized,
-                editedSplatFormat: 'ply'
+                editedSplatFormat: 'ply',
+                saveAllSplatsAsSog: false,
+                sogMaxSHBands: preferredPackageSogMaxSHBands,
+                sogIterations: DEFAULT_PACKAGE_SOG_ITERATIONS
             };
         }
 
@@ -1222,7 +1365,10 @@ const registerDocEvents = (scene: Scene, events: Events) => {
             preferredEditedSplatPackageFormat = 'ply';
             return {
                 serialized,
-                editedSplatFormat: 'ply'
+                editedSplatFormat: 'ply',
+                saveAllSplatsAsSog: false,
+                sogMaxSHBands: preferredPackageSogMaxSHBands,
+                sogIterations: DEFAULT_PACKAGE_SOG_ITERATIONS
             };
         }
 
@@ -1230,20 +1376,31 @@ const registerDocEvents = (scene: Scene, events: Events) => {
             type: 'info',
             header: localize('doc.save-package-options.header'),
             message: localize('doc.save-package-options.message'),
-            select: {
-                label: localize('doc.save-package-options.edited-splat-format'),
-                value: preferredEditedSplatPackageFormat,
-                options: [
-                    {
-                        label: localize('doc.save-package-options.edited-splat-format.ply'),
-                        value: 'ply'
-                    },
-                    {
-                        label: localize('doc.save-package-options.edited-splat-format.sog'),
-                        value: 'sog'
-                    }
-                ]
-            },
+            selects: [
+                {
+                    id: 'editedSplatFormat',
+                    label: localize('doc.save-package-options.edited-splat-format'),
+                    value: preferredEditedSplatPackageFormat,
+                    presentation: 'buttons',
+                    options: [
+                        {
+                            label: localize('doc.save-package-options.edited-splat-format.ply'),
+                            value: 'ply'
+                        },
+                        {
+                            label: localize('doc.save-package-options.edited-splat-format.sog'),
+                            value: 'sog'
+                        }
+                    ]
+                },
+                {
+                    id: 'sogMaxSHBands',
+                    label: localize('doc.save-package-options.sog-sh-bands'),
+                    value: `${preferredPackageSogMaxSHBands}`,
+                    presentation: 'dropdown',
+                    options: shBandOptions
+                }
+            ],
             buttons: [
                 {
                     label: localize('doc.transition.save-package'),
@@ -1260,13 +1417,18 @@ const registerDocEvents = (scene: Scene, events: Events) => {
             return null;
         }
 
-        const editedSplatFormat: EditedSplatPackageFormat = result.value === 'sog' ? 'sog' : 'ply';
+        const editedSplatFormat: EditedSplatPackageFormat = result.values?.editedSplatFormat === 'sog' ? 'sog' : 'ply';
+        const parsedSogMaxSHBands = Number.parseInt(result.values?.sogMaxSHBands ?? `${preferredPackageSogMaxSHBands}`, 10);
 
         preferredEditedSplatPackageFormat = editedSplatFormat;
+        preferredPackageSogMaxSHBands = [0, 1, 2, 3].includes(parsedSogMaxSHBands) ? parsedSogMaxSHBands : DEFAULT_PACKAGE_SOG_MAX_SH_BANDS;
 
         return {
             serialized,
-            editedSplatFormat
+            editedSplatFormat,
+            saveAllSplatsAsSog: false,
+            sogMaxSHBands: preferredPackageSogMaxSHBands,
+            sogIterations: DEFAULT_PACKAGE_SOG_ITERATIONS
         };
     };
 
@@ -1276,6 +1438,9 @@ const registerDocEvents = (scene: Scene, events: Events) => {
         handle?: FileSystemFileHandle | null;
         serialized: SerializedSceneState;
         editedSplatFormat: EditedSplatPackageFormat;
+        saveAllSplatsAsSog: boolean;
+        sogMaxSHBands: number;
+        sogIterations: number;
     }): Promise<boolean> => {
         events.fire('startSpinner');
         let saveStep = 'init';
@@ -1285,12 +1450,32 @@ const registerDocEvents = (scene: Scene, events: Events) => {
         let sourcePackageZip: ZipReadFileSystem | null = null;
         let sourcePackageBlobSource: BlobReadSource | null = null;
         let usedSogFallback = false;
+        let saveProgressActive = false;
+        const maybeYield = createCooperativeYield();
+        const ensureInitialSaveProgress = async () => {
+            if (!saveProgressActive) {
+                events.fire('progressStart', localize('doc.save-package-progress.header'), false);
+                saveProgressActive = true;
+            }
+            events.fire('progressUpdate', {
+                progress: 0
+            });
+            await yieldToBrowser();
+        };
 
         try {
+            await maybeYield(true);
+            await ensureInitialSaveProgress();
             const nextProjectId = currentProjectId ?? createId('project');
             const nextPackageRevision = (currentPackageRevision ?? 0) + 1;
-            const { serialized, editedSplatFormat } = options;
-            const packagePlans = await buildPackageAssetSavePlans(serialized, editedSplatFormat);
+            const { serialized, editedSplatFormat, saveAllSplatsAsSog, sogMaxSHBands, sogIterations } = options;
+            const packagePlans = await buildPackageAssetSavePlans(
+                serialized,
+                editedSplatFormat,
+                saveAllSplatsAsSog,
+                sogMaxSHBands,
+                sogIterations
+            );
             const { assetPlanById } = packagePlans;
             usedSogFallback = packagePlans.usedSogFallback;
             const modelBlobMap = new Map<Model, Blob>();
@@ -1344,6 +1529,42 @@ const registerDocEvents = (scene: Scene, events: Events) => {
             );
             const useZip64 = estimate.total >= ZIP64_MARGIN_BYTES || estimate.total > ZIP32_LIMIT;
             const document = createDocumentPayload(useZip64);
+            const totalProgressSteps = Math.max(
+                1,
+                1 + serialized.splats.length + serialized.models.length + serialized.referenceImageAssets.length + 1
+            );
+            let completedProgressSteps = 0;
+            const ensureSaveProgress = () => {
+                if (saveProgressActive) {
+                    return;
+                }
+                events.fire('progressStart', localize('doc.save-package-progress.header'), false);
+                saveProgressActive = true;
+            };
+            const updateSaveProgress = (text: string, stepProgress = 0) => {
+                ensureSaveProgress();
+                const normalizedStepProgress = Math.min(Math.max(stepProgress, 0), 1);
+                const progress = 100 * ((completedProgressSteps + normalizedStepProgress) / totalProgressSteps);
+                events.fire('progressUpdate', {
+                    text,
+                    progress
+                });
+            };
+            const completeSaveProgressStep = (text: string) => {
+                completedProgressSteps = Math.min(totalProgressSteps, completedProgressSteps + 1);
+                updateSaveProgress(text, 0);
+            };
+            const getProgressName = (path: string) => path.split('/').pop() ?? path;
+            const getProgressText = (path: string) => localize('doc.save-package-progress.item', {
+                name: getProgressName(path)
+            });
+            const withSaveProgressStep = async (text: string, fn: (setStepProgress: (fraction: number) => void) => Promise<void>) => {
+                updateSaveProgress(text, 0);
+                await fn((fraction) => {
+                    updateSaveProgress(text, fraction);
+                });
+                completeSaveProgressStep(text);
+            };
 
             if (!options.stream && useZip64 && !hasFileSystemAccess()) {
                 await events.invoke('showPopup', {
@@ -1354,7 +1575,7 @@ const registerDocEvents = (scene: Scene, events: Events) => {
                 return false;
             }
 
-            const readSourcePackageEntry = async (path: string) => {
+            const readSourcePackageEntry = async (path: string, progress?: (loaded: number, total: number) => void) => {
                 if (!(currentPackageBlob instanceof Blob)) {
                     throw new Error(`Package source not available for '${path}'`);
                 }
@@ -1362,7 +1583,9 @@ const registerDocEvents = (scene: Scene, events: Events) => {
                     sourcePackageBlobSource = new BlobReadSource(currentPackageBlob);
                     sourcePackageZip = new ZipReadFileSystem(sourcePackageBlobSource);
                 }
-                const source = await sourcePackageZip.createSource(path);
+                const source = await sourcePackageZip.createSource(path, (loaded, total) => {
+                    progress?.(loaded, total ?? 0);
+                });
                 try {
                     const data = await source.read().readAll();
                     return new Blob([new Uint8Array(data)]);
@@ -1379,11 +1602,15 @@ const registerDocEvents = (scene: Scene, events: Events) => {
             saveStep = 'write document.json';
             const documentJson = JSON.stringify(document);
             jsonLength = documentJson.length;
-            const docWriter = await zipFs.createWriter('document.json');
-            await docWriter.write(new TextEncoder().encode(documentJson));
-            await docWriter.close();
+            await withSaveProgressStep(getProgressText('document.json'), async () => {
+                const docWriter = await zipFs.createWriter('document.json');
+                await docWriter.write(new TextEncoder().encode(documentJson));
+                await docWriter.close();
+            });
+            await maybeYield();
 
             for (let i = 0; i < serialized.splats.length; i++) {
+                await maybeYield();
                 const doc = serialized.splatDocs[i];
                 const plan = assetPlanById.get(doc.assetId);
                 if (!plan) {
@@ -1392,38 +1619,69 @@ const registerDocEvents = (scene: Scene, events: Events) => {
 
                 saveStep = `write ${plan.outputPath}`;
                 if (plan.mode === 'serialize-ply') {
-                    await serializePly([serialized.splats[i]], {
-                        keepStateData: false,
-                        keepWorldTransform: true,
-                        keepColorTint: true
-                    }, zipFs, plan.outputPath);
+                    await withSaveProgressStep(getProgressText(plan.outputPath), async (setStepProgress) => {
+                        await serializePly([serialized.splats[i]], {
+                            keepStateData: false,
+                            keepWorldTransform: true,
+                            keepColorTint: true
+                        }, zipFs, plan.outputPath, (loaded, total) => {
+                            setStepProgress(total > 0 ? loaded / total : 0);
+                        });
+                    });
                 } else if (plan.mode === 'copy-package-entry') {
-                    await writeBlobToZip(zipFs, plan.outputPath, await readSourcePackageEntry(plan.sourcePath ?? plan.outputPath));
+                    await withSaveProgressStep(getProgressText(plan.outputPath), async (setStepProgress) => {
+                        const sourceBlob = await readSourcePackageEntry(plan.sourcePath ?? plan.outputPath, (loaded, total) => {
+                            const readFraction = total > 0 ? loaded / total : 0;
+                            setStepProgress(readFraction * 0.5);
+                        });
+                        await writeBlobToZip(zipFs, plan.outputPath, sourceBlob, (loaded, total) => {
+                            const writeFraction = total > 0 ? loaded / total : 0;
+                            setStepProgress(0.5 + writeFraction * 0.5);
+                        }, maybeYield);
+                    });
                 } else {
-                    await writeBlobToZip(zipFs, plan.outputPath, plan.blob ?? await getSplatSourceBlob(serialized.splats[i]));
+                    await withSaveProgressStep(getProgressText(plan.outputPath), async (setStepProgress) => {
+                        const sourceBlob = plan.blob ?? await getSplatSourceBlob(serialized.splats[i]);
+                        await writeBlobToZip(zipFs, plan.outputPath, sourceBlob, (loaded, total) => {
+                            setStepProgress(total > 0 ? loaded / total : 0);
+                        }, maybeYield);
+                    });
                 }
             }
 
             for (let i = 0; i < serialized.models.length; i++) {
+                await maybeYield();
                 const doc = serialized.modelDocs[i];
                 const plan = assetPlanById.get(doc.assetId);
                 if (!plan?.blob) {
                     throw new Error(`Missing package save plan for model '${doc.assetId}'`);
                 }
                 saveStep = `write ${plan.outputPath}`;
-                await writeBlobToZip(zipFs, plan.outputPath, plan.blob);
+                await withSaveProgressStep(getProgressText(plan.outputPath), async (setStepProgress) => {
+                    await writeBlobToZip(zipFs, plan.outputPath, plan.blob!, (loaded, total) => {
+                        setStepProgress(total > 0 ? loaded / total : 0);
+                    }, maybeYield);
+                });
             }
 
             for (const asset of serialized.referenceImageAssets) {
+                await maybeYield();
                 if (!asset?.blob || typeof asset?.path !== 'string' || !asset.path) {
                     continue;
                 }
                 saveStep = `write ${asset.path}`;
-                await writeBlobToZip(zipFs, asset.path, asset.blob);
+                await withSaveProgressStep(getProgressText(asset.path), async (setStepProgress) => {
+                    await writeBlobToZip(zipFs, asset.path, asset.blob, (loaded, total) => {
+                        setStepProgress(total > 0 ? loaded / total : 0);
+                    }, maybeYield);
+                });
             }
 
             saveStep = 'finalize zip';
-            await zipFs.close();
+            await withSaveProgressStep(localize('doc.save-package-progress.finalizing'), async () => {
+                await maybeYield(true);
+                await zipFs.close();
+            });
             saved = true;
 
             currentProjectId = nextProjectId;
@@ -1472,6 +1730,14 @@ const registerDocEvents = (scene: Scene, events: Events) => {
             }
 
             events.fire('doc.saved');
+            if (saveProgressActive) {
+                events.fire('progressUpdate', {
+                    text: localize('doc.save-package-progress.done'),
+                    progress: 100
+                });
+                events.fire('progressEnd');
+                saveProgressActive = false;
+            }
             if (usedSogFallback) {
                 events.fire('stopSpinner');
                 spinnerStopped = true;
@@ -1502,6 +1768,9 @@ const registerDocEvents = (scene: Scene, events: Events) => {
             sourcePackageBlobSource?.close();
             if (!saved && options.stream) {
                 await cleanupWritableStream(options.stream);
+            }
+            if (saveProgressActive) {
+                events.fire('progressEnd');
             }
             if (!spinnerStopped) {
                 events.fire('stopSpinner');
@@ -2122,6 +2391,35 @@ const registerDocEvents = (scene: Scene, events: Events) => {
 
     events.on('doc.savePackage', async () => {
         await events.invoke('doc.savePackage');
+    });
+
+    events.function('doc.savePackageSogAll', async () => {
+        const saveContext = await resolveSavePackageContext('all-sog');
+        if (!saveContext) {
+            return false;
+        }
+
+        if (documentFileHandle) {
+            try {
+                return await savePackageDocument({
+                    stream: await documentFileHandle.createWritable(),
+                    handle: documentFileHandle,
+                    ...saveContext
+                });
+            } catch (error) {
+                if ((error as Error)?.name !== 'AbortError' && (error as Error)?.name !== 'NotAllowedError') {
+                    console.error(error);
+                    await events.invoke('showPopup', {
+                        type: 'error',
+                        header: localize('doc.save-failed'),
+                        message: `'${(error as Error)?.message ?? error}'`
+                    });
+                }
+                return false;
+            }
+        }
+
+        return await savePackageAsWithContext(saveContext);
     });
 
     events.function('doc.savePackageAs', async () => {

@@ -152,7 +152,35 @@ const serviceWorker = {
     cache: false
 };
 
+const sogSerializeWorker = {
+    input: 'src/sog-serialize.worker.ts',
+    output: {
+        dir: 'dist',
+        format: 'esm',
+        sourcemap: true
+    },
+    onwarn,
+    plugins: [
+        alias({
+            entries: {
+                'playcanvas': ENGINE_DIR,
+                '@playcanvas/pcui': PCUI_DIR
+            }
+        }),
+        commonjs(),
+        typescript({
+            tsconfig: './tsconfig.json'
+        }),
+        resolve(),
+        json(),
+        BUILD_TYPE !== 'debug' && terser()
+    ],
+    treeshake: 'smallest',
+    cache: false
+};
+
 export default [
     application,
-    serviceWorker
+    serviceWorker,
+    sogSerializeWorker
 ];
