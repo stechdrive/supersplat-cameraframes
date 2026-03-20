@@ -493,15 +493,17 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
             } else if (mode === 'rings') {
                 scene.camera.pickPrep(splat, op);
 
-                // Use normalized coordinates with minimal size for single pixel pick
-                const pickResult = await scene.camera.pickRect(
+                // Search a small neighborhood so tiny splats remain pickable under unified culling.
+                const pickId = await scene.camera.pick(
                     point.x,
                     point.y,
-                    1 / width,
-                    1 / height
+                    2
                 );
-                const pickId = pickResult[0];
-                events.fire('edit.add', new SelectOp(splat, op, new Uint32Array([pickId])));
+                events.fire('edit.add', new SelectOp(
+                    splat,
+                    op,
+                    pickId >= 0 ? new Uint32Array([pickId]) : new Uint32Array(0)
+                ));
             }
         }
     });
@@ -533,10 +535,8 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
 
         for (const splat of splats) {
             scene.camera.pickPrep(splat, 'set');
-            // Use normalized coordinates with minimal size for single pixel pick
-            const pickBuffer = await scene.camera.pickRect(nx, ny, 1 / width, 1 / height);
-            const pickId = pickBuffer?.[0];
-            if (pickId === undefined || pickId === 0xffffffff) {
+            const pickId = await scene.camera.pick(nx, ny, 2);
+            if (pickId < 0) {
                 continue;
             }
 

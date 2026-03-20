@@ -1765,7 +1765,100 @@ class Camera extends Element {
         const nx = clamp(mapped.x / mapped.width, 0, 1);
         const ny = clamp(mapped.y / mapped.height, 0, 1);
 
-        const splats = scene.getElementsByType(ElementType.splat);
+        const splats = scene.getElementsByType(ElementType.splat) as Splat[];
+        const resolveIntersectionPosition = (normalizedDepth: number) => {
+            const device = scene?.graphicsDevice;
+            const clientWidth = device?.clientRect?.width ?? 0;
+            const clientHeight = device?.clientRect?.height ?? 0;
+            if (!(clientWidth > 0 && clientHeight > 0)) {
+                return null;
+            }
+
+            if (resolveCameraProjectionData(this.entity.camera, cameraMatricesScratch, {
+                fallbackToCurrentMatrices: true
+            })) {
+                cameraMatricesScratch.viewInv.getTranslation(cameraPos);
+            } else {
+                cameraPos.copy(this.entity.getPosition());
+            }
+
+            const position = new Vec3();
+            if (!screenToWorldFromDepthWithProjectionData(
+                cameraMatricesScratch,
+                screenX,
+                screenY,
+                normalizedDepth,
+                clientWidth,
+                clientHeight,
+                this.entity.camera,
+                position
+            )) {
+                return null;
+            }
+
+            return {
+                position,
+                distance: vecb.sub2(position, cameraPos).length()
+            };
+        };
+
+        const findSplatByGsplatComponent = (component: any) => {
+            if (!component) {
+                return null;
+            }
+            return splats.find(splat => splat.entity.gsplat === component) ?? null;
+        };
+
+        const pickLayers = [scene.worldLayer, scene.modelLightingLayer].filter((layer): layer is Layer => !!layer);
+        const hasDirectUnifiedSplats =
+            scene.splatRenderCapabilities.resolvedMode === 'unified-display' &&
+            splats.some(splat => splat.visible && splat.entity.gsplat?.enabled);
+
+        if (this.selectionDepthPicker && hasDirectUnifiedSplats && pickLayers.length > 0) {
+            this.selectionDepthPicker.resize(mapped.width, mapped.height);
+            this.selectionDepthPicker.prepare(this.entity.camera, this.scene.app.scene, pickLayers);
+
+            const directDepth = await (this.selectionDepthPicker as any).getPointDepthAsync(ix, iy) as number | null;
+            if (directDepth !== null) {
+                const directHit = resolveIntersectionPosition(directDepth);
+                if (!directHit) {
+                    return null;
+                }
+
+                const selection = this.selectionDepthPicker.getSelection(ix, iy) as any[];
+                for (let i = 0; i < selection.length; ++i) {
+                    const entry = selection[i];
+                    const gsplatComponent = entry?.entity?.gsplat ?? entry?.node?.gsplat ?? null;
+                    const splat = findSplatByGsplatComponent(gsplatComponent);
+                    if (splat) {
+                        return {
+                            splat,
+                            element: splat,
+                            position: directHit.position,
+                            distance: directHit.distance
+                        };
+                    }
+
+                    if (entry instanceof MeshInstance) {
+                        const model = scene.events.invoke('mesh.fromGraphNode', entry.node) as Model;
+                        if (model) {
+                            return {
+                                model,
+                                element: model,
+                                position: directHit.position,
+                                distance: directHit.distance
+                            };
+                        }
+                    }
+                }
+
+                return {
+                    element: null as Element | null,
+                    position: directHit.position,
+                    distance: directHit.distance
+                };
+            }
+        }
 
         let closestDepth = Infinity;
         let closestSplat: Splat | null = null;
@@ -1829,40 +1922,16 @@ class Camera extends Element {
             );
 
         if (useSplatHit) {
-            const device = scene?.graphicsDevice;
-            const clientWidth = device?.clientRect?.width ?? 0;
-            const clientHeight = device?.clientRect?.height ?? 0;
-            if (!(clientWidth > 0 && clientHeight > 0)) {
-                return null;
-            }
-
-            if (resolveCameraProjectionData(this.entity.camera, cameraMatricesScratch, {
-                fallbackToCurrentMatrices: true
-            })) {
-                cameraMatricesScratch.viewInv.getTranslation(cameraPos);
-            } else {
-                cameraPos.copy(this.entity.getPosition());
-            }
-
-            const position = new Vec3();
-            if (!screenToWorldFromDepthWithProjectionData(
-                cameraMatricesScratch,
-                screenX,
-                screenY,
-                closestDepth,
-                clientWidth,
-                clientHeight,
-                this.entity.camera,
-                position
-            )) {
+            const splatHit = resolveIntersectionPosition(closestDepth);
+            if (!splatHit) {
                 return null;
             }
 
             return {
                 splat: closestSplat,
                 element: closestSplat,
-                position,
-                distance: vecb.sub2(position, cameraPos).length()
+                position: splatHit.position,
+                distance: splatHit.distance
             };
         }
 
@@ -1981,8 +2050,7 @@ class Camera extends Element {
         });
     }
 
-    async pick(x: number, y: number) {
-        const id = await this.picker.readId(x, y);
+    private mapPickIdToLocal(id: number) {
         const mapped = this.scene.splatRenderPicking.mapPickId(id);
         if (!mapped || (this.currentPickTarget && mapped.splat !== this.currentPickTarget)) {
             return -1;
@@ -1990,17 +2058,74 @@ class Camera extends Element {
         return mapped.local;
     }
 
+    async pick(x: number, y: number, pixelRadius = 0) {
+        const finish = (result: number) => {
+            this.currentPickTarget = null;
+            return result;
+        };
+
+        if (!(pixelRadius > 0)) {
+            const id = await this.picker.readId(x, y);
+            return finish(this.mapPickIdToLocal(id));
+        }
+
+        const targetSize = this.scene.targetSize;
+        const width = targetSize?.width ?? 0;
+        const height = targetSize?.height ?? 0;
+        if (!(width > 0 && height > 0)) {
+            const id = await this.picker.readId(x, y);
+            return finish(this.mapPickIdToLocal(id));
+        }
+
+        const nx = Math.max(0, Math.min(1, x));
+        const ny = Math.max(0, Math.min(1, y));
+        const radiusX = pixelRadius / width;
+        const radiusY = pixelRadius / height;
+        const sampleX = Math.max(0, nx - radiusX);
+        const sampleY = Math.max(0, ny - radiusY);
+        const sampleWidth = Math.min(1 - sampleX, (pixelRadius * 2 + 1) / width);
+        const sampleHeight = Math.min(1 - sampleY, (pixelRadius * 2 + 1) / height);
+        const ids = await this.picker.readIds(sampleX, sampleY, sampleWidth, sampleHeight);
+
+        const px = Math.floor(sampleX * width);
+        const py = Math.floor(sampleY * height);
+        const pw = Math.max(1, Math.ceil((sampleX + sampleWidth) * width) - px);
+        const ph = Math.max(1, Math.ceil((sampleY + sampleHeight) * height) - py);
+        const targetPx = Math.max(0, Math.min(width - 1, Math.floor(nx * width)));
+        const targetPy = Math.max(0, Math.min(height - 1, Math.floor(ny * height)));
+        const centerCol = Math.max(0, Math.min(pw - 1, targetPx - px));
+        const centerRow = Math.max(0, Math.min(ph - 1, targetPy - py));
+
+        let closestLocal = -1;
+        let closestDistance = Number.POSITIVE_INFINITY;
+        const count = Math.min(ids.length, pw * ph);
+
+        for (let i = 0; i < count; i++) {
+            const local = this.mapPickIdToLocal(ids[i]);
+            if (local < 0) {
+                continue;
+            }
+
+            const col = i % pw;
+            const row = Math.floor(i / pw);
+            const dx = col - centerCol;
+            const dy = row - centerRow;
+            const distance = dx * dx + dy * dy;
+            if (distance < closestDistance) {
+                closestDistance = distance;
+                closestLocal = local;
+            }
+        }
+
+        return finish(closestLocal);
+    }
+
     async pickRect(x: number, y: number, width: number, height: number) {
         const ids = await this.picker.readIds(x, y, width, height);
         const result: number[] = [];
 
         for (let i = 0; i < ids.length; i++) {
-            const mapped = this.scene.splatRenderPicking.mapPickId(ids[i]);
-            if (!mapped || (this.currentPickTarget && mapped.splat !== this.currentPickTarget)) {
-                result.push(-1);
-            } else {
-                result.push(mapped.local);
-            }
+            result.push(this.mapPickIdToLocal(ids[i]));
         }
 
         this.currentPickTarget = null;
