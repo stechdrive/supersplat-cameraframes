@@ -1818,11 +1818,6 @@ class Camera extends Element {
                         break;
                     }
                 }
-
-                if (!closestModel) {
-                    closestModelDepth = worldDepth;
-                    closestModelPosition = worldPosition.clone();
-                }
             }
         }
 

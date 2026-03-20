@@ -77,6 +77,20 @@ class PointerController {
             fpvMove(forward, 0, 0, mul);
         };
 
+        const setPivotPoint = (event: PointerEvent) => {
+            // fallback pivot if async pick is not yet available
+            pivotPoint.copy(camera.entity.getPosition());
+            pivotForward.copy(camera.entity.forward).mulScalar(camera.sceneRadius * 2);
+            pivotPoint.add(pivotForward);
+
+            (async () => {
+                const hit = await camera.intersectCss(event.offsetX, event.offsetY);
+                if (hit) {
+                    pivotPoint.copy(hit.position);
+                }
+            })().catch(() => {});
+        };
+
         // mouse state
         let pressedButton = -1;  // no button pressed, otherwise 0, 1, or 2
         let x: number, y: number;
@@ -84,10 +98,6 @@ class PointerController {
         // fpv-only middle-drag tracking
         let mmbX = 0, mmbY = 0, mmbActive = false;
         let isPivoting = false;
-        let pendingPivotPick = false;
-        let pivotPickToken = 0;
-        let pendingPivotDeltaX = 0;
-        let pendingPivotDeltaY = 0;
 
         // touch state
         let touches: { id: number, x: number, y: number}[] = [];
@@ -98,54 +108,6 @@ class PointerController {
             isPivoting = false;
             activeMousePointerId = null;
             mmbActive = false;
-            pendingPivotPick = false;
-            pendingPivotDeltaX = 0;
-            pendingPivotDeltaY = 0;
-            pivotPickToken++;
-        };
-
-        const beginPivotPick = (event: PointerEvent) => {
-            const token = ++pivotPickToken;
-            pendingPivotPick = true;
-            pendingPivotDeltaX = 0;
-            pendingPivotDeltaY = 0;
-
-            (async () => {
-                let nextPivot: Vec3 | null = null;
-                const hit = await camera.intersectCss(event.offsetX, event.offsetY);
-                if (hit) {
-                    nextPivot = hit.position;
-                } else {
-                    pivotPoint.copy(camera.entity.getPosition());
-                    pivotForward.copy(camera.entity.forward).mulScalar(camera.sceneRadius * 2);
-                    pivotPoint.add(pivotForward);
-                    nextPivot = pivotPoint.clone();
-                }
-
-                if (token !== pivotPickToken || activeMousePointerId !== event.pointerId || pressedButton !== 0) {
-                    return;
-                }
-
-                if (nextPivot) {
-                    pivotPoint.copy(nextPivot);
-                }
-
-                pendingPivotPick = false;
-                isPivoting = true;
-
-                if (Math.abs(pendingPivotDeltaX) > 0 || Math.abs(pendingPivotDeltaY) > 0) {
-                    const sens = camera.scene.config.controls.orbitSensitivity;
-                    camera.orbitAround(pivotPoint, pendingPivotDeltaX * sens, pendingPivotDeltaY * sens);
-                    pendingPivotDeltaX = 0;
-                    pendingPivotDeltaY = 0;
-                }
-            })().catch(() => {
-                if (token !== pivotPickToken) {
-                    return;
-                }
-                pendingPivotPick = false;
-                isPivoting = false;
-            });
         };
 
         const releaseMouseInteraction = (event?: Pick<PointerEvent, 'pointerId'> | null) => {
@@ -179,7 +141,8 @@ class PointerController {
                     mmbActive = false;
                 }
                 if (pivotDrag) {
-                    beginPivotPick(event);
+                    setPivotPoint(event);
+                    isPivoting = true;
                     return;
                 }
                 if (pressedButton === 0 && isFpvNav()) {
@@ -245,20 +208,14 @@ class PointerController {
                         const wantPivot = isCtrlLike(modState);
                         if (wantPivot) {
                             if (!isPivoting) {
-                                if (!pendingPivotPick) {
-                                    beginPivotPick(event);
-                                }
+                                setPivotPoint(event);
+                                isPivoting = true;
                                 if (document.pointerLockElement === target) {
                                     document.exitPointerLock?.();
                                 }
                                 // avoid a jump on first pivot frame
                                 x = event.offsetX;
                                 y = event.offsetY;
-                            }
-                            if (pendingPivotPick) {
-                                pendingPivotDeltaX += dx;
-                                pendingPivotDeltaY += dy;
-                                return;
                             }
                             const sens = camera.scene.config.controls.orbitSensitivity;
                             camera.orbitAround(pivotPoint, dx * sens, dy * sens);
@@ -267,10 +224,6 @@ class PointerController {
 
                         if (isPivoting && !wantPivot) {
                             isPivoting = false;
-                            pendingPivotPick = false;
-                            pendingPivotDeltaX = 0;
-                            pendingPivotDeltaY = 0;
-                            pivotPickToken++;
                             x = event.offsetX;
                             y = event.offsetY;
                         }
