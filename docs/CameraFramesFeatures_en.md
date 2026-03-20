@@ -1,6 +1,6 @@
 # CAMERA FRAMES Features Overview
 
-CAMERA FRAMES v2.21.2 lets you lay out multiple frames on an A4-like master sheet and keep the composition stable with anchored off-axis frustums so preview and export match. It unifies zoomable previews, frame editing, camera pose control, and PSD/PNG export.
+CAMERA FRAMES v2.21.3 lets you lay out multiple frames on an A4-like master sheet and keep the composition stable with anchored off-axis frustums so preview and export match. It unifies zoomable previews, frame editing, camera pose control, and PSD/PNG export.
 
 ## 1. What it offers
 - **Anchored render box scaling**: 3×3 anchors drive off-axis frustums so horizontal/vertical scale and viewZoom never drift the anchored composition.
@@ -17,7 +17,7 @@ CAMERA FRAMES v2.21.2 lets you lay out multiple frames on an A4-like master shee
 - Header provides **CAMERA FRAMES ON/OFF** (Capture=ON, Edit=OFF icons), **Capture Camera Controls** (separate panel) button, and **Compact** toggle. Compact mode shows only the header.
 - The Capture Camera Controls panel can be opened only while CAMERA FRAMES is OFF. While open, the capture frustum stays highlighted as a capture edit mode.
 - Panel can be dragged and is clamped inside the window; pointer events on the panel do not fall through to the canvas.
-- Label shows `| CAMERA FRAMES v2.21.2`.
+- Label shows `| CAMERA FRAMES v2.21.3`.
 
 ## 3. Render Box (Layout)
 - Master sheet `1754 × 1240px` (A4 at 150dpi). `Width/Height (%)` are clamped to 100%+ up to 16000px equivalent. 3×3 anchor sets the pivot for future scaling.
