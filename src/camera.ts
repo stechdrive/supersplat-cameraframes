@@ -56,6 +56,7 @@ import {
     getOpticalAxisScreenCoordsWithProjectionData,
     resolveCameraProjectionData,
     resolveCameraRayBasis,
+    screenToWorldFromDepthWithProjectionData,
     screenToWorldWithCameraProjectionData,
     worldToScreenWithProjectionData,
     type CameraRayBasis,
@@ -1785,63 +1786,107 @@ class Camera extends Element {
             }
         }
 
-        if (closestSplat) {
-            // Convert normalized depth to linear depth
-            const linearDepth = closestDepth * (this.far - this.near) + this.near;
+        const worldLayer = scene.app.scene.layers.getLayerByName('World');
+        const layersToPick = [worldLayer, scene.modelLightingLayer].filter(layer => !!layer);
 
-            if (!this.getRay(screenX, screenY, ray)) {
+        let closestModel: Model | null = null;
+        let closestModelDepth: number | null = null;
+        let closestModelPosition: Vec3 | null = null;
+
+        if (this.selectionDepthPicker && layersToPick.length > 0) {
+            this.selectionDepthPicker.resize(mapped.width, mapped.height);
+            this.selectionDepthPicker.prepare(this.entity.camera, this.scene.app.scene, layersToPick);
+
+            const worldDepth = await (this.selectionDepthPicker as any).getPointDepthAsync(ix, iy) as number | null;
+            const worldPosition = worldDepth !== null ?
+                await (this.selectionDepthPicker as any).getWorldPointAsync(ix, iy) as Vec3 | null :
+                null;
+
+            if (worldDepth !== null && worldPosition) {
+                const selection = this.selectionDepthPicker.getSelection(ix, iy);
+                for (let i = 0; i < selection.length; ++i) {
+                    const mesh = selection[i];
+                    if (!(mesh instanceof MeshInstance)) {
+                        continue;
+                    }
+
+                    const model = scene.events.invoke('mesh.fromGraphNode', mesh.node) as Model;
+                    if (model) {
+                        closestModel = model;
+                        closestModelDepth = worldDepth;
+                        closestModelPosition = worldPosition.clone();
+                        break;
+                    }
+                }
+
+                if (!closestModel) {
+                    closestModelDepth = worldDepth;
+                    closestModelPosition = worldPosition.clone();
+                }
+            }
+        }
+
+        const useSplatHit =
+            closestSplat &&
+            (
+                closestModelDepth === null ||
+                closestDepth <= closestModelDepth + 1e-5
+            );
+
+        if (useSplatHit) {
+            const device = scene?.graphicsDevice;
+            const clientWidth = device?.clientRect?.width ?? 0;
+            const clientHeight = device?.clientRect?.height ?? 0;
+            if (!(clientWidth > 0 && clientHeight > 0)) {
                 return null;
             }
 
-            // Calculate world position from ray and depth
-            const t = linearDepth / ray.direction.dot(this.entity.forward);
+            if (resolveCameraProjectionData(this.entity.camera, cameraMatricesScratch, {
+                fallbackToCurrentMatrices: true
+            })) {
+                cameraMatricesScratch.viewInv.getTranslation(cameraPos);
+            } else {
+                cameraPos.copy(this.entity.getPosition());
+            }
+
             const position = new Vec3();
-            position.copy(ray.origin).add(vec.copy(ray.direction).mulScalar(t));
+            if (!screenToWorldFromDepthWithProjectionData(
+                cameraMatricesScratch,
+                screenX,
+                screenY,
+                closestDepth,
+                clientWidth,
+                clientHeight,
+                this.entity.camera,
+                position
+            )) {
+                return null;
+            }
 
             return {
                 splat: closestSplat,
                 element: closestSplat,
                 position,
-                distance: t
+                distance: vecb.sub2(position, cameraPos).length()
             };
         }
 
-        const worldLayer = scene.app.scene.layers.getLayerByName('World');
-        const layersToPick = [worldLayer, scene.modelLightingLayer].filter(layer => !!layer);
-        if (!this.modelPicker) {
-            return null;
-        }
-        this.modelPicker.resize(mapped.width, mapped.height);
-        this.modelPicker.prepare(this.entity.camera, this.scene.app.scene, layersToPick.length > 0 ? layersToPick : undefined);
-        const selection = this.modelPicker.getSelection(ix, iy);
-        for (let i = 0; i < selection.length; ++i) {
-            const mesh = selection[i];
-            if (!(mesh instanceof MeshInstance)) {
-                continue;
+        if (closestModelPosition) {
+            if (resolveCameraProjectionData(this.entity.camera, cameraMatricesScratch, {
+                fallbackToCurrentMatrices: true
+            })) {
+                cameraMatricesScratch.viewInv.getTranslation(cameraPos);
+            } else {
+                cameraPos.copy(this.entity.getPosition());
             }
-            const model = scene.events.invoke('mesh.fromGraphNode', mesh.node) as Model;
-            if (model) {
-                if (!this.getRay(screenX, screenY, ray)) {
-                    return null;
-                }
-                if (mesh.aabb.intersectsRay(ray, vec)) {
-                    const distance = vecb.sub2(vec, ray.origin).length();
-                    return {
-                        model,
-                        element: model,
-                        position: vec.clone(),
-                        distance
-                    };
-                }
-                vec.copy(mesh.aabb.center);
-                const distance = vecb.sub2(vec, ray.origin).length();
-                return {
-                    model,
-                    element: model,
-                    position: vec.clone(),
-                    distance
-                };
-            }
+
+            const distance = vecb.sub2(closestModelPosition, cameraPos).length();
+            return {
+                model: closestModel,
+                element: closestModel,
+                position: closestModelPosition,
+                distance
+            };
         }
 
         return null;

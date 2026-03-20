@@ -117,11 +117,8 @@ void main(void) {
 
     #if PICK_PASS
         if (pickMode == 1) {
-            // depth estimation mode: compute normalized depth in vertex shader
-            float linearDepth = -center.view.z;
-            float normalizedDepth = (linearDepth - camera_params.z) / (camera_params.y - camera_params.z);
             vec4 clr = getColor();
-            color = vec4(normalizedDepth, 0.0, 0.0, 1.0) * clr.a;
+            color = vec4(0.0, 0.0, 0.0, clr.a);
         } else if (pickMode == 2) {
             vec4 clr = getColor();
             color = vec4(0.0, 0.0, 0.0, clr.a);
@@ -216,14 +213,13 @@ void main(void) {
 
     #if PICK_PASS
         if (pickMode == 1) {
-            // depth estimation
-            mediump float alpha = normExp(A);
+            // depth estimation based on the current fragment depth, weighted by the
+            // visible alpha contribution so the hit stays close to what the user sees.
+            mediump float alpha = normExp(A) * color.a;
             if (alpha < 1.0 / 255.0) {
                 discard;
             }
-            // we should multiply by alpha here to take into account gaussian falloff,
-            // but it results in less accurate depth for some reason
-            gl_FragColor = color * alpha;
+            gl_FragColor = vec4(gl_FragCoord.z, 0.0, 0.0, 1.0) * alpha;
         } else if (pickMode == 2) {
             mediump float alpha = normExp(A) * color.a;
             if (alpha < 1.0 / 255.0) {

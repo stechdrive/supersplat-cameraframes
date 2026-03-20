@@ -179,6 +179,28 @@ const screenToWorldWithProjectionData = (
     return true;
 };
 
+const screenToWorldFromDepthWithProjectionData = (
+    projectionData: CameraProjectionData,
+    screenX: number,
+    screenY: number,
+    normalizedDepth: number,
+    clientWidth: number,
+    clientHeight: number,
+    camera: CameraComponent,
+    out: Vec3
+) => {
+    const viewport = buildViewportCoords(screenX, screenY, camera, clientWidth, clientHeight);
+    if (!viewport) {
+        return false;
+    }
+
+    const clipX = viewport.x * 2 - 1;
+    const clipY = viewport.y * 2 - 1;
+    const clipZ = normalizedDepth * 2 - 1;
+
+    return unprojectClipCoordWithProjectionData(projectionData, clipX, clipY, clipZ, out);
+};
+
 const worldToScreenWithProjectionData = (
     projectionData: CameraProjectionData,
     world: Vec3,
@@ -391,6 +413,7 @@ export {
     getOpticalAxisScreenCoordsWithProjectionData,
     screenToWorldWithCameraProjectionData,
     screenToWorldWithProjectionData,
+    screenToWorldFromDepthWithProjectionData,
     unprojectClipCoordWithProjectionData,
     worldToScreenWithProjectionData,
     type CameraRayBasis,
