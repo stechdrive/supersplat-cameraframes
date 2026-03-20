@@ -385,6 +385,8 @@
     "doc.cleanup.confirm-message-current": "ブラウザに保存されたローカル作業状態 {{count}} 件（約 {{size}}）を削除します。.ssproj ファイルは変更されません。現在開いているドキュメントのパッケージ未保存の変更は、再読み込み後に復元できなくなります。",
     "doc.cleanup.success": "ローカル作業状態を削除しました（{{count}} 件、約 {{size}}）。",
     "doc.cleanup.failed": "ローカル作業状態の削除に失敗",
+    "doc.save-working-state-quota.header": "ローカル作業状態の保存容量を超えました",
+    "doc.save-working-state-quota.message": "この変更はブラウザのローカル作業状態としては大きすぎるため、Ctrl+S では保存できません。プロジェクトパッケージを保存して .ssproj を更新してください。不要なローカル作業状態は File > ローカル作業状態を削除 で整理できます。",
     "doc.save-failed": "保存に失敗",
     "doc.load-failed": "読み込みに失敗",
     "doc.reference-images.missing": "下絵の一部を読み込めませんでした（{{count}}件欠落）。",

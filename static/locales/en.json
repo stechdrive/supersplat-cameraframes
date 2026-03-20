@@ -385,6 +385,8 @@
     "doc.cleanup.confirm-message-current": "This will remove {{count}} browser-local working state item(s) (about {{size}}). Your .ssproj files will not be changed. Changes in the current document that are not saved into the package will no longer be restored after reload.",
     "doc.cleanup.success": "Cleared {{count}} local working state item(s) (about {{size}}).",
     "doc.cleanup.failed": "Failed to Clear Local Working State",
+    "doc.save-working-state-quota.header": "Local Working State Storage Limit Reached",
+    "doc.save-working-state-quota.message": "This change is too large to keep as browser-local working state, so Ctrl+S cannot save it. Save the project package to update the .ssproj file instead. You can clean up unused local working state from File > Clear Local Working State.",
     "doc.save-failed": "Failed to Save",
     "doc.load-failed": "Failed to Load",
     "doc.reference-images.missing": "Some reference images could not be loaded ({{count}} item(s) missing).",
