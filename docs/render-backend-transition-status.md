@@ -120,7 +120,7 @@ upstream 変更で
 
 ### 2. `scene.gsplat` の policy 設定
 
-[splat-render-backend.ts](/D:/GitHub/supersplat-cameraframes/src/splat-render-backend.ts) の `configureUnifiedDisplaySceneGsplat()` で、
+[splat-render-backend.ts](/D:/GitHub/supersplat-cameraframes/src/splat-render-backend.ts) の `applyUnifiedDisplaySceneGsplatPolicy()` で、
 
 - `culling`
 - `radialSorting`

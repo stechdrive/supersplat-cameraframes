@@ -106,6 +106,30 @@ type SplatRenderBackends = SplatRenderRoleBackends & {
     capabilities: SplatRenderBackendCapabilities;
 };
 
+type UnifiedDisplaySceneGsplatPolicy = {
+    culling: boolean;
+    radialSorting: boolean;
+    colorUpdateAngle: number;
+    colorUpdateDistance: number;
+};
+
+type UnifiedDisplayProjectionSnapshotEntry = {
+    key: string;
+    value: string;
+};
+
+type UnifiedDisplayProjectionSnapshot = {
+    entries: UnifiedDisplayProjectionSnapshotEntry[];
+    signature: string;
+};
+
+type UnifiedDisplayRefreshController = {
+    syncSceneGsplatPolicy: () => void;
+    resetProjectionBaseline: () => void;
+    captureProjectionBaseline: () => void;
+    refreshForProjectionChange: () => void;
+};
+
 const wrapSplatRenderLifecycleBackend = (backend: SplatRenderLifecycleBackend): SplatRenderLifecycleBackend => {
     return {
         freeze: () => backend.freeze(),
@@ -310,6 +334,29 @@ const resolveUnifiedDisplayRadialSorting = (scene: Scene) => {
     return !scene.camera?.ortho;
 };
 
+const resolveUnifiedDisplaySceneGsplatPolicy = (scene: Scene): UnifiedDisplaySceneGsplatPolicy => {
+    return {
+        culling: scene.config.renderBackend?.unifiedCulling === true,
+        radialSorting: resolveUnifiedDisplayRadialSorting(scene),
+        colorUpdateAngle: 0,
+        colorUpdateDistance: 0
+    };
+};
+
+const readUnifiedDisplaySceneGsplatPolicy = (scene: Scene): UnifiedDisplaySceneGsplatPolicy => {
+    const gsplat = scene.app.scene.gsplat;
+    return {
+        culling: gsplat.culling,
+        radialSorting: gsplat.radialSorting,
+        colorUpdateAngle: gsplat.colorUpdateAngle,
+        colorUpdateDistance: gsplat.colorUpdateDistance
+    };
+};
+
+const formatUnifiedDisplaySceneGsplatPolicy = (policy: UnifiedDisplaySceneGsplatPolicy) => {
+    return `culling=${policy.culling}, radialSorting=${policy.radialSorting}, colorUpdateAngle=${policy.colorUpdateAngle}, colorUpdateDistance=${policy.colorUpdateDistance}`;
+};
+
 const installUnifiedDisplayGsplatCenterOverride = (scene: Scene) => {
     const device = scene.graphicsDevice;
     if (unifiedDisplayGsplatCenterOverrideInstalled.has(device)) {
@@ -321,26 +368,26 @@ const installUnifiedDisplayGsplatCenterOverride = (scene: Scene) => {
     unifiedDisplayGsplatCenterOverrideInstalled.add(device);
 };
 
-const configureUnifiedDisplaySceneGsplat = (scene: Scene) => {
+const applyUnifiedDisplaySceneGsplatPolicy = (scene: Scene) => {
     installUnifiedDisplayGsplatCenterOverride(scene);
 
     const gsplat = scene.app.scene.gsplat;
-    const useUnifiedCulling = scene.config.renderBackend?.unifiedCulling === true;
-    const useRadialSorting = resolveUnifiedDisplayRadialSorting(scene);
+    const currentPolicy = readUnifiedDisplaySceneGsplatPolicy(scene);
+    const nextPolicy = resolveUnifiedDisplaySceneGsplatPolicy(scene);
     const needsUpdate =
-        gsplat.culling !== useUnifiedCulling ||
-        gsplat.radialSorting !== useRadialSorting ||
-        gsplat.colorUpdateAngle !== 0 ||
-        gsplat.colorUpdateDistance !== 0;
+        currentPolicy.culling !== nextPolicy.culling ||
+        currentPolicy.radialSorting !== nextPolicy.radialSorting ||
+        currentPolicy.colorUpdateAngle !== nextPolicy.colorUpdateAngle ||
+        currentPolicy.colorUpdateDistance !== nextPolicy.colorUpdateDistance;
 
-    gsplat.culling = useUnifiedCulling;
-    gsplat.radialSorting = useRadialSorting;
-    gsplat.colorUpdateAngle = 0;
-    gsplat.colorUpdateDistance = 0;
+    gsplat.culling = nextPolicy.culling;
+    gsplat.radialSorting = nextPolicy.radialSorting;
+    gsplat.colorUpdateAngle = nextPolicy.colorUpdateAngle;
+    gsplat.colorUpdateDistance = nextPolicy.colorUpdateDistance;
 
     if (needsUpdate) {
         gsplat.dirty = true;
-        console.info(`[SplatRender] unified-display scene.gsplat configured: culling=${useUnifiedCulling}, radialSorting=${useRadialSorting}, colorUpdateAngle=0, colorUpdateDistance=0`);
+        console.info(`[SplatRender] unified-display scene.gsplat configured: ${formatUnifiedDisplaySceneGsplatPolicy(nextPolicy)}`);
     }
 };
 
@@ -351,39 +398,131 @@ const roundProjectionSignatureValue = (value: number | null | undefined) => {
     return `${Math.round(value * 1e6) / 1e6}`;
 };
 
-const getUnifiedDisplayProjectionSignature = (scene: Scene) => {
+const createUnifiedDisplayProjectionSnapshot = (
+    entries: UnifiedDisplayProjectionSnapshotEntry[]
+): UnifiedDisplayProjectionSnapshot => {
+    return {
+        entries,
+        signature: entries.map(({ key, value }) => `${key}=${value}`).join('|')
+    };
+};
+
+const getUnifiedDisplayProjectionSnapshot = (scene: Scene): UnifiedDisplayProjectionSnapshot => {
     const cameraElement = scene.camera;
     if (!cameraElement?.camera) {
-        return 'camera-unavailable';
+        return createUnifiedDisplayProjectionSnapshot([
+            { key: 'status', value: 'camera-unavailable' }
+        ]);
     }
+
     const camera = cameraElement.camera;
     const targetSize = cameraElement.targetSize;
     const customFrustum = cameraElement.getCustomFrustum();
+    const useUnifiedCulling = scene.config.renderBackend?.unifiedCulling === true;
+    const cameraPosition = cameraElement.entity?.getPosition();
 
-    return [
-        `proj=${camera.projection}`,
-        `fov=${roundProjectionSignatureValue(camera.fov)}`,
-        `orthoHeight=${roundProjectionSignatureValue(camera.orthoHeight)}`,
-        `hFov=${camera.horizontalFov ? 1 : 0}`,
-        `aspect=${roundProjectionSignatureValue(camera.aspectRatio)}`,
-        `near=${roundProjectionSignatureValue(camera.nearClip)}`,
-        `far=${roundProjectionSignatureValue(camera.farClip)}`,
-        `ortho=${cameraElement.ortho ? 1 : 0}`,
-        `nearOverride=${roundProjectionSignatureValue(cameraElement.getNearOverride())}`,
-        `target=${targetSize ? `${roundProjectionSignatureValue(targetSize.width)}x${roundProjectionSignatureValue(targetSize.height)}` : 'null'}`,
-        `frustum=${customFrustum ? [
-            roundProjectionSignatureValue(customFrustum.left),
-            roundProjectionSignatureValue(customFrustum.right),
-            roundProjectionSignatureValue(customFrustum.bottom),
-            roundProjectionSignatureValue(customFrustum.top),
-            roundProjectionSignatureValue(customFrustum.near),
-            roundProjectionSignatureValue(customFrustum.far)
-        ].join(',') : 'null'}`
-    ].join('|');
+    return createUnifiedDisplayProjectionSnapshot([
+        { key: 'proj', value: `${camera.projection}` },
+        { key: 'fov', value: roundProjectionSignatureValue(camera.fov) },
+        { key: 'orthoHeight', value: roundProjectionSignatureValue(camera.orthoHeight) },
+        { key: 'hFov', value: `${camera.horizontalFov ? 1 : 0}` },
+        { key: 'aspect', value: roundProjectionSignatureValue(camera.aspectRatio) },
+        { key: 'near', value: roundProjectionSignatureValue(camera.nearClip) },
+        { key: 'far', value: roundProjectionSignatureValue(camera.farClip) },
+        { key: 'ortho', value: `${cameraElement.ortho ? 1 : 0}` },
+        { key: 'nearOverride', value: roundProjectionSignatureValue(cameraElement.getNearOverride()) },
+        { key: 'target', value: targetSize ? `${roundProjectionSignatureValue(targetSize.width)}x${roundProjectionSignatureValue(targetSize.height)}` : 'null' },
+        {
+            key: 'frustum',
+            value: customFrustum ? [
+                roundProjectionSignatureValue(customFrustum.left),
+                roundProjectionSignatureValue(customFrustum.right),
+                roundProjectionSignatureValue(customFrustum.bottom),
+                roundProjectionSignatureValue(customFrustum.top),
+                roundProjectionSignatureValue(customFrustum.near),
+                roundProjectionSignatureValue(customFrustum.far)
+            ].join(',') : 'null'
+        },
+        { key: 'culling', value: `${useUnifiedCulling ? 1 : 0}` },
+        {
+            key: 'cameraPos',
+            value: useUnifiedCulling && cameraPosition ? [
+                roundProjectionSignatureValue(cameraPosition.x),
+                roundProjectionSignatureValue(cameraPosition.y),
+                roundProjectionSignatureValue(cameraPosition.z)
+            ].join(',') : 'null'
+        }
+    ]);
+};
+
+const describeUnifiedDisplayProjectionSnapshotDiff = (
+    previousSnapshot: UnifiedDisplayProjectionSnapshot,
+    nextSnapshot: UnifiedDisplayProjectionSnapshot
+) => {
+    const previousValues = new Map(previousSnapshot.entries.map(({ key, value }) => [key, value]));
+    const nextValues = new Map(nextSnapshot.entries.map(({ key, value }) => [key, value]));
+    const diffs: string[] = [];
+
+    nextSnapshot.entries.forEach(({ key, value }) => {
+        const previousValue = previousValues.get(key);
+        if (previousValue !== value) {
+            diffs.push(`${key}:${previousValue ?? 'null'}->${value}`);
+        }
+    });
+
+    previousSnapshot.entries.forEach(({ key, value }) => {
+        if (!nextValues.has(key)) {
+            diffs.push(`${key}:${value}->null`);
+        }
+    });
+
+    return diffs.join(', ');
+};
+
+const createUnifiedDisplayRefreshController = (
+    scene: Scene,
+    options: {
+        debugState: boolean;
+        scheduleDirectRefresh: (frames?: number) => void;
+    }
+): UnifiedDisplayRefreshController => {
+    let lastProjectionSnapshot: UnifiedDisplayProjectionSnapshot | null = null;
+
+    return {
+        syncSceneGsplatPolicy: () => {
+            applyUnifiedDisplaySceneGsplatPolicy(scene);
+        },
+        resetProjectionBaseline: () => {
+            lastProjectionSnapshot = null;
+        },
+        captureProjectionBaseline: () => {
+            lastProjectionSnapshot = getUnifiedDisplayProjectionSnapshot(scene);
+        },
+        refreshForProjectionChange: () => {
+            const projectionSnapshot = getUnifiedDisplayProjectionSnapshot(scene);
+            if (projectionSnapshot.signature === lastProjectionSnapshot?.signature) {
+                return;
+            }
+
+            const previousProjectionSnapshot = lastProjectionSnapshot;
+            lastProjectionSnapshot = projectionSnapshot;
+
+            if (!previousProjectionSnapshot) {
+                return;
+            }
+
+            if (options.debugState) {
+                const reason = describeUnifiedDisplayProjectionSnapshotDiff(previousProjectionSnapshot, projectionSnapshot);
+                console.info(`[SplatRender] unified-display projection changed ${reason || projectionSnapshot.signature}`);
+            }
+
+            options.scheduleDirectRefresh(36);
+        }
+    };
 };
 
 const createUnifiedDisplayBackends = (scene: Scene): SplatRenderRoleBackends => {
-    configureUnifiedDisplaySceneGsplat(scene);
+    applyUnifiedDisplaySceneGsplatPolicy(scene);
 
     const mergedRenderer = createSupersplatSplatRenderSystemBackends(scene);
     const sources: Splat[] = [];
@@ -392,7 +531,6 @@ const createUnifiedDisplayBackends = (scene: Scene): SplatRenderRoleBackends => 
     let lastFallbackReason: string | null = null;
     let pendingDirectForceRenderFrames = 0;
     let lastUnifiedStateLog = '';
-    let lastProjectionRefreshSignature = '';
     let pendingDirectRestoreFrames = 0;
 
     const markUnifiedDisplayDirty = () => {
@@ -487,22 +625,10 @@ const createUnifiedDisplayBackends = (scene: Scene): SplatRenderRoleBackends => 
         kickEngineDirectPlacements();
     };
 
-    const refreshForProjectionChange = () => {
-        const projectionSignature = getUnifiedDisplayProjectionSignature(scene);
-        if (projectionSignature === lastProjectionRefreshSignature) {
-            return;
-        }
-
-        const hadPreviousSignature = lastProjectionRefreshSignature.length > 0;
-        lastProjectionRefreshSignature = projectionSignature;
-
-        if (hadPreviousSignature) {
-            if (debugUnifiedState) {
-                console.info(`[SplatRender] unified-display projection changed ${projectionSignature}`);
-            }
-            scheduleDirectRefresh(36);
-        }
-    };
+    const unifiedDisplayRefreshController = createUnifiedDisplayRefreshController(scene, {
+        debugState: debugUnifiedState,
+        scheduleDirectRefresh
+    });
 
     const findFallbackReason = () => {
         for (const splat of sources) {
@@ -540,7 +666,7 @@ const createUnifiedDisplayBackends = (scene: Scene): SplatRenderRoleBackends => 
         mergedRenderer.setMergedDisplayVisible(!shouldUseEngineDirect);
         if (!shouldUseEngineDirect) {
             pendingDirectForceRenderFrames = 0;
-            lastProjectionRefreshSignature = '';
+            unifiedDisplayRefreshController.resetProjectionBaseline();
         }
 
         sources.forEach((splat) => {
@@ -559,8 +685,8 @@ const createUnifiedDisplayBackends = (scene: Scene): SplatRenderRoleBackends => 
             if (directModeChanged) {
                 console.info('[SplatRender] unified-display direct mode restored.');
             }
-            lastProjectionRefreshSignature = getUnifiedDisplayProjectionSignature(scene);
             if (directModeChanged || options?.refreshDirect) {
+                unifiedDisplayRefreshController.captureProjectionBaseline();
                 scheduleDirectRefresh(directModeChanged ? 36 : 24);
             }
         }
@@ -631,8 +757,8 @@ const createUnifiedDisplayBackends = (scene: Scene): SplatRenderRoleBackends => 
             onPreRender: () => {
                 syncEngineComponents();
                 if (engineDirectActive) {
-                    configureUnifiedDisplaySceneGsplat(scene);
-                    refreshForProjectionChange();
+                    unifiedDisplayRefreshController.syncSceneGsplatPolicy();
+                    unifiedDisplayRefreshController.refreshForProjectionChange();
                     logUnifiedDisplayState();
                     if (pendingDirectForceRenderFrames > 0) {
                         pendingDirectForceRenderFrames--;
