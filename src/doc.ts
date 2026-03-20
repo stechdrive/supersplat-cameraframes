@@ -1,4 +1,4 @@
-import { MemoryFileSystem, ZipFileSystem, ZipReadFileSystem } from '@playcanvas/splat-transform';
+import { MemoryFileSystem, ZipReadFileSystem } from '@playcanvas/splat-transform';
 
 import {
     type EditOp,
@@ -10,7 +10,7 @@ import {
 } from './edit-ops';
 import { ElementType } from './element';
 import { Events } from './events';
-import { BrowserFileSystem, BlobReadSource, MappedReadFileSystem } from './io';
+import { BrowserFileSystem, BlobReadSource, DeflateZipFileSystem, MappedReadFileSystem } from './io';
 import { Model } from './model';
 import {
     projectSaveStateStore,
@@ -24,7 +24,7 @@ import { recentFiles } from './recent-files';
 import { normalizeReferenceImageFilename } from './reference-image-filename';
 import { Scene } from './scene';
 import { Splat } from './splat';
-import { serializePly } from './splat-serialize';
+import { canSerializeSog, serializePly, serializeSog } from './splat-serialize';
 import { State } from './splat-state';
 import { Transform } from './transform';
 import { formatInteger, localize } from './ui/localization';
@@ -58,6 +58,7 @@ type SerializedAssetEntry = {
     element: Splat | Model;
 };
 
+type EditedSplatPackageFormat = 'ply' | 'sog';
 type PackageAssetSaveMode = 'copy-package-entry' | 'copy-blob' | 'serialize-ply';
 
 type PackageAssetSavePlan = {
@@ -82,6 +83,11 @@ type SerializedSceneState = {
     referenceImagesState: any;
     referenceImageAssets: WorkingReferenceImageAssetRecord[];
     lightingState: any;
+};
+
+type SavePackageContext = {
+    serialized: SerializedSceneState;
+    editedSplatFormat: EditedSplatPackageFormat;
 };
 
 type NormalizedDocument = {
@@ -317,7 +323,26 @@ const serializeSplatToBlob = async (splat: Splat) => {
     return new Blob([copy], { type: 'application/octet-stream' });
 };
 
-const writeBlobToZip = async (zipFs: ZipFileSystem, filename: string, source: Blob | ReadableStream<Uint8Array>) => {
+const serializeSplatToSogBlob = async (splat: Splat, events?: Events, progressHeader?: string) => {
+    const memFs = new MemoryFileSystem();
+    await serializeSog([splat], {
+        keepStateData: false,
+        keepWorldTransform: true,
+        keepColorTint: true,
+        iterations: 10,
+        ...(events ? { events } : {}),
+        ...(progressHeader ? { progressHeader } : {})
+    }, memFs);
+    const data = memFs.results.get('output.sog');
+    if (!data) {
+        throw new Error(`Failed to serialize splat '${splat.name}' as SOG`);
+    }
+    const copy = new Uint8Array(data.byteLength);
+    copy.set(data);
+    return new Blob([copy], { type: 'application/octet-stream' });
+};
+
+const writeBlobToZip = async (zipFs: { createWriter(filename: string): Promise<{ write(data: Uint8Array): void | Promise<void>; close(): void | Promise<void>; }>; }, filename: string, source: Blob | ReadableStream<Uint8Array>) => {
     const writer = await zipFs.createWriter(filename);
     const reader = (source instanceof Blob ? source.stream() : source).getReader();
     while (true) {
@@ -390,6 +415,7 @@ const registerDocEvents = (scene: Scene, events: Events) => {
     const dirtySplatAssetIds = new Set<string>();
     const splatSnapshotAssetIds = new Set<string>();
     const workingOverrideAssetIds = new Set<string>();
+    let preferredEditedSplatPackageFormat: EditedSplatPackageFormat = 'ply';
 
     const emitDocStatusChanged = () => {
         events.fire('doc.statusChanged', {
@@ -706,9 +732,14 @@ const registerDocEvents = (scene: Scene, events: Events) => {
         return candidate;
     };
 
-    const resolveSplatPackagePath = (entry: SerializedAssetEntry, index: number, preserveSource: boolean) => {
+    const resolveSplatPackagePath = (
+        entry: SerializedAssetEntry,
+        index: number,
+        preserveSource: boolean,
+        fallbackFormat: EditedSplatPackageFormat = 'ply'
+    ) => {
         if (!preserveSource) {
-            return `splat_${index}.ply`;
+            return `splat_${index}.${fallbackFormat}`;
         }
 
         if (entry.packagePath) {
@@ -823,8 +854,15 @@ const registerDocEvents = (scene: Scene, events: Events) => {
         };
     };
 
-    const buildPackageAssetSavePlans = async (serialized: SerializedSceneState) => {
+    const buildPackageAssetSavePlans = async (
+        serialized: SerializedSceneState,
+        editedSplatFormat: EditedSplatPackageFormat
+    ) => {
         const assetPlanById = new Map<string, PackageAssetSavePlan>();
+        let usedSogFallback = false;
+        const totalEditedSplats = serialized.assetEntries.reduce((sum, entry) => {
+            return sum + ((entry.kind === 'splat' && splatSnapshotAssetIds.has(entry.id)) ? 1 : 0);
+        }, 0);
         const usedPaths = new Set<string>();
         serialized.referenceImageAssets.forEach((asset) => {
             if (typeof asset?.path === 'string' && asset.path) {
@@ -834,6 +872,7 @@ const registerDocEvents = (scene: Scene, events: Events) => {
 
         let splatIndex = 0;
         let modelIndex = 0;
+        let editedSplatIndex = 0;
 
         for (const entry of serialized.assetEntries) {
             if (entry.kind === 'model') {
@@ -864,7 +903,7 @@ const registerDocEvents = (scene: Scene, events: Events) => {
             const canCopySourceBlob = !hasSnapshotOverride && sourceBlob instanceof Blob;
 
             let mode: PackageAssetSaveMode = 'serialize-ply';
-            let outputPath = `splat_${splatIndex}.ply`;
+            let outputPath = `splat_${splatIndex}.${editedSplatFormat}`;
             let blob: Blob | undefined;
             let sourcePath: string | undefined;
 
@@ -877,10 +916,29 @@ const registerDocEvents = (scene: Scene, events: Events) => {
                 blob = sourceBlob ?? undefined;
                 outputPath = resolveSplatPackagePath(entry, splatIndex, true);
             } else {
-                outputPath = resolveSplatPackagePath(entry, splatIndex, false);
+                if (editedSplatFormat === 'sog') {
+                    try {
+                        editedSplatIndex++;
+                        const progressHeader = localize('doc.save-package-options.sog-progress', {
+                            current: formatInteger(editedSplatIndex),
+                            total: formatInteger(totalEditedSplats)
+                        });
+                        blob = await serializeSplatToSogBlob(entry.element as Splat, events, progressHeader);
+                        mode = 'copy-blob';
+                        outputPath = resolveSplatPackagePath(entry, splatIndex, false, 'sog');
+                    } catch (error) {
+                        usedSogFallback = true;
+                        console.warn(`SOG package pre-serialization failed for '${entry.filename}', falling back to PLY`, error);
+                        mode = 'serialize-ply';
+                        outputPath = resolveSplatPackagePath(entry, splatIndex, false, 'ply');
+                    }
+                } else {
+                    outputPath = resolveSplatPackagePath(entry, splatIndex, false, 'ply');
+                }
             }
 
-            outputPath = ensureUniquePackagePath(usedPaths, outputPath, `splat_${splatIndex}.ply`);
+            const defaultOutputPath = blob && editedSplatFormat === 'sog' ? `splat_${splatIndex}.sog` : `splat_${splatIndex}.ply`;
+            outputPath = ensureUniquePackagePath(usedPaths, outputPath, defaultOutputPath);
 
             assetPlanById.set(assetId, {
                 entry,
@@ -911,7 +969,10 @@ const registerDocEvents = (scene: Scene, events: Events) => {
             }
         });
 
-        return assetPlanById;
+        return {
+            assetPlanById,
+            usedSogFallback
+        };
     };
 
     const runWorkingStateCleanup = async (keepProjectId?: string | null) => {
@@ -1143,23 +1204,95 @@ const registerDocEvents = (scene: Scene, events: Events) => {
         }
     };
 
+    const resolveSavePackageContext = async (): Promise<SavePackageContext | null> => {
+        const serialized = collectSerializedSceneState('package');
+        const hasEditedSplats = serialized.assetEntries.some((entry) => {
+            return entry.kind === 'splat' && splatSnapshotAssetIds.has(entry.id);
+        });
+
+        if (!hasEditedSplats) {
+            return {
+                serialized,
+                editedSplatFormat: 'ply'
+            };
+        }
+
+        const sogAvailable = await canSerializeSog();
+        if (!sogAvailable) {
+            preferredEditedSplatPackageFormat = 'ply';
+            return {
+                serialized,
+                editedSplatFormat: 'ply'
+            };
+        }
+
+        const result = await events.invoke('showPopup', {
+            type: 'info',
+            header: localize('doc.save-package-options.header'),
+            message: localize('doc.save-package-options.message'),
+            select: {
+                label: localize('doc.save-package-options.edited-splat-format'),
+                value: preferredEditedSplatPackageFormat,
+                options: [
+                    {
+                        label: localize('doc.save-package-options.edited-splat-format.ply'),
+                        value: 'ply'
+                    },
+                    {
+                        label: localize('doc.save-package-options.edited-splat-format.sog'),
+                        value: 'sog'
+                    }
+                ]
+            },
+            buttons: [
+                {
+                    label: localize('doc.transition.save-package'),
+                    action: 'save'
+                },
+                {
+                    label: localize('popup.cancel'),
+                    action: 'cancel'
+                }
+            ]
+        });
+
+        if (result.action !== 'save') {
+            return null;
+        }
+
+        const editedSplatFormat: EditedSplatPackageFormat = result.value === 'sog' ? 'sog' : 'ply';
+
+        preferredEditedSplatPackageFormat = editedSplatFormat;
+
+        return {
+            serialized,
+            editedSplatFormat
+        };
+    };
+
     const savePackageDocument = async (options: {
         stream?: FileSystemWritableFileStream;
         filename?: string;
         handle?: FileSystemFileHandle | null;
+        serialized: SerializedSceneState;
+        editedSplatFormat: EditedSplatPackageFormat;
     }): Promise<boolean> => {
         events.fire('startSpinner');
         let saveStep = 'init';
         let saved = false;
+        let spinnerStopped = false;
         let jsonLength = 0;
         let sourcePackageZip: ZipReadFileSystem | null = null;
         let sourcePackageBlobSource: BlobReadSource | null = null;
+        let usedSogFallback = false;
 
         try {
             const nextProjectId = currentProjectId ?? createId('project');
             const nextPackageRevision = (currentPackageRevision ?? 0) + 1;
-            const serialized = collectSerializedSceneState('package');
-            const assetPlanById = await buildPackageAssetSavePlans(serialized);
+            const { serialized, editedSplatFormat } = options;
+            const packagePlans = await buildPackageAssetSavePlans(serialized, editedSplatFormat);
+            const { assetPlanById } = packagePlans;
+            usedSogFallback = packagePlans.usedSogFallback;
             const modelBlobMap = new Map<Model, Blob>();
             serialized.models.forEach((model, index) => {
                 const doc = serialized.modelDocs[index];
@@ -1241,7 +1374,7 @@ const registerDocEvents = (scene: Scene, events: Events) => {
             saveStep = 'create writer';
             const browserFs = new BrowserFileSystem(options.filename ?? 'scene.ssproj', options.stream);
             const browserWriter = await browserFs.createWriter(options.filename ?? 'scene.ssproj');
-            const zipFs = new ZipFileSystem(browserWriter);
+            const zipFs = new DeflateZipFileSystem(browserWriter);
 
             saveStep = 'write document.json';
             const documentJson = JSON.stringify(document);
@@ -1339,6 +1472,15 @@ const registerDocEvents = (scene: Scene, events: Events) => {
             }
 
             events.fire('doc.saved');
+            if (usedSogFallback) {
+                events.fire('stopSpinner');
+                spinnerStopped = true;
+                await events.invoke('showPopup', {
+                    type: 'info',
+                    header: localize('doc.save-package-options.sog-fallback.header'),
+                    message: localize('doc.save-package-options.sog-fallback.message')
+                });
+            }
             return true;
         } catch (error) {
             const errorName = (error as Error & { name?: string })?.name;
@@ -1361,7 +1503,9 @@ const registerDocEvents = (scene: Scene, events: Events) => {
             if (!saved && options.stream) {
                 await cleanupWritableStream(options.stream);
             }
-            events.fire('stopSpinner');
+            if (!spinnerStopped) {
+                events.fire('stopSpinner');
+            }
         }
     };
 
@@ -1914,33 +2058,7 @@ const registerDocEvents = (scene: Scene, events: Events) => {
         await events.invoke('doc.save');
     });
 
-    events.function('doc.savePackage', async () => {
-        if (documentFileHandle) {
-            try {
-                return await savePackageDocument({
-                    stream: await documentFileHandle.createWritable(),
-                    handle: documentFileHandle
-                });
-            } catch (error) {
-                if ((error as Error)?.name !== 'AbortError' && (error as Error)?.name !== 'NotAllowedError') {
-                    console.error(error);
-                    await events.invoke('showPopup', {
-                        type: 'error',
-                        header: localize('doc.save-failed'),
-                        message: `'${(error as Error)?.message ?? error}'`
-                    });
-                }
-                return false;
-            }
-        }
-        return await events.invoke('doc.savePackageAs');
-    });
-
-    events.on('doc.savePackage', async () => {
-        await events.invoke('doc.savePackage');
-    });
-
-    events.function('doc.savePackageAs', async () => {
+    const savePackageAsWithContext = async (saveContext: SavePackageContext) => {
         if (window.showSaveFilePicker) {
             try {
                 const suggestedName = docName && docName.endsWith('.ssproj') ? docName : 'scene.ssproj';
@@ -1951,7 +2069,8 @@ const registerDocEvents = (scene: Scene, events: Events) => {
                 });
                 return await savePackageDocument({
                     stream: await handle.createWritable(),
-                    handle
+                    handle,
+                    ...saveContext
                 });
             } catch (error) {
                 if ((error as Error)?.name !== 'AbortError') {
@@ -1968,8 +2087,49 @@ const registerDocEvents = (scene: Scene, events: Events) => {
 
         const fallbackName = docName && docName.endsWith('.ssproj') ? docName : 'scene.ssproj';
         return await savePackageDocument({
-            filename: fallbackName
+            filename: fallbackName,
+            ...saveContext
         });
+    };
+
+    events.function('doc.savePackage', async () => {
+        const saveContext = await resolveSavePackageContext();
+        if (!saveContext) {
+            return false;
+        }
+
+        if (documentFileHandle) {
+            try {
+                return await savePackageDocument({
+                    stream: await documentFileHandle.createWritable(),
+                    handle: documentFileHandle,
+                    ...saveContext
+                });
+            } catch (error) {
+                if ((error as Error)?.name !== 'AbortError' && (error as Error)?.name !== 'NotAllowedError') {
+                    console.error(error);
+                    await events.invoke('showPopup', {
+                        type: 'error',
+                        header: localize('doc.save-failed'),
+                        message: `'${(error as Error)?.message ?? error}'`
+                    });
+                }
+                return false;
+            }
+        }
+        return await savePackageAsWithContext(saveContext);
+    });
+
+    events.on('doc.savePackage', async () => {
+        await events.invoke('doc.savePackage');
+    });
+
+    events.function('doc.savePackageAs', async () => {
+        const saveContext = await resolveSavePackageContext();
+        if (!saveContext) {
+            return false;
+        }
+        return await savePackageAsWithContext(saveContext);
     });
 
     events.function('doc.saveAs', async () => {

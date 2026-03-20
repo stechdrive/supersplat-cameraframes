@@ -71,6 +71,41 @@
             }
         }
 
+        #popup-select-row {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            margin: 0 14px 12px;
+
+            #popup-select-label {
+                color: $text-primary;
+                font-size: 12px;
+                text-align: left;
+            }
+
+            #popup-select-options {
+                display: grid;
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                gap: 8px;
+
+                .popup-select-option {
+                    height: 40px;
+                    width: 100%;
+                    border-radius: 4px;
+                    background-color: $bcg-darker;
+                    color: $text-primary;
+
+                    &:hover {
+                        background-color: $clr-hilight;
+                    }
+
+                    &.selected {
+                        background-color: $clr-hilight;
+                    }
+                }
+            }
+        }
+
         #popup-link-row {
             margin: 20px 10px;
 

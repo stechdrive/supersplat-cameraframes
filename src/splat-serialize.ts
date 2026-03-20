@@ -1201,6 +1201,16 @@ const createGpuDevice = async (): Promise<WebgpuGraphicsDevice> => {
     return graphicsDevice;
 };
 
+const canSerializeSog = async (): Promise<boolean> => {
+    try {
+        await createGpuDevice();
+        return true;
+    } catch (error) {
+        console.warn('SOG serialization preflight failed', error);
+        return false;
+    }
+};
+
 /**
  * Extract Splat data into a DataTable for use with splat-transform writers.
  * This is shared between serializeSog and serializeViewer.
@@ -1342,19 +1352,20 @@ const serializeViewer = async (splats: Splat[], serializeSettings: SerializeSett
 type SogSettings = SerializeSettings & {
     iterations: number;
     events?: Events;
+    progressHeader?: string;
 };
 
-const serializeSog = async (splats: Splat[], settings: SogSettings, fs: FileSystem): Promise<void> => {
-    const { iterations = 10, events } = settings;
+const serializeSog = async (splats: Splat[], settings: SogSettings, fs: FileSystem, filename = 'output.sog'): Promise<void> => {
+    const { iterations = 10, events, progressHeader = 'Exporting SOG' } = settings;
 
-    splatTransformLogger.setLogger(createProgressLogger('Exporting SOG', events));
+    splatTransformLogger.setLogger(createProgressLogger(progressHeader, events));
 
     // Extract splat data to DataTable
     const dataTable = extractDataTable(splats, settings);
 
     // Call splat-transform's writeSog
     await writeSogInternal({
-        filename: 'output.sog',
+        filename,
         dataTable,
         bundle: true,
         iterations,
@@ -1368,6 +1379,7 @@ export {
     serializePlyCompressed,
     serializeSplat,
     serializeSog,
+    canSerializeSog,
     serializeViewer,
     AnimTrack,
     CameraPose,

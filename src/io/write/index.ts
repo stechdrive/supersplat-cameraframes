@@ -4,6 +4,7 @@
 
 // Browser file system
 export { BrowserFileSystem } from './browser-file-system';
+export { DeflateZipFileSystem } from './deflate-zip-file-system';
 
 // Writer utilities
 export {

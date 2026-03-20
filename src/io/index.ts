@@ -13,6 +13,7 @@ export {
 // Write operations
 export {
     BrowserFileSystem,
+    DeflateZipFileSystem,
     GZipWriter,
     ProgressWriter
 } from './write';
