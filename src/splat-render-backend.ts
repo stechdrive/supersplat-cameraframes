@@ -1,4 +1,11 @@
-import type { BoundingBox, Entity, Texture } from 'playcanvas';
+import {
+    ShaderChunks,
+    SHADERLANGUAGE_GLSL,
+    SHADERLANGUAGE_WGSL,
+    type BoundingBox,
+    type Entity,
+    type Texture
+} from 'playcanvas';
 
 import type { IntersectOptions } from './data-processor';
 import type { Scene } from './scene';
@@ -228,15 +235,95 @@ const createUnifiedDisplayRenderBackendCapabilities = (): SplatRenderBackendCapa
     };
 };
 
-const resolveUnifiedDisplayRadialSorting = (scene: Scene) => {
-    // Engine unified's orthographic linear sorting does not currently provide
-    // usable front/back slicing for CAMERA_FRAMES layout work. Keep radial
-    // sorting enabled so camera depth moves continue to affect the displayed
-    // slice similarly to the merged renderer.
+const unifiedDisplayGsplatCenterGLSL = /* glsl */`
+uniform mat4 matrix_model;
+uniform mat4 matrix_view;
+#ifndef GSPLAT_CENTER_NOPROJ
+    uniform vec4 camera_params;
+    uniform mat4 matrix_projection;
+#endif
+bool initCenter(vec3 modelCenter, inout SplatCenter center) {
+    mat4 modelView = matrix_view * matrix_model;
+    vec4 centerView = modelView * vec4(modelCenter, 1.0);
+    #ifndef GSPLAT_CENTER_NOPROJ
+        if (camera_params.w != 1.0 && centerView.z > 0.0) {
+            return false;
+        }
+
+        float dist = -centerView.z;
+        if (dist < camera_params.z) {
+            return false;
+        }
+
+        vec4 centerProj = matrix_projection * centerView;
+        #if WEBGPU
+            centerProj.z = clamp(centerProj.z, 0, abs(centerProj.w));
+        #else
+            centerProj.z = clamp(centerProj.z, -abs(centerProj.w), abs(centerProj.w));
+        #endif
+        center.proj = centerProj;
+        center.projMat00 = matrix_projection[0][0];
+    #endif
+    center.view = centerView.xyz / centerView.w;
+    center.modelView = modelView;
     return true;
+}
+`;
+
+const unifiedDisplayGsplatCenterWGSL = /* wgsl */`
+uniform matrix_model: mat4x4f;
+uniform matrix_view: mat4x4f;
+#ifndef GSPLAT_CENTER_NOPROJ
+    uniform camera_params: vec4f;
+    uniform matrix_projection: mat4x4f;
+#endif
+fn initCenter(modelCenter: vec3f, center: ptr<function, SplatCenter>) -> bool {
+    let modelView: mat4x4f = uniform.matrix_view * uniform.matrix_model;
+    let centerView: vec4f = modelView * vec4f(modelCenter, 1.0);
+    #ifndef GSPLAT_CENTER_NOPROJ
+        if (uniform.camera_params.w != 1.0 && centerView.z > 0.0) {
+            return false;
+        }
+
+        let dist = -centerView.z;
+        if (dist < uniform.camera_params.z) {
+            return false;
+        }
+
+        var centerProj: vec4f = uniform.matrix_projection * centerView;
+        centerProj.z = clamp(centerProj.z, 0.0, abs(centerProj.w));
+        center.proj = centerProj;
+        center.projMat00 = uniform.matrix_projection[0][0];
+    #endif
+    center.view = centerView.xyz / centerView.w;
+    center.modelView = modelView;
+    return true;
+}
+`;
+
+const unifiedDisplayGsplatCenterOverrideInstalled = new WeakSet<object>();
+
+const resolveUnifiedDisplayRadialSorting = (scene: Scene) => {
+    // Perspective keeps radial sorting. Orthographic prefers linear sorting
+    // for stable compositing with grids / GLB, while the unified shader chunk
+    // override enforces near clipping so front/back slicing still works.
+    return !scene.camera?.ortho;
+};
+
+const installUnifiedDisplayGsplatCenterOverride = (scene: Scene) => {
+    const device = scene.graphicsDevice;
+    if (unifiedDisplayGsplatCenterOverrideInstalled.has(device)) {
+        return;
+    }
+
+    ShaderChunks.get(device, SHADERLANGUAGE_GLSL).set('gsplatCenterVS', unifiedDisplayGsplatCenterGLSL);
+    ShaderChunks.get(device, SHADERLANGUAGE_WGSL).set('gsplatCenterVS', unifiedDisplayGsplatCenterWGSL);
+    unifiedDisplayGsplatCenterOverrideInstalled.add(device);
 };
 
 const configureUnifiedDisplaySceneGsplat = (scene: Scene) => {
+    installUnifiedDisplayGsplatCenterOverride(scene);
+
     const gsplat = scene.app.scene.gsplat;
     const useUnifiedCulling = scene.config.renderBackend?.unifiedCulling === true;
     const useRadialSorting = resolveUnifiedDisplayRadialSorting(scene);
