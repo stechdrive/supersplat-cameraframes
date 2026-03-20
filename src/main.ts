@@ -11,6 +11,7 @@ import { EditHistory } from './edit-history';
 import { registerEditorEvents } from './editor';
 import { Events } from './events';
 import { initFileHandler } from './file-handler';
+import { preferredGpuPowerPreference } from './gpu-preference';
 import { registerIframeApi } from './iframe-api';
 import { MeshManager } from './mesh-manager';
 import { registerPlySequenceEvents } from './ply-sequence';
@@ -189,7 +190,7 @@ const main = async () => {
         depth: false,
         stencil: false,
         xrCompatible: false,
-        powerPreference: 'high-performance'
+        powerPreference: preferredGpuPowerPreference
     });
 
     const overrides = [

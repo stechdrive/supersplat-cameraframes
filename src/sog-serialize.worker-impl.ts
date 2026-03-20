@@ -14,6 +14,8 @@ import {
     WebgpuGraphicsDevice
 } from 'playcanvas';
 
+import { preferredGpuPowerPreference } from './gpu-preference';
+
 type TypedArray =
     Int8Array |
     Uint8Array |
@@ -63,7 +65,8 @@ const createGpuDevice = async (): Promise<WebgpuGraphicsDevice> => {
     const graphicsDevice = new WebgpuGraphicsDevice(canvas as any, {
         antialias: false,
         depth: false,
-        stencil: false
+        stencil: false,
+        powerPreference: preferredGpuPowerPreference
     });
 
     await graphicsDevice.createDevice();

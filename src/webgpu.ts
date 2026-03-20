@@ -1,3 +1,5 @@
+import { preferredGpuPowerPreference } from './gpu-preference';
+
 let cachedAvailability: boolean | null = null;
 let pendingAvailability: Promise<boolean> | null = null;
 
@@ -12,7 +14,9 @@ const canUseWebGPU = (): Promise<boolean> => {
     }
 
     if (!pendingAvailability) {
-        pendingAvailability = navigator.gpu.requestAdapter()
+        pendingAvailability = navigator.gpu.requestAdapter({
+            powerPreference: preferredGpuPowerPreference
+        })
         .then((adapter) => {
             cachedAvailability = !!adapter;
             return cachedAvailability;

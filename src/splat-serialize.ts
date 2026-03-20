@@ -26,6 +26,7 @@ import {
 
 import { version } from '../package.json';
 import { Events } from './events';
+import { preferredGpuPowerPreference } from './gpu-preference';
 import { ProgressWriter } from './io';
 import { SHRotation } from './sh-utils';
 import { serializeSogInWorker } from './sog-serialize-worker-client';
@@ -1183,7 +1184,8 @@ const createGpuDevice = async (): Promise<WebgpuGraphicsDevice> => {
     const graphicsDevice = new WebgpuGraphicsDevice(canvas, {
         antialias: false,
         depth: false,
-        stencil: false
+        stencil: false,
+        powerPreference: preferredGpuPowerPreference
     });
 
     await graphicsDevice.createDevice();
