@@ -994,7 +994,10 @@ class SplatRenderSystem {
         const resourceInfo = this.mergedResourceInfo ?? createMergedResourceInfo(this.mergedResource);
         const runtimeDimensions = this.getRuntimeDimensions();
 
-        console.log('SplatRenderSystem: Merged data created.',
+        console.log(
+            this.scene.splatRenderCapabilities.resolvedMode === 'unified-display' ?
+                'SplatRenderSystem: Merged backing data created for unified-display.' :
+                'SplatRenderSystem: Merged data created.',
             'Total splats:', buildArtifacts.totalSplats,
             'Resource Width:', runtimeDimensions.width,
             'Resource Height:', runtimeDimensions.height,

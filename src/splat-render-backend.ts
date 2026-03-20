@@ -232,22 +232,6 @@ const resolveUnifiedDisplayRadialSorting = (scene: Scene) => {
     return scene.camera?.ortho !== true;
 };
 
-const isUnifiedDisplayWindowActive = () => {
-    if (typeof document === 'undefined') {
-        return true;
-    }
-
-    if (document.visibilityState && document.visibilityState !== 'visible') {
-        return false;
-    }
-
-    if (typeof document.hasFocus === 'function' && !document.hasFocus()) {
-        return false;
-    }
-
-    return true;
-};
-
 const configureUnifiedDisplaySceneGsplat = (scene: Scene) => {
     const gsplat = scene.app.scene.gsplat;
     const useUnifiedCulling = scene.config.renderBackend?.unifiedCulling === true;
@@ -429,10 +413,6 @@ const createUnifiedDisplayBackends = (scene: Scene): SplatRenderRoleBackends => 
     };
 
     const findFallbackReason = () => {
-        if (!isUnifiedDisplayWindowActive()) {
-            return 'window unfocused';
-        }
-
         if (scene.camera?.ortho === true) {
             return 'orthographic camera';
         }
