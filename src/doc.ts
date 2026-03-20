@@ -179,6 +179,13 @@ const createPackageFingerprint = (name: string | null | undefined, size: number,
     return `doc:${name ?? ''}:${size}:${hashString(documentJson)}`;
 };
 
+const isQuotaExceededError = (error: unknown) => {
+    const name = (error as Error & { name?: string })?.name ?? '';
+    return name === 'QuotaExceededError' ||
+        name === 'NS_ERROR_DOM_QUOTA_REACHED' ||
+        `${error}`.includes('QuotaExceededError');
+};
+
 const formatStorageSize = (bytes: number) => {
     const units = ['B', 'KB', 'MB', 'GB', 'TB'];
     let value = Math.max(0, bytes);
@@ -920,6 +927,49 @@ const registerDocEvents = (scene: Scene, events: Events) => {
         }
     };
 
+    const reclaimWorkingStateBudget = async () => {
+        if (!currentProjectId) {
+            return;
+        }
+
+        try {
+            const result = await projectSaveStateStore.cleanup({
+                keepProjectIds: [currentProjectId],
+                maxProjects: 1,
+                maxBytes: 0
+            });
+            if (result.removedProjects > 0 || result.removedLinks > 0) {
+                console.info('reclaimed local working state budget before save', result);
+            }
+        } catch (error) {
+            console.warn('failed to reclaim working state budget before save', error);
+        }
+    };
+
+    const handleWorkingStateQuotaExceeded = async () => {
+        const result = await events.invoke('showPopup', {
+            type: 'info',
+            header: localize('doc.save-working-state-quota.header'),
+            message: localize('doc.save-working-state-quota.message'),
+            buttons: [
+                {
+                    label: localize('doc.transition.save-package'),
+                    action: 'save-package'
+                },
+                {
+                    label: localize('popup.cancel'),
+                    action: 'cancel'
+                }
+            ]
+        });
+
+        if (result.action === 'save-package') {
+            return await events.invoke('doc.savePackage');
+        }
+
+        return false;
+    };
+
     const clearLocalWorkingState = async () => {
         const stats = await projectSaveStateStore.getStats();
         if (stats.projectCount === 0) {
@@ -1065,6 +1115,7 @@ const registerDocEvents = (scene: Scene, events: Events) => {
                 referenceImageAssets: serialized.referenceImageAssets
             };
 
+            await reclaimWorkingStateBudget();
             await projectSaveStateStore.save(record);
             await projectSaveStateStore.setProjectLink(currentPackageFingerprint, currentProjectId);
             await runWorkingStateCleanup(currentProjectId);
@@ -1076,6 +1127,10 @@ const registerDocEvents = (scene: Scene, events: Events) => {
             events.fire('doc.saved');
             return true;
         } catch (error) {
+            if (isQuotaExceededError(error)) {
+                console.warn('working state save exceeded browser quota', error);
+                return await handleWorkingStateQuotaExceeded();
+            }
             console.error('saveWorkingState failed', error);
             await events.invoke('showPopup', {
                 type: 'error',
