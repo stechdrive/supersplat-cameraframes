@@ -1,5 +1,5 @@
 const buildInfo = {
-    version: 'v2.21.10-1774002314'
+    version: 'v2.21.11-1774004633'
 };
 
 const cacheName = `superSplat-cFrames-${buildInfo.version}`;
