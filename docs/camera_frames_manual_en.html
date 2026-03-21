@@ -44,30 +44,7 @@
     h3 {
       color: #6c757d;
       margin-top: 25px;
-      font-size: 1.4em;
-    }
-
-    .app-link {
-      text-align: center;
-      margin-bottom: 40px;
-    }
-
-    .app-link a {
-      display: inline-block;
-      background-color: #ffc107;
-      color: #333;
-      padding: 15px 30px;
-      text-decoration: none;
-      border-radius: 8px;
-      font-size: 1.5em;
-      font-weight: bold;
-      transition: background-color 0.3s, transform 0.2s;
-      box-shadow: 0 4px 10px rgba(255, 193, 7, 0.5);
-    }
-
-    .app-link a:hover {
-      background-color: #e0a800;
-      transform: scale(1.03);
+      font-size: 1.3em;
     }
 
     table {
@@ -82,43 +59,51 @@
       border: 1px solid #dee2e6;
       padding: 12px;
       text-align: left;
+      vertical-align: top;
     }
 
     th {
       background-color: #007bff;
       color: white;
       font-weight: bold;
-      width: 30%;
+      width: 28%;
+    }
+
+    .app-link {
+      text-align: center;
+      margin-bottom: 36px;
+    }
+
+    .app-link a {
+      display: inline-block;
+      background-color: #ffc107;
+      color: #333;
+      padding: 15px 30px;
+      text-decoration: none;
+      border-radius: 8px;
+      font-size: 1.25em;
+      font-weight: bold;
+      transition: background-color 0.3s, transform 0.2s;
+      box-shadow: 0 4px 10px rgba(255, 193, 7, 0.5);
+    }
+
+    .app-link a:hover {
+      background-color: #e0a800;
+      transform: scale(1.03);
+    }
+
+    .note,
+    .tip {
+      background-color: #eef8ff;
+      border-left: 5px solid #007bff;
+      padding: 14px 16px;
+      margin: 18px 0;
+      border-radius: 4px;
     }
 
     .tip {
       background-color: #e9f7ef;
-      border-left: 5px solid #28a745;
-      padding: 15px;
-      margin: 20px 0;
-      border-radius: 4px;
-    }
-
-    .operation-list li {
-      margin-bottom: 10px;
-      padding-left: 10px;
-      list-style: disc;
-      border-left: 3px solid #007bff;
-    }
-
-    .note {
-      font-style: italic;
-      color: #6c757d;
-      margin-top: 5px;
-      display: block;
-    }
-
-    .image-placeholder {
-      text-align: center;
-      margin: 30px 0;
-      padding: 15px;
-      background: #fff;
-      border: 1px dashed #ccc;
+      border-left-color: #28a745;
     }
 
     .keyword {
@@ -130,6 +115,25 @@
       font-weight: bold;
       color: #007bff;
     }
+
+    .image-placeholder {
+      text-align: center;
+      margin: 28px 0;
+      padding: 15px;
+      background: #fff;
+      border: 1px dashed #ccc;
+    }
+
+    .image-placeholder img {
+      max-width: 100%;
+      height: auto;
+    }
+
+    code {
+      background: #f1f3f5;
+      padding: 1px 4px;
+      border-radius: 4px;
+    }
   </style>
 </head>
 
@@ -138,12 +142,15 @@
   <div class="container">
 
     <h1>CAMERA FRAMES Manual</h1>
-    <p style="text-align: left; font-size: 1.1em; color: #5a5a5a;">
-      CAMERA FRAMES is a layout-oriented fork of SuperSplat for Japanese animation workflows. It lets you place multiple
-      <span class="keyword">camera frames</span> on an A4-like <span class="keyword">render sheet</span>, adjust the capture camera,
-      and export PNG / PSD layouts that match the preview.
-      <br>This manual is for CAMERA FRAMES <span class="keyword">v2.21.12</span>.
-      <br>URL: <a href="https://stechdrive.github.io/supersplat-cameraframes/?lng=en"
+    <p>
+      CAMERA FRAMES lets you place multiple <span class="keyword">camera frames</span> on an A4-like
+      <span class="keyword">render sheet</span>, manage a capture camera, use reference images,
+      and export matching PNG / PSD output.
+      This is the user manual for <span class="keyword">CAMERA FRAMES v2.21.12</span>.
+    </p>
+    <p>
+      URL:
+      <a href="https://stechdrive.github.io/supersplat-cameraframes/?lng=en"
         target="_blank">https://stechdrive.github.io/supersplat-cameraframes/?lng=en</a>
     </p>
 
@@ -153,116 +160,231 @@
       </a>
     </div>
 
-    <hr>
-
-    <h2>Getting Started</h2>
-    <ul class="operation-list">
-      <li>Load <span class="keyword">3D splat data</span> such as <span class="control">.ply / .splat / .sog / .lcc</span> or a <span
-          class="keyword">3D model</span> such as <span class="control">.glb</span>.</li>
-      <li>Use the <span class="control">Render Box</span> controls to define paper size, scale, anchor, and zoom.</li>
-      <li>Add one or more <span class="control">Camera Frames</span> and edit their position, rotation, scale, and anchor in the viewport.</li>
-      <li>Use <span class="control">CAMERA FRAMES ON</span> to frame the final capture view. Use <span class="control">OFF</span> to explore with the edit camera.</li>
-      <li>Export the shot as <span class="control">PNG</span> or <span class="control">PSD</span>.</li>
-    </ul>
-
-    <h2>What You Can Load</h2>
+    <h2>1. Supported Files</h2>
     <table>
       <tr>
-        <th>Asset Type</th>
+        <th>Type</th>
         <th>Examples</th>
         <th>Use</th>
       </tr>
       <tr>
-        <td>Splat data</td>
+        <td>Project files</td>
+        <td><span class="control">.ssproj</span></td>
+        <td>The save/load format for the CAMERA FRAMES working state. It restores the scene, camera frames, reference images, lighting, and the rest of the working state together.</td>
+      </tr>
+      <tr>
+        <td>3DGS / splat data</td>
         <td><span class="control">.ply / .splat / .sog / .lcc</span></td>
-        <td>Use for backgrounds, locations, and other 3DGS scene elements.</td>
+        <td>Load these as source assets such as backgrounds, locations, and main 3DGS scene content.</td>
       </tr>
       <tr>
         <td>3D models</td>
         <td><span class="control">.glb</span></td>
-        <td>Use for props, rough character placement, and composition checks.</td>
-      </tr>
-      <tr>
-        <td>Scene files</td>
-        <td><span class="control">.ssproj</span></td>
-        <td>Restore saved camera, frame, mask, and reference-image state.</td>
+        <td>Load these as source assets for props, rough placement, and composition checks.</td>
       </tr>
       <tr>
         <td>Reference images</td>
         <td><span class="control">.png / .jpg / .jpeg / .webp / .psd</span></td>
-        <td>Use as guide images layered on the render sheet.</td>
+        <td>Load these as source images for storyboards and alignment. PSD files are split into multiple reference-image items.</td>
       </tr>
     </table>
 
-    <h2>Main Panel Overview</h2>
+    <h2>2. Basic Workflow</h2>
+    <p>
+      CAMERA FRAMES is meant for deciding one shot, creating the next shot with the same assets, and exporting the whole set at the end.
+      A typical workflow looks like this.
+    </p>
+    <ol>
+      <li>Load 3DGS files (<code>.ply / .sog / .splat / .lcc</code> and similar), 3D model files (<code>.glb</code>), or an existing <code>.ssproj</code>.</li>
+      <li>When needed, use <span class="control">Scene Manager</span> and <span class="control">Transform</span> to place or adjust the assets. You can also add small GLB props later and adjust them per shot.</li>
+      <li>For shots that need camera movement, set up the base sheet in <span class="control">Layout</span> when needed, then add the required <span class="control">Frames</span>.</li>
+      <li>Choose the lens feel with <span class="control">Capture Camera (mm)</span>, then move the camera with <span class="control">Capture Camera</span> and <span class="control">Capture Camera Controls</span> until the first shot looks right.</li>
+      <li>If needed, load <span class="control">Reference Images</span> and align them to a storyboard or rough layout. Reference images can be changed for each camera in <span class="control">Camera List</span>.</li>
+      <li>Once that shot is decided, add the next camera in <span class="control">Camera List</span> and continue building the next shot with the same assets.</li>
+      <li>At the end, use <span class="control">Export</span> to write the current camera, all cameras, or selected cameras.</li>
+    </ol>
+
+    <h2>3. Camera Frames Panel</h2>
     <div class="image-placeholder">
-      <span class="note"><img src="../static/images/screenshot-cameraframes.jpg" alt="CAMERA FRAMES screenshot"
-          width="80%"></span>
+      <img src="../static/images/cf-uipanel-en.png" alt="Camera Frames panel">
     </div>
-    <ul class="operation-list">
-      <li><span class="control">Header</span>: Toggle CAMERA FRAMES ON/OFF, open the help panel, or open the capture camera controls.</li>
-      <li><span class="control">Render Box</span>: Set width, height, anchor, and canvas zoom for the sheet.</li>
-      <li><span class="control">Frames</span>: Add and manage multiple shot frames on one sheet.</li>
-      <li><span class="control">Mask</span>: Darken the area outside the selected or all frames in preview.</li>
-      <li><span class="control">Export</span>: Render PNG / PSD, optional overlays, and per-model layers.</li>
+
+    <div class="note">
+      <span class="control">Export</span>, <span class="control">Camera List</span>, <span class="control">Frames</span>, <span class="control">Layout</span>, and <span class="control">Capture Camera Controls</span> are collapsible sections. Click each section header to open or close it.
+    </div>
+
+    <h3>3-1. Header</h3>
+    <ul>
+      <li><span class="control">Toggle Capture/Edit Camera</span>: Switch between <span class="control">Capture Camera</span> and the edit camera. Final export uses the capture-camera view.</li>
+      <li><span class="control">Capture Camera Controls</span>: Available while the edit camera is active. Lets you edit Capture Camera (mm), transform, near clip, and navigation mode.</li>
+      <li><span class="control">Reference Images</span>: Open the reference-image panel and toggle global reference-image visibility.</li>
+      <li><span class="control">Collapse Panel</span>: Collapse the panel to the header only. Use it again to expand the panel.</li>
     </ul>
 
-    <h2>Capture View and Edit View</h2>
+    <h3>3-2. Lens</h3>
+    <ul>
+      <li><span class="control">Capture Camera (mm)</span> shows the <span class="keyword">horizontal angle of view inside the red frame</span> when that frame is at 100% size, expressed as a <span class="keyword">35mm-film-equivalent lens value</span>. Smaller numbers feel wider; larger numbers feel more telephoto.</li>
+      <li>As a rough guide, <span class="control">35mm</span> feels slightly wide, around <span class="control">50mm</span> feels standard, and <span class="control">85mm</span> or higher feels telephoto.</li>
+      <li><span class="control">Edit Camera (mm)</span> changes the lens value only for the edit-camera view. Use it when you want a different working view for alignment; it does not change the exported framing.</li>
+    </ul>
+
+    <h3>3-3. Canvas Zoom and Mask</h3>
+    <ul>
+      <li><span class="control">Canvas Zoom (%)</span> changes only the preview magnification. It does not change the export result.</li>
+      <li><span class="control">Mask</span> is preview-only and is not included in PNG or PSD export.</li>
+      <li><span class="control">All</span> darkens everything outside all frames, while <span class="control">Selected</span> darkens everything outside the selected frame.</li>
+      <li>If no frame is selected, <span class="control">Selected</span> behaves the same as <span class="control">All</span>.</li>
+      <li>Use <span class="control">Opacity</span> to adjust how dark the masked area looks.</li>
+    </ul>
+
+    <h3>3-4. Export</h3>
+    <ol>
+      <li>Open <span class="control">Export Details</span> and enter a <span class="control">Filename</span>. The default is <code>cf-%cam</code>. The <code>%cam</code> part is replaced with the camera name at export time, so it is useful when exporting <span class="control">All Cameras</span> or <span class="control">Selected Cameras</span> and you want separate filenames automatically.</li>
+      <li>Choose <span class="control">PSD</span> or <span class="control">PNG</span>. Use <span class="control">PSD</span> when you want separated layers for later editing, and <span class="control">PNG</span> when you just want the final image.</li>
+      <li>Choose an <span class="control">Export Target</span>: <span class="control">Current Camera</span>, <span class="control">All Cameras</span>, or <span class="control">Selected Cameras</span>. If you use <span class="control">Selected Cameras</span>, enable the checkmarks in <span class="control">Camera List</span> for the cameras you want.</li>
+      <li>Use the icons on the right when needed to include <span class="control">Grid / Eye Level</span> or to export GLB models as separate model layers.</li>
+      <li>If you want reference images in the export, enable both <span class="control">Visible</span> and <span class="control">Output</span> for those images in the <span class="control">Reference Images</span> panel.</li>
+      <li>When everything is ready, switch to <span class="control">Capture Camera</span> and press <span class="control">Render</span>. With <span class="control">All Cameras</span>, every camera in the <span class="control">Camera List</span> is exported in one run.</li>
+    </ol>
+
+    <h3>3-5. Camera List</h3>
+    <ul>
+      <li>Click a row in <span class="control">Camera List</span> to switch to that camera.</li>
+      <li>Use <span class="control">Add Camera</span> to create a new shot and <span class="control">Delete Camera</span> to remove the current one.</li>
+      <li>To rename a camera, double-click its name in the list and type the new name.</li>
+      <li>Use <span class="control">Export Cameras</span> / <span class="control">Import Cameras</span> to exchange the camera list as a <span class="control">.sscam</span> file.</li>
+      <li>If you want a different reference-image setup for a specific camera, choose it from the reference-image preset field in that row.</li>
+    </ul>
+
+    <h3>3-6. Frames</h3>
+    <ul>
+      <li><span class="control">Frames</span> are the red shot rectangles on the sheet. You can place up to <span class="control">20</span>. Use <span class="control">Add Frame</span> to create one and <span class="control">Delete Frame</span> to remove the selected frame.</li>
+      <li>You can select a frame by clicking it in the list or by clicking the red rectangle directly.</li>
+      <li>Drag inside the red rectangle to move it, drag the edge or corner handles to resize it, drag the rotate handle to rotate it, and drag the anchor handle to change its reference point.</li>
+      <li>Hold <span class="control">Shift</span> while editing for axis lock and 15-degree rotation snap. Hold <span class="control">Alt</span> while resizing to scale symmetrically around the anchor.</li>
+      <li>Hold <span class="control">Shift</span> and drag empty space to move the whole sheet. Double-click the anchor handle to return it to the center, and double-click the rotate handle to reset rotation to 0 degrees.</li>
+      <li>If CAMERA FRAMES is enabled with no frames yet, one default frame is created automatically.</li>
+    </ul>
+
+    <h3>3-7. Layout</h3>
+    <ul>
+      <li>Base sheet size is <span class="control">1754 × 1240 px</span>.</li>
+      <li><span class="control">Width / Height (%)</span> starts at 100% and is clamped so each output dimension stays within 16000px.</li>
+      <li>The <span class="control">3×3 anchor</span> defines which side of the composition stays fixed during scaling.</li>
+      <li><span class="control">Output Resolution</span> shows the image size that will be exported with the current settings, so you can adjust sheet size and frame scale while watching the final resolution.</li>
+    </ul>
+
+    <h3>3-8. Capture Camera Controls</h3>
+    <ul>
+      <li>You can edit position XYZ, yaw / pitch / roll, and near clip numerically in both the main panel and <span class="control">Capture Camera Controls</span>.</li>
+      <li>Hold <span class="control">Alt</span> while editing <span class="control">Position XYZ</span>, <span class="control">Yaw / Pitch / Roll</span>, <span class="control">right / up / forward</span>, or <span class="control">Near Clip</span> when you want finer adjustments.</li>
+      <li><span class="control">Capture Camera (mm)</span> controls how wide or narrow the framing feels. Smaller values show a wider view, while larger values feel more tightly framed.</li>
+      <li>Local motion sliders nudge the capture camera in right / up / forward directions.</li>
+      <li><span class="control">Near Clip</span> sets the distance in front of the camera that will not be shown. The unit is <span class="control">meters</span>.</li>
+      <li>Increase it when you want to hide foreground objects very close to the camera and frame the shot from a little farther back. Lower it when you want nearby objects to stay visible.</li>
+      <li>Roll lock keeps the current roll while yaw / pitch changes are applied.</li>
+    </ul>
+
+    <h2>4. Reference Images</h2>
+    <div class="image-placeholder">
+      <img src="../static/images/ref-uipanel-en.png" alt="Reference Images panel">
+    </div>
+    <ul>
+      <li>To use reference images, open the <span class="control">Reference Images</span> panel from the <span class="control">Reference Images</span> button in the header of the <span class="control">Camera Frames</span> panel, then load an image with <span class="control">Load / Replace</span>. Use <span class="control">Clear All</span> when you want to remove everything.</li>
+      <li><span class="control">Preset Name</span> is the name of the current reference-image setup. If you want different reference-image setups per shot, select a camera in <span class="control">Camera List</span> before adjusting the images.</li>
+      <li>Loaded images are listed under <span class="control">Back</span> or <span class="control">Front</span>. Use the arrow buttons to change their stacking order.</li>
+      <li>Each image has controls for <span class="control">Visible</span>, <span class="control">Output</span>, and <span class="control">Delete</span>.</li>
+      <li>Use <span class="control">Placement</span>, <span class="control">Offset</span>, <span class="control">Centering</span>, <span class="control">Scale</span>, and <span class="control">Opacity</span> to line the image up with the scene.</li>
+      <li>If you want an image to appear in the export, enable both <span class="control">Visible</span> and <span class="control">Output</span>.</li>
+      <li>Use <span class="control">Reset to default</span> to return camera-specific adjustments to the shared preset state.</li>
+    </ul>
+
+    <h2>5. Scene Manager / Transform / Lighting</h2>
+    <div class="image-placeholder">
+      <img src="../static/images/sm-uipanel-en.png" alt="Scene Manager panel">
+    </div>
+    <p>
+      To open <span class="control">Scene Manager</span>, first click the top-left <span class="control">&gt;</span> button to expand the menu.
+    </p>
+    <p>
+      When you want to move a 3DGS object or a GLB model, first select it in <span class="control">Scene Manager</span>.
+      Then use <span class="control">Transform</span> to edit <span class="control">Position</span>,
+      <span class="control">Rotation</span>, and <span class="control">Scale</span> numerically.
+    </p>
+    <div class="image-placeholder">
+      <img src="../static/images/tools-ui.png" alt="Editing tools at the bottom of the screen">
+    </div>
+    <p>
+      You can also use the editing tools shown at the bottom of the screen for move, rotate, and scale. Use those tools when you want direct drag-based editing, and use <span class="control">Transform</span> when you want exact numeric values.
+    </p>
+    <p>
+      When you want to adjust the light, use <span class="control">Lighting</span>.
+      If you want to change the light direction, first press <span class="control">Select Light</span> to select the light.
+      There you can use <span class="control">Toggle Light</span>, <span class="control">Reset Light Direction</span>,
+      <span class="control">Light Intensity</span>, and <span class="control">Ambient</span>.
+    </p>
+
+    <h2>6. Capture Camera / Edit Camera and Navigation</h2>
+    <p>
+      CAMERA FRAMES has two camera views: <span class="control">Capture Camera</span> for checking what will be exported,
+      and <span class="control">Edit Camera</span> for moving through the scene and adjusting placement.
+      Switch between them with <span class="control">Toggle Capture/Edit Camera</span> in the header.
+    </p>
+    <p>
+      To change how the camera moves, switch to <span class="control">Edit Camera</span>, then open <span class="control">Capture Camera Controls</span> inside the <span class="control">Camera Frames</span> panel.
+      The icons on the right side of the <span class="control">Capture Camera Controls</span> section header switch between <span class="control">FPV navigation</span> and <span class="control">Orbit navigation</span>.
+    </p>
+    <h3>6-1. FPV Navigation</h3>
+    <ul>
+      <li>Use this when you want to move the camera more like a person walking through the scene.</li>
+      <li><span class="control">Left-drag</span> looks around. Drag right to look right, drag left to look left.</li>
+      <li><span class="control">Right-drag</span> moves the camera left / right / up / down.</li>
+      <li><span class="control">Mouse wheel</span> moves forward and backward.</li>
+      <li>Hold <span class="control">Ctrl</span> and <span class="control">left-drag</span> to orbit around the pointed location.</li>
+    </ul>
+    <h3>6-2. Orbit Navigation</h3>
+    <ul>
+      <li>Use this when you want to move around the subject while keeping it in view.</li>
+      <li><span class="control">Left-drag</span> rotates around the subject.</li>
+      <li><span class="control">Right-drag</span> pans the view left / right / up / down.</li>
+      <li><span class="control">Mouse wheel</span> moves closer or farther away.</li>
+      <li><span class="control">Double-click</span> helps center the view around the clicked area.</li>
+    </ul>
+    <h3>6-3. Parallel View in Edit Camera</h3>
+    <ul>
+      <li>When you need accurate alignment from the front, side, or top, use the <span class="keyword">parallel view</span> in <span class="control">Edit Camera</span>. It reduces perspective depth cues, so matching positions is easier.</li>
+      <li>Use the <span class="control">XYZ gizmo</span> in the top-right corner. Click the <span class="control">X</span>, <span class="control">Y</span>, or <span class="control">Z</span> circle to align the view to that axis and switch to parallel view.</li>
+      <li>When you want normal perspective again, rotate in orbit mode or switch to <span class="control">FPV navigation</span>.</li>
+    </ul>
+    <h2>7. Undo / Redo</h2>
+    <p>
+      Numeric edits and layout changes can be undone with <span class="control">Ctrl+Z</span> and redone with <span class="control">Ctrl+Shift+Z</span>.
+    </p>
+
+    <h2>8. Save Formats</h2>
     <table>
       <tr>
-        <th>Mode</th>
-        <th>Purpose</th>
+        <th>Format</th>
+        <th>Use</th>
       </tr>
       <tr>
-        <td><span class="control">CAMERA FRAMES ON</span></td>
-        <td>Shows the capture composition used for final framing and export.</td>
+        <td><span class="control">.ssproj</span></td>
+        <td>Project file format for saving the entire scene, CAMERA FRAMES settings, reference images, and lighting. Use this when you want to <span class="keyword">save everything together and reopen the same state later</span>, or when you want to hand the whole setup to another user or environment.</td>
       </tr>
       <tr>
-        <td><span class="control">CAMERA FRAMES OFF</span></td>
-        <td>Lets you inspect the scene freely with the edit camera.</td>
-      </tr>
-      <tr>
-        <td><span class="control">Capture Camera Controls</span></td>
-        <td>Edit the capture camera while CAMERA FRAMES is OFF.</td>
+        <td><span class="control">.sscam</span></td>
+        <td>Camera-list exchange format. It stores camera settings and reference-image preset names, but it does not include scene assets or the actual reference-image files. Use this when you only want to <span class="keyword">pass camera data</span>.</td>
       </tr>
     </table>
 
     <div class="tip">
-      Tip: Use ON when you want to judge the final shot, and OFF when you want to inspect the scene or adjust from another angle.
+      <strong>When to use .ssproj saves</strong><br>
+      In CAMERA FRAMES, the standard menu is collapsed by default, so first click the top-left <span class="control">&gt;</span> button to open the menu, then go to <span class="control">File</span>.<br>
+      Regular <span class="control">Save</span> is the fast save used to continue working in the current browser.<br>
+      When you want to <span class="keyword">save everything together and reopen the same state later</span>, or before handing the project to another user or opening it in another environment, use <span class="control">File &gt; Save Project Package</span> to update the <span class="control">.ssproj</span> file.<br>
+      The <span class="control">*</span> mark means you still have unsaved changes. <span class="control">PKG</span> means the <span class="control">.ssproj</span> file is not up to date.<br>
+      If <span class="control">PKG</span> is shown, use <span class="control">File &gt; Save Project Package</span> before sharing or handoff.
     </div>
-
-    <h2>Viewport Operations</h2>
-    <ul class="operation-list">
-      <li><span class="control">Select a frame</span>: Click a frame outline or select it in the list.</li>
-      <li><span class="control">Move a frame</span>: Drag inside the selected frame.</li>
-      <li><span class="control">Scale a frame</span>: Drag an edge or corner handle. Hold <span class="control">Alt</span> for symmetric scaling around the anchor.</li>
-      <li><span class="control">Rotate a frame</span>: Drag the rotation handle above the frame. Hold <span class="control">Shift</span> to snap by 15 degrees.</li>
-      <li><span class="control">Edit the frame anchor</span>: Drag the center anchor handle. Double-click to reset.</li>
-      <li><span class="control">Pan the render box</span>: Hold <span class="control">Shift</span> and drag outside the frames.</li>
-    </ul>
-
-    <h2>Export</h2>
-    <ul class="operation-list">
-      <li><span class="control">PNG</span>: Good for flattened layout images.</li>
-      <li><span class="control">PSD</span>: Keeps render, frame lines, and optional overlays in separate layers.</li>
-      <li><span class="control">Grid / Eye-level</span>: Optional overlay output.</li>
-      <li><span class="control">Model layers</span>: PSD-only output for visible GLB models.</li>
-      <li><span class="control">Reference images</span>: Export only when enabled, visible, and set to include in render.</li>
-    </ul>
-
-    <h2>Reference Images</h2>
-    <ul class="operation-list">
-      <li>Reference images are managed as presets.</li>
-      <li>You can keep per-camera overrides for visibility, opacity, order, offset, and scale.</li>
-      <li>Reference images can be exported in front of or behind the render.</li>
-    </ul>
-
-    <h2>More Documentation</h2>
-    <ul class="operation-list">
-      <li><a href="https://github.com/stechdrive/supersplat-cameraframes/blob/camera-frames/docs/CameraFramesFeatures_en.md" target="_blank">Feature overview (English)</a></li>
-      <li><a href="https://github.com/stechdrive/supersplat-cameraframes/blob/camera-frames/docs/camera_frames_requirements_en.md" target="_blank">Detailed requirements (English)</a></li>
-      <li><a href="https://github.com/stechdrive/supersplat-cameraframes" target="_blank">GitHub repository</a></li>
-    </ul>
 
   </div>
 

@@ -1,76 +1,121 @@
-# CAMERA FRAMES 機能概要
+# CAMERA FRAMES 機能一覧と再現チェックポイント
 
-CAMERA FRAMES v2.21.12 は、A4相当の基準紙に複数のフレームをレイアウトし、アンカー付きの off-axis フラスタムで構図を保ちながらプレビューと書き出しを一致させるための機能群です。プレビューのズームアウトやフレーム操作、カメラポーズ編集、PSD/PNG エクスポートを一体で提供します。
+この文書は、`camera-frames` ブランチの現在の stable 機能を短く把握するための一覧です。
+将来 Spark 2.0 上で再現する時のチェックリストとしても使います。
 
-## 1. 主な特徴
-- **レンダーボックスのアンカー拡縮**: 3×3 アンカーを基準に、横縦別スケールと viewZoom を掛けても基準側の構図がずれない off-axis フラスタムを都度再計算。
-- **プレビュー＝書き出し**: viewZoom を除き、プレビューで見える内容が PNG/PSD とピクセル一致。書き出し時は viewZoom=100%・中央配置で計算し、完了後にプレビューフラスタムへ復帰。
-- **複数フレーム管理**: 最大 20 枚のフレームを追加・移動・回転・拡縮・アンカー変更。マスクや並び順も保持。
-- **カメラ二層管理**: CAMERA FRAMES 有効時は撮影構図を固定し、無効時は編集カメラで自由に確認。編集視点で撮影カメラを調整する場合は撮影カメラ操作パネルから行う。
-- **書き出しオプション**: PNG/PSD、グリッド＋アイレベル同時出力、モデルレイヤー(PSD)対応。150dpi pHYs、プレマルチ解除、フレーム別レイヤーを自動付与。
-- **カメラ別の書き出し設定保持**: 書き出し形式、ガイド出力、モデルレイヤー出力などはカメラ preset ごとに保持され、全カメラ書き出し時も各 preset の設定が使われる。
-- **下絵セット名の管理**: 下絵を初回読み込みしたファイル名でセットを自動作成し、下絵パネルの登録名でリネーム可能（`(blank)` は編集不可）。
-- **下絵のカメラ別上書き**: 表示/出力/並び順/位置/不透明度/スケールなどはカメラごとに保存。初期化ボタンが表示される項目は「初期化」で共通状態に戻せる。
-- **下絵の出力連携**: `enabled / visible / includeInRender` を満たす下絵だけを書き出しに含める。PNG は前面/背面に応じて合成し、PSD は `Reference` レイヤーとして前後関係を保って追加する。
+対象バージョン: `v2.21.12`
 
-## 2. パネルとトグル
-- ヘッダーに **CAMERA FRAMES ON/OFF トグル**（撮影=ON、編集=OFF アイコン）と **撮影カメラ操作パネル**ボタン、**コンパクト切替**。コンパクト時はヘッダーのみ表示。
-- 撮影カメラ操作パネルは **CAMERA FRAMES OFF 時のみ**開ける。開いている間は撮影編集モードとしてフラスタム強調を継続。
-- パネルはドラッグで移動し、ウィンドウ内にクランプ。パネル上のポインタ操作はキャンバスへ伝搬しない。
-- ラベルに `| CAMERA FRAMES v2.21.12` を併記。
+---
 
-## 3. レンダーボックス（Layout）
-- 基準紙 `1754 × 1240px`（A4 150dpi）。`幅/高さ(%)` は各 100%以上で 16000px 相当までクランプ。アンカー 3×3 で次回拡縮の基準点を指定。
-- ビューポートリサイズ時は AutoFit で `fitScale` を更新し、アンカーのスクリーン位置が変わらないよう center を補正。
-- **表示倍率 (Canvas Zoom 25–100%)**: プレビューのみ縮小拡大。ズームアウトすると紙とフレームが均等縮小し、周囲のシーンが見えてくる。
-- **FOV(mm)**: 撮影カメラ表示時のみ、構図基準の水平 FOV を 35mm 換算で表示・編集（HFOV 10–120°）。編集視点で撮影カメラを調整する場合は撮影カメラ操作パネルの FOV を使う。
-- **Viewport lens(mm)**: 編集カメラ表示時のみ、通常カメラの FOV を mm 表示・編集（同レンジ換算）。
-- 出力解像度表示で論理サイズ・拡大率・ビューポート溢れ警告を確認可能。
+## 1. 現在の stable 基準
 
-## 4. フレーム管理と操作
-- 基準サイズ `1536 × 864px`。追加/削除ボタンとリストで最大 20 枚を管理。リストには実効ピクセルサイズと倍率を表示。
-- 選択中のみハンドル有効。スケール% 入力（10–400%、UI は 1–500%）で等比拡縮。
-- ハンドルドラッグで移動・拡縮、回転ハンドルで回転（Shift で 15° スナップ）。Alt+ドラッグでフレーム固有アンカーを中心に対称拡縮。
-- フレームアンカーは中央ハンドルをドラッグで変更し、ダブルクリックで中心へリセット。回転ハンドルのダブルクリックで回転 0°。
-- 背景クリックで選択中フレームを解除できる。枠・ハンドル・gizmo・modifier 操作中は解除しない。
-- order が大きいフレームが前面でヒット優先。選択状態はスナップショットに保存。
+- 既定 render backend は `unified-display`
+- Graphics API は `WebGL2`
+- `unified-culling` 既定値は `false`
+- streaming LoD は未接続
+- 起動後は CAMERA_FRAMES ON + FPV が自動で有効化される
 
-## 5. マスク
-- トグルで有効化。不透明度 0–100% を指定。
-- `scope: all / selected` を選択可能。selected のとき選択フレームの外接矩形のみを対象（選択なしは全体にフォールバック）。
-- プレビュー専用で PNG/PSD には含めない。履歴・保存対象。
+---
 
-## 6. エクスポート
-- ファイル名、フォーマット（PSD/PNG、初期 PSD）。空の場合は自動名 `cf-%cam`。Export 設定は履歴対象外。
-- **書き出し対象**: 現在/全カメラ/選択カメラを切り替え。選択時はカメラリストで対象をチェック。
-- **Grid/Eye-level**: 1 つのトグルで両オーバーレイを同時出力。PNG は合成、PSD は別レイヤー。
-- **Model layers**: PSD のみ有効。可視 GLB を 1 つずつ `Source + layer mask` として出力し、他モデルや Render と合成しやすい形でレイヤー追加する（トグル表示自体は常時）。
-- Render ボタンで書き出し。進行中はスピナー表示とボタン無効化。
-- 書き出し時は viewZoom=100%、中心基準でフラスタムを固定。完了後にプレビューフラスタムへ戻す。
-- PSD レイヤー順: グリッド → アイレベル → モデル群 → フレーム群（ID 先頭文字でグループ化） → Render。PNG は 150dpi pHYs 付きで圧縮。
+## 2. CAMERA_FRAMES コア機能
 
-## 7. カメラ／ビュー／トランスフォーム
-- CAMERA FRAMES ON/OFF で **撮影表示**と**編集表示**を切り替える。編集表示中も mainPose を保持し、撮影カメラ操作パネルで撮影カメラ編集が可能。
-- Transform セクションは表示中のカメラに対して位置 XYZ、回転 yaw/pitch/roll（ロールロック付き）、ローカル移動スライダーを編集。Alt で微調整。
-- navMode を Orbit/FPV で切替。数値入力フォーカス中は自動同期を一時停止し、フォーカスアウトで反映。
-- 撮影表示時は構図基準 FOV と nearClip を mainPose に適用。編集表示時の操作は通常カメラへ適用し、再度撮影表示に戻ると mainPose を再適用。
-- nearClip は安全値へ自動補正（0.01 以上、far×0.1 / シーン半径×0.5 以内）。タイムライン再生中は mainPose の自動更新を抑止。
+- A4 相当の Render Box を基準に shot layout を組める
+- Render Box は幅 / 高さ別拡縮、アンカー 3x3、Canvas Zoom を持つ
+- off-axis フラスタムでアンカー側の構図を維持できる
+- 赤い frame を最大 20 枚まで配置できる
+- frame は移動 / 回転 / 拡縮 / アンカー変更に対応
+- Shift で軸ロック / 角度スナップ、Alt でアンカー基準の対称拡縮ができる
+- 撮影表示と編集表示を切り替えられる
+- OFF 中だけ撮影カメラ操作ポップアップを開ける
 
-## 8. ビューポートでの操作
-- フレーム選択: 枠線クリックまたはリスト選択。再クリックで解除可。
-- 移動: フレーム内ドラッグ。Shift で軸ロック。ドラッグ開始後に Shift を押しても軸ロックへ移行できる。
-- 拡縮: 辺/頂点ハンドルをドラッグ。Alt でアンカー対称拡縮。
-- 回転: 上方ハンドルをドラッグ。Shift で 15° スナップ、ダブルクリックで 0°。
-- アンカー編集: 中央ハンドルをドラッグ、ダブルクリックでリセット。
-- レンダーボックスパン: フレーム外を Shift+ドラッグで紙全体を移動（画面内にクランプ）。マウス静止中に Shift を押してからドラッグを始めても有効。
-- ポインタ捕捉が外れたらドラッグ履歴を commit。オーバーレイはヒット時のみ pointerEvents を有効化し、ドラッグ中は `grabbing` カーソル。
+---
 
-## 9. 保存と履歴
-- ドキュメント保存には CAMERA FRAMES の状態一式を含む（renderBox、frames、mask、nearClip、export 設定、selectedId、mainCameraPose、cameraFramesVersion など）。
-- `.ssproj` 保存失敗時は、保存 step と件数情報を browser console の `saveDocument failed` に出して原因を追いやすくしている。
-- Undo/Redo は有効化/無効化、レンダーボックス拡縮・アンカー・パン・viewZoom、FOV、フレーム追加/削除/選択/編集、マスク、nearClip、mainPose 編集を記録。Export 設定は履歴外。
+## 3. カメラと preset
 
-## 10. 表示と描画の補足
-- レンダーボックスは白破線、フレームは赤 2px＋選択時白点線、ハンドルは白塗り赤縁 10px、回転ハンドルは枠から 30px 上。90°刻み回転時は書き出し枠をピクセルスナップ。
-- マスクは対象フレーム群の外接矩形外を黒で塗り、プレビュー専用。
-- CAMERA FRAMES ON 中は `camera.rect/scissor` を使わずカスタムフラスタムで描画し、オーバーレイも devicePixelRatio でスケール。
+- camera preset ごとに main camera を保持する
+- camera preset ごとに render box / frames / mask / export 設定を保持する
+- selected preset は CAMERA_FRAMES 状態に保存される
+- `.sscam` で camera preset 群を外部保存 / 読込できる
+
+---
+
+## 4. Export
+
+- PNG / PSD に対応
+- 書き出し対象は `current / all / selected`
+- export の既定値は
+  - `format = psd`
+  - `grid/eye-level = on`
+  - `model layers = on`
+  - `filename = cf-%cam`
+- 全カメラ書き出し時は unified splat の安定待ちを入れている
+- PNG は 150dpi の `pHYs` を付与する
+- PSD は render / guide / model / reference / frame を分けて出力できる
+
+---
+
+## 5. 下絵（Reference Images）
+
+- `png / jpg / jpeg / webp / psd` を下絵として扱える
+- PSD はレイヤーごとに下絵へ展開する
+- 下絵は front / back に分けられる
+- 並び順、可視、出力、位置、スケール、不透明度を持つ
+- export に入るのは `enabled && visible && includeInRender` のものだけ
+- 初期 preset は `(blank)`
+- camera preset ごとに下絵 override を持てる
+- override は reset で shared 状態へ戻せる
+
+---
+
+## 6. 保存形式
+
+### `.ssproj`
+
+- シーン全体の保存
+- splats / models / CAMERA_FRAMES / 下絵状態 / 下絵 asset / lighting を含む
+
+### `.sscam`
+
+- camera preset 交換用
+- camera preset と reference image preset の ID / name を含む
+- 3D asset、下絵実データ、camera ごとの下絵 override は含まない
+
+---
+
+## 7. 操作感まわり
+
+- 起動後の既定 nav mode は FPV
+- FPV 左ドラッグは pointer lock を使わない
+- そのためブラウザの pointer-lock トーストは出ない
+- 数値入力の Undo / Redo は主要 CAMERA_FRAMES UI で自動 commit 付き
+  - CAMERA_FRAMES パネル
+  - 撮影カメラ操作ポップアップ
+  - 下絵パネル
+  - Scene Manager の light / ambient
+  - Transform パネル
+
+---
+
+## 8. 現在 baseline に含めないもの
+
+- WebGPU 起動
+- streaming LoD
+- `lod-meta.json` runtime
+- `unified-culling=true` を既定 ON にした運用
+
+---
+
+## 9. Spark 2.0 再現の最低チェック項目
+
+次を満たして初めて「現行 CAMERA_FRAMES の再現」とみなす。
+
+- Render Box のアンカー付き構図維持
+- 撮影表示 / 編集表示の切替
+- camera preset ごとの状態保存
+- 全カメラ export
+- 下絵 preset と camera override
+- `.ssproj` / `.sscam` の保存意味の維持
+- preview と export の一致
+- numeric input 編集中の自然な undo / redo
+
+この条件を満たさない移植は、見た目が近くても CAMERA_FRAMES の要件を満たしていない。

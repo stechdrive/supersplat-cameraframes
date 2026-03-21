@@ -44,30 +44,12 @@
     h3 {
       color: #6c757d;
       margin-top: 25px;
-      font-size: 1.4em;
+      font-size: 1.3em;
     }
 
-    .app-link {
-      text-align: center;
-      margin-bottom: 40px;
-    }
-
-    .app-link a {
-      display: inline-block;
-      background-color: #ffc107;
-      color: #333;
-      padding: 15px 30px;
-      text-decoration: none;
-      border-radius: 8px;
-      font-size: 1.5em;
-      font-weight: bold;
-      transition: background-color 0.3s, transform 0.2s;
-      box-shadow: 0 4px 10px rgba(255, 193, 7, 0.5);
-    }
-
-    .app-link a:hover {
-      background-color: #e0a800;
-      transform: scale(1.03);
+    p,
+    li {
+      font-size: 1.02em;
     }
 
     table {
@@ -82,53 +64,53 @@
       border: 1px solid #dee2e6;
       padding: 12px;
       text-align: left;
+      vertical-align: top;
     }
 
     th {
       background-color: #007bff;
       color: white;
       font-weight: bold;
-      width: 30%;
+      width: 28%;
     }
 
-    .operation-table td:nth-child(2) {
+    .app-link {
+      text-align: center;
+      margin-bottom: 36px;
+    }
+
+    .app-link a {
+      display: inline-block;
+      background-color: #ffc107;
+      color: #333;
+      padding: 15px 30px;
+      text-decoration: none;
+      border-radius: 8px;
+      font-size: 1.25em;
       font-weight: bold;
-      color: #dc3545;
-      /* 赤色で強調 */
+      transition: background-color 0.3s, transform 0.2s;
+      box-shadow: 0 4px 10px rgba(255, 193, 7, 0.5);
+    }
+
+    .app-link a:hover {
+      background-color: #e0a800;
+      transform: scale(1.03);
+    }
+
+    .note,
+    .tip {
+      background-color: #eef8ff;
+      border-left: 5px solid #007bff;
+      padding: 14px 16px;
+      margin: 18px 0;
+      border-radius: 4px;
     }
 
     .tip {
       background-color: #e9f7ef;
-      border-left: 5px solid #28a745;
-      padding: 15px;
-      margin: 20px 0;
-      border-radius: 4px;
+      border-left-color: #28a745;
     }
 
-    .operation-list li {
-      margin-bottom: 10px;
-      padding-left: 10px;
-      list-style: disc;
-      /* リスト記号 */
-      border-left: 3px solid #007bff;
-    }
-
-    .note {
-      font-style: italic;
-      color: #6c757d;
-      margin-top: 5px;
-      display: block;
-    }
-
-    .image-placeholder {
-      text-align: center;
-      margin: 30px 0;
-      padding: 15px;
-      background: #fff;
-      border: 1px dashed #ccc;
-    }
-
-    /* キーワードの強調 */
     .keyword {
       font-weight: bold;
       color: #dc3545;
@@ -138,6 +120,25 @@
       font-weight: bold;
       color: #007bff;
     }
+
+    .image-placeholder {
+      text-align: center;
+      margin: 28px 0;
+      padding: 15px;
+      background: #fff;
+      border: 1px dashed #ccc;
+    }
+
+    .image-placeholder img {
+      max-width: 100%;
+      height: auto;
+    }
+
+    code {
+      background: #f1f3f5;
+      padding: 1px 4px;
+      border-radius: 4px;
+    }
   </style>
 </head>
 
@@ -146,11 +147,14 @@
   <div class="container">
 
     <h1>CAMERA FRAMES 操作マニュアル</h1>
-    <p style="text-align: left; font-size: 1.1em; color: #5a5a5a;">
-      CAMERA FRAMES は、A4相当の<span class="keyword">基準用紙</span>の上に複数の<span
-        class="keyword">撮影フレーム</span>をレイアウトし、構図（カメラの位置・向き・画角）を調整して、LO用紙テンプレとぴったり合う画像を書き出すためのツールです。Webブラウザで動作します。本マニュアルは
-      CAMERA FRAMES <span class="keyword">v2.21.12</span> に対応しています。
-      <br>URL: <a href="https://stechdrive.github.io/supersplat-cameraframes/"
+    <p>
+      CAMERA FRAMES は、A4 相当の<span class="keyword">基準用紙</span>の上に複数の<span class="keyword">撮影フレーム</span>を配置し、
+      撮影カメラ・下絵・書き出しをまとめて管理するための機能です。
+      本書は <span class="keyword">CAMERA FRAMES v2.21.12</span> に対応した、ユーザー向けの操作マニュアルです。
+    </p>
+    <p>
+      URL:
+      <a href="https://stechdrive.github.io/supersplat-cameraframes/"
         target="_blank">https://stechdrive.github.io/supersplat-cameraframes/</a>
     </p>
 
@@ -160,363 +164,253 @@
       </a>
     </div>
 
-    <hr>
-
-    <h2>はじめに（基本の流れ）</h2>
-    <ul class="operation-list">
-      <li><span class="keyword">3Dデータ</span>（.ply/.splat/.sog/.lcc など）や <span
-          class="keyword">3Dモデル</span>（.glb）を読み込みます。</li>
-      <li><span class="control">大判指定</span>で基準用紙のサイズ（幅/高さ）と基準点を決めます。</li>
-      <li><span class="control">フレーム一覧</span>で撮影フレームを追加し、ビューポート上で位置・回転・拡縮を調整します。</li>
-      <li><span class="control">撮影カメラ表示（ON）</span>で構図を仕上げ、<span class="control">編集カメラ表示（OFF）</span>で別視点を確認します。編集視点で撮影カメラを調整したい場合は<span class="control">撮影カメラ操作パネル</span>を開きます。</li>
-      <li><span class="control">書き出し</span>で PSD/PNG を<span class="control">レンダリング</span>して書き出します。</li>
-    </ul>
-
-	    <h2>0. ファイルの読み込み</h2>
-	    <p style="text-align: left; font-size: 1.1em; color: #5a5a5a;">
-	      ブラウザへドラッグ・アンド・ドロップすると読み込みできます（複数ファイル可）。画像ファイル（<span class="control">.png / .jpg / .jpeg / .webp / .psd</span>）のみをドロップした場合は、<span class="keyword">下絵（参考画像）</span>として読み込まれます（複数可）。
-	    </p>
-
+    <h2>1. 読み込めるファイル</h2>
+    <p>ドラッグ＆ドロップ、または通常の読み込み操作で次のファイルを扱えます。</p>
     <table>
       <tr>
-        <th>読み込めるもの</th>
-        <th>拡張子例</th>
+        <th>種類</th>
+        <th>拡張子</th>
         <th>用途</th>
       </tr>
       <tr>
-        <td>ロケ地などの3Dデータ</td>
-        <td><span class="control">.ply / .splat / .sog / .lcc</span></td>
-        <td>背景などのベースとして配置します（複数読み込み可）。</td>
-      </tr>
-      <tr>
-        <td>3Dモデル</td>
-        <td><span class="control">.glb</span></td>
-        <td>小物やキャラなどの当たりを置いて構図確認に使います。</td>
-      </tr>
-      <tr>
-        <td>シーンファイル</td>
+        <td>プロジェクト</td>
         <td><span class="control">.ssproj</span></td>
-        <td>カメラや撮影フレーム、マスク、下絵などを含めて再現できます。</td>
+        <td>CAMERA FRAMES の作業状態を保存・再開するためのファイルです。シーン、カメラフレーム設定、下絵、照明などをまとめて復元できます。</td>
       </tr>
-	      <tr>
-	        <td>下絵（画像）</td>
-	        <td><span class="control">.png / .jpg / .jpeg / .webp / .psd</span></td>
-	        <td>基準用紙に重ねて表示し、位置合わせのガイドにできます（PSD はレイヤーごとに分割して下絵として読み込み）。</td>
-	      </tr>
-	    </table>
+      <tr>
+        <td>3DGS / splat データ</td>
+        <td><span class="control">.ply / .splat / .sog / .lcc</span></td>
+        <td>背景・ロケ地・大物セットなどの素材として読み込みます。</td>
+      </tr>
+      <tr>
+        <td>3D モデル</td>
+        <td><span class="control">.glb</span></td>
+        <td>小物・当たり・構図確認用の素材として読み込みます。</td>
+      </tr>
+      <tr>
+        <td>下絵</td>
+        <td><span class="control">.png / .jpg / .jpeg / .webp / .psd</span></td>
+        <td>絵コンテや参考画像の素材として読み込みます。PSD はレイヤーを分解して複数の下絵として取り込みます。</td>
+      </tr>
+    </table>
 
-
-    <hr>
-
-
-    <h2>1. UIパネルからの操作（設定・書き出し）</h2>
-    <div class="image-placeholder">
-
-      <span class="note"><img src="../static/images/screenshot-cameraframes.jpg" alt="スクリーンショット"
-          width="80%"></span>
-    </div>
-    <p style="text-align: left; font-size: 1.0em; color: #5a5a5a;">
-      操作の中心は、画面右側の <span class="control">カメラフレーム</span> パネルです。パネル内の一部項目は<span class="control">▶/▼</span>で折りたためます。
-      <span class="keyword">撮影カメラ表示の見え方が、最終的にレンダリングされて出力されます。</span>
+    <h2>2. 基本の流れ</h2>
+    <p>
+      CAMERA FRAMES は、1カットの構図を決めて、同じアセットのまま次のカットを作り、最後にまとめて書き出すためのツールです。
+      典型的な流れは次のとおりです。
     </p>
+    <ol>
+      <li>3DGS ファイル（<code>.ply / .sog / .splat / .lcc</code> など）や 3D モデル（<code>.glb</code>）、必要なら <code>.ssproj</code> を読み込みます。</li>
+      <li>必要に応じて、<span class="control">シーンマネージャー</span> と <span class="control">トランスフォーム</span> でアセットの位置や向きを整えます。あとから GLB の小物を追加して調整しても構いません。</li>
+      <li>カメラワークが必要なカットでは、必要に応じて <span class="control">大判指定</span> で基準紙を決め、<span class="control">撮影フレーム</span> を追加します。</li>
+      <li><span class="control">撮影カメラ(mm)</span> でレンズ感を決め、<span class="control">撮影カメラ表示</span> や <span class="control">撮影カメラ操作</span> を使ってカメラを動かし、1カット目の構図を決めます。</li>
+      <li>必要なら <span class="control">下絵</span> を読み込み、絵コンテやラフに合わせて位置合わせします。下絵は <span class="control">カメラリスト</span> にある各カメラごとに切り替えられます。</li>
+      <li>そのカットが決まったら、<span class="control">カメラリスト</span> に次のカメラを追加して、同じアセットのまま次のカットを作ります。</li>
+      <li>最後に <span class="control">書き出し</span> で現在のカメラ、全カメラ、または選択カメラを書き出します。</li>
+    </ol>
 
-    <h3>1-0. パネルヘッダー（撮影/編集・下絵・コンパクト）</h3>
+    <h2>3. カメラフレーム パネル</h2>
+    <div class="image-placeholder">
+      <img src="../static/images/cf-uipanel-jp.png" alt="カメラフレーム パネル">
+    </div>
+
+    <div class="note">
+      <span class="control">書き出し</span>、<span class="control">カメラリスト</span>、<span class="control">撮影フレーム</span>、<span class="control">大判指定</span>、<span class="control">撮影カメラ操作</span> は、見出しをクリックして開閉します。
+    </div>
+
+    <h3>3-1. ヘッダー</h3>
     <table>
       <tr>
         <th>項目</th>
-        <th>主な機能</th>
-        <th>ポイント</th>
+        <th>内容</th>
       </tr>
       <tr>
         <td><span class="control">撮影/編集カメラ切り替え</span></td>
-        <td>表示モードの切替（ON=撮影／OFF=編集）</td>
         <td>
-          <ul>
-            <li><span class="control">撮影カメラ表示（ON）</span>は CAMERA FRAMES を有効にして構図を決めるモードです。</li>
-            <li><span class="control">編集カメラ表示（OFF）</span>は自由に移動して確認するためのモードです。</li>
-            <li><span class="keyword">書き出しは撮影カメラ表示の構図で行われます。</span></li>
-          </ul>
+          <span class="control">撮影カメラ表示</span> と <span class="control">編集カメラ表示</span> を切り替えます。
+          <span class="keyword">最終書き出しは撮影カメラ表示の構図</span>を基準に行われます。
         </td>
       </tr>
       <tr>
         <td><span class="control">撮影カメラ操作</span></td>
-        <td>撮影カメラ操作パネル</td>
         <td>
-          <ul>
-            <li><span class="control">編集カメラ表示中</span>に撮影カメラ操作パネルを開き、撮影カメラのレンズ/位置/回転/ニアクリップを調整できます。</li>
-            <li><span class="control">撮影カメラ表示中</span>はロックされて開けません。</li>
-          </ul>
-        </td>
-      </tr>
-	      <tr>
-	        <td><span class="control">下絵</span></td>
-	        <td>下絵パネルの表示</td>
-	        <td>
-	          <ul>
-	            <li>パネルヘッダーの<span class="control">下絵アイコン</span>で、下絵パネルを開きます。</li>
-	            <li>その隣の<span class="control">目アイコン</span>で、下絵（全体）の表示/非表示を切り替えます（下絵があるときのみ有効）。</li>
-	          </ul>
-	        </td>
-	      </tr>
-      <tr>
-        <td><span class="control">ヘルプ</span></td>
-        <td>ヘルプパネルの表示</td>
-        <td>
-          <ul>
-            <li>パネルヘッダーの<span class="control">？アイコン</span>で、ヘルプパネルを開きます。</li>
-            <li>現在開いているヘルプパネルの開閉ができます。</li>
-            <li>ヘルプパネル右上の<span class="control">別タブで開く</span>ボタンから、同じマニュアルをブラウザの別タブで開けます。</li>
-          </ul>
+          編集カメラ表示中のみ開けるポップアップです。撮影カメラ(mm)、位置、回転、ニアクリップ、オービット操作 / FPV操作を編集できます。
         </td>
       </tr>
       <tr>
-        <td><span class="control">コンパクト切替</span></td>
-        <td>パネルの折りたたみ</td>
-        <td>
-          <ul>
-            <li>パネルをヘッダーだけの表示にして作業スペースを広げられます。</li>
-            <li>パネルヘッダーは<span class="control">ドラッグ</span>で移動できます（ウィンドウ内に収まるように自動調整）。</li>
-          </ul>
-        </td>
+        <td><span class="control">下絵ボタン</span></td>
+        <td>下絵パネルを開閉します。目アイコンで下絵全体の表示 / 非表示も切り替えられます。</td>
+      </tr>
+      <tr>
+        <td><span class="control">パネルを折りたたむ</span></td>
+        <td>ヘッダーだけ残してパネル本体を折りたためます。もう一度押すと再び開けます。</td>
       </tr>
     </table>
 
-    <h3>1-1. 大判指定（基準用紙のサイズ）</h3>
-    <ul class="operation-list">
-      <li><span class="control">基準点</span>: 3×3アンカーで拡縮の基準を指定します。</li>
-      <li><span class="control">幅/高さ(%)</span>: A4基準用紙（1754×1240px
-        @150dpi）に対する拡大率です（最小100%、UIは1000%まで／内部は16000px上限）。</li>
-      <li><span class="control">表示倍率</span>: 25..100%。プレビュー表示のみ縮小され、書き出しサイズには影響しません。</li>
-      <li><span class="control">出力解像度</span>: 実際に画像として出力される縦横のピクセル数です。</li>
+    <h3>3-2. レンズ</h3>
+    <ul>
+      <li><span class="control">撮影カメラ(mm)</span> は、赤い撮影フレームが 100% サイズの時に<span class="keyword">その枠内に見える横方向の画角</span>を、<span class="keyword">35mmフィルム換算のレンズ mm</span> で表した値です。数値が小さいほど広角寄り、大きいほど望遠寄りになります。</li>
+      <li>構図を決める時は、<span class="control">35mm</span> ならやや広角、<span class="control">50mm</span> 前後なら標準、<span class="control">85mm</span> 以上なら望遠寄り、という感覚で使うと合わせやすくなります。</li>
+      <li><span class="control">編集カメラ(mm)</span> は編集カメラ表示だけに効くレンズ値です。位置合わせや確認用の見え方を変えたい時に使い、書き出し結果には影響しません。</li>
     </ul>
 
-	    <h3>1-2. 書き出し（PSD/PNG書き出し）</h3>
-	    <ul class="operation-list">
-	      <li><span class="control">書き出し</span>: PSD/PNG形式を選びます。</li>
-	      <li><span class="control">グリッド/アイレベル</span>: グリッドとアイレベルを出力画像に含めます（PNGは合成、PSDは個別レイヤー）。</li>
-	      <li><span class="control">モデルレイヤー</span>: PSD時のみ有効。GLBモデルをモデル単位でレイヤー出力します。各GLBは<span class="control">Source + レイヤーマスク</span>として書き出されるため、PSD上で隠れている部分も後から確認できます（シーンが重い場合は時間がかかります）。</li>
-	      <li><span class="control">下絵（出力）</span>: 出力対象の下絵があるとアイコンが有効/点灯します。クリックで下絵パネルを開き、各下絵の<span class="control">出力</span>を切り替えます（PSDはレイヤー、PNGは合成）。</li>
-	      <li><span class="control">書き出し詳細</span>: <span class="control">ファイル名</span>を編集できます。空欄の場合はデフォルトで<span class="control">cf-%cam</span>が使われ、<span class="control">%cam</span>はカメラ名に置換されます（例: デフォルトのカメラ名が<span class="control">camera1</span>なら<span class="control">cf-%cam</span>→<span class="control">cf-camera1</span>）。</li>
-        <li><span class="control">書き出し対象</span>: 現在のカメラ/全カメラ/選択カメラを切り替えます。選択カメラ時はカメラリスト内にチェックが表示され、対象を選べます。</li>
-	      <li><span class="control">レンダリング</span>: 現在の構図でファイルに画像を出力します。</li>
-	    </ul>
-
-    <p style="text-align: left; font-size: 1.0em; color: #5a5a5a;">
-      <span class="control">カメラリスト</span> は、<span class="keyword">撮影カメラの構図</span>と Camera Frames の設定（大判指定・撮影フレーム・ニアクリップ等）をプリセットとして管理する機能です。リストをクリックして切り替え、内容は<span
-        class="control">.ssproj</span>に保存されます。<span class="control">.sscam</span>はリスト全体を一括で書き出し/読み込みします。
-    </p>
-    <ul class="operation-list">
-      <li><span class="control">追加</span>: ヘッダーの<span class="control">追加アイコン</span>で、現在の構図をリストに保存します。</li>
-      <li><span class="control">削除</span>: ヘッダーの<span class="control">削除アイコン</span>で、選択中プリセットを削除します。</li>
-      <li><span class="control">適用</span>: リスト項目をクリックすると即座に構図が切り替わります。</li>
-      <li><span class="control">名前編集</span>: 項目名をダブルクリックで編集します（Enter/フォーカス外で確定、Escでキャンセル）。</li>
-      <li><span class="control">カメラごとの書き出し設定</span>: 書き出し形式、グリッド/アイレベル、モデルレイヤーのON/OFFなどは<span class="keyword">カメラごとに保存</span>されます。<span class="control">全カメラ</span>書き出しでも各カメラの設定が使われます。</li>
-      <li><span class="control">下絵（Reference Image）</span>: 各カメラに紐づく下絵セットを行内のセレクトで切り替えます。カメラ追加時は共通の<span class="control">(blank)</span>にリンクされ、下絵を初めて読み込むと<span class="control">読み込んだ最初のファイル名</span>で新規セットが作成されて自動で切り替わります。</li>
-      <li><span class="control">書き出し（.sscam）</span>: ヘッダーの<span class="control">エクスポートアイコン</span>で、カメラリストをファイルに保存します。</li>
-      <li><span class="control">読み込み（.sscam）</span>: ヘッダーの<span class="control">インポートアイコン</span>で、カメラリストを読み込み、現在のリストを置き換えます（必要ならUndoで戻せます）。</li>
-      <li><span class="keyword">注意</span>: <span class="control">.sscam</span>には、読み込んでいる<span class="keyword">ロケ地データ（.ply/.splat/.sog/.lcc など）や3Dモデル（.glb）</span>は保存されません。アセットの差し替え・移動/回転/スケールなどを行うと、同じカメラでも画が合わない場合があります。構図を固定したい場合は、アセット側を変えないか、編集後に再度<span
-          class="control">書き出し</span>してください（シーン全体の保存は<span class="keyword">.ssproj</span>を利用します）。</li>
+    <h3>3-3. 表示倍率とマスク</h3>
+    <ul>
+      <li><span class="control">表示倍率</span> は 25〜100% で、プレビューだけを拡大 / 縮小します。書き出し結果には影響しません。</li>
+      <li><span class="control">マスク</span> はプレビュー専用です。PNG / PSD には含まれません。</li>
+      <li><span class="control">全体</span> は全フレームの外側、<span class="control">選択</span> は選択中フレームの外側を暗くします。</li>
+      <li>選択フレームがない場合、<span class="control">選択</span> でも <span class="control">全体</span> と同じ見え方になります。</li>
+      <li><span class="control">不透明度</span> で暗さを調整できます。</li>
     </ul>
 
-    <h3>1-3. 撮影フレーム（フレーム一覧）</h3>
-    <ul class="operation-list">
-      <li><span class="control">フレーム追加</span>/<span class="control">フレーム削除</span>: 新しい撮影フレームを追加（最大20個）/削除します。</li>
-      <li><span class="control">リスト</span>: クリックで選択・再クリックで解除します。リストには実効ピクセルサイズの目安も表示されます。</li>
-      <li><span class="control">フレーム拡縮(%)</span>: 選択中フレームのスケールを数値指定します（10..400%にクランプ）。</li>
+    <h3>3-4. 書き出し</h3>
+    <ol>
+      <li><span class="control">書き出し詳細</span> を開き、<span class="control">ファイル名</span> を入力します。既定値は <code>cf-%cam</code> です。<code>%cam</code> は書き出し時にそのカメラの名前へ置き換わるので、<span class="control">全カメラ</span> や <span class="control">選択カメラ</span> をまとめて書き出す時に、カメラごとのファイル名を自動で分けられます。</li>
+      <li><span class="control">PSD / PNG</span> から保存形式を選びます。後でレイヤーを分けて調整したい時は <span class="control">PSD</span>、そのまま完成画像を出したい時は <span class="control">PNG</span> が向いています。</li>
+      <li><span class="control">書き出し対象</span> で <span class="control">現在のカメラ</span>、<span class="control">全カメラ</span>、<span class="control">選択カメラ</span> を選びます。<span class="control">選択カメラ</span> を使う時は、<span class="control">カメラリスト</span> 左のチェックを入れたカメラだけが対象です。</li>
+      <li>必要に応じて右側のアイコンで <span class="control">グリッド/アイレベル</span> や GLB モデルのレイヤー出力を切り替えます。</li>
+      <li>下絵を書き出しに含めたい時は、<span class="control">下絵</span> パネル側で対象画像の <span class="control">表示</span> と <span class="control">出力</span> を両方有効にします。</li>
+      <li>準備ができたら <span class="control">撮影カメラ表示</span> にして <span class="control">レンダリング</span> を押します。<span class="control">全カメラ</span> を選ぶと、カメラリストにある複数のカメラをまとめて書き出せます。</li>
+    </ol>
+
+    <h3>3-5. カメラリスト</h3>
+    <ul>
+      <li><span class="control">カメラリスト</span> の行をクリックすると、そのカメラに切り替わります。</li>
+      <li>新しい構図を増やしたい時は <span class="control">カメラ追加</span>、不要なカメラを消したい時は <span class="control">カメラ削除</span> を使います。</li>
+      <li>カメラ名を変えたい時は、一覧の名前をダブルクリックして入力します。</li>
+      <li><span class="control">カメラを書き出し</span> / <span class="control">カメラを読み込み</span> で、カメラリストを <span class="control">.sscam</span> として受け渡せます。</li>
+      <li>カメラごとに使う下絵セットを変えたい時は、一覧内の下絵プリセット欄で選びます。</li>
     </ul>
 
-    <h3>1-4. マスク（フレーム外を暗く表示）</h3>
-    <ul class="operation-list">
-      <li><span class="control">マスク</span>: ONでフレーム外を暗く表示します（プレビュー専用で、PNG/PSDには含まれません）。</li>
-      <li><span class="control">マスク詳細</span>: <span class="control">範囲</span>（全体/選択）と<span
-          class="control">不透明度</span>を調整できます。範囲が「選択」のとき、選択フレームがない場合は全体扱いになります。</li>
+    <h3>3-6. 撮影フレーム</h3>
+    <ul>
+      <li><span class="control">撮影フレーム</span> は赤い枠です。1 つの紙に最大 <span class="control">20 枚</span>まで置けます。<span class="control">フレーム追加</span> で増やし、選択したフレームは <span class="control">フレーム削除</span> で消せます。</li>
+      <li>フレームは一覧をクリックするか、赤い枠を直接クリックすると選択できます。</li>
+      <li>赤い枠の内側をドラッグすると移動、辺や角のハンドルをドラッグすると拡縮、回転ハンドルをドラッグすると回転、アンカーハンドルをドラッグすると基準点を変えられます。</li>
+      <li><span class="control">Shift</span> を押しながら操作すると移動の軸ロックや 15 度刻みの回転がしやすくなります。<span class="control">Alt</span> を押しながら拡縮すると、アンカー基準で左右対称に広げられます。</li>
+      <li>画面の何もない所を <span class="control">Shift + ドラッグ</span> すると、紙全体をずらせます。アンカーハンドルをダブルクリックすると中央へ戻り、回転ハンドルをダブルクリックすると回転が 0 度に戻ります。</li>
+      <li>最初に有効化された時点でフレームが 0 枚なら、デフォルトの 1 枚が自動生成されます。</li>
     </ul>
 
-    <h3>1-5. 撮影/編集カメラ操作（カメラの移動・回転・画角）</h3>
-    <ul class="operation-list">
-      <li><span class="control">FPV/オービット</span>: マウスでのカメラ操作方式を切り替えます（詳細は「2. マウス・ビューポート操作」参照）。</li>
-      <li><span class="control">撮影カメラ(mm)</span>: 撮影カメラ表示時のみ。撮影カメラの画角（35mm判換算）を調整し、<span
-          class="keyword">書き出しの構図に影響します。</span></li>
-      <li><span class="control">編集カメラ(mm)</span>: 編集カメラ表示時のみ。編集視点の画角（35mm判換算）を調整します。</li>
-      <li><span class="control">撮影カメラ操作パネル</span>: 編集カメラ表示中に、撮影カメラのレンズ/位置/回転/ロール固定/ローカル移動/ニアクリップを調整します。</li>
-      <li><span class="control">X, Y, Z</span> / <span class="control">Yaw, Pitch, Roll</span>:
-        表示中のカメラ（撮影表示=撮影カメラ／編集表示=編集カメラ）の位置と回転を精密に調整します。<span class="control">ロール固定</span>も可能です。</li>
-      <li><span class="control">左右・上下・前後</span>: スライダーでローカル方向へ移動します（<span class="control">Altキー</span>で微調整）。</li>
-      <li><span class="control">ニアクリップ</span>: カメラに近い邪魔なものを写さないための表示カット距離（m）です。編集カメラ表示中は撮影カメラ操作パネル側で調整します。</li>
+    <h3>3-7. 大判指定</h3>
+    <ul>
+      <li>基準紙は <span class="control">1754 × 1240 px</span>（A4 150dpi 相当）です。</li>
+      <li><span class="control">幅 / 高さ (%)</span> は 100%以上で、実効サイズは各軸 16000px 以内に制限されます。</li>
+      <li><span class="control">アンカー 3×3</span> は拡縮時に構図を固定する基準点です。</li>
+      <li><span class="control">出力解像度</span> には、今の設定で書き出される画像サイズが表示されます。解像度を見ながら、紙サイズやフレーム倍率を調整できます。</li>
     </ul>
 
-    <h3>1-6. 下絵（参考画像）</h3>
-    <p style="text-align: left; font-size: 1.0em; color: #5a5a5a;">
-      下絵は、基準用紙に重ねて表示できるガイド画像です。LOテンプレやレイアウトのガイド画像を読み込み、カメラやフレームの位置合わせに使えます。カメラごとに下絵セットを切り替えられ、カメラリストのセレクトからリンク先を変更できます。複数登録でき、PSD を読み込むとレイヤーごとに下絵として展開されます。
-    </p>
-	    <ul class="operation-list">
-	      <li><span class="control">下絵パネルを開く</span>: カメラフレームパネルのヘッダーにある<span class="control">下絵アイコン</span>をクリックします（書き出し欄の下絵アイコンからも開けます）。
-	      </li>
-	      <li><span class="control">読み込み（複数可）</span>: 下絵パネルの<span class="control">＋</span>から画像を選択して読み込みます（<span class="control">.png / .jpg / .webp / .psd</span>）。ブラウザへのドラッグ&ドロップでも読み込みできます。</li>
-	      <li><span class="control">PSD読み込み</span>: PSD はレイヤーごとに下絵として追加されます（レイヤー名/不透明度/表示状態を反映。隠しレイヤーは非表示で取り込み）。</li>
-	      <li><span class="control">登録名</span>: 下絵パネル上部の入力欄で、現在の下絵セット名を編集できます（<span class="control">(blank)</span> は編集不可）。</li>
-	      <li><span class="control">カメラ別調整</span>: 表示/出力/並び順/位置/不透明度/スケールなどの調整は、選択中カメラごとに保存されます。読み込み/削除/登録名の変更は共通の下絵セットを編集し、全カメラに反映されます。</li>
-	      <li><span class="control">表示</span>: 各行の<span class="control">目アイコン</span>で表示/非表示を切り替えます。ヘッダーの<span class="control">目アイコン</span>で下絵（全体）も一括表示/非表示できます。</li>
-	      <li><span class="control">前面/背面</span>: 下絵パネル内は<span class="control">前面</span>（3Dの上に重ねる）/ <span class="control">背面</span>（3Dの後ろに敷く）の2リストに分かれます。</li>
-	      <li><span class="control">並び順（優先順位）</span>: リストの<span class="keyword">上側が優先（手前）</span>です。矢印ボタンで順序を変えられます。</li>
-	      <li><span class="control">選択（複数）</span>: クリックで選択、<span class="control">Ctrl/Cmd</span>+クリックで追加選択、<span class="control">Shift</span>+クリックで同じリスト内の範囲選択ができます。</li>
-	      <li><span class="control">一括表示/出力</span>: 複数選択中に<span class="control">目アイコン</span>や<span class="control">出力アイコン</span>を押すと、選択中の下絵にまとめて反映されます。</li>
-	      <li><span class="control">出力</span>: 各行の<span class="control">出力アイコン</span>で、書き出しに含めるかを切り替えます（PSDはレイヤー、PNGは合成）。</li>
-	      <li><span class="control">初期化</span>: <span class="control">初期化</span>ボタンが表示されている行はカメラ別で上書きされています。クリックするとそのカメラの調整を解除し、共通の状態に戻します。</li>
-	      <li><span class="control">調整</span>: 選択した下絵の<span class="control">スケール</span>/<span class="control">不透明度</span>/<span class="control">オフセット</span>を調整します。<span class="control">センタリング</span>で位置を戻せます。</li>
-	      <li><span class="control">一括移動/調整</span>: 複数選択した状態で<span class="control">オフセット</span>を変更すると、選択した下絵が同じ量だけ移動します。<span class="control">スケール</span>は選択全体の中心を基準に拡縮し、<span class="control">不透明度</span>は一括で変更されます。</li>
-	    </ul>
-
-    <h3>1-7. シーンマネージャー（ロケ地データ/3Dモデルの表示・移動）</h3>
-    <p style="text-align: left; font-size: 1.0em; color: #5a5a5a;">
-      既存のPLY/SOG/LCCなどのロケ地データや、読み込んだGLBモデルは<span class="control">シーンマネージャー</span>で管理できます。表示の切り替えや、位置・回転・拡縮の調整を行いたい場合は次の手順で操作します。
-    </p>
-    <ul class="operation-list">
-      <li><span class="control">メニューを展開</span>: 画面左上の<span class="control">「＞」</span>をクリックして折りたたみを解除します（<span
-          class="control">シーンマネージャー</span>と画面下部の<span class="control">ツールバー</span>が表示されます）。</li>
-      <li><span class="control">オブジェクトを選択</span>: <span class="control">シーンマネージャー</span>の一覧から、操作したい<span
-          class="keyword">ロケ地データ（.ply/.splat/.sog/.lcc など）</span>や<span class="keyword">3Dモデル（.glb）</span>の名前をクリックします。</li>
-      <li><span class="control">複数選択</span>: <span class="control">Ctrl/Cmd</span>+クリックで追加/解除、<span
-          class="control">Shift</span>+クリックで同じリスト内の範囲選択ができます。最後にクリックした項目がアクティブになります。</li>
-      <li><span class="control">表示/非表示</span>: 一覧の<span class="control">目アイコン</span>をクリックして切り替えます。</li>
-      <li><span class="control">移動/回転/スケール</span>: 画面下部のツールバーから<span class="control">移動 ( 1 )</span> / <span
-          class="control">回転 ( 2 )</span> / <span class="control">スケール ( 3 )</span>を選び、表示されるギズモをドラッグします。</li>
-      <li><span class="control">複数選択の編集</span>: 複数選択時は共通ピボットで移動/回転/スケールします。<span
-          class="control">ローカル</span>ではアクティブ項目の向き、<span class="control">ワールド</span>では世界軸が回転基準です。</li>
-      <li><span class="control">数値で微調整</span>: <span class="control">シーンマネージャー</span>内の<span
-          class="control">トランスフォーム</span>（位置/回転/スケール）で数値入力して精密に調整できます。</li>
-      <li><span class="control">座標系・基準点</span>: ツールバーの<span class="control">ローカル/ワールド</span>切替や<span
-          class="control">中心/バウンディング中心</span>切替で、操作の感覚を合わせられます。</li>
-      <li><span class="control">ガウス選択ツール</span>: 矩形/ブラシ/ラッソなどの部分選択は、単一のロケ地データを選択した状態で使用します（複数選択中は無効）。</li>
+    <h3>3-8. 撮影カメラ操作</h3>
+    <ul>
+      <li>パネル本体と <span class="control">撮影カメラ操作</span> ポップアップの両方で、位置 XYZ、Yaw / Pitch / Roll、ニアクリップを数値編集できます。</li>
+      <li><span class="control">位置 XYZ</span>、<span class="control">Yaw / Pitch / Roll</span>、<span class="control">左右 / 上下 / 前後</span>、<span class="control">ニアクリップ</span> は、<span class="control">Alt</span> を押しながら操作すると細かく調整しやすくなります。</li>
+      <li><span class="control">撮影カメラ(mm)</span> は、構図の広さを決める項目です。数値を小さくすると広く写り、数値を大きくすると狭く切り取るような見え方になります。</li>
+      <li>ローカル移動スライダーでは <span class="control">左右</span> / <span class="control">上下</span> / <span class="control">前後</span> に沿ってカメラを微調整できます。</li>
+      <li><span class="control">ニアクリップ</span> は、カメラから <span class="keyword">この距離より手前を表示しない</span> ための境界です。単位は <span class="control">m</span> です。</li>
+      <li>値を大きくすると、カメラのすぐ近くにある前景を映さずに、少し離れた位置から構図を作りやすくなります。値を小さくすると、カメラの近くにあるものまで表示されます。</li>
+      <li><span class="control">ロール固定</span> を有効にすると、Yaw / Pitch 調整時に Roll を維持します。</li>
     </ul>
 
-    <hr>
-
-    <h2>2. マウス・ビューポート操作</h2>
-
-    <h3>2-1. 撮影フレーム操作</h3>
+    <h2>4. 下絵</h2>
     <div class="image-placeholder">
-
-      <span class="note"><img src="../static/images/screenshot-cameraframes.jpg" alt="撮影フレームの例"
-          width="80%"></span>
+      <img src="../static/images/ref-uipanel-jp.png" alt="下絵 パネル">
     </div>
+    <ul>
+      <li>下絵を使う時は、<span class="control">カメラフレーム</span> パネルのヘッダーにある <span class="control">下絵ボタン</span> で <span class="control">下絵</span> パネルを開き、<span class="control">読み込み/差し替え</span> から画像を読み込みます。全部消したい時は <span class="control">全削除</span> を使います。</li>
+      <li><span class="control">登録名</span> は、下絵の組み合わせや配置をまとめて呼び出すための名前です。カメラごとに別の下絵セットを使いたい時は、<span class="control">カメラリスト</span> でカメラを選んでから調整します。</li>
+      <li>読み込んだ画像は一覧の <span class="control">背面</span> / <span class="control">前面</span> に分かれて並びます。矢印ボタンで重なり順を変えられます。</li>
+      <li>各画像の目ボタンで <span class="control">表示</span>、書き出しボタンで <span class="control">出力</span> を切り替えます。不要な画像は <span class="control">削除</span> で外せます。</li>
+      <li>位置合わせは <span class="control">配置</span>、<span class="control">オフセット</span>、<span class="control">センタリング</span>、<span class="control">スケール</span>、<span class="control">不透明度</span> を使います。</li>
+      <li>書き出しに含めたい時は、その画像の <span class="control">表示</span> と <span class="control">出力</span> を両方有効にしてください。</li>
+      <li>カメラ別に調整した値を共通状態へ戻したい時は <span class="control">初期化</span> を押します。</li>
+    </ul>
 
-    <table class="operation-table">
+    <h2>5. シーンマネージャー / トランスフォーム / 照明</h2>
+    <div class="image-placeholder">
+      <img src="../static/images/sm-uipanel-jp.png" alt="シーンマネージャー パネル">
+    </div>
+    <p>
+      <span class="control">シーンマネージャー</span> を開く時は、まず左上の <span class="control">&gt;</span> ボタンでメニューを開きます。
+    </p>
+    <p>
+      シーン内の 3DGS や GLB モデルの位置を直したい時は、まず <span class="control">シーンマネージャー</span> で対象を選びます。
+      選んだあとに <span class="control">トランスフォーム</span> を使うと、<span class="control">位置</span>、
+      <span class="control">回転</span>、<span class="control">スケール</span> を数値で調整できます。
+    </p>
+    <div class="image-placeholder">
+      <img src="../static/images/tools-ui.png" alt="画面下部の編集ツール">
+    </div>
+    <p>
+      画面下部に出る編集ツールでも移動、回転、拡大縮小ができます。ドラッグで直感的に動かしたい時は編集ツール、正確に数値を入れたい時は <span class="control">トランスフォーム</span> を使うと便利です。
+    </p>
+    <p>
+      明るさや光の向きを調整したい時は、<span class="control">照明</span> を使います。
+      ライトの向きを動かしたい時は、先に <span class="control">ライトを選択/解除</span> を押してライトを選択してください。
+      ここでは <span class="control">ライトのON/OFF</span>、<span class="control">ライト方向をリセット</span>、
+      <span class="control">ライト強度</span>、<span class="control">環境光</span> を調整できます。
+    </p>
+
+    <h2>6. 撮影カメラ表示 / 編集カメラ表示とカメラ操作</h2>
+    <p>
+      CAMERA FRAMES には、書き出し結果に近い見え方を確認する <span class="control">撮影カメラ表示</span> と、
+      シーンの中を動きながら位置関係を調整する <span class="control">編集カメラ表示</span> があります。
+      切り替えはヘッダーの <span class="control">撮影/編集カメラ切り替え</span> で行います。
+    </p>
+    <p>
+      カメラの動かし方を変えたい時は、<span class="control">編集カメラ表示</span> にしてから、<span class="control">カメラフレーム</span> パネル内の <span class="control">撮影カメラ操作</span> を開きます。
+      <span class="control">撮影カメラ操作</span> の見出し右側にあるアイコンが、<span class="control">FPV操作</span> と <span class="control">オービット操作</span> の切り替えです。
+    </p>
+    <h3>6-1. FPV操作</h3>
+    <ul>
+      <li>カメラマンの視点で前進・後退しながら構図を探したい時に向いています。</li>
+      <li><span class="control">左ドラッグ</span> で見回します。右を見たい時は右へ、左を見たい時は左へドラッグします。</li>
+      <li><span class="control">右ドラッグ</span> で左右 / 上下へ移動します。</li>
+      <li><span class="control">ホイール</span> で前進 / 後退します。被写体に近づきたい時や離れたい時に使います。</li>
+      <li><span class="control">Ctrl</span> を押しながら <span class="control">左ドラッグ</span> すると、指した位置を中心に回り込めます。</li>
+    </ul>
+    <h3>6-2. オービット操作</h3>
+    <ul>
+      <li>被写体のまわりを回り込みながら構図を探したい時に向いています。</li>
+      <li><span class="control">左ドラッグ</span> で回転します。右を見たい時も左を見たい時も、被写体のまわりを回る感覚で操作します。</li>
+      <li><span class="control">右ドラッグ</span> で平行移動します。構図全体を横や上下へずらしたい時に使います。</li>
+      <li><span class="control">ホイール</span> で近づく / 離れるができます。</li>
+      <li><span class="control">ダブルクリック</span> すると、その位置を中心に見やすい向きへ寄せられます。</li>
+    </ul>
+    <h3>6-3. 編集カメラ表示での平行投影</h3>
+    <ul>
+      <li>正面・側面・上面からまっすぐ確認して位置を合わせたい時は、<span class="control">編集カメラ表示</span> で <span class="keyword">平行投影</span> を使うと便利です。遠近感が弱くなるので、手前と奥の見かけのズレに惑わされにくくなります。</li>
+      <li>切り替える時は、画面右上の <span class="control">XYZ ギズモ</span> の <span class="control">X</span>、<span class="control">Y</span>、<span class="control">Z</span> の丸をクリックします。向きがその軸にそろい、平行投影に切り替わります。</li>
+      <li>もう一度自由に遠近感を見ながら動かしたい時は、オービットで回転するか <span class="control">FPV操作</span> に切り替えると通常の表示に戻ります。</li>
+    </ul>
+    <h2>7. Undo / Redo</h2>
+    <p>
+      数値入力や配置の調整は、<span class="control">Ctrl+Z</span> で Undo、<span class="control">Ctrl+Shift+Z</span> で Redo できます。
+    </p>
+
+    <h2>8. 保存形式</h2>
+    <table>
       <tr>
-        <th>目的</th>
-        <th>操作</th>
-        <th>詳細</th>
+        <th>形式</th>
+        <th>用途</th>
       </tr>
       <tr>
-        <td><span class="keyword">選択</span></td>
-        <td>撮影フレームを<span class="control">クリック</span></td>
-        <td>赤枠が点線になり、ハンドルが表示されます。フレーム一覧から選択と選択解除をすることもできます。</td>
+        <td><span class="control">.ssproj</span></td>
+        <td>シーン全体、3D データ、カメラフレーム設定、下絵、照明などをまとめて保存するプロジェクトファイルです。<span class="keyword">あとで同じ状態をそのまま再開したい時や、他の環境・他のユーザーに全部セットで渡したい時</span>は、これで保存します。</td>
       </tr>
       <tr>
-        <td><span class="keyword">移動</span></td>
-        <td>フレーム枠を<span class="control">ドラッグ</span></td>
-        <td><span class="control">Shift + ドラッグ</span>で、垂直・水平方向に移動を制限。</td>
-      </tr>
-      <tr>
-        <td><span class="keyword">リサイズ</span></td>
-        <td>四隅/辺の<span class="control">白いハンドル（□）</span>をドラッグ</td>
-        <td><span class="control">Alt + ドラッグ</span>でフレーム固有アンカーを中心に対称拡縮（10-400%にクランプ）。</td>
-      </tr>
-      <tr>
-        <td><span class="keyword">回転</span></td>
-        <td>上部の<span class="control">回転ハンドル中央上部（□）</span>をドラッグ</td>
-        <td><span class="control">Shift + ドラッグ</span>で、15度刻みでスナップ回転します。</td>
-      </tr>
-      <tr>
-        <td><span class="keyword">アンカー移動</span></td>
-        <td>フレーム上の<span class="control">アンカーポイント</span>をドラッグ</td>
-        <td>基準点を変更できます。<span class="control">ダブルクリック</span>でフレーム中心に戻します。</td>
-      </tr>
-      <tr>
-        <td><span class="keyword">リセット</span></td>
-        <td>回転ハンドル / アンカーポイントを<span class="control">ダブルクリック</span></td>
-        <td>回転を0度に、またはアンカーをフレームの中央に戻します。</td>
-      </tr>
-      <tr>
-        <td><span class="keyword">パン</span></td>
-        <td>画面の何もないところで<span class="control">Shift+左ドラッグ</span></td>
-        <td>用紙全体をブラウザウィンドウの中で移動できます（はみ出しは自動でクランプ）。</td>
+        <td><span class="control">.sscam</span></td>
+        <td>カメラリストを受け渡すためのファイルです。カメラ設定と下絵の登録名は含みますが、3D データや下絵の実画像データは含みません。<span class="keyword">カメラだけを受け渡したい時</span>に使います。</td>
       </tr>
     </table>
-
-    <h3>2-2. FPVカメラ操作（一人称視点での移動）</h3>
-    <p>FPVモード選択時のカメラ操作です（撮影カメラ/編集カメラどちらでも共通）。</p>
-    <div class="image-placeholder">
-
-      <span class="note">FPVモード：視点移動（左ドラッグ）、前後移動（ホイール）、平行移動（右ドラッグ）</span>
-    </div>
-
-    <ul class="operation-list">
-      <li>
-        <span class="keyword">視点移動</span>: <span class="control">左ドラッグ</span>で視線の向きを変更します。
-      </li>
-      <li>
-        <span class="keyword">前後移動</span>: <span class="control">マウスホイール</span>で前後に移動します。（<span
-          class="control">Alt + ホイール</span>でゆっくり移動）
-      </li>
-      <li>
-        <span class="keyword">平行移動</span>: <span class="control">右ドラッグ</span>で上下左右に移動します。（<span
-          class="control">Alt + 右ドラッグ</span>でゆっくり移動）
-      </li>
-      <li>
-        <span class="keyword">ピボット回転</span>: <span class="control">Ctrl +
-          左ドラッグ</span>で、クリックした地点を中心にカメラを回転させます。（被写体を回り込むのに便利）
-      </li>
-    </ul>
-
-    <h3>2-3. オービットカメラ操作（注視点の周りを回る）</h3>
-    <p>オービットモード選択時のカメラ操作です。</p>
-    <ul class="operation-list">
-      <li><span class="keyword">回り込み</span>: <span class="control">左ドラッグ</span>で注視点の周りを回転します。</li>
-      <li><span class="keyword">平行移動</span>: <span class="control">右ドラッグ</span>でカメラを平行移動します。</li>
-      <li><span class="keyword">ズーム</span>: <span class="control">ホイール</span>（または<span
-          class="control">中ドラッグ</span>）で前後にズームします。</li>
-      <li><span class="keyword">注視点変更</span>: <span class="control">ダブルクリック</span>でクリックした場所に注視点を移動します。</li>
-    </ul>
-
-    <hr>
-
-    <h2>3. その他・補足</h2>
 
     <div class="tip">
-      <span style="font-weight: bold;">ヒント：現在の状態を保存したい / メニューを開くには</span><br>
-      画面左上のアイコンの<span class="keyword">「＞」をクリック</span>してメニューを展開してください。そのメニューの<span class="keyword">「ファイル」</span> →
-      <span class="keyword">「名前を付けて保存」</span> から、3Dデータやカメラ、撮影フレーム、マスク、下絵などを再現可能な<span
-        class="keyword">シーン全体</span>を保存できます。
+      <strong>.ssproj の保存で迷った時は</strong><br>
+      CAMERA_FRAMES では標準メニューを折りたたんでいるため、まず左上の <span class="control">&gt;</span> ボタンを押してメニューを開き、<span class="control">ファイル</span> へ進みます。<br>
+      普段の <span class="control">保存</span> は、今のブラウザで続きを作業するための高速保存です。<br>
+      <span class="keyword">全部まとめて保存して、あとで同じ状態を再開したい時</span>や、他の環境や他のユーザーに渡す前は、<span class="control">ファイル &gt; プロジェクトパッケージを保存</span> を選んで <span class="control">.ssproj</span> を更新してください。<br>
+      左上の <span class="control">*</span> は「まだ保存していない変更があります」、<span class="control">PKG</span> は「.ssproj が最新ではありません」という意味です。<br>
+      <span class="control">PKG</span> が出ている時は、共有や受け渡しの前に <span class="control">ファイル &gt; プロジェクトパッケージを保存</span> をしてください。
     </div>
-
-    <ul class="operation-list">
-      <li>
-        <span class="keyword">Undo/Redo</span>: 撮影フレーム編集・マスク・下絵・カメラ調整などは <span class="control">Ctrl+Z</span> /
-        <span class="control">Ctrl+Shift+Z</span> で戻せます。
-      </li>
-      <li>
-        <span class="keyword">自動フィット</span>: ウィンドウサイズ変更などで、レイアウト用紙全体が画面に収まるように自動的に表示倍率が調整されます。
-      </li>
-	      <li>
-	        <span class="keyword">プレビュー＝書き出し</span>: プレビューで見えている用紙サイズ内が指定解像度で出力されます。マスクはプレビュー専用でPNG/PSDには含まれません。
-	      </li>
-	      <li>
-	        <span class="keyword">更新が反映されない</span>: PWA/サービスワーカーのキャッシュの影響で表示が古い場合があります。<span class="control">Ctrl+Shift+R</span>でハードリロードするか、ブラウザのサイトデータ（キャッシュ）を削除してください。
-	      </li>
-	      <li>
-	        <span class="keyword">複数PLY/SPLAT/GLBの統合レンダリング</span>: 複数の3Dデータを読み込んでも、<span
-	          class="keyword">深度順に統合して描画</span>されるため、ビューポート・書き出しともに<span class="keyword">正しく遮蔽が効きます</span>。
-	      </li>
-      <li>
-        <span class="keyword">GLB読み込み</span>:
-        シーンパネルのインポートやブラウザへのドラッグ&ドロップでGLBを読み込み、スプラットと並べてレイアウト確認が可能です。GLB形式に変換するにはBlenderでモデルを読み込んで、ファイルメニュー＞エクスポートからglTF2.0という形式を選んで出力してください。
-      </li>
-      <li>
-        <span class="keyword">ライティング操作</span>:
-        画面左上の＞ボタンをクリックしてシーンパネルを開きます。照明の項目でライトのON/OFF、ライトの選択、照明と環境光の強さを調整できます。ライトを選択すると、その下のトランスフォーム項目からライトの方向を回転させることができます。ライトはGLBモデル用です。
-      </li>
-    </ul>
 
   </div>
 

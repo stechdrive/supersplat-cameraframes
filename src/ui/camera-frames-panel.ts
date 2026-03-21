@@ -3,6 +3,7 @@ import { BooleanInput, Button, Container, Label, NumericInput, Panel, SelectInpu
 import { DEFAULT_NEAR_CLIP, MIN_NEAR_CLIP } from '../clip-constants';
 import { Events } from '../events';
 import { subscribeAltKey } from './alt-key-tracker';
+import { getHelpManualPath } from './camera-frames-help-panel';
 import { formatInteger, localize } from './localization';
 import { registerNumericInputHistory } from './register-numeric-input-history';
 import mainCamSvg from './svg/camera-panel.svg';
@@ -347,22 +348,15 @@ class CameraFramesPanel extends Panel {
             text: ''
         });
         helpHeaderButton.dom.appendChild(createSvg(helpSvg));
-        helpHeaderButton.dom.title = localize('panel.camera-frames.help.toggle');
-        helpHeaderButton.dom.setAttribute('aria-label', localize('panel.camera-frames.help.toggle'));
-        helpHeaderButton.dom.setAttribute('aria-pressed', 'false');
+        helpHeaderButton.dom.title = localize('panel.camera-frames.help.open');
+        helpHeaderButton.dom.setAttribute('aria-label', localize('panel.camera-frames.help.open'));
         ['pointerdown', 'pointerup', 'click'].forEach((evt) => {
             helpHeaderButton.dom.addEventListener(evt, (e: Event) => e.stopPropagation());
         });
         helpHeaderButton.on('click', () => {
-            events.fire('cameraFramesHelpPanel.toggleVisible');
+            const opened = window.open(getHelpManualPath(), '_blank');
+            opened?.focus();
         });
-
-        const setHelpButtonState = (visible: boolean) => {
-            helpHeaderButton.class[visible ? 'add' : 'remove']('active');
-            helpHeaderButton.dom.setAttribute('aria-pressed', visible ? 'true' : 'false');
-        };
-        setHelpButtonState(false);
-        events.on('cameraFramesHelpPanel.visible', (visible: boolean) => setHelpButtonState(!!visible));
 
         this.header.append(headerToggle);
         this.header.append(referenceImageHeaderButton);
