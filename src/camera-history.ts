@@ -40,6 +40,7 @@ class CameraHistory {
     private camera: Camera;
     private before: CameraSnapshot | null = null;
     private timer: number | null = null;
+    private pendingLabel: string | null = null;
     private applying = false;
     private suppressDepth = 0;
     private debounceMs = 250;
@@ -78,10 +79,15 @@ class CameraHistory {
         if (!this.before) {
             this.before = clone(pickSnapshot(this.camera));
         }
+        this.pendingLabel = label;
         if (this.timer !== null) {
             window.clearTimeout(this.timer);
         }
-        this.timer = window.setTimeout(() => this.commit(label), this.debounceMs);
+        this.timer = window.setTimeout(() => this.commitPending(label), this.debounceMs);
+    }
+
+    commitPending(label?: string) {
+        this.commit(label ?? this.pendingLabel ?? 'camera.transform');
     }
 
     private commit(label: string) {
@@ -98,6 +104,7 @@ class CameraHistory {
         const before = this.before;
         const after = clone(pickSnapshot(this.camera));
         this.before = null;
+        this.pendingLabel = null;
 
         if (isEqual(before, after)) {
             return;
@@ -148,6 +155,7 @@ class CameraHistory {
 
     private reset() {
         this.before = null;
+        this.pendingLabel = null;
         if (this.timer !== null) {
             window.clearTimeout(this.timer);
             this.timer = null;
@@ -159,6 +167,7 @@ const registerCameraHistory = (events: Events, camera: Camera) => {
     const history = new CameraHistory(events, camera);
     history.attach();
     events.function('cameraHistory.suppress', (fn: () => void) => history.suppress(fn));
+    events.function('cameraHistory.commitPending', (label?: string) => history.commitPending(label));
     return history;
 };
 

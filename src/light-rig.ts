@@ -45,6 +45,7 @@ class LightRig extends Element {
         events.on('modelLight.setIntensity', (value: number) => this.setIntensity(value, true), this);
         events.on('modelLight.resetDirection', () => this.resetDirection(true), this);
         events.on('modelLight.selectRig', () => events.fire('selection', this), this);
+        events.function('modelLight.commitPending', () => this.commitPendingIntensity());
         events.on('edit.apply', this.onEditApplied, this);
 
         this.notifyState();
@@ -280,6 +281,10 @@ class LightRig extends Element {
         }
         this.pendingIntensityOp = null;
         this.pendingIntensityFresh = false;
+    }
+
+    private commitPendingIntensity() {
+        this.clearPendingIntensityOp();
     }
 
     private onEditApplied(op: any) {

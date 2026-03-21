@@ -4,6 +4,7 @@ import { DEFAULT_NEAR_CLIP, MIN_NEAR_CLIP } from '../clip-constants';
 import { Events } from '../events';
 import { subscribeAltKey } from './alt-key-tracker';
 import { formatInteger, localize } from './localization';
+import { registerNumericInputHistory } from './register-numeric-input-history';
 import mainCamSvg from './svg/camera-panel.svg';
 import cameraPropertySvg from './svg/camera-property.svg';
 import cameraResetSvg from './svg/camera-reset.svg';
@@ -1399,6 +1400,47 @@ class CameraFramesPanel extends Panel {
             events.fire('cameraFrames.setNearClip', value);
         };
         nearClipInput.on('change', applyNearClipChange);
+
+        [widthScale.input, heightScale.input].forEach((input) => {
+            registerNumericInputHistory({
+                events,
+                input,
+                label: 'cameraFrames.renderBoxScale',
+                canBegin: () => !suppress
+            });
+        });
+        registerNumericInputHistory({
+            events,
+            input: canvasZoomInput,
+            label: 'cameraFrames.viewZoom',
+            canBegin: () => !suppress
+        });
+        registerNumericInputHistory({
+            events,
+            input: frameScaleInput,
+            label: 'cameraFrames.frameScale',
+            canBegin: () => !suppress
+        });
+        registerNumericInputHistory({
+            events,
+            input: maskOpacityInput,
+            label: 'cameraFrames.mask',
+            canBegin: () => !suppress
+        });
+        [posX, posY, posZ, yawInput, pitchInput, rollInput].forEach((input) => {
+            registerNumericInputHistory({
+                events,
+                input,
+                label: 'cameraFrames.mainCameraPose',
+                canBegin: () => !suppress
+            });
+        });
+        registerNumericInputHistory({
+            events,
+            input: nearClipInput,
+            label: 'cameraFrames.nearClip',
+            canBegin: () => !suppress
+        });
 
         // hide numeric boxes on sliders (slider-only look)
         const hideSliderInputs = (slider: SliderInput) => {

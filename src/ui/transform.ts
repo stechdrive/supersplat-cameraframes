@@ -4,6 +4,7 @@ import { Quat, Vec3 } from 'playcanvas';
 import { Events } from '../events';
 import { localize } from './localization';
 import { Pivot } from '../pivot';
+import { registerNumericInputHistory } from './register-numeric-input-history';
 
 const v = new Vec3();
 
@@ -92,6 +93,7 @@ class Transform extends Container {
 
         let uiUpdating = false;
         let mouseUpdating = false;
+        let keyboardUpdating = false;
 
         // update UI with pivot
         const updateUI = (pivot: Pivot) => {
@@ -118,11 +120,33 @@ class Transform extends Container {
             pivot.moveTRS(new Vec3(p[0], p[1], p[2]), q, new Vec3(s, s, s));
         };
 
+        const beginKeyboardUpdate = () => {
+            if (uiUpdating || mouseUpdating || keyboardUpdating) {
+                return;
+            }
+            if (!events.invoke('selection')) {
+                return;
+            }
+            const pivot = events.invoke('pivot') as Pivot;
+            keyboardUpdating = true;
+            pivot.start();
+        };
+
+        const commitKeyboardUpdate = () => {
+            if (!keyboardUpdating) {
+                return;
+            }
+            const pivot = events.invoke('pivot') as Pivot;
+            updatePivot(pivot);
+            keyboardUpdating = false;
+            pivot.end();
+        };
+
         // handle a change in the UI state
         const change = () => {
             if (!uiUpdating) {
                 const pivot = events.invoke('pivot') as Pivot;
-                if (mouseUpdating) {
+                if (mouseUpdating || keyboardUpdating) {
                     updatePivot(pivot);
                 } else {
                     pivot.start();
@@ -145,7 +169,22 @@ class Transform extends Container {
             pivot.end();
         };
 
-        [positionVector.inputs, rotationVector.inputs, scaleInput].flat().forEach((input) => {
+        const transformInputs = [positionVector.inputs, rotationVector.inputs, scaleInput].flat();
+        transformInputs.forEach((input) => {
+            registerNumericInputHistory({
+                events,
+                input,
+                label: 'scene.transform',
+                canBegin: () => !uiUpdating && !mouseUpdating && !!events.invoke('selection'),
+                historyBeginEvent: null,
+                historyCommitEvent: null,
+                beginOnFocus: false,
+                beginOnPointer: false,
+                beginOnSliderDrag: false,
+                flushCameraHistory: false,
+                onBegin: beginKeyboardUpdate,
+                onCommit: commitKeyboardUpdate
+            });
             input.on('change', change);
             input.on('slider:mousedown', mousedown);
             input.on('slider:mouseup', mouseup);
@@ -161,7 +200,7 @@ class Transform extends Container {
         });
 
         events.on('pivot.moved', (pivot: Pivot) => {
-            if (!mouseUpdating) {
+            if (!mouseUpdating && !keyboardUpdating) {
                 updateUI(pivot);
             }
         });
