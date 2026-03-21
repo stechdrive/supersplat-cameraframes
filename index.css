@@ -2547,6 +2547,9 @@
 .selected .splat-list .splat-item .splat-item-text {
   color: #fff;
 }
+.splat-list .splat-item .splat-item-text.disabled {
+  opacity: 0.5;
+}
 .splat-list .splat-item .splat-item-visible {
   flex-grow: 0;
   flex-shrink: 0;
@@ -2562,6 +2565,37 @@
 .splat-list .splat-item .splat-item-visible:hover {
   color: #fff;
 }
+.splat-list .splat-item .splat-item-visible.disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+.splat-list .splat-item .splat-item-reorder {
+  flex-grow: 0;
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  padding: 2px;
+  color: #aaa;
+  cursor: pointer;
+}
+.splat-list .splat-item .splat-item-reorder svg {
+  width: 12px;
+  height: 12px;
+  display: block;
+}
+.splat-list .splat-item .splat-item-reorder.up svg {
+  transform: rotate(-90deg);
+}
+.splat-list .splat-item .splat-item-reorder.down svg {
+  transform: rotate(90deg);
+}
+.splat-list .splat-item .splat-item-reorder:hover:not(.disabled) {
+  color: #fff;
+}
+.splat-list .splat-item .splat-item-reorder.disabled {
+  opacity: 0.3;
+  cursor: default;
+}
 .splat-list .splat-item .splat-item-delete {
   flex-grow: 0;
   flex-shrink: 0;
@@ -2574,6 +2608,10 @@
 }
 .splat-list .splat-item .splat-item-delete:hover {
   color: #fff;
+}
+.splat-list .splat-item .splat-item-delete.disabled {
+  opacity: 0.3;
+  cursor: default;
 }
 
 .mesh-list {
@@ -2609,6 +2647,9 @@
 .selected .mesh-list .mesh-item .mesh-item-text {
   color: #fff;
 }
+.mesh-list .mesh-item .mesh-item-text.disabled {
+  opacity: 0.5;
+}
 .mesh-list .mesh-item .mesh-item-visible {
   flex-grow: 0;
   flex-shrink: 0;
@@ -2624,6 +2665,37 @@
 .mesh-list .mesh-item .mesh-item-visible:hover {
   color: #fff;
 }
+.mesh-list .mesh-item .mesh-item-visible.disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+.mesh-list .mesh-item .mesh-item-reorder {
+  flex-grow: 0;
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  padding: 2px;
+  color: #aaa;
+  cursor: pointer;
+}
+.mesh-list .mesh-item .mesh-item-reorder svg {
+  width: 12px;
+  height: 12px;
+  display: block;
+}
+.mesh-list .mesh-item .mesh-item-reorder.up svg {
+  transform: rotate(-90deg);
+}
+.mesh-list .mesh-item .mesh-item-reorder.down svg {
+  transform: rotate(90deg);
+}
+.mesh-list .mesh-item .mesh-item-reorder:hover:not(.disabled) {
+  color: #fff;
+}
+.mesh-list .mesh-item .mesh-item-reorder.disabled {
+  opacity: 0.3;
+  cursor: default;
+}
 .mesh-list .mesh-item .mesh-item-delete {
   flex-grow: 0;
   flex-shrink: 0;
@@ -2636,6 +2708,10 @@
 }
 .mesh-list .mesh-item .mesh-item-delete:hover {
   color: #fff;
+}
+.mesh-list .mesh-item .mesh-item-delete.disabled {
+  opacity: 0.3;
+  cursor: default;
 }
 
 #transform {
@@ -4271,11 +4347,13 @@
 
 .export-row .grid-toggle-button,
 .export-row .model-layer-toggle-button,
+.export-row .splat-layer-toggle-button,
 .export-row .reference-include-toggle-button {
   padding: 2px;
 }
 .export-row .grid-toggle-button svg,
 .export-row .model-layer-toggle-button svg,
+.export-row .splat-layer-toggle-button svg,
 .export-row .reference-include-toggle-button svg {
   width: 20px;
   height: 20px;
@@ -4557,6 +4635,39 @@
 .export-target-row > .control-element,
 .mask-scope-row > .control-element {
   min-width: 110px;
+}
+
+.export-splat-layer-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.export-splat-layer-row > .control-element {
+  margin-left: 0;
+  flex: 0 0 auto;
+}
+.export-splat-layer-row.disabled {
+  opacity: 0.5;
+}
+
+.export-splat-layer-labels {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.export-splat-layer-labels > .control-label {
+  width: auto;
+  white-space: normal;
+  line-height: 1.25;
+}
+
+.export-splat-layer-note {
+  color: #aaa;
+  font-size: 11px;
+  line-height: 1.2;
 }
 
 .chevron-toggle {
