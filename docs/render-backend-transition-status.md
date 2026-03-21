@@ -1,8 +1,8 @@
 # Render Backend Transition Status
 
-最終更新: 2026-03-20  
+最終更新: 2026-03-21  
 対象 trunk: `camera-frames`  
-現在の CAMERA_FRAMES 版: `v2.21.12`
+現在の CAMERA_FRAMES 版: `v2.21.13`
 
 ## 目的
 
@@ -46,19 +46,19 @@
 
 ## 現在の既定動作
 
-コード上の既定 `renderBackend.mode` はまだ `merged`。  
-`unified-display` は opt-in で使う前提になっている。
+コード上の既定 `renderBackend.mode` は `unified-display`。  
+`merged` は fallback / 比較用に維持している。
 
 - 既定:
-  - `merged`
-- baseline:
-  - `http://localhost:3000/?render-backend.mode=unified-display`
+  - `unified-display`
+- fallback:
+  - `http://localhost:3000/?render-backend.mode=merged`
 - debug:
   - `http://localhost:3000/?render-backend.mode=unified-display&render-backend.debug-state=true`
 - 現在の前提:
   - `render-backend.unified-culling=false`
 
-これは「unified が不安定だから」ではなく、upstream 追従と rollback 性を保つための運用上の保守設定。
+これは「merged を捨てた」ではなく、live 既定を `unified-display` に上げつつ、rollback 性を残している状態である。
 
 ## 現在の unified-display の判断
 

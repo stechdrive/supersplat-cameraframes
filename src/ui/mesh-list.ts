@@ -1,8 +1,10 @@
-import { Container, Element as PcuiElement, Label, TextInput } from '@playcanvas/pcui';
+import { Button, Container, Element as PcuiElement, Label, TextInput } from '@playcanvas/pcui';
 
 import { Element, ElementType } from '../element';
 import { Events } from '../events';
 import { Model } from '../model';
+import { localize } from './localization';
+import arrowSvg from './svg/arrow.svg';
 import deleteSvg from './svg/delete.svg';
 import hiddenSvg from './svg/hidden.svg';
 import shownSvg from './svg/shown.svg';
@@ -19,6 +21,9 @@ class MeshItem extends Container {
     setSelected: (value: boolean) => void;
     getVisible: () => boolean;
     setVisible: (value: boolean) => void;
+    setMoveUpEnabled: (value: boolean) => void;
+    setMoveDownEnabled: (value: boolean) => void;
+    setBusy: (value: boolean) => void;
     destroy: () => void;
 
     constructor(name: string, edit: TextInput, args = {}) {
@@ -45,12 +50,43 @@ class MeshItem extends Container {
             hidden: true
         });
 
+        const moveUp = new Button({
+            class: ['icon-button', 'mesh-item-reorder', 'up'],
+            text: ''
+        });
+        moveUp.dom.appendChild(createSvg(arrowSvg));
+        moveUp.dom.setAttribute('title', localize('panel.scene-manager.reorder-up'));
+        moveUp.dom.setAttribute('aria-label', localize('panel.scene-manager.reorder-up'));
+
+        const moveDown = new Button({
+            class: ['icon-button', 'mesh-item-reorder', 'down'],
+            text: ''
+        });
+        moveDown.dom.appendChild(createSvg(arrowSvg));
+        moveDown.dom.setAttribute('title', localize('panel.scene-manager.reorder-down'));
+        moveDown.dom.setAttribute('aria-label', localize('panel.scene-manager.reorder-down'));
+
         const remove = new PcuiElement({
             dom: createSvg(deleteSvg),
             class: 'mesh-item-delete'
         });
 
+        let busy = false;
+        let canMoveUp = false;
+        let canMoveDown = false;
+
+        const setDisabledClass = (element: PcuiElement, disabled: boolean) => {
+            element.class[disabled ? 'add' : 'remove']('disabled');
+        };
+
+        const updateMoveButtonState = () => {
+            setDisabledClass(moveUp, busy || !canMoveUp);
+            setDisabledClass(moveDown, busy || !canMoveDown);
+        };
+
         this.append(text);
+        this.append(moveUp);
+        this.append(moveDown);
         this.append(visible);
         this.append(invisible);
         this.append(remove);
@@ -97,18 +133,62 @@ class MeshItem extends Container {
             }
         };
 
+        this.setMoveUpEnabled = (value: boolean) => {
+            canMoveUp = value;
+            updateMoveButtonState();
+        };
+
+        this.setMoveDownEnabled = (value: boolean) => {
+            canMoveDown = value;
+            updateMoveButtonState();
+        };
+
+        this.setBusy = (value: boolean) => {
+            busy = value;
+            updateMoveButtonState();
+            setDisabledClass(visible, busy);
+            setDisabledClass(invisible, busy);
+            setDisabledClass(remove, busy);
+            text.class[busy ? 'add' : 'remove']('disabled');
+        };
+
         const toggleVisible = (event: MouseEvent) => {
             event.stopPropagation();
+            if (busy) {
+                return;
+            }
             this.visible = !this.visible;
+        };
+
+        const handleMoveUp = (event: MouseEvent) => {
+            event.stopPropagation();
+            if (busy || moveUp.class.contains('disabled')) {
+                return;
+            }
+            this.emit('moveUpClicked', this);
+        };
+
+        const handleMoveDown = (event: MouseEvent) => {
+            event.stopPropagation();
+            if (busy || moveDown.class.contains('disabled')) {
+                return;
+            }
+            this.emit('moveDownClicked', this);
         };
 
         const handleRemove = (event: MouseEvent) => {
             event.stopPropagation();
+            if (busy) {
+                return;
+            }
             this.emit('removeClicked', this);
         };
 
         text.dom.addEventListener('dblclick', (event: MouseEvent) => {
             event.stopPropagation();
+            if (busy) {
+                return;
+            }
 
             const onblur = () => {
                 this.remove(edit);
@@ -125,11 +205,19 @@ class MeshItem extends Container {
             edit.focus();
         });
 
+        ['pointerdown', 'pointerup', 'click'].forEach((evt) => {
+            moveUp.dom.addEventListener(evt, (event: Event) => event.stopPropagation());
+            moveDown.dom.addEventListener(evt, (event: Event) => event.stopPropagation());
+        });
+        moveUp.on('click', handleMoveUp);
+        moveDown.on('click', handleMoveDown);
         visible.dom.addEventListener('click', toggleVisible);
         invisible.dom.addEventListener('click', toggleVisible);
         remove.dom.addEventListener('click', handleRemove);
 
         this.destroy = () => {
+            moveUp.unbind('click');
+            moveDown.unbind('click');
             visible.dom.removeEventListener('click', toggleVisible);
             invisible.dom.removeEventListener('click', toggleVisible);
             remove.dom.removeEventListener('click', handleRemove);
@@ -173,10 +261,29 @@ class MeshList extends Container {
         const items = new Map<Model, MeshItem>();
         const itemsByElement = new Map<MeshItem, Model>();
         let selectionAnchor: Model | null = null;
+        let exportBusy = events.functions.has('cameraFrames.exportBusy') ? !!events.invoke('cameraFrames.exportBusy') : false;
 
         const edit = new TextInput({
             id: 'mesh-edit'
         });
+
+        const getOrderedModels = () => {
+            const ordered = (events.invoke('mesh.list') as Model[] | null) ?? [];
+            return ordered.filter(model => items.has(model));
+        };
+
+        const syncOrder = () => {
+            const orderedModels = getOrderedModels();
+            orderedModels.forEach((model, index) => {
+                const item = items.get(model);
+                if (!item) {
+                    return;
+                }
+                this.dom.appendChild(item.dom);
+                item.setMoveUpEnabled(index > 0);
+                item.setMoveDownEnabled(index < orderedModels.length - 1);
+            });
+        };
 
         events.on('scene.elementAdded', (element: Element) => {
             if (element.type === ElementType.model) {
@@ -185,6 +292,8 @@ class MeshList extends Container {
                 this.append(item);
                 items.set(model, item);
                 itemsByElement.set(item, model);
+                item.setBusy(exportBusy);
+                syncOrder();
 
                 item.on('visible', () => {
                     events.fire('mesh.setVisible', model, true);
@@ -197,6 +306,12 @@ class MeshList extends Container {
                 });
                 item.on('rename', (value: string) => {
                     events.fire('mesh.rename', model, value);
+                });
+                item.on('moveUpClicked', () => {
+                    events.invoke('scene.reorderElement', model, 'up');
+                });
+                item.on('moveDownClicked', () => {
+                    events.invoke('scene.reorderElement', model, 'down');
                 });
             }
         });
@@ -213,7 +328,19 @@ class MeshList extends Container {
                         selectionAnchor = null;
                     }
                 }
+                syncOrder();
             }
+        });
+
+        events.on('scene.elementReordered', (element: Element) => {
+            if (element.type === ElementType.model) {
+                syncOrder();
+            }
+        });
+
+        events.on('cameraFrames.exportBusyChanged', (value: boolean) => {
+            exportBusy = !!value;
+            items.forEach(item => item.setBusy(exportBusy));
         });
 
         events.on('selection.changed', (selection: Element, _prev: Element, list?: Element[]) => {
@@ -252,7 +379,7 @@ class MeshList extends Container {
 
             const toggleKey = event.metaKey || event.ctrlKey;
             const shiftKey = event.shiftKey;
-            const orderedModels = Array.from(items.keys());
+            const orderedModels = getOrderedModels();
             let nextSelection: Element[] | null = null;
 
             if (shiftKey && selectionAnchor) {
@@ -305,6 +432,8 @@ class MeshList extends Container {
                 events.fire('mesh.remove', model);
             }
         });
+
+        syncOrder();
     }
 
     protected _onAppendChild(element: PcuiElement): void {
@@ -318,6 +447,12 @@ class MeshList extends Container {
             element.on('removeClicked', () => {
                 this.emit('removeClicked', element);
             });
+            element.on('moveUpClicked', () => {
+                this.emit('moveUpClicked', element);
+            });
+            element.on('moveDownClicked', () => {
+                this.emit('moveDownClicked', element);
+            });
         }
     }
 
@@ -325,6 +460,8 @@ class MeshList extends Container {
         if (element instanceof MeshItem) {
             element.unbind('click');
             element.unbind('removeClicked');
+            element.unbind('moveUpClicked');
+            element.unbind('moveDownClicked');
         }
 
         super._onRemoveChild(element);

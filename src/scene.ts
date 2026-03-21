@@ -145,13 +145,15 @@ class Scene {
         gridLayerOverride: Layer | null;
         hideBounds: boolean;
         offscreenIncludeReferenceImage: boolean;
+        forceMergedSplatDisplay: boolean;
     } = {
             forceGridOverlay: false,
             forceEyeLevelOverlay: false,
             eyeLevelLayerOverride: null,
             gridLayerOverride: null,
             hideBounds: false,
-            offscreenIncludeReferenceImage: false
+            offscreenIncludeReferenceImage: false,
+            forceMergedSplatDisplay: false
         };
 
     canvasResize: { width: number; height: number } | null = null;
@@ -380,6 +382,9 @@ class Scene {
         });
         events.function('lighting.ambient', () => this.app.scene.ambientLight.r ?? 0.3);
         events.function('lighting.commitPending', () => this.commitPendingAmbient());
+        events.function('scene.reorderElement', (element: Element, direction: 'up' | 'down') => {
+            return this.reorderElement(element, direction);
+        });
         events.on('edit.apply', this.onEditApplied, this);
 
         this.dataProcessor = new DataProcessor(this.app.graphicsDevice);
@@ -838,12 +843,21 @@ class Scene {
     }
 
     // add a scene element
-    async add(element: Element) {
+    async add(element: Element, options?: { insertAtTop?: boolean; }) {
         if (!element.scene) {
             // add the new element
             element.scene = this;
             await element.add();
-            this.elements.push(element);
+            if (options?.insertAtTop) {
+                const insertIndex = this.elements.findIndex(e => e.type === element.type);
+                if (insertIndex >= 0) {
+                    this.elements.splice(insertIndex, 0, element);
+                } else {
+                    this.elements.push(element);
+                }
+            } else {
+                this.elements.push(element);
+            }
 
             // notify all elements of scene addition
             this.forEachElement(e => e !== element && e.onAdded(element));
@@ -902,6 +916,38 @@ class Scene {
 
     getElementsByType(elementType: ElementType) {
         return this.elements.filter(e => e.type === elementType);
+    }
+
+    reorderElement(element: Element, direction: 'up' | 'down') {
+        if (!(element instanceof Element)) {
+            return false;
+        }
+
+        if (element.type !== ElementType.splat && element.type !== ElementType.model) {
+            return false;
+        }
+
+        const ordered = this.getElementsByType(element.type);
+        const fromIndex = ordered.indexOf(element);
+        if (fromIndex === -1) {
+            return false;
+        }
+
+        const toIndex = direction === 'up' ? fromIndex - 1 : fromIndex + 1;
+        if (toIndex < 0 || toIndex >= ordered.length) {
+            return false;
+        }
+
+        const target = ordered[toIndex];
+        const currentIndex = this.elements.indexOf(element);
+        const targetIndex = this.elements.indexOf(target);
+        if (currentIndex === -1 || targetIndex === -1) {
+            return false;
+        }
+
+        [this.elements[currentIndex], this.elements[targetIndex]] = [this.elements[targetIndex], this.elements[currentIndex]];
+        this.events.fire('scene.elementReordered', element, direction, fromIndex, toIndex);
+        return true;
     }
 
     get graphicsDevice() {

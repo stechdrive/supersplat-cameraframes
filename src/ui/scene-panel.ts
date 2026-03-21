@@ -41,9 +41,14 @@ class ScenePanel extends Container {
         const safeInvoke = <T>(name: string): T | undefined => {
             return events.functions.has(name) ? events.invoke(name) as T : undefined;
         };
+        const setControlDisabled = (control: Container, disabled: boolean) => {
+            control.class[disabled ? 'add' : 'remove']('disabled');
+            control.dom.setAttribute('aria-disabled', disabled ? 'true' : 'false');
+        };
 
         const initialLightState = safeInvoke<{ enabled?: boolean; intensity?: number }>('modelLight.state');
         const initialAmbient = safeInvoke<number>('lighting.ambient');
+        let exportBusy = safeInvoke<boolean>('cameraFrames.exportBusy') ?? false;
 
         const sceneHeader = new Container({
             class: 'panel-header'
@@ -72,6 +77,9 @@ class ScenePanel extends Container {
         };
 
         soloToggle.on('click', () => {
+            if (exportBusy) {
+                return;
+            }
             updateSoloToggleState(!soloActive);
             events.fire('scene.solo', soloActive);
         });
@@ -93,10 +101,16 @@ class ScenePanel extends Container {
         sceneHeader.append(sceneNew);
 
         sceneImport.on('click', async () => {
+            if (exportBusy) {
+                return;
+            }
             await events.invoke('scene.import');
         });
 
         sceneNew.on('click', () => {
+            if (exportBusy) {
+                return;
+            }
             events.invoke('doc.new');
         });
 
@@ -199,6 +213,17 @@ class ScenePanel extends Container {
             class: 'panel-header-slider'
         });
 
+        const updateBusyState = () => {
+            setControlDisabled(soloToggle, exportBusy);
+            setControlDisabled(sceneImport, exportBusy);
+            setControlDisabled(sceneNew, exportBusy);
+            setControlDisabled(lightToggle, exportBusy);
+            setControlDisabled(lightSelect, exportBusy);
+            setControlDisabled(lightReset, exportBusy);
+            lightInput.enabled = !exportBusy;
+            ambientInput.enabled = !exportBusy;
+        };
+
         let lightEnabled = initialLightState?.enabled ?? true;
         let lightSelected = false;
         let syncingIntensity = false;
@@ -257,11 +282,17 @@ class ScenePanel extends Container {
         lightHeader.append(lightReset);
 
         lightToggle.on('click', () => {
+            if (exportBusy) {
+                return;
+            }
             updateLightToggleState(!lightEnabled);
             events.fire('modelLight.toggle');
         });
 
         lightSelect.on('click', () => {
+            if (exportBusy) {
+                return;
+            }
             if (lightSelected) {
                 events.fire('selection', null);
             } else {
@@ -270,6 +301,9 @@ class ScenePanel extends Container {
         });
 
         lightReset.on('click', () => {
+            if (exportBusy) {
+                return;
+            }
             events.fire('modelLight.resetDirection');
         });
 
@@ -292,6 +326,10 @@ class ScenePanel extends Container {
         events.on('lighting.ambientChanged', (value: number) => {
             updateAmbientFromState(value);
         });
+        events.on('cameraFrames.exportBusyChanged', (value: boolean) => {
+            exportBusy = !!value;
+            updateBusyState();
+        });
 
         tooltips.register(lightToggle, localize('panel.scene-manager.lighting.toggle'), 'top');
         tooltips.register(lightSelect, localize('panel.scene-manager.lighting.select'), 'top');
@@ -312,7 +350,7 @@ class ScenePanel extends Container {
         }));
 
         lightInput.on('change', (value: number) => {
-            if (syncingIntensity) {
+            if (syncingIntensity || exportBusy) {
                 return;
             }
             events.fire('modelLight.setIntensity', value);
@@ -335,7 +373,7 @@ class ScenePanel extends Container {
         });
 
         ambientInput.on('change', (value: number) => {
-            if (syncingAmbient) {
+            if (syncingAmbient || exportBusy) {
                 return;
             }
             events.fire('lighting.setAmbient', value);
@@ -356,6 +394,8 @@ class ScenePanel extends Container {
                 }
             }
         });
+
+        updateBusyState();
     }
 }
 

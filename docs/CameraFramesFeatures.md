@@ -3,7 +3,7 @@
 この文書は、`camera-frames` ブランチの現在の stable 機能を短く把握するための一覧です。
 将来 Spark 2.0 上で再現する時のチェックリストとしても使います。
 
-対象バージョン: `v2.21.12`
+対象バージョン: `v2.21.13`
 
 ---
 
@@ -47,10 +47,15 @@
   - `format = psd`
   - `grid/eye-level = on`
   - `model layers = on`
+  - `PLY/SOG object layers = off`
   - `filename = cf-%cam`
 - 全カメラ書き出し時は unified splat の安定待ちを入れている
 - PNG は 150dpi の `pHYs` を付与する
-- PSD は render / guide / model / reference / frame を分けて出力できる
+- PSD は residual render / guide / model / PLY-SOG / reference / frame を分けて出力できる
+- `PLY/SOG object layers` は `model layers` が ON の時だけ有効
+- 下絵は `下絵` グループ、グリッド / アイレベルは `ガイド` グループにまとまる
+- グリッドレイヤーは multiply で出力する
+- splat / model の Scene Manager 順は PSD の object layer 順にも反映される
 
 ---
 

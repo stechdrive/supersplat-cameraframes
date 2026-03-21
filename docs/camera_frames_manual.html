@@ -150,7 +150,7 @@
     <p>
       CAMERA FRAMES は、A4 相当の<span class="keyword">基準用紙</span>の上に複数の<span class="keyword">撮影フレーム</span>を配置し、
       撮影カメラ・下絵・書き出しをまとめて管理するための機能です。
-      本書は <span class="keyword">CAMERA FRAMES v2.21.12</span> に対応した、ユーザー向けの操作マニュアルです。
+      本書は <span class="keyword">CAMERA FRAMES v2.21.13</span> に対応した、ユーザー向けの操作マニュアルです。
     </p>
     <p>
       URL:
@@ -268,8 +268,9 @@
       <li><span class="control">書き出し詳細</span> を開き、<span class="control">ファイル名</span> を入力します。既定値は <code>cf-%cam</code> です。<code>%cam</code> は書き出し時にそのカメラの名前へ置き換わるので、<span class="control">全カメラ</span> や <span class="control">選択カメラ</span> をまとめて書き出す時に、カメラごとのファイル名を自動で分けられます。</li>
       <li><span class="control">PSD / PNG</span> から保存形式を選びます。後でレイヤーを分けて調整したい時は <span class="control">PSD</span>、そのまま完成画像を出したい時は <span class="control">PNG</span> が向いています。</li>
       <li><span class="control">書き出し対象</span> で <span class="control">現在のカメラ</span>、<span class="control">全カメラ</span>、<span class="control">選択カメラ</span> を選びます。<span class="control">選択カメラ</span> を使う時は、<span class="control">カメラリスト</span> 左のチェックを入れたカメラだけが対象です。</li>
-      <li>必要に応じて右側のアイコンで <span class="control">グリッド/アイレベル</span> や GLB モデルのレイヤー出力を切り替えます。</li>
-      <li>下絵を書き出しに含めたい時は、<span class="control">下絵</span> パネル側で対象画像の <span class="control">表示</span> と <span class="control">出力</span> を両方有効にします。</li>
+      <li>必要に応じて右側のアイコンで <span class="control">グリッド/アイレベル</span> や <span class="control">GLBモデルをモデル単位で出力</span> を切り替えます。<span class="control">GLBモデルをモデル単位で出力</span> を有効にすると、<span class="control">書き出し詳細</span> 内の <span class="control">PLY/SOGオブジェクトをレイヤー出力</span> も使えます。</li>
+      <li><span class="control">PLY/SOGオブジェクトをレイヤー出力</span> を有効にすると、PLY / SOG の各オブジェクトを PSD の個別レイヤーとして出力できます。書き出し時間は長くなります。</li>
+      <li>下絵を書き出しに含めたい時は、<span class="control">下絵</span> パネル側で対象画像の <span class="control">表示</span> と <span class="control">出力</span> を両方有効にします。PSD では下絵は <span class="control">下絵</span> グループ、グリッドとアイレベルは <span class="control">ガイド</span> グループにまとまります。</li>
       <li>準備ができたら <span class="control">撮影カメラ表示</span> にして <span class="control">レンダリング</span> を押します。<span class="control">全カメラ</span> を選ぶと、カメラリストにある複数のカメラをまとめて書き出せます。</li>
     </ol>
 
@@ -337,6 +338,9 @@
       選んだあとに <span class="control">トランスフォーム</span> を使うと、<span class="control">位置</span>、
       <span class="control">回転</span>、<span class="control">スケール</span> を数値で調整できます。
     </p>
+    <p>
+      一覧の上下ボタンで 3DGS / GLB の並び順を変えられます。PSD のオブジェクトレイヤー出力を使う時は、この順番が重なり順に反映されます。
+    </p>
     <div class="image-placeholder">
       <img src="../static/images/tools-ui.png" alt="画面下部の編集ツール">
     </div>
@@ -395,7 +399,7 @@
       </tr>
       <tr>
         <td><span class="control">.ssproj</span></td>
-        <td>シーン全体、3D データ、カメラフレーム設定、下絵、照明などをまとめて保存するプロジェクトファイルです。<span class="keyword">あとで同じ状態をそのまま再開したい時や、他の環境・他のユーザーに全部セットで渡したい時</span>は、これで保存します。</td>
+        <td>シーン全体、3D データ、カメラフレーム設定、下絵、照明、書き出し設定などをまとめて保存するプロジェクトファイルです。<span class="keyword">あとで同じ状態をそのまま再開したい時や、他の環境・他のユーザーに全部セットで渡したい時</span>は、これで保存します。</td>
       </tr>
       <tr>
         <td><span class="control">.sscam</span></td>

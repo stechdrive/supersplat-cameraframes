@@ -26,7 +26,7 @@ type RenderPngParams = {
 };
 
 type RenderPsdParams = {
-    basePixels: Uint8ClampedArray;
+    basePixels?: Uint8ClampedArray | null;
     underlays?: PsdOverlayLayer[];
     overlays: PsdOverlayLayer[];
     width: number;
@@ -35,6 +35,8 @@ type RenderPsdParams = {
 };
 
 type RenderImageOptions = { format?: ExportFormat; filename?: string };
+type RenderImageProgress = { text: string; progress: number; };
+type OnRenderImageProgress = (update: RenderImageProgress) => void;
 
 type RenderImageParams = {
     renderBackend: CameraFramesRenderBackend;
@@ -46,6 +48,7 @@ type RenderImageParams = {
     renderFrameOverlaysByManagement: RenderFrameOverlaysByManagement;
     getCompressor: GetCompressor;
     options?: RenderImageOptions;
+    onProgress?: OnRenderImageProgress;
 };
 
 export const mergeOverlayCanvases = (
@@ -201,6 +204,15 @@ export const renderPsd = async (params: RenderPsdParams) => {
     });
 };
 
+const hasVisiblePixels = (pixels: Uint8Array | Uint8ClampedArray) => {
+    for (let i = 3; i < pixels.length; i += 4) {
+        if (pixels[i] !== 0) {
+            return true;
+        }
+    }
+    return false;
+};
+
 export const renderImage = async ({
     renderBackend,
     getState,
@@ -210,8 +222,10 @@ export const renderImage = async ({
     renderFrameOverlay,
     renderFrameOverlaysByManagement,
     getCompressor,
-    options
+    options,
+    onProgress
 }: RenderImageParams) => {
+    const clamp01 = (value: number) => Math.max(0, Math.min(1, value));
     const state = getState();
     const rb = state.renderBox;
     const width = Math.round(rb.baseSize.w * rb.scale.kx);
@@ -228,56 +242,150 @@ export const renderImage = async ({
     const format = normalizeFormat(options?.format ?? state.exportFormat);
     const filename = resolveFilename(options?.filename ?? state.exportName, format);
     const usePsdModelMaskExport = format === 'psd' && !!state.exportModelLayers;
+    const usePsdSplatMaskExport = format === 'psd' && !!state.exportModelLayers && !!state.exportSplatLayers;
+
+    const stageKeys = [
+        'panel.camera-frames.export.progress.stage.prepare',
+        'panel.camera-frames.export.progress.stage.base',
+        'panel.camera-frames.export.progress.stage.reference',
+        'panel.camera-frames.export.progress.stage.overlays',
+        ...(usePsdModelMaskExport ? ['panel.camera-frames.export.progress.stage.model-layers'] : []),
+        ...(usePsdSplatMaskExport ? ['panel.camera-frames.export.progress.stage.splat-layers'] : []),
+        'panel.camera-frames.export.progress.stage.write'
+    ];
+    const totalStages = Math.max(stageKeys.length, 1);
+    let currentStageIndex = 0;
+
+    const emitStageProgress = (text: string, stageProgress = 0) => {
+        onProgress?.({
+            text,
+            progress: clamp01((currentStageIndex + clamp01(stageProgress)) / totalStages)
+        });
+    };
+
+    const runStage = async <T>(
+        key: string,
+        fn: (reportStageProgress: (progress: number, text?: string) => void) => T | Promise<T>
+    ) => {
+        const baseText = localize(key);
+        emitStageProgress(baseText, 0);
+        try {
+            const result = await fn((progress, text) => {
+                emitStageProgress(text ?? baseText, progress);
+            });
+            emitStageProgress(baseText, 1);
+            return result;
+        } finally {
+            currentStageIndex += 1;
+        }
+    };
 
     try {
-        renderBackend.syncExportFrustum(width, height);
+        await runStage('panel.camera-frames.export.progress.stage.prepare', () => {
+            renderBackend.syncExportFrustum(width, height);
+        });
+
         const currentState = getState();
-        const basePixels = usePsdModelMaskExport ?
-            await renderBackend.renderBaseWithoutModels(width, height) :
-            await renderBackend.renderBase(width, height);
-        const debugOverlays = await renderBackend.renderOverlayLayers(width, height, getState().exportGridOverlay);
-        const referenceLayers = await renderBackend.renderReferenceLayers(width, height, { applyOpacity: format !== 'psd' });
+        const basePixels = await runStage('panel.camera-frames.export.progress.stage.base', async () => {
+            return (usePsdModelMaskExport || usePsdSplatMaskExport) ?
+                await renderBackend.renderBaseWithoutLayers(width, height, {
+                    excludeModels: usePsdModelMaskExport,
+                    excludeSplats: usePsdSplatMaskExport
+                }) :
+                await renderBackend.renderBase(width, height);
+        });
+        const referenceLayers = await runStage('panel.camera-frames.export.progress.stage.reference', async () => {
+            return await renderBackend.renderReferenceLayers(width, height, { applyOpacity: format !== 'psd' });
+        });
+        const debugOverlays = await runStage('panel.camera-frames.export.progress.stage.overlays', async () => {
+            return await renderBackend.renderOverlayLayers(width, height, getState().exportGridOverlay);
+        });
 
         if (format === 'psd') {
-            const referenceUnderlays: PsdOverlayLayer[] = referenceLayers
-            .filter(layer => layer.group === 'back')
-            .map(layer => ({ name: layer.name, canvas: layer.canvas, opacity: layer.opacity, bounds: layer.bounds }));
-            const referenceOverlays: PsdOverlayLayer[] = referenceLayers
-            .filter(layer => layer.group === 'front')
+            const referenceGroupLayers: PsdOverlayLayer[] = referenceLayers
             .map(layer => ({ name: layer.name, canvas: layer.canvas, opacity: layer.opacity, bounds: layer.bounds }));
             const modelOverlays = usePsdModelMaskExport ?
-                await renderBackend.renderModelLayersWithOcclusion(width, height, currentState.exportModelLayers) :
+                await runStage('panel.camera-frames.export.progress.stage.model-layers', async (reportStageProgress) => {
+                    return await renderBackend.renderModelLayersWithOcclusion(width, height, currentState.exportModelLayers, ({ completed, total, name }) => {
+                        const itemText = localize('panel.camera-frames.export.progress.item.model', {
+                            index: completed,
+                            total,
+                            name: name ?? 'Model'
+                        });
+                        reportStageProgress(total > 0 ? completed / total : 1, itemText);
+                    });
+                }) :
                 await renderBackend.renderModelLayers(width, height, currentState.exportModelLayers);
+            const splatOverlays = usePsdSplatMaskExport ?
+                await runStage('panel.camera-frames.export.progress.stage.splat-layers', async (reportStageProgress) => {
+                    return await renderBackend.renderSplatLayersWithOcclusion(width, height, currentState.exportSplatLayers, ({ completed, total, name }) => {
+                        const itemText = localize('panel.camera-frames.export.progress.item.splat', {
+                            index: completed,
+                            total,
+                            name: name ?? 'Splat'
+                        });
+                        reportStageProgress(total > 0 ? completed / total : 1, itemText);
+                    });
+                }) :
+                [];
+            const orderedSplatOverlays = [...splatOverlays].reverse();
+            const orderedModelOverlays = [...modelOverlays].reverse();
             const frameOverlays = renderFrameOverlaysByManagement(width, height);
+            const guideGroupLayers: PsdOverlayLayer[] = [
+                ...(debugOverlays?.grid ? [{
+                    name: localize('panel.camera-frames.export.grid-layer.grid'),
+                    canvas: debugOverlays.grid,
+                    blendMode: 'multiply' as const
+                }] : []),
+                ...(debugOverlays?.eyeLevel ? [{
+                    name: localize('panel.camera-frames.export.grid-layer.eye-level'),
+                    canvas: debugOverlays.eyeLevel
+                }] : [])
+            ];
             const overlayLayers = [
-                ...(debugOverlays?.grid ? [{ name: localize('panel.camera-frames.export.grid-layer.grid'), canvas: debugOverlays.grid }] : []),
-                ...(debugOverlays?.eyeLevel ? [{ name: localize('panel.camera-frames.export.grid-layer.eye-level'), canvas: debugOverlays.eyeLevel }] : []),
-                ...modelOverlays,
-                ...referenceOverlays,
+                // Scene Manager の上側が PSD の上側レイヤーになるよう、
+                // export 配列は bottom-to-top に並べる。
+                ...orderedSplatOverlays,
+                ...orderedModelOverlays,
+                ...(guideGroupLayers.length > 0 ? [{
+                    name: localize('panel.camera-frames.export.guide-group'),
+                    opened: true,
+                    children: guideGroupLayers
+                }] : []),
+                ...(referenceGroupLayers.length > 0 ? [{
+                    name: localize('panel.camera-frames.export.reference-group'),
+                    opened: true,
+                    children: referenceGroupLayers
+                }] : []),
                 ...frameOverlays
             ];
-            await renderPsd({
-                basePixels: basePixels instanceof Uint8ClampedArray ? basePixels : new Uint8ClampedArray(basePixels),
-                underlays: referenceUnderlays.length > 0 ? referenceUnderlays : undefined,
-                overlays: overlayLayers,
-                width,
-                height,
-                filename
+            await runStage('panel.camera-frames.export.progress.stage.write', async () => {
+                await renderPsd({
+                    basePixels: hasVisiblePixels(basePixels) ?
+                        (basePixels instanceof Uint8ClampedArray ? basePixels : new Uint8ClampedArray(basePixels)) :
+                        null,
+                    overlays: overlayLayers,
+                    width,
+                    height,
+                    filename
+                });
             });
         } else {
             const overlay = renderFrameOverlay(width, height);
             const gridOverlay = mergeOverlayCanvases(width, height, [debugOverlays?.grid]);
             const eyeLevelOverlay = mergeOverlayCanvases(width, height, [debugOverlays?.eyeLevel]);
-            await renderPng({
-                basePixels,
-                referenceLayers,
-                frameOverlay: overlay.canvas,
-                gridOverlay,
-                eyeLevelOverlay,
-                width,
-                height,
-                filename,
-                getCompressor
+            await runStage('panel.camera-frames.export.progress.stage.write', async () => {
+                await renderPng({
+                    basePixels,
+                    referenceLayers,
+                    frameOverlay: overlay.canvas,
+                    gridOverlay,
+                    eyeLevelOverlay,
+                    width,
+                    height,
+                    filename,
+                    getCompressor
+                });
             });
         }
     } catch (error) {

@@ -1,9 +1,11 @@
-import { Container, Label, Element as PcuiElement, TextInput } from '@playcanvas/pcui';
+import { Button, Container, Label, Element as PcuiElement, TextInput } from '@playcanvas/pcui';
 
 import { SplatRenameOp } from '../edit-ops';
 import { Element, ElementType } from '../element';
 import { Events } from '../events';
 import { Splat } from '../splat';
+import { localize } from './localization';
+import arrowSvg from './svg/arrow.svg';
 import deleteSvg from './svg/delete.svg';
 import hiddenSvg from './svg/hidden.svg';
 import shownSvg from './svg/shown.svg';
@@ -20,6 +22,9 @@ class SplatItem extends Container {
     setSelected: (value: boolean) => void;
     getVisible: () => boolean;
     setVisible: (value: boolean) => void;
+    setMoveUpEnabled: (value: boolean) => void;
+    setMoveDownEnabled: (value: boolean) => void;
+    setBusy: (value: boolean) => void;
     destroy: () => void;
 
     constructor(name: string, edit: TextInput, args = {}) {
@@ -46,12 +51,43 @@ class SplatItem extends Container {
             hidden: true
         });
 
+        const moveUp = new Button({
+            class: ['icon-button', 'splat-item-reorder', 'up'],
+            text: ''
+        });
+        moveUp.dom.appendChild(createSvg(arrowSvg));
+        moveUp.dom.setAttribute('title', localize('panel.scene-manager.reorder-up'));
+        moveUp.dom.setAttribute('aria-label', localize('panel.scene-manager.reorder-up'));
+
+        const moveDown = new Button({
+            class: ['icon-button', 'splat-item-reorder', 'down'],
+            text: ''
+        });
+        moveDown.dom.appendChild(createSvg(arrowSvg));
+        moveDown.dom.setAttribute('title', localize('panel.scene-manager.reorder-down'));
+        moveDown.dom.setAttribute('aria-label', localize('panel.scene-manager.reorder-down'));
+
         const remove = new PcuiElement({
             dom: createSvg(deleteSvg),
             class: 'splat-item-delete'
         });
 
+        let busy = false;
+        let canMoveUp = false;
+        let canMoveDown = false;
+
+        const setDisabledClass = (element: PcuiElement, disabled: boolean) => {
+            element.class[disabled ? 'add' : 'remove']('disabled');
+        };
+
+        const updateMoveButtonState = () => {
+            setDisabledClass(moveUp, busy || !canMoveUp);
+            setDisabledClass(moveDown, busy || !canMoveDown);
+        };
+
         this.append(text);
+        this.append(moveUp);
+        this.append(moveDown);
         this.append(visible);
         this.append(invisible);
         this.append(remove);
@@ -98,19 +134,63 @@ class SplatItem extends Container {
             }
         };
 
+        this.setMoveUpEnabled = (value: boolean) => {
+            canMoveUp = value;
+            updateMoveButtonState();
+        };
+
+        this.setMoveDownEnabled = (value: boolean) => {
+            canMoveDown = value;
+            updateMoveButtonState();
+        };
+
+        this.setBusy = (value: boolean) => {
+            busy = value;
+            updateMoveButtonState();
+            setDisabledClass(visible, busy);
+            setDisabledClass(invisible, busy);
+            setDisabledClass(remove, busy);
+            text.class[busy ? 'add' : 'remove']('disabled');
+        };
+
         const toggleVisible = (event: MouseEvent) => {
             event.stopPropagation();
+            if (busy) {
+                return;
+            }
             this.visible = !this.visible;
+        };
+
+        const handleMoveUp = (event: MouseEvent) => {
+            event.stopPropagation();
+            if (busy || moveUp.class.contains('disabled')) {
+                return;
+            }
+            this.emit('moveUpClicked', this);
+        };
+
+        const handleMoveDown = (event: MouseEvent) => {
+            event.stopPropagation();
+            if (busy || moveDown.class.contains('disabled')) {
+                return;
+            }
+            this.emit('moveDownClicked', this);
         };
 
         const handleRemove = (event: MouseEvent) => {
             event.stopPropagation();
+            if (busy) {
+                return;
+            }
             this.emit('removeClicked', this);
         };
 
         // rename on double click
         text.dom.addEventListener('dblclick', (event: MouseEvent) => {
             event.stopPropagation();
+            if (busy) {
+                return;
+            }
 
             const onblur = () => {
                 this.remove(edit);
@@ -128,11 +208,19 @@ class SplatItem extends Container {
         });
 
         // handle clicks
+        ['pointerdown', 'pointerup', 'click'].forEach((evt) => {
+            moveUp.dom.addEventListener(evt, (event: Event) => event.stopPropagation());
+            moveDown.dom.addEventListener(evt, (event: Event) => event.stopPropagation());
+        });
+        moveUp.on('click', handleMoveUp);
+        moveDown.on('click', handleMoveDown);
         visible.dom.addEventListener('click', toggleVisible);
         invisible.dom.addEventListener('click', toggleVisible);
         remove.dom.addEventListener('click', handleRemove);
 
         this.destroy = () => {
+            moveUp.unbind('click');
+            moveDown.unbind('click');
             visible.dom.removeEventListener('click', toggleVisible);
             invisible.dom.removeEventListener('click', toggleVisible);
             remove.dom.removeEventListener('click', handleRemove);
@@ -177,6 +265,7 @@ class SplatList extends Container {
         const itemsByElement = new Map<SplatItem, Splat>();
         let selectionAnchor: Splat | null = null;
         let soloMode = false;
+        let exportBusy = events.functions.has('cameraFrames.exportBusy') ? !!events.invoke('cameraFrames.exportBusy') : false;
         const savedVisibility = new Map<Splat, boolean>();
 
         // edit input used during renames
@@ -190,6 +279,24 @@ class SplatList extends Container {
                 (events.invoke('selection.list') as Element[] | undefined) ?? [];
 
             return new Set(selectionList.filter((item): item is Splat => item instanceof Splat));
+        };
+
+        const getOrderedSplats = () => {
+            const ordered = (events.invoke('scene.allSplats') as Splat[] | null) ?? [];
+            return ordered.filter(splat => items.has(splat));
+        };
+
+        const syncOrder = () => {
+            const orderedSplats = getOrderedSplats();
+            orderedSplats.forEach((splat, index) => {
+                const item = items.get(splat);
+                if (!item) {
+                    return;
+                }
+                this.dom.appendChild(item.dom);
+                item.setMoveUpEnabled(index > 0);
+                item.setMoveDownEnabled(index < orderedSplats.length - 1);
+            });
         };
 
         const applySoloVisibility = (selectedSplats: ReadonlySet<Splat>) => {
@@ -209,6 +316,8 @@ class SplatList extends Container {
                 this.append(item);
                 items.set(splat, item);
                 itemsByElement.set(item, splat);
+                item.setBusy(exportBusy);
+                syncOrder();
 
                 if (soloMode) {
                     savedVisibility.set(splat, splat.visible);
@@ -236,6 +345,12 @@ class SplatList extends Container {
                 item.on('rename', (value: string) => {
                     events.fire('edit.add', new SplatRenameOp(splat, value));
                 });
+                item.on('moveUpClicked', () => {
+                    events.invoke('scene.reorderElement', splat, 'up');
+                });
+                item.on('moveDownClicked', () => {
+                    events.invoke('scene.reorderElement', splat, 'down');
+                });
             }
         });
 
@@ -252,7 +367,19 @@ class SplatList extends Container {
                     }
                 }
                 savedVisibility.delete(splat);
+                syncOrder();
             }
+        });
+
+        events.on('scene.elementReordered', (element: Element) => {
+            if (element.type === ElementType.splat) {
+                syncOrder();
+            }
+        });
+
+        events.on('cameraFrames.exportBusyChanged', (value: boolean) => {
+            exportBusy = !!value;
+            items.forEach(item => item.setBusy(exportBusy));
         });
 
         events.on('selection.changed', (selection: Element, _prev: Element, list?: Element[]) => {
@@ -269,6 +396,9 @@ class SplatList extends Container {
         });
 
         events.on('scene.solo', (value: boolean) => {
+            if (exportBusy) {
+                return;
+            }
             soloMode = value;
 
             if (soloMode) {
@@ -307,7 +437,7 @@ class SplatList extends Container {
 
             const toggleKey = event.metaKey || event.ctrlKey;
             const shiftKey = event.shiftKey;
-            const orderedSplats = Array.from(items.keys());
+            const orderedSplats = getOrderedSplats();
             let nextSelection: Element[] | null = null;
 
             if (shiftKey && selectionAnchor) {
@@ -360,6 +490,8 @@ class SplatList extends Container {
                 splat.destroy();
             }
         });
+
+        syncOrder();
     }
 
     protected _onAppendChild(element: PcuiElement): void {
@@ -373,6 +505,12 @@ class SplatList extends Container {
             element.on('removeClicked', () => {
                 this.emit('removeClicked', element);
             });
+            element.on('moveUpClicked', () => {
+                this.emit('moveUpClicked', element);
+            });
+            element.on('moveDownClicked', () => {
+                this.emit('moveDownClicked', element);
+            });
         }
     }
 
@@ -380,6 +518,8 @@ class SplatList extends Container {
         if (element instanceof SplatItem) {
             element.unbind('click');
             element.unbind('removeClicked');
+            element.unbind('moveUpClicked');
+            element.unbind('moveDownClicked');
         }
 
         super._onRemoveChild(element);

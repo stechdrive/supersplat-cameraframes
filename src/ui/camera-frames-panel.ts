@@ -74,6 +74,7 @@ type CameraFramesStateBase = {
     exportFormat?: 'png' | 'psd';
     exportGridOverlay?: boolean;
     exportModelLayers?: boolean;
+    exportSplatLayers?: boolean;
 };
 
 type CameraPreset = {
@@ -208,10 +209,11 @@ class CameraFramesPanel extends Panel {
         let lastFovInfo: FovInfo | null = null;
         let lastState: CameraFramesState | null = null;
         let framesEnabled = false;
-        let rendering = false;
+        let rendering = events.functions.has('cameraFrames.exportBusy') ? !!events.invoke('cameraFrames.exportBusy') : false;
         let maskScope: 'all' | 'selected' = 'all';
         let gridOverlayEnabled = false;
         let modelLayerEnabled = false;
+        let splatLayerEnabled = false;
         let exportTarget: ExportTarget = 'current';
         let exportPresetIds: string[] = [];
         let navMode: 'orbit' | 'fpv' = 'orbit';
@@ -552,6 +554,7 @@ class CameraFramesPanel extends Panel {
         const modelLayerToggle = new Button({ class: ['icon-button', 'model-layer-toggle-button'], text: '' });
         modelLayerToggle.dom.appendChild(createSvg(glbOutputSvg));
         modelLayerToggle.dom.title = localize('panel.camera-frames.export.model-layer-tooltip');
+        modelLayerToggle.dom.setAttribute('aria-label', localize('panel.camera-frames.export.model-layer-tooltip'));
         modelLayerToggle.dom.setAttribute('aria-pressed', 'false');
         const referenceIncludeToggle = new Button({ class: ['icon-button', 'reference-include-toggle-button'], text: '' });
         referenceIncludeToggle.dom.appendChild(createSvg(referenceImageSvg));
@@ -595,6 +598,25 @@ class CameraFramesPanel extends Panel {
         exportDetails.dom.style.gap = '6px';
         exportDetails.append(filenameRow);
         exportDetails.append(exportTargetRow);
+        const splatLayerRow = new Container({ class: ['control-parent', 'export-splat-layer-row'] });
+        const splatLayerLabels = new Container({ class: 'export-splat-layer-labels' });
+        const splatLayerLabel = new Label({ class: 'control-label', text: localize('panel.camera-frames.export.splat-layer-label') });
+        const splatLayerNote = new Label({ class: 'export-splat-layer-note', text: localize('panel.camera-frames.export.splat-layer-note') });
+        const splatLayerToggle = new BooleanInput({
+            type: 'toggle',
+            class: 'control-element',
+            value: false
+        });
+        const splatLayerTooltip = localize('panel.camera-frames.export.splat-layer-tooltip');
+        splatLayerLabel.dom.title = splatLayerTooltip;
+        splatLayerNote.dom.title = splatLayerTooltip;
+        splatLayerToggle.dom.title = splatLayerTooltip;
+        splatLayerToggle.dom.setAttribute('aria-label', splatLayerTooltip);
+        splatLayerLabels.append(splatLayerLabel);
+        splatLayerLabels.append(splatLayerNote);
+        splatLayerRow.append(splatLayerLabels);
+        splatLayerRow.append(splatLayerToggle);
+        exportDetails.append(splatLayerRow);
         exportDetails.append(new Container({ class: 'export-details-extra' }));
 
         const cameraPresetsActions = new Container({ class: 'camera-presets-actions' });
@@ -691,7 +713,7 @@ class CameraFramesPanel extends Panel {
         const updateReferenceIncludeToggle = () => {
             referenceIncludeToggle.class[referenceIncludeEnabled ? 'add' : 'remove']('active');
             referenceIncludeToggle.dom.setAttribute('aria-pressed', referenceIncludeEnabled ? 'true' : 'false');
-            referenceIncludeToggle.enabled = referenceImageLoaded;
+            referenceIncludeToggle.enabled = referenceImageLoaded && !rendering;
             const label = referenceImageLoaded ?
                 localize('panel.camera-frames.export.reference-image-tooltip') :
                 localize('panel.reference-image.empty');
@@ -997,8 +1019,28 @@ class CameraFramesPanel extends Panel {
         });
         modelLayerToggle.on('click', () => {
             if (suppress) return;
-            events.fire('cameraFrames.setExportModelLayers', !modelLayerEnabled);
+            const next = !modelLayerEnabled;
+            if (!next && splatLayerEnabled) {
+                events.fire('cameraFrames.setExportSplatLayers', false);
+            }
+            events.fire('cameraFrames.setExportModelLayers', next);
         });
+        splatLayerToggle.on('change', (value: boolean) => {
+            if (suppress) return;
+            events.fire('cameraFrames.setExportSplatLayers', !!value);
+        });
+
+        const updateExportControlsAvailability = () => {
+            const isPsd = formatSelect.value === 'psd';
+            filenameInput.enabled = !rendering;
+            formatSelect.enabled = !rendering;
+            exportTargetSelect.enabled = !rendering;
+            gridToggle.enabled = !rendering;
+            modelLayerToggle.enabled = !rendering && isPsd;
+            splatLayerToggle.enabled = !rendering && isPsd && modelLayerEnabled;
+            splatLayerRow.class[(!isPsd || !modelLayerEnabled) ? 'add' : 'remove']('disabled');
+            referenceIncludeToggle.enabled = !rendering && referenceImageLoaded;
+        };
 
         const setRenderBusy = (busy: boolean) => {
             rendering = busy;
@@ -1006,23 +1048,22 @@ class CameraFramesPanel extends Panel {
             renderSpinner.hidden = !busy;
             updateMainPropsButton();
             updateMainPropsPanelVisibility();
+            updateExportControlsAvailability();
         };
+        events.on('cameraFrames.exportBusyChanged', (busy: boolean) => {
+            setRenderBusy(!!busy);
+        });
 
         addButton.on('click', () => events.fire('cameraFrames.addFrame'));
         renderButton.on('click', async () => {
             if (rendering) return;
             if (!framesEnabled) return;
-            setRenderBusy(true);
-            try {
-                await events.invoke('cameraFrames.render', {
-                    format: formatSelect.value as ('png' | 'psd'),
-                    filename: filenameInput.value,
-                    target: exportTarget,
-                    presetIds: exportPresetIds
-                });
-            } finally {
-                setRenderBusy(false);
-            }
+            await events.invoke('cameraFrames.render', {
+                format: formatSelect.value as ('png' | 'psd'),
+                filename: filenameInput.value,
+                target: exportTarget,
+                presetIds: exportPresetIds
+            });
         });
 
         const updateFrameScale = (value: number) => {
@@ -1708,11 +1749,14 @@ class CameraFramesPanel extends Panel {
             modelLayerEnabled = !!state.exportModelLayers;
             modelLayerToggle.class[modelLayerEnabled ? 'add' : 'remove']('active');
             modelLayerToggle.dom.setAttribute('aria-pressed', modelLayerEnabled ? 'true' : 'false');
+            splatLayerEnabled = !!state.exportSplatLayers;
+            splatLayerToggle.value = splatLayerEnabled;
             exportTarget = state.exportTarget === 'all' ? 'all' : (state.exportTarget === 'selected' ? 'selected' : 'current');
             exportTargetSelect.value = exportTarget;
             exportPresetIds = Array.isArray(state.exportPresetIds) ?
                 state.exportPresetIds.filter(id => state.cameraPresets.some(preset => preset.id === id)) :
                 [];
+            updateExportControlsAvailability();
 
             const zoomPct = Math.round(state.renderBox.viewZoomPct ?? 100);
             canvasZoomInput.value = zoomPct;

@@ -146,7 +146,7 @@
       CAMERA FRAMES lets you place multiple <span class="keyword">camera frames</span> on an A4-like
       <span class="keyword">render sheet</span>, manage a capture camera, use reference images,
       and export matching PNG / PSD output.
-      This is the user manual for <span class="keyword">CAMERA FRAMES v2.21.12</span>.
+      This is the user manual for <span class="keyword">CAMERA FRAMES v2.21.13</span>.
     </p>
     <p>
       URL:
@@ -242,8 +242,9 @@
       <li>Open <span class="control">Export Details</span> and enter a <span class="control">Filename</span>. The default is <code>cf-%cam</code>. The <code>%cam</code> part is replaced with the camera name at export time, so it is useful when exporting <span class="control">All Cameras</span> or <span class="control">Selected Cameras</span> and you want separate filenames automatically.</li>
       <li>Choose <span class="control">PSD</span> or <span class="control">PNG</span>. Use <span class="control">PSD</span> when you want separated layers for later editing, and <span class="control">PNG</span> when you just want the final image.</li>
       <li>Choose an <span class="control">Export Target</span>: <span class="control">Current Camera</span>, <span class="control">All Cameras</span>, or <span class="control">Selected Cameras</span>. If you use <span class="control">Selected Cameras</span>, enable the checkmarks in <span class="control">Camera List</span> for the cameras you want.</li>
-      <li>Use the icons on the right when needed to include <span class="control">Grid / Eye Level</span> or to export GLB models as separate model layers.</li>
-      <li>If you want reference images in the export, enable both <span class="control">Visible</span> and <span class="control">Output</span> for those images in the <span class="control">Reference Images</span> panel.</li>
+      <li>Use the icons on the right when needed to include <span class="control">Grid / Eye Level</span> or to enable <span class="control">Export GLB Models as Separate Layers</span>. Once <span class="control">Export GLB Models as Separate Layers</span> is on, you can also use <span class="control">Export PLY/SOG Objects as Layers</span> inside <span class="control">Export Details</span>.</li>
+      <li>Turn on <span class="control">Export PLY/SOG Objects as Layers</span> when you want each PLY / SOG object written as its own PSD layer. This export takes longer.</li>
+      <li>If you want reference images in the export, enable both <span class="control">Visible</span> and <span class="control">Output</span> for those images in the <span class="control">Reference Images</span> panel. In PSD output, reference images are grouped under <span class="control">Reference Images</span>, and grid / eye level are grouped under <span class="control">Guides</span>.</li>
       <li>When everything is ready, switch to <span class="control">Capture Camera</span> and press <span class="control">Render</span>. With <span class="control">All Cameras</span>, every camera in the <span class="control">Camera List</span> is exported in one run.</li>
     </ol>
 
@@ -311,6 +312,9 @@
       Then use <span class="control">Transform</span> to edit <span class="control">Position</span>,
       <span class="control">Rotation</span>, and <span class="control">Scale</span> numerically.
     </p>
+    <p>
+      Use the up/down buttons in the list to change the order of 3DGS and GLB items. When you export object layers to PSD, that order is used as the stacking order.
+    </p>
     <div class="image-placeholder">
       <img src="../static/images/tools-ui.png" alt="Editing tools at the bottom of the screen">
     </div>
@@ -369,7 +373,7 @@
       </tr>
       <tr>
         <td><span class="control">.ssproj</span></td>
-        <td>Project file format for saving the entire scene, CAMERA FRAMES settings, reference images, and lighting. Use this when you want to <span class="keyword">save everything together and reopen the same state later</span>, or when you want to hand the whole setup to another user or environment.</td>
+        <td>Project file format for saving the entire scene, CAMERA FRAMES settings, reference images, lighting, and export settings together. Use this when you want to <span class="keyword">save everything together and reopen the same state later</span>, or when you want to hand the whole setup to another user or environment.</td>
       </tr>
       <tr>
         <td><span class="control">.sscam</span></td>

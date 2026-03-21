@@ -358,6 +358,7 @@
 
 .export-row .grid-toggle-button,
 .export-row .model-layer-toggle-button,
+.export-row .splat-layer-toggle-button,
 .export-row .reference-include-toggle-button {
     padding: 2px;
 
@@ -657,6 +658,42 @@
 .export-target-row > .control-element,
 .mask-scope-row > .control-element {
     min-width: 110px;
+}
+
+.export-splat-layer-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+
+    > .control-element {
+        margin-left: 0;
+        flex: 0 0 auto;
+    }
+
+    &.disabled {
+        opacity: 0.5;
+    }
+}
+
+.export-splat-layer-labels {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+    flex: 1 1 auto;
+
+    > .control-label {
+        width: auto;
+        white-space: normal;
+        line-height: 1.25;
+    }
+}
+
+.export-splat-layer-note {
+    color: $text-secondary;
+    font-size: 11px;
+    line-height: 1.2;
 }
 
 .chevron-toggle {

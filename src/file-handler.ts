@@ -303,7 +303,7 @@ const initFileHandler = (scene: Scene, events: Events, dropTarget: HTMLElement) 
 
             const sourceBlob = mainFile.contents instanceof Blob ? mainFile.contents : null;
             const model = await scene.assetLoader.load(filename, fileSystem, animationFrame, sourceBlob);
-            await scene.add(model);
+            await scene.add(model, { insertAtTop: true });
             return model;
         } catch (error) {
             const displayName = files[0]?.filename ?? 'unknown';
@@ -319,7 +319,7 @@ const initFileHandler = (scene: Scene, events: Events, dropTarget: HTMLElement) 
                 blob = await response.blob();
             }
             const model = await scene.assetLoader.loadModel(file.filename, blob ?? null, file.url);
-            await scene.add(model);
+            await scene.add(model, { insertAtTop: true });
             return model;
         } catch (error) {
             await showLoadError(error.message ?? error, file.filename ?? 'unknown');

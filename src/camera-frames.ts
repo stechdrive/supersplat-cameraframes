@@ -159,6 +159,7 @@ export class CameraFramesController {
         exportFormat: 'psd',
         exportGridOverlay: true,
         exportModelLayers: true,
+        exportSplatLayers: false,
         exportTarget: 'current',
         exportPresetIds: [],
         cameraPresets: [],
@@ -223,6 +224,7 @@ export class CameraFramesController {
     private mainEditMode = false;
     private mainCameraSelected = false;
     private suppressReferencePresetSync = false;
+    private exportBusy = false;
     private lastReferenceSyncPresetId: string | null = null;
     private lastReferenceSyncReferencePresetId: string | null = null;
     private lastPresetsStateKey: string | null = null;
@@ -494,6 +496,14 @@ export class CameraFramesController {
         if (typeof currentFov === 'number' && isFinite(currentFov)) {
             this.viewportFovRuntime = currentFov;
         }
+    }
+
+    private setExportBusy(value: boolean) {
+        if (this.exportBusy === value) {
+            return;
+        }
+        this.exportBusy = value;
+        this.events.fire('cameraFrames.exportBusyChanged', value);
     }
 
     private applyViewportRuntimeToCamera() {
@@ -1208,9 +1218,6 @@ export class CameraFramesController {
             const next = this.normalizeFormat(format);
             if (this.state.exportFormat === next) return;
             this.state.exportFormat = next;
-            if (next === 'psd') {
-                this.state.exportModelLayers = true;
-            }
             this.emitStateChanged();
         });
 
@@ -1223,8 +1230,21 @@ export class CameraFramesController {
 
         this.events.on('cameraFrames.setExportModelLayers', (value: boolean) => {
             const next = !!value;
-            if (this.state.exportModelLayers === next) return;
+            if (this.state.exportModelLayers === next && (!this.state.exportSplatLayers || next)) return;
             this.state.exportModelLayers = next;
+            if (!next) {
+                this.state.exportSplatLayers = false;
+            }
+            this.emitStateChanged();
+        });
+
+        this.events.on('cameraFrames.setExportSplatLayers', (value: boolean) => {
+            const next = !!value;
+            if (this.state.exportSplatLayers === next && (!next || this.state.exportModelLayers)) return;
+            if (next) {
+                this.state.exportModelLayers = true;
+            }
+            this.state.exportSplatLayers = next;
             this.emitStateChanged();
         });
 
@@ -1254,6 +1274,8 @@ export class CameraFramesController {
             this.overlay.style.pointerEvents = 'none';
         });
 
+        this.events.function('cameraFrames.exportBusy', () => this.exportBusy);
+
         // render output
         this.events.function('cameraFrames.render', async (options?: {
             format?: ExportFormat;
@@ -1261,65 +1283,119 @@ export class CameraFramesController {
             target?: ExportTarget;
             presetIds?: string[];
         }) => {
-            if (!this.state.enabled) {
+            if (!this.state.enabled || this.exportBusy) {
                 return;
             }
-            const renderOnce = async () => {
-                await renderImage({
-                    renderBackend: this.renderBackend,
-                    getState: () => this.state,
-                    applyCameraPose: (pose, opts) => this.applyCameraPose(pose, opts),
-                    normalizeFormat: format => this.normalizeFormat(format),
-                    resolveFilename: (name, format) => this.resolveFilename(name, format),
-                    renderFrameOverlay: (width, height) => this.renderFrameOverlay(width, height),
-                    renderFrameOverlaysByManagement: (width, height) => this.renderFrameOverlaysByManagement(width, height),
-                    getCompressor: () => this.getCompressor(),
-                    options
-                });
-            };
-            const target = this.normalizeExportTarget(options?.target ?? this.state.exportTarget);
-            if (target === 'current') {
-                // Ensure splat sorter updates for the active camera before exporting.
-                await this.renderBackend.waitForSplatSorter();
-                await renderOnce();
-                return;
-            }
-
-            const presetIds = target === 'all' ?
-                this.state.cameraPresets.map(preset => preset.id) :
-                this.normalizeExportPresetIds(options?.presetIds ?? this.state.exportPresetIds);
-
-            if (!presetIds.length) {
-                await this.events.invoke('showPopup', {
-                    type: 'error',
-                    header: localize('popup.error'),
-                    message: localize('panel.camera-frames.export.target.empty')
-                });
-                return;
-            }
-
-            const prevSnapshot = this.snapshot();
-            const prevSuppressReferenceSync = this.suppressReferencePresetSync;
-            // 書き出し中は下絵プリセットを明示同期し、stateChanged由来の切替と競合させない
-            this.suppressReferencePresetSync = true;
+            this.setExportBusy(true);
+            this.events.fire('progressStart', localize('panel.camera-frames.export.progress.header'), false);
             try {
-                for (const presetId of presetIds) {
-                    if (!this.state.cameraPresets.some(preset => preset.id === presetId)) {
-                        continue;
-                    }
-                    this.applyCameraPreset(presetId, { skipHistory: true });
-                    await this.syncReferenceImagesPreset(presetId);
-                    // Ensure splat sorter updates for the preset camera before exporting.
+                const getCameraName = (presetId?: string | null) => {
+                    const explicit = typeof presetId === 'string' ?
+                        this.state.cameraPresets.find(preset => preset.id === presetId)?.name?.trim() :
+                        null;
+                    return explicit || this.getSelectedPresetName();
+                };
+
+                const updateExportProgress = (
+                    cameraIndex: number,
+                    cameraCount: number,
+                    cameraName: string,
+                    cameraProgress: number,
+                    text: string
+                ) => {
+                    const normalizedCameraCount = Math.max(cameraCount, 1);
+                    const normalizedCameraIndex = Math.max(0, cameraIndex);
+                    const overallProgress = 100 * ((normalizedCameraIndex + Math.max(0, Math.min(1, cameraProgress))) / normalizedCameraCount);
+                    const message = normalizedCameraCount > 1 ?
+                        localize('panel.camera-frames.export.progress.camera-stage', {
+                            index: normalizedCameraIndex + 1,
+                            total: normalizedCameraCount,
+                            name: cameraName,
+                            text
+                        }) :
+                        text;
+                    this.events.fire('progressUpdate', {
+                        text: message,
+                        progress: Math.max(0, Math.min(100, overallProgress))
+                    });
+                };
+
+                const renderOnce = async (cameraIndex: number, cameraCount: number, cameraName: string) => {
+                    await renderImage({
+                        renderBackend: this.renderBackend,
+                        getState: () => this.state,
+                        applyCameraPose: (pose, opts) => this.applyCameraPose(pose, opts),
+                        normalizeFormat: format => this.normalizeFormat(format),
+                        resolveFilename: (name, format) => this.resolveFilename(name, format),
+                        renderFrameOverlay: (width, height) => this.renderFrameOverlay(width, height),
+                        renderFrameOverlaysByManagement: (width, height) => this.renderFrameOverlaysByManagement(width, height),
+                        getCompressor: () => this.getCompressor(),
+                        options,
+                        onProgress: ({ text, progress }) => {
+                            updateExportProgress(cameraIndex, cameraCount, cameraName, 0.25 + progress * 0.75, text);
+                        }
+                    });
+                };
+                const target = this.normalizeExportTarget(options?.target ?? this.state.exportTarget);
+                if (target === 'current') {
+                    const cameraName = getCameraName(this.selectedPresetId);
+                    updateExportProgress(0, 1, cameraName, 0, localize('panel.camera-frames.export.progress.stage.stabilize'));
+                    // Ensure splat sorter updates for the active camera before exporting.
                     await this.renderBackend.waitForSplatSorter();
-                    await renderOnce();
+                    updateExportProgress(0, 1, cameraName, 0.2, localize('panel.camera-frames.export.progress.stage.stabilize'));
+                    await renderOnce(0, 1, cameraName);
+                    return;
+                }
+
+                const presetIds = target === 'all' ?
+                    this.state.cameraPresets.map(preset => preset.id) :
+                    this.normalizeExportPresetIds(options?.presetIds ?? this.state.exportPresetIds);
+
+                if (!presetIds.length) {
+                    await this.events.invoke('showPopup', {
+                        type: 'error',
+                        header: localize('popup.error'),
+                        message: localize('panel.camera-frames.export.target.empty')
+                    });
+                    return;
+                }
+
+                const prevSnapshot = this.snapshot();
+                const prevSuppressReferenceSync = this.suppressReferencePresetSync;
+                // 書き出し中は下絵プリセットを明示同期し、stateChanged由来の切替と競合させない
+                this.suppressReferencePresetSync = true;
+                try {
+                    for (let presetIndex = 0; presetIndex < presetIds.length; presetIndex++) {
+                        const presetId = presetIds[presetIndex];
+                        if (!this.state.cameraPresets.some(preset => preset.id === presetId)) {
+                            continue;
+                        }
+                        const cameraName = getCameraName(presetId);
+                        updateExportProgress(presetIndex, presetIds.length, cameraName, 0, localize('panel.camera-frames.export.progress.stage.camera'));
+                        this.applyCameraPreset(presetId, { skipHistory: true });
+                        updateExportProgress(presetIndex, presetIds.length, cameraName, 0.08, localize('panel.camera-frames.export.progress.stage.reference-sync'));
+                        await this.syncReferenceImagesPreset(presetId);
+                        updateExportProgress(presetIndex, presetIds.length, cameraName, 0.16, localize('panel.camera-frames.export.progress.stage.stabilize'));
+                        // Ensure splat sorter updates for the preset camera before exporting.
+                        await this.renderBackend.waitForSplatSorter();
+                        updateExportProgress(presetIndex, presetIds.length, cameraName, 0.22, localize('panel.camera-frames.export.progress.stage.stabilize'));
+                        await renderOnce(presetIndex, presetIds.length, cameraName);
+                    }
+                } finally {
+                    try {
+                        this.events.fire('progressUpdate', {
+                            text: localize('panel.camera-frames.export.progress.restore'),
+                            progress: 99
+                        });
+                        this.applySnapshot(prevSnapshot);
+                        await this.syncReferenceImagesPreset(this.selectedPresetId);
+                    } finally {
+                        this.suppressReferencePresetSync = prevSuppressReferenceSync;
+                    }
                 }
             } finally {
-                try {
-                    this.applySnapshot(prevSnapshot);
-                    await this.syncReferenceImagesPreset(this.selectedPresetId);
-                } finally {
-                    this.suppressReferencePresetSync = prevSuppressReferenceSync;
-                }
+                this.events.fire('progressEnd');
+                this.setExportBusy(false);
             }
         });
 
@@ -1511,7 +1587,8 @@ export class CameraFramesController {
             exportName: this.state.exportName,
             exportFormat: this.normalizeFormat(this.state.exportFormat),
             exportGridOverlay: !!this.state.exportGridOverlay,
-            exportModelLayers: !!this.state.exportModelLayers
+            exportModelLayers: !!this.state.exportModelLayers,
+            exportSplatLayers: !!this.state.exportSplatLayers
         };
     }
 
@@ -2606,6 +2683,7 @@ export class CameraFramesController {
             baseState.exportModelLayers = typeof baseState.exportModelLayers === 'boolean' ?
                 baseState.exportModelLayers :
                 baseState.exportFormat === 'psd';
+            baseState.exportSplatLayers = !!baseState.exportSplatLayers && !!baseState.exportModelLayers;
             baseState.mainCameraPose = this.rebuildMainCameraPoseFromPreset(preset, baseState);
             baseState.nearClip = preset.mainCamera.nearClip ?? null;
             this.normalizeProjectionIntoState(baseState, preset.mainCamera.projection);

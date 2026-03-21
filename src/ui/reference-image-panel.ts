@@ -112,6 +112,7 @@ class ReferenceImagePanel extends Container {
         let cameraPresetId: string | null = null;
         let lastState: ReferenceImagesState | null = null;
         let lastPresetsState: ReferenceImagesPresetsState | null = null;
+        let exportBusy = events.functions.has('cameraFrames.exportBusy') ? !!events.invoke('cameraFrames.exportBusy') : false;
 
         const panelHeader = new Container({ class: 'panel-header' });
         const panelIcon = new Container({ class: 'panel-header-icon' });
@@ -190,7 +191,8 @@ class ReferenceImagePanel extends Container {
 
         const canUseOverrides = () => events.functions.has('cameraFrames.referenceOverrides.get');
         const canUseCameraMode = () => canUseOverrides() && !!cameraPresetId;
-        const canEditItems = () => !canUseOverrides() || canUseCameraMode();
+        const canEditItems = () => !exportBusy && (!canUseOverrides() || canUseCameraMode());
+        const canEditShared = () => !exportBusy;
         const syncEditMode = () => {
             events.fire('referenceImages.setEditMode', canUseCameraMode() ? 'camera' : 'shared');
         };
@@ -395,7 +397,7 @@ class ReferenceImagePanel extends Container {
             const items = Array.isArray(state?.items) ? state.items : [];
             const itemsById = new Map(items.map(item => [item.id, item]));
             const allowItemEdits = canEditItems();
-            const allowSharedEdits = true;
+            const allowSharedEdits = canEditShared();
             const overrideItemIds = allowItemEdits ? getOverrideItemIds() : new Set<string>();
             // UIリストは「上が優先(手前)」になるよう、order が大きいものを上に表示する
             const compareOrderDesc = (a: ReferenceImageItemState, b: ReferenceImageItemState) => (b.order - a.order) || a.id.localeCompare(b.id);
@@ -699,10 +701,13 @@ class ReferenceImagePanel extends Container {
         });
 
         addButton.on('click', () => {
+            if (exportBusy) {
+                return;
+            }
             fileInput.click();
         });
         clearAllButton.on('click', async () => {
-            if (suppress) return;
+            if (suppress || exportBusy) return;
             const result = await events.invoke('showPopup', {
                 type: 'yesno',
                 header: localize('panel.reference-image.title'),
@@ -1052,7 +1057,7 @@ class ReferenceImagePanel extends Container {
             const activePreset = nextActiveId ? presets.find(preset => preset.id === nextActiveId) ?? null : null;
             const nextName = activePreset?.name ?? '';
             const editablePreset = !!nextActiveId && nextActiveId !== DEFAULT_REFERENCE_IMAGE_PRESET_ID;
-            const editable = editablePreset;
+            const editable = editablePreset && !exportBusy;
             const presetChanged = nextActiveId !== activePresetId;
 
             activePresetId = nextActiveId;
@@ -1088,7 +1093,7 @@ class ReferenceImagePanel extends Container {
 
             const hasItems = items.length > 0;
             const allowItemEdits = canEditItems();
-            const allowSharedEdits = true;
+            const allowSharedEdits = canEditShared();
             addButton.enabled = allowSharedEdits;
             clearAllButton.enabled = allowSharedEdits && hasItems;
 
@@ -1208,6 +1213,15 @@ class ReferenceImagePanel extends Container {
         events.on('referenceImages.stateChanged', (state: ReferenceImagesState) => applyState(state));
         events.on('referenceImages.presetsState', (state: ReferenceImagesPresetsState) => applyPresetsState(state));
         events.on('cameraFrames.presetsState', (state: CameraFramesPresetsState) => applyCameraPresetsState(state));
+        events.on('cameraFrames.exportBusyChanged', (value: boolean) => {
+            exportBusy = !!value;
+            if (lastState) {
+                applyState(lastState);
+            }
+            if (lastPresetsState) {
+                applyPresetsState(lastPresetsState);
+            }
+        });
 
         const setVisible = (visible: boolean) => {
             const nextHidden = !visible;

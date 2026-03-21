@@ -94,6 +94,13 @@ class Transform extends Container {
         let uiUpdating = false;
         let mouseUpdating = false;
         let keyboardUpdating = false;
+        let exportBusy = events.functions.has('cameraFrames.exportBusy') ? !!events.invoke('cameraFrames.exportBusy') : false;
+        let hasSelection = false;
+
+        const updateEnabledState = () => {
+            const enabled = hasSelection && !exportBusy;
+            positionVector.enabled = rotationVector.enabled = scaleInput.enabled = enabled;
+        };
 
         // update UI with pivot
         const updateUI = (pivot: Pivot) => {
@@ -121,7 +128,7 @@ class Transform extends Container {
         };
 
         const beginKeyboardUpdate = () => {
-            if (uiUpdating || mouseUpdating || keyboardUpdating) {
+            if (exportBusy || uiUpdating || mouseUpdating || keyboardUpdating) {
                 return;
             }
             if (!events.invoke('selection')) {
@@ -144,7 +151,7 @@ class Transform extends Container {
 
         // handle a change in the UI state
         const change = () => {
-            if (!uiUpdating) {
+            if (!uiUpdating && !exportBusy) {
                 const pivot = events.invoke('pivot') as Pivot;
                 if (mouseUpdating || keyboardUpdating) {
                     updatePivot(pivot);
@@ -157,12 +164,20 @@ class Transform extends Container {
         };
 
         const mousedown = () => {
+            if (exportBusy) {
+                return;
+            }
             mouseUpdating = true;
             const pivot = events.invoke('pivot') as Pivot;
             pivot.start();
         };
 
         const mouseup = () => {
+            if (exportBusy) {
+                mouseUpdating = false;
+                keyboardUpdating = false;
+                return;
+            }
             const pivot = events.invoke('pivot') as Pivot;
             updatePivot(pivot);
             mouseUpdating = false;
@@ -175,7 +190,7 @@ class Transform extends Container {
                 events,
                 input,
                 label: 'scene.transform',
-                canBegin: () => !uiUpdating && !mouseUpdating && !!events.invoke('selection'),
+                canBegin: () => !exportBusy && !uiUpdating && !mouseUpdating && !!events.invoke('selection'),
                 historyBeginEvent: null,
                 historyCommitEvent: null,
                 beginOnFocus: false,
@@ -192,7 +207,20 @@ class Transform extends Container {
 
         // toggle ui availability based on selection
         events.on('selection.changed', (selection) => {
-            positionVector.enabled = rotationVector.enabled = scaleInput.enabled = !!selection;
+            hasSelection = !!selection;
+            updateEnabledState();
+        });
+        events.on('cameraFrames.exportBusyChanged', (value: boolean) => {
+            exportBusy = !!value;
+            if (exportBusy) {
+                if (mouseUpdating || keyboardUpdating) {
+                    const pivot = events.invoke('pivot') as Pivot;
+                    pivot.end();
+                }
+                mouseUpdating = false;
+                keyboardUpdating = false;
+            }
+            updateEnabledState();
         });
 
         events.on('pivot.placed', (pivot: Pivot) => {
@@ -208,6 +236,8 @@ class Transform extends Container {
         events.on('pivot.ended', (pivot: Pivot) => {
             updateUI(pivot);
         });
+
+        updateEnabledState();
     }
 }
 
