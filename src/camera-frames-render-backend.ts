@@ -4,6 +4,8 @@ import type { Model } from './model';
 import { renderModelLayersWithOcclusion as renderModelLayersWithOcclusionExport } from './model-occlusion-export';
 import type { PsdOverlayLayer } from './psd-export';
 import type { Scene } from './scene';
+import type { Splat } from './splat';
+import { renderSplatLayersWithOcclusion as renderSplatLayersWithOcclusionExport } from './splat-occlusion-export';
 import { localize } from './ui/localization';
 
 type OffscreenOptions = {
@@ -15,21 +17,43 @@ type OffscreenOptions = {
     stabilizeSplat?: boolean;
 };
 
+type ObjectLayerProgress = {
+    completed: number;
+    total: number;
+    name?: string;
+};
+
 type CameraFramesRenderBackend = {
     syncExportFrustum: (width: number, height: number) => void;
     waitForSplatSorter: () => Promise<void>;
     showExportError: (error: unknown) => Promise<void>;
     restorePreviewAfterExport: (enabled: boolean) => void;
     renderBase: (width: number, height: number) => Promise<Uint8Array>;
-    renderBaseWithoutModels: (width: number, height: number) => Promise<Uint8Array>;
+    renderBaseWithoutLayers: (width: number, height: number, options: { excludeModels?: boolean; excludeSplats?: boolean; }) => Promise<Uint8Array>;
     renderReferenceLayers: (width: number, height: number, options?: { applyOpacity?: boolean; }) => Promise<ReferenceExportLayer[]>;
     renderOverlayLayers: (
         width: number,
         height: number,
         exportGridOverlay: boolean
     ) => Promise<{ grid: HTMLCanvasElement | null; eyeLevel: HTMLCanvasElement | null; } | null>;
-    renderModelLayers: (width: number, height: number, exportModelLayers: boolean) => Promise<PsdOverlayLayer[]>;
-    renderModelLayersWithOcclusion: (width: number, height: number, exportModelLayers: boolean) => Promise<PsdOverlayLayer[]>;
+    renderModelLayers: (
+        width: number,
+        height: number,
+        exportModelLayers: boolean,
+        onProgress?: (progress: ObjectLayerProgress) => void
+    ) => Promise<PsdOverlayLayer[]>;
+    renderModelLayersWithOcclusion: (
+        width: number,
+        height: number,
+        exportModelLayers: boolean,
+        onProgress?: (progress: ObjectLayerProgress) => void
+    ) => Promise<PsdOverlayLayer[]>;
+    renderSplatLayersWithOcclusion: (
+        width: number,
+        height: number,
+        exportSplatLayers: boolean,
+        onProgress?: (progress: ObjectLayerProgress) => void
+    ) => Promise<PsdOverlayLayer[]>;
 };
 
 type CreateRenderBackendParams = {
@@ -62,6 +86,36 @@ const createSupersplatCameraFramesRenderBackend = ({
     syncCameraFrustum,
     requestRender
 }: CreateRenderBackendParams): CameraFramesRenderBackend => {
+    const postRender = () => {
+        return new Promise<void>((resolve) => {
+            const handle = scene.events.on('postrender', () => {
+                handle.off();
+                resolve();
+            });
+        });
+    };
+
+    const stabilizeAfterSplatVisibilityChange = async () => {
+        const isUnifiedDisplay =
+            scene.splatRenderCapabilities.resolvedMode === 'unified-display' &&
+            !scene.renderFlags.forceMergedSplatDisplay;
+        const minFrames = isUnifiedDisplay ? 3 : 1;
+        const maxFrames = isUnifiedDisplay ? 6 : 2;
+
+        scene.splatRenderDisplay.scheduleRebuildForVisibility(true);
+        await scene.splatRenderLifecycle.waitForSorter();
+
+        for (let frame = 0; frame < maxFrames; frame++) {
+            scene.forceRender = true;
+            await postRender();
+            await scene.splatRenderLifecycle.waitForSorter();
+
+            if (frame + 1 >= minFrames && !scene.forceRender) {
+                break;
+            }
+        }
+    };
+
     const renderOffscreen = async (width: number, height: number, options: OffscreenOptions) => {
         const pixels = await events.invoke('render.offscreen', width, height, options) as Uint8Array;
         if (!pixels) {
@@ -77,17 +131,48 @@ const createSupersplatCameraFramesRenderBackend = ({
         });
     };
 
-    const renderBaseWithoutModels = async (width: number, height: number) => {
-        const modelLayer = scene.modelLightingLayer;
-        const prevEnabled = modelLayer?.enabled ?? false;
+    const renderBaseWithoutLayers = async (
+        width: number,
+        height: number,
+        options: { excludeModels?: boolean; excludeSplats?: boolean; }
+    ) => {
+        const modelStates = options.excludeModels ?
+            (((events.invoke('mesh.list') as Model[] | null) ?? []).filter((model) => {
+                return !!model && !!model.entity && model.visible && model.entity.enabled !== false;
+            }).map(model => ({
+                model,
+                enabled: model.entity.enabled
+            }))) :
+            [];
+        const restoreLayers: Array<{ layer: any; enabled: boolean; }> = [];
+        const rememberLayer = (layer?: any) => {
+            if (!layer) return;
+            restoreLayers.push({ layer, enabled: layer.enabled });
+        };
+        const prevForceMergedSplatDisplay = scene.renderFlags.forceMergedSplatDisplay;
         try {
-            if (modelLayer) {
-                modelLayer.enabled = false;
+            modelStates.forEach(({ model }) => {
+                model.entity.enabled = false;
+            });
+            if (options.excludeSplats) {
+                rememberLayer(scene.splatLayer);
+                scene.renderFlags.forceMergedSplatDisplay = true;
+                if (scene.splatLayer) {
+                    scene.splatLayer.enabled = false;
+                }
+                await stabilizeAfterSplatVisibilityChange();
             }
             return await renderBase(width, height);
         } finally {
-            if (modelLayer) {
-                modelLayer.enabled = prevEnabled;
+            modelStates.forEach(({ model, enabled }) => {
+                model.entity.enabled = enabled;
+            });
+            restoreLayers.forEach(({ layer, enabled }) => {
+                layer.enabled = enabled;
+            });
+            scene.renderFlags.forceMergedSplatDisplay = prevForceMergedSplatDisplay;
+            if (options.excludeSplats) {
+                await stabilizeAfterSplatVisibilityChange();
             }
         }
     };
@@ -132,7 +217,8 @@ const createSupersplatCameraFramesRenderBackend = ({
     const renderModelLayers = async (
         width: number,
         height: number,
-        exportModelLayers: boolean
+        exportModelLayers: boolean,
+        onProgress?: (progress: ObjectLayerProgress) => void
     ): Promise<PsdOverlayLayer[]> => {
         if (!exportModelLayers) {
             return [];
@@ -151,6 +237,7 @@ const createSupersplatCameraFramesRenderBackend = ({
             model,
             enabled: model.entity.enabled
         }));
+        onProgress?.({ completed: 0, total: modelStates.length });
 
         const layers = scene.app.scene.layers;
         const worldLayer = layers.getLayerByName('World');
@@ -200,7 +287,8 @@ const createSupersplatCameraFramesRenderBackend = ({
                 model.entity.enabled = false;
             });
 
-            for (const { model } of modelStates) {
+            for (let index = 0; index < modelStates.length; index++) {
+                const { model } = modelStates[index];
                 model.entity.enabled = true;
                 const pixels = await renderOffscreen(width, height, { unpremultiplyAlpha: true });
                 if (pixels.length > 0) {
@@ -210,6 +298,11 @@ const createSupersplatCameraFramesRenderBackend = ({
                     });
                 }
                 model.entity.enabled = false;
+                onProgress?.({
+                    completed: index + 1,
+                    total: modelStates.length,
+                    name: model.name ?? 'Model'
+                });
             }
         } finally {
             modelStates.forEach(({ model, enabled }) => {
@@ -234,9 +327,19 @@ const createSupersplatCameraFramesRenderBackend = ({
     const renderModelLayersWithOcclusion = async (
         width: number,
         height: number,
-        exportModelLayers: boolean
+        exportModelLayers: boolean,
+        onProgress?: (progress: ObjectLayerProgress) => void
     ) => {
-        return await renderModelLayersWithOcclusionExport(events, scene, width, height, exportModelLayers);
+        return await renderModelLayersWithOcclusionExport(events, scene, width, height, exportModelLayers, onProgress);
+    };
+
+    const renderSplatLayersWithOcclusion = async (
+        width: number,
+        height: number,
+        exportSplatLayers: boolean,
+        onProgress?: (progress: ObjectLayerProgress) => void
+    ) => {
+        return await renderSplatLayersWithOcclusionExport(events, scene, width, height, exportSplatLayers, onProgress);
     };
 
     const syncExportFrustum = (width: number, height: number) => {
@@ -269,13 +372,14 @@ const createSupersplatCameraFramesRenderBackend = ({
         showExportError,
         restorePreviewAfterExport,
         renderBase,
-        renderBaseWithoutModels,
+        renderBaseWithoutLayers,
         renderReferenceLayers,
         renderOverlayLayers,
         renderModelLayers,
-        renderModelLayersWithOcclusion
+        renderModelLayersWithOcclusion,
+        renderSplatLayersWithOcclusion
     };
 };
 
 export { createSupersplatCameraFramesRenderBackend };
-export type { CameraFramesRenderBackend };
+export type { CameraFramesRenderBackend, ObjectLayerProgress };

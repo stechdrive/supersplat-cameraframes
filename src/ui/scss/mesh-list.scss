@@ -40,6 +40,10 @@
             .selected & {
                 color: $text-primary;
             }
+
+            &.disabled {
+                opacity: 0.5;
+            }
         }
 
         .mesh-item-visible {
@@ -61,6 +65,46 @@
             &:hover {
                 color: $text-primary;
             }
+
+            &.disabled {
+                opacity: 0.3;
+                cursor: default;
+            }
+        }
+
+        .mesh-item-reorder {
+            flex-grow: 0;
+            flex-shrink: 0;
+
+            width: 20px;
+            height: 20px;
+            padding: 2px;
+
+            color: $text-secondary;
+            cursor: pointer;
+
+            svg {
+                width: 12px;
+                height: 12px;
+                display: block;
+            }
+
+            &.up svg {
+                transform: rotate(-90deg);
+            }
+
+            &.down svg {
+                transform: rotate(90deg);
+            }
+
+            &:hover:not(.disabled) {
+                color: $text-primary;
+            }
+
+            &.disabled {
+                opacity: 0.3;
+                cursor: default;
+            }
         }
 
         .mesh-item-delete {
@@ -78,6 +122,11 @@
 
             &:hover {
                 color: $text-primary;
+            }
+
+            &.disabled {
+                opacity: 0.3;
+                cursor: default;
             }
         }
     }

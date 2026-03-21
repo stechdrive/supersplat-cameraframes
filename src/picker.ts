@@ -264,7 +264,7 @@ class Picker {
     }
 
     // Prepare for depth picking by rendering the specified splat
-    prepareDepth(splat: Splat) {
+    prepareDepth(splat: Splat, layers?: any[] | null) {
         if (!this.depthRenderTarget) {
             return;
         }
@@ -272,6 +272,8 @@ class Picker {
         const { scene } = this;
         const { app, camera, splatLayer } = scene;
         const emptyMap = new Map();
+
+        const renderLayers = (layers && layers.length > 0) ? layers : [splatLayer];
 
         // Hide non-selected elements
         const splats = scene.getElementsByType(ElementType.splat);
@@ -287,13 +289,33 @@ class Picker {
         this.renderPass.blendState = this.depthBlendState;
         this.renderPass.init(this.depthRenderTarget);
         this.renderPass.setClearColor(depthClearColor);
-        this.renderPass.update(camera.camera, app.scene, [splatLayer], emptyMap, false);
+        this.renderPass.update(camera.camera, app.scene, renderLayers, emptyMap, false);
         this.renderPass.render();
 
         // Re-enable all splats
         splats.forEach((s: Splat) => {
             s.entity.enabled = true;
         });
+    }
+
+    prepareVisibleDepth(layers?: any[] | null) {
+        if (!this.depthRenderTarget) {
+            return;
+        }
+
+        const { scene } = this;
+        const { app, camera, splatLayer } = scene;
+        const emptyMap = new Map();
+        const renderLayers = (layers && layers.length > 0) ? layers : [splatLayer];
+
+        this.device.scope.resolve('pickOp').setValue(2);
+        this.device.scope.resolve('pickMode').setValue(1);
+
+        this.renderPass.blendState = this.depthBlendState;
+        this.renderPass.init(this.depthRenderTarget);
+        this.renderPass.setClearColor(depthClearColor);
+        this.renderPass.update(camera.camera, app.scene, renderLayers, emptyMap, false);
+        this.renderPass.render();
     }
 
     // Read normalized depth (0-1) at normalized screen position (0-1 range) (after prepareDepth)
@@ -329,6 +351,61 @@ class Picker {
 
         // Return normalized depth (0-1 range)
         return r / alpha;
+    }
+
+    async readDepthMap(): Promise<Float32Array | null> {
+        if (!this.depthRenderTarget) {
+            return null;
+        }
+
+        const rt = this.depthRenderTarget;
+        const colorBuffer = rt.colorBuffer;
+        const width = rt.width;
+        const height = rt.height;
+        const pixels = await colorBuffer.read(0, 0, width, height, { renderTarget: rt });
+        const data = new Float32Array(width * height);
+
+        for (let y = 0; y < height; y++) {
+            const srcY = this.device.isWebGL2 ? (height - 1 - y) : y;
+            for (let x = 0; x < width; x++) {
+                const src = (srcY * width + x) * 4;
+                const r = half2Float(pixels[src + 0]);
+                const transmittance = half2Float(pixels[src + 3]);
+                const alpha = 1 - transmittance;
+                data[y * width + x] = alpha < 1e-6 ? Number.POSITIVE_INFINITY : (r / alpha);
+            }
+        }
+
+        return data;
+    }
+
+    async readDepthInfoMap(): Promise<{ depth: Float32Array; alpha: Uint8ClampedArray; } | null> {
+        if (!this.depthRenderTarget) {
+            return null;
+        }
+
+        const rt = this.depthRenderTarget;
+        const colorBuffer = rt.colorBuffer;
+        const width = rt.width;
+        const height = rt.height;
+        const pixels = await colorBuffer.read(0, 0, width, height, { renderTarget: rt });
+        const depth = new Float32Array(width * height);
+        const alpha = new Uint8ClampedArray(width * height);
+
+        for (let y = 0; y < height; y++) {
+            const srcY = this.device.isWebGL2 ? (height - 1 - y) : y;
+            for (let x = 0; x < width; x++) {
+                const src = (srcY * width + x) * 4;
+                const r = half2Float(pixels[src + 0]);
+                const transmittance = half2Float(pixels[src + 3]);
+                const visibleAlpha = Math.max(0, Math.min(1, 1 - transmittance));
+                const index = y * width + x;
+                depth[index] = visibleAlpha < 1e-6 ? Number.POSITIVE_INFINITY : (r / visibleAlpha);
+                alpha[index] = Math.max(0, Math.min(255, Math.round(visibleAlpha * 255)));
+            }
+        }
+
+        return { depth, alpha };
     }
 
     // Clean up resources

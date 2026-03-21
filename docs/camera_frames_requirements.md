@@ -5,7 +5,7 @@
 この文書は、現在の `camera-frames` ブランチのコードを正として、
 CAMERA_FRAMES の「あるべき現在地」を固定するための実装基点です。
 
-- 対象バージョン: `cameraFramesVersion = v2.21.12`
+- 対象バージョン: `cameraFramesVersion = v2.21.13`
 - 対象ブランチ: `camera-frames`
 - 主な参照実装:
   - `src/camera-frames.ts`
@@ -91,6 +91,7 @@ CAMERA_FRAMES の価値は、単なる viewport overlay ではなく、
 - `exportFormat`
 - `exportGridOverlay`
 - `exportModelLayers`
+- `exportSplatLayers`
 - `cameraPresets`
 - `exportTarget`
 - `exportPresetIds`
@@ -127,6 +128,7 @@ CAMERA_FRAMES の価値は、単なる viewport overlay ではなく、
 - `exportFormat = 'psd'`
 - `exportGridOverlay = true`
 - `exportModelLayers = true`
+- `exportSplatLayers = false`
 - `exportTarget = 'current'`
 - `exportPresetIds = []`
 
@@ -193,6 +195,7 @@ CAMERA_FRAMES の価値は、単なる viewport overlay ではなく、
 - `exportFormat`
 - `exportGridOverlay`
 - `exportModelLayers`
+- `exportSplatLayers`
 - `exportName`
 
 一方で、`exportTarget` と `exportPresetIds` は「今回どの preset を書き出すか」の操作状態であり、
@@ -210,11 +213,27 @@ camera preset の意味そのものとは別に扱う。
 
 #### PSD
 
-- base render
-- front / back reference images
-- Grid / Eye-level
+- residual `Render` layer
+  - 個別レイヤー化していない残りだけを持つ
+  - 残りが空なら PSD へ出さない
+- `ガイド` グループ
+  - Grid
+  - Eye-level
+  - Grid は multiply
 - visible GLB model layers
+- visible PLY / SOG object layers
+  - `exportSplatLayers = true` の時だけ
+  - `exportModelLayers = true` が前提
+- `下絵` グループ
 - frame overlays
+
+#### PSD object-layer export のルール
+
+- `exportSplatLayers` は `exportModelLayers` に従属し、単独では有効化しない
+- 3DGS object layer の積み順は Scene Manager の並び順を正とする
+- 最下段の 3DGS は背景扱いで mask を持たない
+- 上位 3DGS は `単独 / 自身+下位 / 下位のみ` の 3 枚から mask を導出する
+- GLB mask は従来どおり「自分以外の GLB + splat occlusion」を相手にする
 
 ### 5.5 全カメラ書き出し時の安定化
 
@@ -337,6 +356,8 @@ CAMERA_FRAMES 非対象のダイアログは base app の挙動を取ること�
 ## 9. Scene Manager / Lighting / Transform の契約
 
 - Scene Manager で splat / model / light rig を一覧管理できる
+- Scene Manager の splat / model 一覧は上下ボタンで並び替えできる
+- この並び順は PSD の object layer 重ね順へ反映される
 - Transform パネルで選択要素の位置・回転・スケールを数値編集できる
 - Lighting で model light の表示、選択、方向リセット、強度、ambient を扱える
 - これらの主要 numeric input も CAMERA_FRAMES の undo 改善対象に含める

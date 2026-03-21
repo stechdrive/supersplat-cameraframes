@@ -640,9 +640,17 @@ const createUnifiedDisplayBackends = (scene: Scene): SplatRenderRoleBackends => 
         return null;
     };
 
+    const prefersMergedDisplayForSelection = () => {
+        // Rings mode visuals still come from the legacy merged renderer. Keep
+        // unified-display direct mode for normal editing, but temporarily fall
+        // back to merged while rings mode is active so the existing behavior
+        // continues to work.
+        return scene.events.invoke('camera.mode') === 'rings' || scene.renderFlags.forceMergedSplatDisplay;
+    };
+
     const syncEngineComponents = (options?: { refreshDirect?: boolean }) => {
         const fallbackReason = findFallbackReason();
-        const shouldUseEngineDirect = fallbackReason === null;
+        const shouldUseEngineDirect = !prefersMergedDisplayForSelection() && fallbackReason === null;
         const directModeChanged = engineDirectActive !== shouldUseEngineDirect;
         if (fallbackReason !== lastFallbackReason) {
             if (fallbackReason) {

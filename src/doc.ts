@@ -2195,6 +2195,10 @@ const registerDocEvents = (scene: Scene, events: Events) => {
         markDirty();
     });
 
+    events.on('scene.elementReordered', () => {
+        markDirty();
+    });
+
     events.on('scene.clear', () => {
         clearTrackingState();
         setDirtyFlags(false, false);

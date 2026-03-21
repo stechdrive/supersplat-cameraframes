@@ -55,6 +55,7 @@ export type CameraFramesStateBase = {
     exportFormat?: ExportFormat;
     exportGridOverlay?: boolean;
     exportModelLayers?: boolean;
+    exportSplatLayers?: boolean;
 };
 
 export type ProjectionJson =

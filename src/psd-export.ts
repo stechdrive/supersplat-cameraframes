@@ -1,4 +1,4 @@
-import { writePsd, type Psd } from 'ag-psd';
+import { writePsd, type BlendMode, type Layer, type Psd } from 'ag-psd';
 
 type PsdLayerBounds = {
     left: number;
@@ -22,14 +22,18 @@ type PsdLayerMask = {
 
 type PsdOverlayLayer = {
     name: string;
-    canvas: HTMLCanvasElement;
+    canvas?: HTMLCanvasElement;
     opacity?: number;
     bounds?: PsdLayerBounds;
     mask?: PsdLayerMask;
+    hidden?: boolean;
+    blendMode?: BlendMode;
+    children?: PsdOverlayLayer[];
+    opened?: boolean;
 };
 
 type PsdExportParams = {
-    basePixels: Uint8ClampedArray;
+    basePixels?: Uint8ClampedArray | null;
     underlays?: PsdOverlayLayer[];
     overlays: PsdOverlayLayer[];
     width: number;
@@ -95,8 +99,40 @@ const drawLayerToContext = (
     height: number,
     layer: PsdOverlayLayer
 ) => {
+    if (layer.hidden) {
+        return;
+    }
+
     const opacity = clampOpacity(layer.opacity);
     if (opacity <= 0) {
+        return;
+    }
+
+    const compositeOperation = layer.blendMode === 'multiply' ? 'multiply' : 'source-over';
+
+    if (layer.children && layer.children.length > 0) {
+        const temp = document.createElement('canvas');
+        temp.width = width;
+        temp.height = height;
+        const tempCtx = temp.getContext('2d');
+        if (!tempCtx) {
+            throw new Error('Failed to acquire 2D context for PSD layer group');
+        }
+
+        layer.children.forEach((child) => {
+            drawLayerToContext(tempCtx, width, height, child);
+        });
+
+        const previousCompositeOperation = ctx.globalCompositeOperation;
+        ctx.globalCompositeOperation = compositeOperation;
+        ctx.globalAlpha = opacity;
+        ctx.drawImage(temp, 0, 0);
+        ctx.globalAlpha = 1;
+        ctx.globalCompositeOperation = previousCompositeOperation;
+        return;
+    }
+
+    if (!layer.canvas) {
         return;
     }
 
@@ -106,9 +142,12 @@ const drawLayerToContext = (
     const mask = layer.mask;
 
     if (!mask || mask.disabled) {
+        const previousCompositeOperation = ctx.globalCompositeOperation;
+        ctx.globalCompositeOperation = compositeOperation;
         ctx.globalAlpha = opacity;
         ctx.drawImage(layer.canvas, left, top);
         ctx.globalAlpha = 1;
+        ctx.globalCompositeOperation = previousCompositeOperation;
         return;
     }
 
@@ -126,16 +165,23 @@ const drawLayerToContext = (
     tempCtx.drawImage(mask.canvas, maskBounds?.left ?? 0, maskBounds?.top ?? 0);
     tempCtx.globalCompositeOperation = 'source-over';
 
+    const previousCompositeOperation = ctx.globalCompositeOperation;
+    ctx.globalCompositeOperation = compositeOperation;
     ctx.globalAlpha = opacity;
     ctx.drawImage(temp, 0, 0);
     ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = previousCompositeOperation;
 };
 
-const toPsdLayer = (layer: PsdOverlayLayer) => {
+const toPsdLayer = (layer: PsdOverlayLayer): Layer => {
     return {
         name: layer.name,
-        canvas: layer.canvas,
+        ...(layer.canvas ? { canvas: layer.canvas } : {}),
         opacity: clampOpacity(layer.opacity),
+        hidden: !!layer.hidden,
+        ...(layer.blendMode ? { blendMode: layer.blendMode } : {}),
+        ...(typeof layer.opened === 'boolean' ? { opened: layer.opened } : {}),
+        ...(layer.children ? { children: layer.children.map(child => toPsdLayer(child)) } : {}),
         ...toLayerBounds(layer.bounds),
         ...(layer.mask ? { mask: toMaskData(layer.mask) } : {})
     };
@@ -145,7 +191,7 @@ const exportPsd = (params: PsdExportParams) => {
     const { basePixels, overlays, width, height, filename } = params;
     const underlays = params.underlays ?? [];
 
-    const baseCanvas = canvasFromPixels(basePixels, width, height);
+    const baseCanvas = basePixels ? canvasFromPixels(basePixels, width, height) : null;
     const overlayLayers = overlays;
 
     // ビューア向け: 合成済みキャンバス（表示用）を用意
@@ -161,7 +207,9 @@ const exportPsd = (params: PsdExportParams) => {
             drawLayerToContext(ctx, width, height, layer);
         });
         ctx.globalAlpha = 1;
-        ctx.drawImage(baseCanvas, 0, 0);
+        if (baseCanvas) {
+            ctx.drawImage(baseCanvas, 0, 0);
+        }
         overlayLayers.forEach((layer) => {
             drawLayerToContext(ctx, width, height, layer);
         });
@@ -203,10 +251,10 @@ const exportPsd = (params: PsdExportParams) => {
         },
         children: [
             ...underlays.map(layer => toPsdLayer(layer)),
-            {
+            ...(baseCanvas ? [{
                 name: 'Render',
                 canvas: baseCanvas
-            },
+            }] : []),
             ...overlayLayers.map(layer => toPsdLayer(layer))
         ]
     };

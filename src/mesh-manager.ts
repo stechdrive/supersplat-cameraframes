@@ -57,7 +57,8 @@ class MeshManager {
         });
 
         events.function('mesh.list', () => {
-            return Array.from(this.models);
+            return scene.getElementsByType(ElementType.model)
+            .filter((element): element is Model => element instanceof Model && this.models.has(element));
         });
 
         events.function('mesh.fromGraphNode', (node: GraphNode | null) => {

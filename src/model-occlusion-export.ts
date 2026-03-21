@@ -7,6 +7,7 @@ import {
     Picker as EnginePicker
 } from 'playcanvas';
 
+import type { ObjectLayerProgress } from './camera-frames-render-backend';
 import type { Events } from './events';
 import type { Model } from './model';
 import type { PsdOverlayLayer } from './psd-export';
@@ -80,9 +81,28 @@ const postRender = (scene: Scene) => {
     });
 };
 
-const captureScenePixels = async (scene: Scene, width: number, height: number) => {
-    scene.forceRender = true;
-    await postRender(scene);
+const stabilizeExportCapture = async (scene: Scene) => {
+    const isUnifiedDisplay = scene.splatRenderCapabilities.resolvedMode === 'unified-display';
+    const minFrames = isUnifiedDisplay ? 3 : 1;
+    const maxFrames = isUnifiedDisplay ? 6 : 2;
+
+    await scene.splatRenderLifecycle.waitForSorter();
+
+    for (let frame = 0; frame < maxFrames; frame++) {
+        scene.forceRender = true;
+        await postRender(scene);
+        await scene.splatRenderLifecycle.waitForSorter();
+
+        if (frame + 1 >= minFrames && !scene.forceRender) {
+            break;
+        }
+    }
+};
+
+const captureScenePixels = async (scene: Scene, width: number, height: number, settled = false) => {
+    if (!settled) {
+        await stabilizeExportCapture(scene);
+    }
 
     const data = new Uint8Array(width * height * 4);
     const { mainTarget, workTarget } = scene.camera;
@@ -166,25 +186,21 @@ const captureSplatOcclusion = async (
     scene: Scene,
     width: number,
     height: number,
-    modelDepthTexture: any
+    modelDepthTexture: any,
+    splatPicker: any
 ) => {
-    const splatPicker = new EnginePicker(scene.app, width, height, true) as any;
-    try {
-        const device = scene.app.graphicsDevice;
-        device.scope.resolve('pickOp').setValue(2);
-        device.scope.resolve('pickMode').setValue(2);
-        device.scope.resolve('occlusionModelDepthTex').setValue(modelDepthTexture);
-        device.scope.resolve('occlusionModelDepthTexSize').setValue([width, height]);
-        splatPicker.renderPass.blendState = new BlendState(
-            true,
-            BLENDEQUATION_ADD, BLENDMODE_ONE, BLENDMODE_ONE_MINUS_SRC_ALPHA,
-            BLENDEQUATION_ADD, BLENDMODE_ZERO, BLENDMODE_ONE_MINUS_SRC_ALPHA
-        );
-        splatPicker.prepare(scene.camera.entity.camera, scene.app.scene, [scene.splatLayer]);
-        return await readPickerDepth(splatPicker, width, height);
-    } finally {
-        splatPicker.destroy();
-    }
+    const device = scene.app.graphicsDevice;
+    device.scope.resolve('pickOp').setValue(2);
+    device.scope.resolve('pickMode').setValue(2);
+    device.scope.resolve('occlusionModelDepthTex').setValue(modelDepthTexture);
+    device.scope.resolve('occlusionModelDepthTexSize').setValue([width, height]);
+    splatPicker.renderPass.blendState = new BlendState(
+        true,
+        BLENDEQUATION_ADD, BLENDMODE_ONE, BLENDMODE_ONE_MINUS_SRC_ALPHA,
+        BLENDEQUATION_ADD, BLENDMODE_ZERO, BLENDMODE_ONE_MINUS_SRC_ALPHA
+    );
+    splatPicker.prepare(scene.camera.entity.camera, scene.app.scene, [scene.splatLayer]);
+    return await readPickerDepth(splatPicker, width, height);
 };
 
 export const renderModelLayersWithOcclusion = async (
@@ -192,7 +208,8 @@ export const renderModelLayersWithOcclusion = async (
     scene: Scene,
     width: number,
     height: number,
-    exportModelLayers: boolean
+    exportModelLayers: boolean,
+    onProgress?: (progress: ObjectLayerProgress) => void
 ): Promise<PsdOverlayLayer[]> => {
     if (!exportModelLayers) {
         return [];
@@ -208,6 +225,7 @@ export const renderModelLayersWithOcclusion = async (
 
     const overlays: PsdOverlayLayer[] = [];
     const modelStates = models.map(model => ({ model, enabled: model.entity.enabled }));
+    onProgress?.({ completed: 0, total: modelStates.length });
     const layers = scene.app.scene.layers;
     const worldLayer = layers.getLayerByName('World');
     const restoreLayers: Array<{ layer: any; enabled: boolean; }> = [];
@@ -236,6 +254,7 @@ export const renderModelLayersWithOcclusion = async (
     const prevEyeVisible = scene.eyeLevel.visible;
     const prevRenderOverlays = scene.camera.renderOverlays;
     const depthPicker = new EnginePicker(scene.app, width, height, true) as any;
+    const splatPicker = new EnginePicker(scene.app, width, height, true) as any;
 
     try {
         scene.camera.startOffscreenMode(width, height);
@@ -257,27 +276,31 @@ export const renderModelLayersWithOcclusion = async (
 
         setModelEnabledStates(modelStates, () => false);
 
-        for (const { model } of modelStates) {
+        for (let index = 0; index < modelStates.length; index++) {
+            const { model } = modelStates[index];
             setModelEnabledStates(modelStates, candidate => candidate === model);
             if (scene.modelLightingLayer) {
                 scene.modelLightingLayer.enabled = true;
             }
             scene.splatLayer.enabled = false;
-            const colorPixels = await captureScenePixels(scene, width, height);
+            await stabilizeExportCapture(scene);
+            const colorPixels = await captureScenePixels(scene, width, height, true);
 
             depthPicker.prepare(scene.camera.entity.camera, scene.app.scene, [scene.modelLightingLayer]);
             const targetDepth = await readPickerDepth(depthPicker, width, height);
             const targetDepthTexture = depthPicker.depthBuffer;
 
             scene.splatLayer.enabled = true;
+            await stabilizeExportCapture(scene);
             const splatOcclusion = targetDepthTexture ?
-                await captureSplatOcclusion(scene, width, height, targetDepthTexture) :
+                await captureSplatOcclusion(scene, width, height, targetDepthTexture, splatPicker) :
                 null;
             scene.splatLayer.enabled = false;
 
-            setModelEnabledStates(modelStates, candidate => candidate !== model);
             let otherDepth: Uint8Array | null = null;
+            setModelEnabledStates(modelStates, candidate => candidate !== model);
             if (modelStates.some(({ model: candidate, enabled }) => enabled && candidate !== model)) {
+                await stabilizeExportCapture(scene);
                 depthPicker.prepare(scene.camera.entity.camera, scene.app.scene, [scene.modelLightingLayer]);
                 otherDepth = await readPickerDepth(depthPicker, width, height);
             }
@@ -299,9 +322,15 @@ export const renderModelLayersWithOcclusion = async (
             });
 
             setModelEnabledStates(modelStates, () => false);
+            onProgress?.({
+                completed: index + 1,
+                total: modelStates.length,
+                name: model.name ?? 'Model'
+            });
         }
     } finally {
         depthPicker.destroy();
+        splatPicker.destroy();
         modelStates.forEach(({ model, enabled }) => {
             model.entity.enabled = enabled;
         });
