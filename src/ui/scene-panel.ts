@@ -5,6 +5,7 @@ import { Events } from '../events';
 import { LightRig } from '../light-rig';
 import { localize } from './localization';
 import { MeshList } from './mesh-list';
+import { registerNumericInputHistory } from './register-numeric-input-history';
 import { SplatList } from './splat-list';
 import cameraResetSvg from './svg/camera-reset.svg';
 import hiddenSvg from './svg/hidden.svg';
@@ -317,11 +318,43 @@ class ScenePanel extends Container {
             events.fire('modelLight.setIntensity', value);
         });
 
+        registerNumericInputHistory({
+            events,
+            input: lightInput,
+            label: 'modelLight.intensity',
+            canBegin: () => !syncingIntensity,
+            historyBeginEvent: null,
+            historyCommitEvent: null,
+            beginOnFocus: false,
+            flushCameraHistory: false,
+            onCommit: () => {
+                if (events.functions.has('modelLight.commitPending')) {
+                    events.invoke('modelLight.commitPending');
+                }
+            }
+        });
+
         ambientInput.on('change', (value: number) => {
             if (syncingAmbient) {
                 return;
             }
             events.fire('lighting.setAmbient', value);
+        });
+
+        registerNumericInputHistory({
+            events,
+            input: ambientInput,
+            label: 'lighting.ambient',
+            canBegin: () => !syncingAmbient,
+            historyBeginEvent: null,
+            historyCommitEvent: null,
+            beginOnFocus: false,
+            flushCameraHistory: false,
+            onCommit: () => {
+                if (events.functions.has('lighting.commitPending')) {
+                    events.invoke('lighting.commitPending');
+                }
+            }
         });
     }
 }

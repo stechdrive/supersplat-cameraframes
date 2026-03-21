@@ -348,7 +348,7 @@ export class CameraFramesController {
         this.history.begin(label);
     }
 
-    private historyCommit(label: string) {
+    private historyCommit(label?: string) {
         if (!this.history || this.history.isApplying() || this.applyingHistory) {
             return;
         }
@@ -1081,6 +1081,13 @@ export class CameraFramesController {
 
         // 提供: FOV / 35mm換算情報
         this.events.function('cameraFrames.fovInfo', () => this.fovInfo ?? this.calcFovInfo());
+        this.events.on('cameraFrames.historyBegin', (label?: string) => {
+            const resolved = (typeof label === 'string' && label) ? label : 'cameraFrames';
+            this.historyBegin(resolved);
+        });
+        this.events.on('cameraFrames.historyCommit', (label?: string) => {
+            this.historyCommit(label);
+        });
 
         // near clip override (CAMERA FRAMES 有効時にのみ適用)
         this.events.function('cameraFrames.nearClip', () => this.state.nearClip ?? null);

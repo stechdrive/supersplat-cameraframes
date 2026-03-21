@@ -2,7 +2,7 @@
 
 最終更新: 2026-03-20  
 対象 trunk: `camera-frames`  
-現在の CAMERA_FRAMES 版: `v2.21.11`
+現在の CAMERA_FRAMES 版: `v2.21.12`
 
 ## 目的
 
@@ -120,7 +120,7 @@ upstream 変更で
 
 ### 2. `scene.gsplat` の policy 設定
 
-[splat-render-backend.ts](/D:/GitHub/supersplat-cameraframes/src/splat-render-backend.ts) の `configureUnifiedDisplaySceneGsplat()` で、
+[splat-render-backend.ts](/D:/GitHub/supersplat-cameraframes/src/splat-render-backend.ts) の `applyUnifiedDisplaySceneGsplatPolicy()` で、
 
 - `culling`
 - `radialSorting`

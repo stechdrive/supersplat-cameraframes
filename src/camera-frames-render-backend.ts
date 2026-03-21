@@ -12,6 +12,7 @@ type OffscreenOptions = {
     overlaysOnly?: boolean;
     unpremultiplyAlpha?: boolean;
     includeReferenceImage?: boolean;
+    stabilizeSplat?: boolean;
 };
 
 type CameraFramesRenderBackend = {
@@ -70,7 +71,10 @@ const createSupersplatCameraFramesRenderBackend = ({
     };
 
     const renderBase = async (width: number, height: number) => {
-        return await renderOffscreen(width, height, { includeReferenceImage: false });
+        return await renderOffscreen(width, height, {
+            includeReferenceImage: false,
+            stabilizeSplat: true
+        });
     };
 
     const renderBaseWithoutModels = async (width: number, height: number) => {

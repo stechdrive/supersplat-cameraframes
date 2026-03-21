@@ -379,6 +379,7 @@ class Scene {
             this.setAmbient(value, true);
         });
         events.function('lighting.ambient', () => this.app.scene.ambientLight.r ?? 0.3);
+        events.function('lighting.commitPending', () => this.commitPendingAmbient());
         events.on('edit.apply', this.onEditApplied, this);
 
         this.dataProcessor = new DataProcessor(this.app.graphicsDevice);
@@ -550,6 +551,10 @@ class Scene {
         }
         this.pendingAmbientOp = null;
         this.pendingAmbientFresh = false;
+    }
+
+    private commitPendingAmbient() {
+        this.clearPendingAmbientOp();
     }
 
     private onEditApplied(op: any) {

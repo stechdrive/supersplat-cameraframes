@@ -964,7 +964,8 @@ class Splat extends Element {
     private syncEngineGsplatVisuals(component: GSplatComponent) {
         const usingUnifiedDisplay =
             this.scene?.splatRenderCapabilities.resolvedMode === 'unified-display' &&
-            component.unified === true;
+            component.unified === true &&
+            component.enabled === true;
         const hasWholeSplatColorAdjustments = this.hasWholeSplatColorAdjustments();
         const hasPerSplatStateVisuals = this.hasPerSplatStateVisuals();
         const hasLocalTransformPalette = this.hasLocalTransformPalette();

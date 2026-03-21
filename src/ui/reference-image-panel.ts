@@ -2,6 +2,7 @@ import { Button, Container, Label, NumericInput, SelectInput, TextInput } from '
 
 import { Events } from '../events';
 import { formatInteger, localize } from './localization';
+import { registerNumericInputHistory } from './register-numeric-input-history';
 import arrowSvg from './svg/arrow.svg';
 import closeSvg from './svg/close.svg';
 import deleteSvg from './svg/delete.svg';
@@ -645,106 +646,22 @@ class ReferenceImagePanel extends Container {
         opacityGroup.append(opacityInput);
         transformRow.append(opacityGroup);
 
-        const registerUndoGroup = (input: NumericInput, label: string) => {
-            let active = false;
-            let pointerDown = false;
-            let pointerReleaseHandler: (() => void) | null = null;
-
-            const releasePointerListener = () => {
-                if (!pointerReleaseHandler) {
-                    return;
-                }
-                window.removeEventListener('pointerup', pointerReleaseHandler, true);
-                window.removeEventListener('pointercancel', pointerReleaseHandler, true);
-                pointerReleaseHandler = null;
-            };
-
-            const commit = () => {
-                if (!active) {
-                    return;
-                }
-                active = false;
-                events.fire('referenceImages.historyCommit', label);
-                endRelative(input);
-            };
-
-            const begin = () => {
-                if (suppress || active || !canEditItems()) {
-                    return;
-                }
-                active = true;
-                beginRelative(input);
-                events.fire('referenceImages.historyBegin', label);
-            };
-
-            const handlePointerRelease = () => {
-                pointerDown = false;
-                if (active) {
-                    commit();
-                }
-                releasePointerListener();
-            };
-
-            const ensurePointerRelease = () => {
-                if (pointerReleaseHandler) {
-                    return;
-                }
-                pointerReleaseHandler = handlePointerRelease;
-                window.addEventListener('pointerup', pointerReleaseHandler, true);
-                window.addEventListener('pointercancel', pointerReleaseHandler, true);
-            };
-
-            const beginFromPointer = (event: PointerEvent) => {
-                if (event.button !== 0) {
-                    return;
-                }
-                pointerDown = true;
-                ensurePointerRelease();
-                if (event.target === input.input) {
-                    return;
-                }
-                begin();
-            };
-
-            const beginFromPointerChange = () => {
-                if (!pointerDown) {
-                    return;
-                }
-                begin();
-            };
-
-            const commitFromBlur = () => {
-                if (pointerDown) {
-                    return;
-                }
-                commit();
-            };
-
-            input.dom.addEventListener('pointerdown', beginFromPointer, true);
-            input.on('slider:mousedown', () => begin());
-            input.on('slider:mouseup', commit);
-            input.on('change', beginFromPointerChange);
-            input.on('blur', commitFromBlur);
-
-            // ArrowUp/ArrowDown は keydown 内で値が更新され 'change' が発火するため、
-            // capture で先に begin して 1 操作としてまとめる。
-            input.input.addEventListener('keydown', (event: KeyboardEvent) => {
-                if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
-                    begin();
-                }
-            }, true);
-
-            input.input.addEventListener('keyup', (event: KeyboardEvent) => {
-                if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
-                    commit();
-                }
-            }, true);
-        };
-
-        registerUndoGroup(offsetX, 'referenceImages.offset');
-        registerUndoGroup(offsetY, 'referenceImages.offset');
-        registerUndoGroup(scaleInput, 'referenceImages.scale');
-        registerUndoGroup(opacityInput, 'referenceImages.opacity');
+        [offsetX, offsetY, scaleInput, opacityInput].forEach((input, index) => {
+            const label = index < 2 ?
+                'referenceImages.offset' :
+                (index === 2 ? 'referenceImages.scale' : 'referenceImages.opacity');
+            registerNumericInputHistory({
+                events,
+                input,
+                label,
+                canBegin: () => !suppress && canEditItems(),
+                historyBeginEvent: 'referenceImages.historyBegin',
+                historyCommitEvent: 'referenceImages.historyCommit',
+                flushCameraHistory: false,
+                onBegin: () => beginRelative(input),
+                onCommit: () => endRelative(input)
+            });
+        });
 
         positionGroup.append(offsetRow);
         positionGroup.append(transformRow);

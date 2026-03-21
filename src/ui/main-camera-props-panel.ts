@@ -4,6 +4,7 @@ import { DEFAULT_NEAR_CLIP, MIN_NEAR_CLIP } from '../clip-constants';
 import { Events } from '../events';
 import { subscribeAltKey } from './alt-key-tracker';
 import { localize } from './localization';
+import { registerNumericInputHistory } from './register-numeric-input-history';
 import cameraPropertySvg from './svg/camera-property.svg';
 import closeSvg from './svg/close.svg';
 import lockSvg from './svg/select-lock.svg';
@@ -315,6 +316,21 @@ class MainCameraPropsPanel extends Container {
                     syncMainPropsPoseFromInputs();
                 }
             });
+        });
+
+        [mainPosX, mainPosY, mainPosZ, mainYawInput, mainPitchInput, mainRollInput].forEach((input) => {
+            registerNumericInputHistory({
+                events,
+                input,
+                label: 'cameraFrames.mainCameraPose',
+                canBegin: () => !suppress
+            });
+        });
+        registerNumericInputHistory({
+            events,
+            input: mainPropsNearClipInput,
+            label: 'cameraFrames.nearClip',
+            canBegin: () => !suppress
         });
 
         const setMainRollLockUI = (locked: boolean) => {

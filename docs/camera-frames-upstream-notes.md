@@ -33,7 +33,7 @@ upstream 変更で
 
 ### 2. `scene.gsplat` policy
 
-`configureUnifiedDisplaySceneGsplat()` の前提:
+`applyUnifiedDisplaySceneGsplatPolicy()` の前提:
 
 - `unifiedCulling=false`
 - perspective は `radialSorting=true`
@@ -51,7 +51,7 @@ upstream 取り込みでこの前提を崩すと、
 
 ### 3. projection refresh 署名
 
-`getUnifiedDisplayProjectionSignature()` で見ている項目:
+`getUnifiedDisplayProjectionSnapshot()` で見ている項目:
 
 - `customFrustum`
 - `nearOverride`
