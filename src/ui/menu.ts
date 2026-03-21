@@ -198,7 +198,7 @@ class Menu extends Container {
             }
             return await canUseWebGPU();
         };
-        const hasProjectSplats = () => (((events.invoke('scene.allSplats') as any[])?.length ?? 0) > 0);
+        const hasProjectSplats = () => (((events.invokeOptional('scene.allSplats') as any[])?.length ?? 0) > 0);
 
         const exportMenuPanel = new MenuPanel([{
             text: localize('menu.file.export.ply'),
@@ -305,7 +305,7 @@ class Menu extends Container {
             onSelect: async () => await events.invoke('show.publishSettingsDialog')
         }]);
 
-        const hasActiveSplat = () => events.invoke('selection.splatActive');
+        const hasActiveSplat = () => events.invokeOptional('selection.splatActive');
         const hasSplatSelection = () => events.invoke('selection.splats');
 
         const selectionMenuPanel = new MenuPanel([{

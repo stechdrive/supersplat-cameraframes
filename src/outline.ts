@@ -48,7 +48,7 @@ class Outline extends Element {
 
             this.renderPass.execute({
                 srcTexture: camera.workTarget.colorBuffer,
-                alphaCutoff: events.invoke('camera.mode') === 'rings' ? 0.0 : 0.4,
+                alphaCutoff: events.invokeOptional('camera.mode') === 'rings' ? 0.0 : 0.4,
                 clr
             });
         };

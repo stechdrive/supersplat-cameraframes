@@ -53,7 +53,7 @@ class ToolManager {
         });
 
         events.on('selection.changed', () => {
-            if (this.active && this.selectionTools.has(this.active) && !this.events.invoke('selection.splatActive')) {
+            if (this.active && this.selectionTools.has(this.active) && !this.events.invokeOptional('selection.splatActive')) {
                 this.activate(null);
             }
         });
@@ -72,7 +72,7 @@ class ToolManager {
     }
 
     activate(toolName: string | null) {
-        if (toolName && this.selectionTools.has(toolName) && !this.events.invoke('selection.splatActive')) {
+        if (toolName && this.selectionTools.has(toolName) && !this.events.invokeOptional('selection.splatActive')) {
             if (toolName === this.active) {
                 this.activate(null);
             }

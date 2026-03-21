@@ -282,7 +282,7 @@ class SplatList extends Container {
         };
 
         const getOrderedSplats = () => {
-            const ordered = (events.invoke('scene.allSplats') as Splat[] | null) ?? [];
+            const ordered = (events.invokeOptional('scene.allSplats') as Splat[] | null) ?? [];
             return ordered.filter(splat => items.has(splat));
         };
 

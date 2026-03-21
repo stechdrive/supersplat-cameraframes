@@ -1098,7 +1098,7 @@ function createSplatRenderSystemLifecycleBackend(
             const selectedClr = events.invoke('selectedClr');
             const unselectedClr = events.invoke('unselectedClr');
             const lockedClr = events.invoke('lockedClr');
-            const cameraMode = events.invoke('camera.mode');
+            const cameraMode = events.invokeOptional('camera.mode') ?? 'centers';
             const cameraOverlay = events.invoke('camera.overlay');
             const outlineMode = !!events.invoke('view.outlineSelection');
 

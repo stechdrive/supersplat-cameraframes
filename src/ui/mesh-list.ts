@@ -268,7 +268,7 @@ class MeshList extends Container {
         });
 
         const getOrderedModels = () => {
-            const ordered = (events.invoke('mesh.list') as Model[] | null) ?? [];
+            const ordered = (events.invokeOptional('mesh.list') as Model[] | null) ?? [];
             return ordered.filter(model => items.has(model));
         };
 

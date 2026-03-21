@@ -645,7 +645,7 @@ const createUnifiedDisplayBackends = (scene: Scene): SplatRenderRoleBackends => 
         // unified-display direct mode for normal editing, but temporarily fall
         // back to merged while rings mode is active so the existing behavior
         // continues to work.
-        return scene.events.invoke('camera.mode') === 'rings' || scene.renderFlags.forceMergedSplatDisplay;
+        return scene.events.invokeOptional('camera.mode') === 'rings' || scene.renderFlags.forceMergedSplatDisplay;
     };
 
     const syncEngineComponents = (options?: { refreshDirect?: boolean }) => {
