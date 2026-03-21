@@ -9,6 +9,7 @@ type OffscreenRenderOptions = {
     overlaysOnly?: boolean;
     unpremultiplyAlpha?: boolean;
     includeReferenceImage?: boolean;
+    stabilizeSplat?: boolean;
 };
 
 const unpremultiplyAlpha = (pixels: Uint8Array) => {
@@ -30,12 +31,31 @@ const registerCameraFramesRenderBridge = (
     events: Events,
     postRender: () => Promise<boolean>
 ) => {
+    const stabilizeSplatCapture = async () => {
+        const isUnifiedDisplay = scene.splatRenderCapabilities.resolvedMode === 'unified-display';
+        const minFrames = isUnifiedDisplay ? 3 : 1;
+        const maxFrames = isUnifiedDisplay ? 6 : 2;
+
+        await scene.splatRenderLifecycle.waitForSorter();
+
+        for (let frame = 0; frame < maxFrames; frame++) {
+            scene.forceRender = true;
+            await postRender();
+            await scene.splatRenderLifecycle.waitForSorter();
+
+            if (frame + 1 >= minFrames && !scene.forceRender) {
+                break;
+            }
+        }
+    };
+
     events.function('render.offscreen', async (width: number, height: number, options?: OffscreenRenderOptions): Promise<Uint8Array> => {
         const includeGrid = !!options?.includeGrid;
         const includeEyeLevel = !!options?.includeEyeLevel;
         const overlaysOnly = !!options?.overlaysOnly;
         const applyUnpremultiply = !!options?.unpremultiplyAlpha;
         const includeReferenceImage = !!options?.includeReferenceImage && !overlaysOnly;
+        const stabilizeSplat = !!options?.stabilizeSplat && !overlaysOnly;
 
         const restoreLayers: Array<{ layer: Layer; enabled: boolean; }> = [];
         const rememberLayer = (layer?: Layer) => {
@@ -88,9 +108,12 @@ const registerCameraFramesRenderBridge = (
             scene.eyeLevel.visible = includeEyeLevel;
 
             scene.camera.entity.camera.clearColor.set(0, 0, 0, 0);
-            scene.forceRender = true;
-
-            await postRender();
+            if (stabilizeSplat) {
+                await stabilizeSplatCapture();
+            } else {
+                scene.forceRender = true;
+                await postRender();
+            }
 
             const data = new Uint8Array(width * height * 4);
             const { mainTarget, workTarget } = scene.camera;
