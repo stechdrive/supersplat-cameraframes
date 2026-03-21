@@ -143,11 +143,6 @@ class PointerController {
                 if (pivotDrag) {
                     setPivotPoint(event);
                     isPivoting = true;
-                    return;
-                }
-                if (pressedButton === 0 && isFpvNav()) {
-                    // request pointer lock for look
-                    target.requestPointerLock?.();
                 }
             } else if (event.pointerType === 'touch') {
                 if (touches.length === 0) {
@@ -210,9 +205,6 @@ class PointerController {
                             if (!isPivoting) {
                                 setPivotPoint(event);
                                 isPivoting = true;
-                                if (document.pointerLockElement === target) {
-                                    document.exitPointerLock?.();
-                                }
                                 // avoid a jump on first pivot frame
                                 x = event.offsetX;
                                 y = event.offsetY;
@@ -228,13 +220,7 @@ class PointerController {
                             y = event.offsetY;
                         }
 
-                        if (document.pointerLockElement !== target) {
-                            target.requestPointerLock?.();
-                        }
-
-                        const mdx = document.pointerLockElement === target ? event.movementX : dx;
-                        const mdy = document.pointerLockElement === target ? event.movementY : dy;
-                        fpvLook(mdx, mdy);
+                        fpvLook(dx, dy);
                     } else if (pressedButton === 2) { // RMB strafe/up
                         const sdx = event.offsetX - mmbX;
                         const sdy = event.offsetY - mmbY;
