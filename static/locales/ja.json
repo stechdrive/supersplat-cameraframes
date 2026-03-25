@@ -136,7 +136,7 @@
     "panel.camera-frames.export.splat-layer-note": "書き出し時間が増えます",
     "panel.camera-frames.export.splat-layer-tooltip": "PLY/SOGオブジェクトをオブジェクト単位でレイヤー出力",
     "panel.camera-frames.export.model-occlusion-alpha-tooltip": "実験機能: GLBレイヤーを遮蔽込みアルファで書き出す",
-    "panel.camera-frames.export.reference-image-tooltip": "下絵の出力設定を開く",
+    "panel.camera-frames.export.reference-image-tooltip": "エクスポートに下絵を含める",
     "panel.camera-frames.export.reference-group": "下絵",
     "panel.camera-frames.export.model-layer": "モデル: {{name}}",
     "panel.camera-frames.export.splat-layer": "3DGS: {{name}}",
