@@ -75,6 +75,7 @@ type CameraFramesStateBase = {
     exportGridOverlay?: boolean;
     exportModelLayers?: boolean;
     exportSplatLayers?: boolean;
+    exportReferenceImages?: boolean;
 };
 
 type CameraPreset = {
@@ -235,7 +236,7 @@ class CameraFramesPanel extends Panel {
         let exportDetailsCollapsed = true;
         let cameraPresetsCollapsed = true;
         let framesSectionCollapsed = true;
-        let referenceIncludeEnabled = false;
+        let referenceExportEnabled = true;
 
         let referenceImageLoaded = false;
         let referenceImageVisible = false;
@@ -711,22 +712,14 @@ class CameraFramesPanel extends Panel {
         });
 
         const updateReferenceIncludeToggle = () => {
-            referenceIncludeToggle.class[referenceIncludeEnabled ? 'add' : 'remove']('active');
-            referenceIncludeToggle.dom.setAttribute('aria-pressed', referenceIncludeEnabled ? 'true' : 'false');
-            referenceIncludeToggle.enabled = referenceImageLoaded && !rendering;
-            const label = referenceImageLoaded ?
-                localize('panel.camera-frames.export.reference-image-tooltip') :
-                localize('panel.reference-image.empty');
+            referenceIncludeToggle.class[referenceExportEnabled ? 'add' : 'remove']('active');
+            referenceIncludeToggle.dom.setAttribute('aria-pressed', referenceExportEnabled ? 'true' : 'false');
+            referenceIncludeToggle.enabled = !rendering;
+            const label = localize('panel.camera-frames.export.reference-image-tooltip');
             referenceIncludeToggle.dom.title = label;
             referenceIncludeToggle.dom.setAttribute('aria-label', label);
         };
         updateReferenceIncludeToggle();
-
-        const applyReferenceIncludeState = (state?: Partial<ReferenceImagesState> | null) => {
-            referenceIncludeEnabled = Array.isArray(state?.items) && state.items.some(i => !!i?.includeInRender);
-            updateReferenceIncludeToggle();
-        };
-        events.on('referenceImages.stateChanged', (state: ReferenceImagesState) => applyReferenceIncludeState(state));
 
         const applyReferencePresetsState = (state?: ReferenceImagesPresetsState | null) => {
             const presets = Array.isArray(state?.presets) ? state.presets : [];
@@ -735,7 +728,7 @@ class CameraFramesPanel extends Panel {
 
         referenceIncludeToggle.on('click', () => {
             if (suppress) return;
-            events.fire('referenceImagePanel.setVisible', true);
+            events.fire('cameraFrames.setExportReferenceImages', !referenceExportEnabled);
         });
 
         // frames section
@@ -1039,7 +1032,7 @@ class CameraFramesPanel extends Panel {
             modelLayerToggle.enabled = !rendering && isPsd;
             splatLayerToggle.enabled = !rendering && isPsd && modelLayerEnabled;
             splatLayerRow.class[(!isPsd || !modelLayerEnabled) ? 'add' : 'remove']('disabled');
-            referenceIncludeToggle.enabled = !rendering && referenceImageLoaded;
+            referenceIncludeToggle.enabled = !rendering;
         };
 
         const setRenderBusy = (busy: boolean) => {
@@ -1751,6 +1744,8 @@ class CameraFramesPanel extends Panel {
             modelLayerToggle.dom.setAttribute('aria-pressed', modelLayerEnabled ? 'true' : 'false');
             splatLayerEnabled = !!state.exportSplatLayers;
             splatLayerToggle.value = splatLayerEnabled;
+            referenceExportEnabled = state.exportReferenceImages !== false;
+            updateReferenceIncludeToggle();
             exportTarget = state.exportTarget === 'all' ? 'all' : (state.exportTarget === 'selected' ? 'selected' : 'current');
             exportTargetSelect.value = exportTarget;
             exportPresetIds = Array.isArray(state.exportPresetIds) ?
@@ -1922,7 +1917,6 @@ class CameraFramesPanel extends Panel {
 
             const referenceState = (events.invoke('referenceImages.state') as ReferenceImagesState | null) ?? null;
             applyReferenceImageState(referenceState);
-            applyReferenceIncludeState(referenceState);
             const referencePresetsState = (events.invoke('referenceImages.presetsState') as ReferenceImagesPresetsState | null) ?? null;
             applyReferencePresetsState(referencePresetsState);
             const enabled = events.invoke('cameraFrames.enabled') as boolean;

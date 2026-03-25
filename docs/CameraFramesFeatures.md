@@ -3,7 +3,7 @@
 この文書は、`camera-frames` ブランチの現在の stable 機能を短く把握するための一覧です。
 将来 Spark 2.0 上で再現する時のチェックリストとしても使います。
 
-対象バージョン: `v2.21.13`
+対象バージョン: `v2.21.14`
 
 ---
 
@@ -48,6 +48,7 @@
   - `grid/eye-level = on`
   - `model layers = on`
   - `PLY/SOG object layers = off`
+  - `reference images = on`
   - `filename = cf-%cam`
 - 全カメラ書き出し時は unified splat の安定待ちを入れている
 - PNG は 150dpi の `pHYs` を付与する

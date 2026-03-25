@@ -5,7 +5,7 @@
 この文書は、現在の `camera-frames` ブランチのコードを正として、
 CAMERA_FRAMES の「あるべき現在地」を固定するための実装基点です。
 
-- 対象バージョン: `cameraFramesVersion = v2.21.13`
+- 対象バージョン: `cameraFramesVersion = v2.21.14`
 - 対象ブランチ: `camera-frames`
 - 主な参照実装:
   - `src/camera-frames.ts`

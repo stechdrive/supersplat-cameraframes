@@ -243,11 +243,12 @@ export const renderImage = async ({
     const filename = resolveFilename(options?.filename ?? state.exportName, format);
     const usePsdModelMaskExport = format === 'psd' && !!state.exportModelLayers;
     const usePsdSplatMaskExport = format === 'psd' && !!state.exportModelLayers && !!state.exportSplatLayers;
+    const useReferenceImageExport = state.exportReferenceImages !== false;
 
     const stageKeys = [
         'panel.camera-frames.export.progress.stage.prepare',
         'panel.camera-frames.export.progress.stage.base',
-        'panel.camera-frames.export.progress.stage.reference',
+        ...(useReferenceImageExport ? ['panel.camera-frames.export.progress.stage.reference'] : []),
         'panel.camera-frames.export.progress.stage.overlays',
         ...(usePsdModelMaskExport ? ['panel.camera-frames.export.progress.stage.model-layers'] : []),
         ...(usePsdSplatMaskExport ? ['panel.camera-frames.export.progress.stage.splat-layers'] : []),
@@ -294,9 +295,11 @@ export const renderImage = async ({
                 }) :
                 await renderBackend.renderBase(width, height);
         });
-        const referenceLayers = await runStage('panel.camera-frames.export.progress.stage.reference', async () => {
-            return await renderBackend.renderReferenceLayers(width, height, { applyOpacity: format !== 'psd' });
-        });
+        const referenceLayers = useReferenceImageExport ?
+            await runStage('panel.camera-frames.export.progress.stage.reference', async () => {
+                return await renderBackend.renderReferenceLayers(width, height, { applyOpacity: format !== 'psd' });
+            }) :
+            [];
         const debugOverlays = await runStage('panel.camera-frames.export.progress.stage.overlays', async () => {
             return await renderBackend.renderOverlayLayers(width, height, getState().exportGridOverlay);
         });

@@ -160,6 +160,7 @@ export class CameraFramesController {
         exportGridOverlay: true,
         exportModelLayers: true,
         exportSplatLayers: false,
+        exportReferenceImages: true,
         exportTarget: 'current',
         exportPresetIds: [],
         cameraPresets: [],
@@ -1248,6 +1249,13 @@ export class CameraFramesController {
             this.emitStateChanged();
         });
 
+        this.events.on('cameraFrames.setExportReferenceImages', (value: boolean) => {
+            const next = !!value;
+            if (this.state.exportReferenceImages === next) return;
+            this.state.exportReferenceImages = next;
+            this.emitStateChanged();
+        });
+
         this.events.on('cameraFrames.setExportTarget', (target: ExportTarget) => {
             const next = this.normalizeExportTarget(target);
             if (this.state.exportTarget === next) {
@@ -1588,7 +1596,8 @@ export class CameraFramesController {
             exportFormat: this.normalizeFormat(this.state.exportFormat),
             exportGridOverlay: !!this.state.exportGridOverlay,
             exportModelLayers: !!this.state.exportModelLayers,
-            exportSplatLayers: !!this.state.exportSplatLayers
+            exportSplatLayers: !!this.state.exportSplatLayers,
+            exportReferenceImages: this.state.exportReferenceImages !== false
         };
     }
 
@@ -2684,6 +2693,7 @@ export class CameraFramesController {
                 baseState.exportModelLayers :
                 baseState.exportFormat === 'psd';
             baseState.exportSplatLayers = !!baseState.exportSplatLayers && !!baseState.exportModelLayers;
+            baseState.exportReferenceImages = baseState.exportReferenceImages !== false;
             baseState.mainCameraPose = this.rebuildMainCameraPoseFromPreset(preset, baseState);
             baseState.nearClip = preset.mainCamera.nearClip ?? null;
             this.normalizeProjectionIntoState(baseState, preset.mainCamera.projection);

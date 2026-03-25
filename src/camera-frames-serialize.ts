@@ -280,7 +280,8 @@ const cloneCameraFramesStateBase = (
     exportFormat: normalizeFormat(state.exportFormat),
     exportGridOverlay: !!state.exportGridOverlay,
     exportModelLayers: !!state.exportModelLayers,
-    exportSplatLayers: !!state.exportSplatLayers
+    exportSplatLayers: !!state.exportSplatLayers,
+    exportReferenceImages: state.exportReferenceImages !== false
 });
 
 const cloneCameraPreset = (
@@ -341,7 +342,8 @@ const normalizeCameraFramesStateBase = (
         exportFormat,
         exportGridOverlay: typeof state.exportGridOverlay === 'boolean' ? state.exportGridOverlay : defaultExportGridOverlay(exportFormat),
         exportModelLayers: typeof state.exportModelLayers === 'boolean' ? state.exportModelLayers : defaultExportModelLayers(exportFormat),
-        exportSplatLayers: typeof state.exportSplatLayers === 'boolean' ? state.exportSplatLayers && !!(typeof state.exportModelLayers === 'boolean' ? state.exportModelLayers : defaultExportModelLayers(exportFormat)) : false
+        exportSplatLayers: typeof state.exportSplatLayers === 'boolean' ? state.exportSplatLayers && !!(typeof state.exportModelLayers === 'boolean' ? state.exportModelLayers : defaultExportModelLayers(exportFormat)) : false,
+        exportReferenceImages: typeof state.exportReferenceImages === 'boolean' ? state.exportReferenceImages : true
     };
 };
 
@@ -505,6 +507,9 @@ export const applySnapshot = ({
         state.exportSplatLayers = typeof state.exportSplatLayers === 'boolean' ?
             state.exportSplatLayers && !!state.exportModelLayers :
             false;
+        state.exportReferenceImages = typeof state.exportReferenceImages === 'boolean' ?
+            state.exportReferenceImages :
+            true;
         state.exportTarget = normalizeExportTarget(state.exportTarget);
         state.exportPresetIds = normalizeExportPresetIds(state.exportPresetIds, state.cameraPresets);
         overlay.style.pointerEvents = 'none';
@@ -586,6 +591,7 @@ export const deserialize = ({
             exportGridOverlay: false,
             exportModelLayers: false,
             exportSplatLayers: false,
+            exportReferenceImages: true,
             exportTarget: 'current',
             exportPresetIds: [],
             cameraPresets: [],
@@ -623,6 +629,9 @@ export const deserialize = ({
     const exportSplatLayers = typeof docState.exportSplatLayers === 'boolean' ?
         docState.exportSplatLayers && !!exportModelLayers :
         false;
+    const exportReferenceImages = typeof docState.exportReferenceImages === 'boolean' ?
+        docState.exportReferenceImages :
+        true;
     const exportTarget = normalizeExportTarget(docState.exportTarget);
     const maskScope = normalizeMaskScope(docState.mask?.scope, DEFAULT_MASK.scope);
     const frames = (docState.frames ?? []).map((f: FrameState) => ({
@@ -725,6 +734,7 @@ export const deserialize = ({
         exportGridOverlay,
         exportModelLayers,
         exportSplatLayers,
+        exportReferenceImages,
         exportTarget,
         exportPresetIds,
         mainCameraPose,

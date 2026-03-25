@@ -45,6 +45,7 @@ CAMERA FRAMES v2.21.3 lets you lay out multiple frames on an A4-like master shee
 - **Export target**: switch between current/all/selected cameras. Selected mode uses checkboxes in the camera preset list.
 - **Grid/Eye-level**: Single toggle outputs both overlays. Composited for PNG; separate layers for PSD.
 - **Model layers**: PSD-only; each visible GLB is exported as `Source + layer mask`, making it easier to composite against other models and the Render layer (the toggle itself is always shown).
+- **Reference images**: the export-row toggle is a final gate (default on); each reference image still keeps its own output setting.
 - Render button starts export; shows spinner and disables while busy.
 - Export locks viewZoom=100% and centers the frustum; preview frustum is restored afterward.
 - PSD layer order: grid → eye-level → models → frames (grouped by leading frame letter) → Render. PNG is compressed with 150dpi pHYs.

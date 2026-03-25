@@ -2,7 +2,7 @@
 
 最終更新: 2026-03-21  
 対象 trunk: `camera-frames`  
-現在の CAMERA_FRAMES 版: `v2.21.13`
+現在の CAMERA_FRAMES 版: `v2.21.14`
 
 ## 目的
 
