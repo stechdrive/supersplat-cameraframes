@@ -476,6 +476,10 @@
     "status-bar.splat-data": "Splat Data",
     "tooltip.status-bar.timeline": "Toggle Timeline Panel",
     "tooltip.status-bar.splat-data": "Toggle Splat Data Panel",
+    "welcomeBoard.message.primary": "This version is currently in maintenance mode.",
+    "welcomeBoard.message.secondary": "For new use, please use the new CAMERA FRAMES.",
+    "welcomeBoard.link": "https://stechdrive.github.io/camera-frames/",
+    "welcomeBoard.dismiss": "Close",
     "updateBanner.message": "A new version is available.",
     "updateBanner.reload": "Reload",
     "updateBanner.dismiss": "Later"

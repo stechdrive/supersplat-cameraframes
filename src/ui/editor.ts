@@ -30,6 +30,7 @@ import { UpdateBanner, type UpdateBannerOptions } from './update-banner';
 import { VideoSettingsDialog } from './video-settings-dialog';
 import { ViewCube } from './view-cube';
 import { ViewPanel } from './view-panel';
+import { WelcomeBoard } from './welcome-board';
 import { version } from '../../package.json';
 
 // ts compiler and vscode find this type, but eslint does not
@@ -206,6 +207,7 @@ class EditorUI {
 
         // update banner
         const updateBanner = new UpdateBanner();
+        const welcomeBoard = new WelcomeBoard();
         const aboutPopup = new AboutPopup();
 
         topContainer.append(popup);
@@ -215,6 +217,7 @@ class EditorUI {
         topContainer.append(videoSettingsDialog);
         topContainer.append(shortcutsPopup);
         topContainer.append(aboutPopup);
+        topContainer.append(welcomeBoard);
         appContainer.append(editorContainer);
         appContainer.append(topContainer);
         appContainer.append(updateBanner);
@@ -355,6 +358,16 @@ class EditorUI {
         });
         events.function('updateBanner.hide', () => {
             updateBanner.hide();
+        });
+
+        events.function('welcomeBoard.show', () => {
+            welcomeBoard.show();
+        });
+        events.function('welcomeBoard.hide', () => {
+            welcomeBoard.hide();
+        });
+        events.on('app.ready', () => {
+            welcomeBoard.show();
         });
 
         events.on('show.about', () => {
