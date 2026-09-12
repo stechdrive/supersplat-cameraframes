@@ -6,6 +6,8 @@ import {
     Texture
 } from 'playcanvas';
 
+import { PALETTE_ENTRIES_PER_ROW } from './shaders/palette-chunk';
+
 // mapping from Mat4 to transposed 3x4 matrix
 const idx = [
     0, 4, 8, 12,
@@ -13,27 +15,25 @@ const idx = [
     2, 6, 10, 14
 ];
 
-// texture data stores 512 matrices per row: 512 * 3 * 4 (rgba) floats
-const width = 512 * 3;
+// texture data stores PALETTE_ENTRIES_PER_ROW matrices per row, 3 texels each.
+// the shader-side lookup derives its row stride from the same constant
+const width = PALETTE_ENTRIES_PER_ROW * 3;
 
 // wraps a palette of transform data. transforms are stored as 3x4 (non-perspective)
 // matrices
 class TransformPalette {
     getTransform: (index: number, transform: Mat4) => void;
     setTransform: (index: number, transform: Mat4) => void;
-    beginUpdate: () => void;
-    endUpdate: () => void;
     alloc: (num?: number) => number;
     free: (num?: number) => void;
     destroy: () => void;
     texture: Texture;
+    // number of allocated entries, including the identity at index 0
+    size: number;
 
     constructor(device: GraphicsDevice, initialSize = 4096) {
         let texture: Texture;
         let data: Float32Array;
-        let batchDepth = 0;
-        let pendingUpload = false;
-        let destroyed = false;
 
         // reallocate the storage texture and copy over old data
         const realloc = (width: number, height: number) => {
@@ -74,28 +74,7 @@ class TransformPalette {
                 data[index * 12 + i] = src[idx[i]];
             }
 
-            if (batchDepth > 0) {
-                pendingUpload = true;
-                return;
-            }
-
             texture.upload();
-        };
-
-        this.beginUpdate = () => {
-            batchDepth += 1;
-        };
-
-        this.endUpdate = () => {
-            if (batchDepth === 0) {
-                return;
-            }
-
-            batchDepth -= 1;
-            if (batchDepth === 0 && pendingUpload) {
-                pendingUpload = false;
-                texture.upload();
-            }
         };
 
         // index of the next available matrix. index 0 is identity.
@@ -119,17 +98,15 @@ class TransformPalette {
         };
 
         this.destroy = () => {
-            if (destroyed) {
-                return;
-            }
-            destroyed = true;
-            if (texture) {
-                texture.destroy();
-            }
+            texture.destroy();
         };
 
         Object.defineProperty(this, 'texture', { get() {
             return texture;
+        } });
+
+        Object.defineProperty(this, 'size', { get() {
+            return nextIdx;
         } });
 
         // allocate initial storage

@@ -1,8 +1,8 @@
-import { Button, Container, NumericInput, SelectInput } from '@playcanvas/pcui';
+import { Button, Container, Element, NumericInput, SelectInput } from '@playcanvas/pcui';
 
 import { Events } from '../events';
 import { ShortcutManager } from '../shortcut-manager';
-import { localize } from './localization';
+import { i18n } from './localization';
 import { Tooltips } from './tooltips';
 
 class Ticks extends Container {
@@ -20,11 +20,18 @@ class Ticks extends Container {
 
         this.append(workArea);
 
-        let frameFromOffset = (_offset: number) => 0;
-        let moveCursor = (_frame: number) => {};
-        let ready = false;
+        let frameFromOffset: (offset: number) => number;
+        let moveCursor: (frame: number) => void;
 
+        // pcui wrappers around key markers, kept so their tooltips unregister
+        // (via the destroy event) when the timeline is rebuilt
+        let keyElements: Element[] = [];
+
+        // rebuild the timeline
         const rebuild = () => {
+            // clear existing labels
+            keyElements.forEach(el => el.destroy());
+            keyElements = [];
             workArea.dom.innerHTML = '';
 
             const numFrames = events.invoke('timeline.frames');
@@ -32,8 +39,15 @@ class Ticks extends Container {
 
             const padding = 20;
             const width = this.dom.getBoundingClientRect().width - padding * 2;
-            const labelStep = Math.max(1, Math.floor(numFrames / Math.max(1, Math.floor(width / 50))));
-            const numLabels = Math.max(1, Math.ceil(numFrames / labelStep));
+
+            // round the smallest step that keeps labels ~50px apart up to the
+            // 1/2/5 * 10^n series so labels land on round frame numbers
+            const minStep = Math.max(1, numFrames / Math.max(1, Math.floor(width / 50)));
+            const magnitude = 10 ** Math.floor(Math.log10(minStep));
+            const labelStep = [1, 2, 5, 10].map(m => m * magnitude).find(s => s >= minStep) ?? 10 * magnitude;
+
+            // subdivide labels with minor ticks (fifths, or halves for 1/2 steps)
+            const tickStep = labelStep === 1 ? 0 : labelStep / (labelStep % 5 === 0 ? 5 : 2);
 
             const offsetFromFrame = (frame: number) => {
                 return padding + Math.floor(frame / (numFrames - 1) * width);
@@ -43,22 +57,60 @@ class Ticks extends Container {
                 return Math.max(0, Math.min(numFrames - 1, Math.floor((offset - padding) / width * (numFrames - 1))));
             };
 
-            for (let i = 0; i < numLabels; i++) {
-                const thisFrame = Math.floor(i * labelStep);
+            // timeline labels
+
+            for (let frame = 0; frame < numFrames; frame += labelStep) {
                 const label = document.createElement('div');
                 label.classList.add('time-label');
-                label.style.left = `${offsetFromFrame(thisFrame)}px`;
-                label.textContent = thisFrame.toString();
+                label.style.left = `${offsetFromFrame(frame)}px`;
+                label.textContent = frame.toString();
                 workArea.dom.appendChild(label);
             }
 
+            // minor ticks
+
+            if (tickStep > 0) {
+                for (let frame = tickStep; frame < numFrames; frame += tickStep) {
+                    if (frame % labelStep !== 0) {
+                        const tick = document.createElement('div');
+                        tick.classList.add('time-tick');
+                        tick.style.left = `${offsetFromFrame(frame)}px`;
+                        workArea.dom.appendChild(tick);
+                    }
+                }
+            }
+
+            // keys - get from active track
             const keys = events.invoke('track.keys') as number[] ?? [];
 
-            const createKey = (keyFrame: number) => {
+            // keys at frame >= numFrames don't play (the spline ignores them);
+            // pin them just past the right end of the strip instead of hiding them
+            const inRangeKeys = keys.filter(k => k < numFrames);
+            const outOfRangeKeys = keys.filter(k => k >= numFrames).sort((a, b) => a - b);
+
+            // center of a pinned marker: 10px right of the last frame, staggered
+            // 2px per extra marker, capped so the 8px diamond stays inside the
+            // 20px right padding
+            const pinnedOffset = (index: number) => {
+                return padding + width + 10 + Math.min(index, 3) * 2;
+            };
+
+            const createKey = (keyFrame: number, pinnedIndex = -1) => {
+                const outOfRange = pinnedIndex !== -1;
+
                 const label = document.createElement('div');
                 label.classList.add('time-label', 'key');
-                label.style.left = `${offsetFromFrame(keyFrame)}px`;
+                if (outOfRange) {
+                    label.classList.add('out-of-range');
+                }
+                label.style.left = `${outOfRange ? pinnedOffset(pinnedIndex) : offsetFromFrame(keyFrame)}px`;
                 label.dataset.frame = keyFrame.toString();
+
+                const wrapper = new Element({ dom: label });
+                tooltips.register(wrapper, () => (outOfRange ?
+                    i18n.t('tooltip.timeline.key-out-of-range', { frame: keyFrame }) :
+                    i18n.t('tooltip.timeline.key')), 'top');
+                keyElements.push(wrapper);
                 let dragging = false;
                 let copying = false;
                 let clone: HTMLElement = null;
@@ -72,6 +124,7 @@ class Ticks extends Container {
                         event.stopPropagation();
 
                         if (copying) {
+                            // create a visual clone to drag; original stays in place
                             clone = document.createElement('div');
                             clone.classList.add('time-label', 'key', 'dragging');
                             clone.style.left = label.style.left;
@@ -89,8 +142,13 @@ class Ticks extends Container {
                         if (copying) {
                             clone.style.left = `${offsetFromFrame(toFrame)}px`;
                         } else {
+                            // once dragged, the key can only land in range
+                            label.classList.remove('out-of-range');
                             label.style.left = `${offsetFromFrame(toFrame)}px`;
                         }
+                    } else {
+                        // hint that ctrl+click overwrites the key with the current pose
+                        label.classList.toggle('stamping', event.ctrlKey);
                     }
                 });
 
@@ -110,7 +168,11 @@ class Ticks extends Container {
 
                         label.releasePointerCapture(event.pointerId);
 
-                        if (fromFrame !== toFrame && toFrame >= 0) {
+                        if (event.ctrlKey && (toFrame < 0 || toFrame === fromFrame)) {
+                            // ctrl+click without dragging: overwrite this key
+                            // with the current camera pose
+                            events.fire('track.addKey', fromFrame);
+                        } else if (fromFrame !== toFrame && toFrame >= 0) {
                             if (copying) {
                                 events.fire('track.copyKey', fromFrame, toFrame);
                             } else {
@@ -126,9 +188,16 @@ class Ticks extends Container {
                 workArea.dom.appendChild(label);
             };
 
-            keys.forEach((keyFrame: number) => {
+            inRangeKeys.forEach((keyFrame: number) => {
                 createKey(keyFrame);
             });
+
+            // ascending order so the marker for the largest frame renders topmost
+            outOfRangeKeys.forEach((keyFrame: number, index: number) => {
+                createKey(keyFrame, index);
+            });
+
+            // cursor
 
             const cursor = document.createElement('div');
             cursor.classList.add('time-label', 'cursor');
@@ -142,12 +211,11 @@ class Ticks extends Container {
             };
         };
 
+        // handle scrubbing
+
         let scrubbing = false;
 
         workArea.dom.addEventListener('pointerdown', (event: PointerEvent) => {
-            if (!ready) {
-                return;
-            }
             if (!scrubbing && event.isPrimary) {
                 scrubbing = true;
                 workArea.dom.setPointerCapture(event.pointerId);
@@ -156,64 +224,86 @@ class Ticks extends Container {
         });
 
         workArea.dom.addEventListener('pointermove', (event: PointerEvent) => {
-            if (!ready) {
-                return;
-            }
             if (scrubbing) {
                 events.fire('timeline.setFrame', frameFromOffset(event.offsetX));
             }
         });
 
         workArea.dom.addEventListener('pointerup', (event: PointerEvent) => {
-            if (!ready) {
-                return;
-            }
             if (scrubbing && event.isPrimary) {
                 workArea.dom.releasePointerCapture(event.pointerId);
                 scrubbing = false;
             }
         });
 
-        events.on('app.ready', () => {
-            if (ready) {
-                return;
-            }
-            ready = true;
+        // update the stamp cursor hint when ctrl changes while already
+        // hovering a key (pointermove alone misses a stationary pointer)
+        const updateStamping = (down: boolean) => {
+            const hovered = workArea.dom.querySelector('.key:hover');
+            workArea.dom.querySelectorAll('.key.stamping').forEach((el) => {
+                if (!down || el !== hovered) el.classList.remove('stamping');
+            });
+            if (down && hovered) hovered.classList.add('stamping');
+        };
+
+        const onCtrlDown = (event: KeyboardEvent) => {
+            if (event.key === 'Control' && !event.repeat) updateStamping(true);
+        };
+
+        const onCtrlUp = (event: KeyboardEvent) => {
+            if (event.key === 'Control') updateStamping(false);
+        };
+
+        // ctrl released while the window is unfocused never fires keyup
+        const onBlur = () => updateStamping(false);
+
+        window.addEventListener('keydown', onCtrlDown);
+        window.addEventListener('keyup', onCtrlUp);
+        window.addEventListener('blur', onBlur);
+
+        this.on('destroy', () => {
+            keyElements.forEach(el => el.destroy());
+            keyElements = [];
+            window.removeEventListener('keydown', onCtrlDown);
+            window.removeEventListener('keyup', onCtrlUp);
+            window.removeEventListener('blur', onBlur);
+        });
+
+        // rebuild the timeline on dom resize
+        new ResizeObserver(() => rebuild()).observe(workArea.dom);
+
+        // rebuild when timeline frames change
+        events.on('timeline.frames', () => {
             rebuild();
+        });
 
-            new ResizeObserver(() => rebuild()).observe(workArea.dom);
+        events.on('timeline.frame', (frame: number) => {
+            moveCursor(frame);
+        });
 
-            events.on('timeline.frames', () => {
-                rebuild();
-            });
+        // rebuild when track keys change
+        events.on('track.keyAdded', () => {
+            rebuild();
+        });
 
-            events.on('timeline.frame', (frame: number) => {
-                moveCursor(frame);
-            });
+        events.on('track.keyRemoved', () => {
+            rebuild();
+        });
 
-            events.on('track.keyAdded', () => {
-                rebuild();
-            });
+        events.on('track.keyMoved', () => {
+            rebuild();
+        });
 
-            events.on('track.keyRemoved', () => {
-                rebuild();
-            });
+        events.on('track.keyUpdated', () => {
+            rebuild();
+        });
 
-            events.on('track.keyMoved', () => {
-                rebuild();
-            });
+        events.on('track.keysLoaded', () => {
+            rebuild();
+        });
 
-            events.on('track.keyUpdated', () => {
-                rebuild();
-            });
-
-            events.on('track.keysLoaded', () => {
-                rebuild();
-            });
-
-            events.on('track.keysCleared', () => {
-                rebuild();
-            });
+        events.on('track.keysCleared', () => {
+            rebuild();
         });
     }
 }
@@ -226,6 +316,8 @@ class TimelinePanel extends Container {
         };
 
         super(args);
+
+        // play controls
 
         const prev = new Button({
             class: 'button',
@@ -241,6 +333,8 @@ class TimelinePanel extends Container {
             class: 'button',
             text: '\uE164'
         });
+
+        // key controls
 
         const addKey = new Button({
             class: 'button',
@@ -261,6 +355,8 @@ class TimelinePanel extends Container {
         buttonControls.append(next);
         buttonControls.append(addKey);
         buttonControls.append(removeKey);
+
+        // settings
 
         const speed = new SelectInput({
             id: 'speed',
@@ -299,6 +395,8 @@ class TimelinePanel extends Container {
             frames.value = framesIn;
         });
 
+        // smoothness
+
         const smoothness = new NumericInput({
             id: 'smoothness',
             min: 0,
@@ -315,12 +413,34 @@ class TimelinePanel extends Container {
             smoothness.value = smoothnessIn;
         });
 
+        // loop
+
+        const loop = new Button({
+            id: 'loop',
+            text: '\uE128'
+        });
+
+        loop.on('click', () => {
+            events.fire('timeline.setLoop', !events.invoke('timeline.loop'));
+        });
+
+        events.on('timeline.loop', (loopIn: boolean) => {
+            loop.class[loopIn ? 'add' : 'remove']('active');
+        });
+
+        if (events.invoke('timeline.loop')) {
+            loop.class.add('active');
+        }
+
         const settingsControls = new Container({
             id: 'settings-controls'
         });
         settingsControls.append(speed);
         settingsControls.append(frames);
         settingsControls.append(smoothness);
+        settingsControls.append(loop);
+
+        // append control groups
 
         const controlsWrap = new Container({
             id: 'controls-wrap'
@@ -343,6 +463,8 @@ class TimelinePanel extends Container {
 
         this.append(controlsWrap);
         this.append(ticks);
+
+        // ui handlers
 
         prev.on('click', (evt: MouseEvent) => {
             if (evt.shiftKey) {
@@ -368,6 +490,7 @@ class TimelinePanel extends Container {
             }
         });
 
+        // Sync play button icon when playing state changes (e.g. via keyboard shortcut)
         events.on('timeline.playing', (isPlaying: boolean) => {
             play.text = isPlaying ? '\uE135' : '\uE131';
         });
@@ -381,20 +504,24 @@ class TimelinePanel extends Container {
             events.fire('track.removeKey', frame);
         });
 
+        // Helper to check if the current frame has a key
         const canDeleteKey = () => {
             const keys = events.invoke('track.keys') as number[] ?? [];
             const frame = events.invoke('timeline.frame');
             return keys.includes(frame);
         };
 
+        // Update key button states
         const updateKeyButtonStates = () => {
             removeKey.enabled = canDeleteKey();
         };
 
+        // Update button states when frame changes
         events.on('timeline.frame', () => {
             updateKeyButtonStates();
         });
 
+        // Update button states when track keys change
         events.on('track.keyAdded', () => {
             updateKeyButtonStates();
         });
@@ -419,19 +546,21 @@ class TimelinePanel extends Container {
             updateKeyButtonStates();
         });
 
-        events.on('camera.controller', () => {
+        // cancel animation playback if user interacts with camera
+        events.on('camera.controller', (type: string) => {
             if (events.invoke('timeline.playing')) {
                 // stop
             }
         });
 
+        // tooltips
         const shortcutManager: ShortcutManager = events.invoke('shortcutManager');
-        const tooltip = (localeKey: string, shortcutId?: string) => {
-            const text = localize(localeKey);
+        const tooltip = (localeKey: string, shortcutId?: string) => () => {
+            const text = i18n.t(localeKey);
             if (shortcutId) {
                 const shortcut = shortcutManager.formatShortcut(shortcutId);
                 if (shortcut) {
-                    return `${text} ( ${shortcut} )`;
+                    return i18n.formatTooltipWithShortcut(text, shortcut);
                 }
             }
             return text;
@@ -442,9 +571,10 @@ class TimelinePanel extends Container {
         tooltips.register(next, tooltip('tooltip.timeline.next-frame', 'timeline.nextFrame'), 'top');
         tooltips.register(addKey, tooltip('tooltip.timeline.add-key', 'track.addKey'), 'top');
         tooltips.register(removeKey, tooltip('tooltip.timeline.remove-key', 'track.removeKey'), 'top');
-        tooltips.register(speed, localize('tooltip.timeline.frame-rate'), 'top');
-        tooltips.register(frames, localize('tooltip.timeline.total-frames'), 'top');
-        tooltips.register(smoothness, localize('tooltip.timeline.smoothness'), 'top');
+        tooltips.register(speed, () => i18n.t('tooltip.timeline.frame-rate'), 'top');
+        tooltips.register(frames, () => i18n.t('tooltip.timeline.total-frames'), 'top');
+        tooltips.register(smoothness, () => i18n.t('tooltip.timeline.smoothness'), 'top');
+        tooltips.register(loop, () => i18n.t('tooltip.timeline.loop'), 'top');
     }
 }
 

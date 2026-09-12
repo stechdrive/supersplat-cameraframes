@@ -1,7 +1,7 @@
 import { Container, NumericInput } from '@playcanvas/pcui';
 
 import { Events } from '../events';
-import { isCtrlLike, modifiers } from '../modifier-tracker';
+import { opFromModifiers } from '../select-op';
 
 type Pt = {x : number, y: number };
 
@@ -46,7 +46,7 @@ class FloodSelection {
 
         canvasContainer.append(selectToolbar);
 
-        const apply = async (op: 'set' | 'add' | 'remove') => {
+        const apply = async (op: 'set' | 'add' | 'remove' | 'intersect') => {
             await events.invoke(
                 'select.byMask',
                 op,
@@ -124,8 +124,6 @@ class FloodSelection {
         const pointerup = async (e: PointerEvent) => {
             if (clicked && isPrimary(e)) {
                 clicked = false;
-                const modState = modifiers.read(e);
-                const op = modState.shift ? 'add' : (isCtrlLike(modState) ? 'remove' : 'set');
 
                 point = {
                     x: Math.floor(e.offsetX),
@@ -133,7 +131,8 @@ class FloodSelection {
                 };
 
                 await refreshSelection();
-                await apply(op);
+
+                await apply(opFromModifiers(e));
 
                 context.clearRect(0, 0, canvas.width, canvas.height);
             }
@@ -152,7 +151,7 @@ class FloodSelection {
             selectToolbar.hidden = true;
             canvasContainer.dom.removeEventListener('pointerdown', pointerdown);
             canvasContainer.dom.removeEventListener('pointermove', pointermove);
-            canvasContainer.dom.removeEventListener('pointerup', pointerup);
+            canvasContainer.dom.removeEventListener('pointerup', pointerup, true);
             point = undefined;
         };
     }

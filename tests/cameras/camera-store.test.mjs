@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+
 import { loadTypeScript } from '../load-typescript.mjs';
 
 const { CameraStore, createCamera, createWorkspace, cloneCamera, removeCamera, captureViewLease } = loadTypeScript('src/cameras/camera-store.ts');
@@ -11,7 +12,7 @@ test('copy, edit, delete and undo preserve camera identity and independent data'
     const original = JSON.stringify(store.state);
     const copy = store.edit(document => cloneCamera(document, 'a', 'b'));
     copy.do();
-    const edit = store.edit(document => {
+    const edit = store.edit((document) => {
         document.cameras[1].camera.position = [0, -7, 0];
         document.cameras[1].frames[0].pos.x = 0.1;
     });
@@ -50,7 +51,7 @@ test('rapid queued commands compose against execution state', () => {
 test('zero position, pole orientations and roll survive JSON and view changes', () => {
     for (const rotation of [[0, 0, 0, 2], [Math.SQRT1_2, 0, 0, Math.SQRT1_2], [-Math.SQRT1_2, 0, 0, Math.SQRT1_2], [0, 0, 1, 0]]) {
         const store = makeStore();
-        store.edit(document => {
+        store.edit((document) => {
             document.cameras[0].camera.position = [0, 0, 0];
             document.cameras[0].camera.rotation = rotation;
         }).do();
@@ -79,12 +80,24 @@ test('invalid import and edit fail atomically without notifying or changing revi
     const before = store.state;
     const invalid = [
         document => document.cameras.push(structuredClone(document.cameras[0])),
-        document => { document.cameras[0].camera.rotation = [0, 0, 0, 0]; },
-        document => { document.cameras[0].camera.position[0] = NaN; },
-        document => { document.cameras[0].camera.far = 0; },
-        document => { document.outputCameraId = 'missing'; },
-        document => { document.cameras[0].composition.scaleX = Infinity; },
-        document => { document.cameras[0].frames[0].baseSize.w = 0; }
+        (document) => {
+            document.cameras[0].camera.rotation = [0, 0, 0, 0];
+        },
+        (document) => {
+            document.cameras[0].camera.position[0] = NaN;
+        },
+        (document) => {
+            document.cameras[0].camera.far = 0;
+        },
+        (document) => {
+            document.outputCameraId = 'missing';
+        },
+        (document) => {
+            document.cameras[0].composition.scaleX = Infinity;
+        },
+        (document) => {
+            document.cameras[0].frames[0].baseSize.w = 0;
+        }
     ];
     for (const change of invalid) {
         const command = store.edit(change);
@@ -93,7 +106,9 @@ test('invalid import and edit fail atomically without notifying or changing revi
         assert.equal(store.revision, 0);
         assert.equal(calls, 0);
     }
-    assert.throws(() => { store.get('a').camera.position[0] = 10; });
+    assert.throws(() => {
+        store.get('a').camera.position[0] = 10;
+    });
 });
 
 test('deleting the last camera leaves no dangling output or pane references', () => {
@@ -112,6 +127,8 @@ test('async picks are invalidated by pane changes, camera edits and scene replac
     store.setWorkspace({ ...structuredClone(store.views), split: true });
     assert.equal(first.isCurrent(1), false);
     const second = captureViewLease(store, 'shot', 1);
-    store.edit(document => { document.cameras[0].camera.fovY = 60; }).do();
+    store.edit((document) => {
+        document.cameras[0].camera.fovY = 60;
+    }).do();
     assert.equal(second.isCurrent(1), false);
 });

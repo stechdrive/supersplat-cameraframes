@@ -6,14 +6,18 @@
 export {
     BlobReadSource,
     MappedReadFileSystem,
-    loadGSplatData,
-    validateGSplatData
+    sourcesOf,
+    defaultLodIndex,
+    loadSplatSource,
+    PermutedChunkSource,
+    validateSplatSource
 } from './read';
 
 // Write operations
 export {
     BrowserFileSystem,
-    DeflateZipFileSystem,
     GZipWriter,
-    ProgressWriter
+    pickWriteTarget,
+    ProgressWriter,
+    WriteTarget
 } from './write';

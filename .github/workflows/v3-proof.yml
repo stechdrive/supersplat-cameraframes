@@ -7,8 +7,8 @@ on:
     paths:
       - 'experiments/v3/**'
       - 'package*.json'
-      - 'src/camera-frames-camera.ts'
-      - 'src/camera-frames-viewport.ts'
+      - 'src/cameras/**'
+      - 'tests/**'
       - '.github/workflows/v3-proof.yml'
 
 permissions:
@@ -33,6 +33,8 @@ jobs:
       - name: 固定した本家の依存を準備
         run: npm ci --prefix .v3-proof/upstream --ignore-scripts
       - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
       - run: npm run lint:v3
       - run: npm run test:v3
       - run: npm run build:v3

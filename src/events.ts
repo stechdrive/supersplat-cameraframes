@@ -17,25 +17,14 @@ class Events extends EventHandler {
     invoke(name: string, ...args: any[]) {
         const fn = this.functions.get(name);
         if (!fn) {
-            console.log(`error: function not found '${name}'`);
+            console.error(`error: function not found '${name}'`);
             return;
         }
         return fn(...args);
     }
 
-    // invoke an editor function that may not be registered yet
     invokeOptional(name: string, ...args: any[]) {
-        const fn = this.functions.get(name);
-        return fn ? fn(...args) : undefined;
-    }
-
-    // invoke an editor function that must exist
-    invokeRequired(name: string, ...args: any[]) {
-        const fn = this.functions.get(name);
-        if (!fn) {
-            throw new Error(`error: function not found '${name}'`);
-        }
-        return fn(...args);
+        return this.functions.get(name)?.(...args);
     }
 }
 

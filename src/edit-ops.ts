@@ -1,11 +1,15 @@
-import { Color, Mat4 } from 'playcanvas';
+import { Color, Mat4, Quat, Vec3 } from 'playcanvas';
 
 import { AnimTrack } from './anim-track';
+import { BoxShape } from './box-shape';
+import { composeGrades, createGradeTerms, type GradeTerms } from './color-grade';
+import type { RemovedInstances } from './gaussian-instances';
 import { IndexRanges, sortedPredicate } from './index-ranges';
-import { LightRig } from './light-rig';
-import { Model } from './model';
+import type { LightRig } from './light-rig';
+import type { Model } from './model';
 import { Pivot } from './pivot';
 import { Scene } from './scene';
+import { SphereShape } from './sphere-shape';
 import { Splat } from './splat';
 import { State } from './splat-state';
 import { Transform } from './transform';
@@ -17,10 +21,6 @@ interface EditOp {
     destroy?(): void;
 }
 
-const hiddenMask = (State as { hidden?: number }).hidden ?? 0;
-const blockedMask = State.locked | State.deleted | hiddenMask;
-const selectable = (state: number) => (state & blockedMask) === 0;
-const selectedActive = (state: number) => (state & State.selected) !== 0 && (state & blockedMask) === 0;
 const enum BitOp {
     SET,
     CLEAR,
@@ -32,49 +32,41 @@ class StateOp {
     ranges: IndexRanges;
     mask: number;
     op: BitOp;
-    updateFlags: number;
 
-    constructor(splat: Splat, ranges: IndexRanges, mask: number, op: BitOp, updateFlags = State.selected) {
+    constructor(splat: Splat, ranges: IndexRanges, mask: number, op: BitOp) {
         this.splat = splat;
         this.ranges = ranges;
         this.mask = mask;
         this.op = op;
-        this.updateFlags = updateFlags;
     }
 
     private apply(op: BitOp) {
-        const state = this.splat.splatData.getProp('state') as Uint8Array;
-        const { mask } = this;
+        const { instances } = this.splat;
+        const { mask, ranges } = this;
 
         switch (op) {
             case BitOp.SET:
-                this.ranges.forEach((i) => {
-                    state[i] |= mask;
-                });
+                instances.setBits(ranges, mask);
                 break;
             case BitOp.CLEAR:
-                this.ranges.forEach((i) => {
-                    state[i] &= ~mask;
-                });
+                instances.clearBits(ranges, mask);
                 break;
             case BitOp.TOGGLE:
-                this.ranges.forEach((i) => {
-                    state[i] ^= mask;
-                });
+                instances.toggleBits(ranges, mask);
                 break;
         }
     }
 
     async do() {
         this.apply(this.op);
-        await this.splat.updateState(this.updateFlags);
+        await this.splat.updateState();
     }
 
     async undo() {
         const undoOp = this.op === BitOp.TOGGLE ? BitOp.TOGGLE :
             this.op === BitOp.SET ? BitOp.CLEAR : BitOp.SET;
         this.apply(undoOp);
-        await this.splat.updateState(this.updateFlags);
+        await this.splat.updateState();
     }
 
     destroy() {
@@ -87,8 +79,9 @@ class SelectAllOp extends StateOp {
     name = 'selectAll';
 
     constructor(splat: Splat) {
-        const state = splat.splatData.getProp('state') as Uint8Array;
-        super(splat, IndexRanges.fromPredicate(splat.splatData.numSplats, i => selectable(state[i]) && (state[i] & State.selected) === 0), State.selected, BitOp.SET);
+        const state = splat.instances.flags;
+        const count = splat.instances.count;
+        super(splat, IndexRanges.fromPredicate(count, i => state[i] === 0), State.selected, BitOp.SET);
     }
 }
 
@@ -96,8 +89,9 @@ class SelectNoneOp extends StateOp {
     name = 'selectNone';
 
     constructor(splat: Splat) {
-        const state = splat.splatData.getProp('state') as Uint8Array;
-        super(splat, IndexRanges.fromPredicate(splat.splatData.numSplats, i => selectedActive(state[i])), State.selected, BitOp.CLEAR);
+        const state = splat.instances.flags;
+        const count = splat.instances.count;
+        super(splat, IndexRanges.fromPredicate(count, i => state[i] === State.selected), State.selected, BitOp.CLEAR);
     }
 }
 
@@ -105,28 +99,55 @@ class SelectInvertOp extends StateOp {
     name = 'selectInvert';
 
     constructor(splat: Splat) {
-        const state = splat.splatData.getProp('state') as Uint8Array;
-        super(splat, IndexRanges.fromPredicate(splat.splatData.numSplats, i => selectable(state[i])), State.selected, BitOp.TOGGLE);
+        const state = splat.instances.flags;
+        const count = splat.instances.count;
+        super(splat, IndexRanges.fromPredicate(count, i => (state[i] & State.locked) === 0), State.selected, BitOp.TOGGLE);
     }
 }
 
 class SelectOp extends StateOp {
     name = 'selectOp';
 
-    constructor(splat: Splat, op: 'add' | 'remove' | 'set', filter: ((i: number) => boolean) | Uint32Array) {
-        const splatData = splat.splatData;
-        const state = splatData.getProp('state') as Uint8Array;
-        const bitOp = op === 'add' ? BitOp.SET : op === 'remove' ? BitOp.CLEAR : BitOp.TOGGLE;
+    // `sel` is a committed snapshot of hits: either a per-splat mask
+    // (Uint8Array, 255 = hit) or a sorted Uint32Array of indices. taking a
+    // committed mask rather than a closure removes the foot-gun where a
+    // predicate captured `state[i]` at call time and was evaluated later.
+    // `op` semantics:
+    //   add       — select valid splats that are hit and currently unselected
+    //   remove    — deselect valid splats that are hit and currently selected
+    //   set       — make selection match the hit mask (toggle valid splats whose
+    //               current selection state differs from the mask). NOT a replace —
+    //               the underlying BitOp is TOGGLE on the rows where selection and
+    //               hit disagree, which leaves the locked bit untouched.
+    //   intersect — keep only splats currently selected AND in the hit mask
+    //               (clear the selected bit on selected splats that are not hit).
+    constructor(splat: Splat, op: 'add' | 'remove' | 'set' | 'intersect', sel: Uint8Array | Uint32Array) {
+        const state = splat.instances.flags;
+        const count = splat.instances.count;
+        const isHit = sel instanceof Uint32Array ? sortedPredicate(sel) : (i: number) => sel[i] === 255;
 
-        const pred = filter instanceof Uint32Array ? sortedPredicate(filter) : filter;
+        // single rule applied uniformly: only valid (clean or selected) splats
+        // are considered. consolidates the locked guard in one place so
+        // each producer doesn't have to remember it for the 'set' (toggle) path.
+        const valid = (i: number) => state[i] === 0 || state[i] === State.selected;
 
-        const preds = {
-            add: (i: number) => pred(i) && selectable(state[i]) && (state[i] & State.selected) === 0,
-            remove: (i: number) => pred(i) && selectedActive(state[i]),
-            set: (i: number) => selectable(state[i]) && (selectedActive(state[i]) !== pred(i))
+        // op → bit operation and op → predicate, kept as parallel lookups keyed
+        // by the same union so adding an op forces both to be updated together.
+        const bitOps = {
+            add: BitOp.SET,
+            remove: BitOp.CLEAR,
+            set: BitOp.TOGGLE,
+            intersect: BitOp.CLEAR
         };
 
-        super(splat, IndexRanges.fromPredicate(splatData.numSplats, preds[op]), State.selected, bitOp);
+        const preds = {
+            add: (i: number) => valid(i) && isHit(i) && state[i] === 0,
+            remove: (i: number) => valid(i) && isHit(i) && state[i] === State.selected,
+            set: (i: number) => valid(i) && ((state[i] === State.selected) !== isHit(i)),
+            intersect: (i: number) => valid(i) && state[i] === State.selected && !isHit(i)
+        };
+
+        super(splat, IndexRanges.fromPredicate(count, preds[op]), State.selected, bitOps[op]);
     }
 }
 
@@ -134,8 +155,9 @@ class HideSelectionOp extends StateOp {
     name = 'hideSelection';
 
     constructor(splat: Splat) {
-        const state = splat.splatData.getProp('state') as Uint8Array;
-        super(splat, IndexRanges.fromPredicate(splat.splatData.numSplats, i => selectedActive(state[i])), State.locked, BitOp.SET, State.locked);
+        const state = splat.instances.flags;
+        const count = splat.instances.count;
+        super(splat, IndexRanges.fromPredicate(count, i => state[i] === State.selected), State.locked, BitOp.SET);
     }
 }
 
@@ -143,29 +165,83 @@ class UnhideAllOp extends StateOp {
     name = 'unhideAll';
 
     constructor(splat: Splat) {
-        const state = splat.splatData.getProp('state') as Uint8Array;
-        super(splat, IndexRanges.fromPredicate(splat.splatData.numSplats, i => (state[i] & State.locked) !== 0 && (state[i] & State.deleted) === 0), State.locked, BitOp.CLEAR, State.locked);
+        const state = splat.instances.flags;
+        const count = splat.instances.count;
+        super(splat, IndexRanges.fromPredicate(count, i => (state[i] & State.locked) !== 0), State.locked, BitOp.CLEAR);
     }
 }
 
-class DeleteSelectionOp extends StateOp {
-    name = 'deleteSelection';
+// Deleting removes the selected instances from the live list, order-preserving,
+// and retains their records so undo can put them back exactly where they were.
+// The recorded ranges stay meaningful for older ops because the edit history is
+// strict LIFO: nothing older is undone until this op has been.
+// The instances that selection-driven operations act on. Note the strict
+// equality: an instance that is both selected *and* locked is excluded, which is
+// what makes locked gaussians survive a delete. Shared so that duplicate and
+// separate copy exactly the set that separate then removes - deriving it twice
+// would let the two drift apart and silently duplicate or drop instances.
+const selectedRanges = (splat: Splat) => {
+    const flags = splat.instances.flags;
+    return IndexRanges.fromPredicate(splat.instances.count, i => flags[i] === State.selected);
+};
+
+class RemoveInstancesOp {
+    name = 'removeInstances';
+    splat: Splat;
+    ranges: IndexRanges;
+    private removed: RemovedInstances = null;
 
     constructor(splat: Splat) {
-        const state = splat.splatData.getProp('state') as Uint8Array;
-        super(splat, IndexRanges.fromPredicate(splat.splatData.numSplats, i => selectedActive(state[i])), State.deleted, BitOp.SET, State.deleted);
+        this.splat = splat;
+        this.ranges = selectedRanges(splat);
+    }
+
+    async do() {
+        this.removed = this.splat.instances.remove(this.ranges);
+        await this.splat.updateState();
+    }
+
+    async undo() {
+        this.splat.instances.insert(this.removed);
+        this.removed = null;
+        await this.splat.updateState();
+    }
+
+    destroy() {
+        this.splat = null;
+        this.ranges = null;
+        this.removed = null;
     }
 }
 
-class ResetOp extends StateOp {
-    name = 'reset';
+// Bring back every static gaussian nothing references any more. Unlike undo the
+// original positions are gone, so the restored instances land at the tail, clean.
+class RestoreMissingInstancesOp {
+    name = 'restoreMissingInstances';
+    splat: Splat;
+    private appended = 0;
 
     constructor(splat: Splat) {
-        const state = splat.splatData.getProp('state') as Uint8Array;
-        super(splat, IndexRanges.fromPredicate(splat.splatData.numSplats, i => (state[i] & State.deleted) !== 0), State.deleted, BitOp.CLEAR, State.deleted);
+        this.splat = splat;
+    }
+
+    async do() {
+        this.appended = this.splat.instances.appendMissing(this.splat.resource.numRows);
+        await this.splat.updateState();
+    }
+
+    async undo() {
+        this.splat.instances.truncate(this.appended);
+        this.appended = 0;
+        await this.splat.updateState();
+    }
+
+    destroy() {
+        this.splat = null;
     }
 }
 
+// op for modifying a splat transform
 class EntityTransformOp {
     name = 'entityTransform';
     splat: Splat | Model | LightRig;
@@ -195,58 +271,61 @@ class EntityTransformOp {
 
 const mat = new Mat4();
 
+// op for modifying a subset of individual splats
 class SplatsTransformOp {
     name = 'splatsTransform';
 
     splat: Splat;
     transform: Mat4;
     paletteMap: Map<number, number>;
-    indices: Uint32Array;
 
-    constructor(options: { splat: Splat, transform: Mat4, paletteMap: Map<number, number>, indices: Uint32Array }) {
+    constructor(options: { splat: Splat, transform: Mat4, paletteMap: Map<number, number> }) {
         this.splat = options.splat;
         this.transform = options.transform;
         this.paletteMap = options.paletteMap;
-        this.indices = options.indices;
     }
 
     async do() {
         const { splat, transform, paletteMap } = this;
-        const indices = splat.splatData.getProp('transform') as Uint16Array;
-        const selectedIndices = this.indices;
+        const { instances } = splat;
+        const state = instances.flags;
 
-        for (let i = 0; i < selectedIndices.length; ++i) {
-            const idx = selectedIndices[i];
-            indices[idx] = paletteMap.get(indices[idx]);
+        // update the selected instances' transform palette indices
+        for (let i = 0; i < instances.count; ++i) {
+            if (state[i] === State.selected) {
+                instances.setTransformIndex(i, paletteMap.get(instances.transformIndex(i)));
+            }
         }
 
         splat.transformPalette.alloc(paletteMap.size);
 
+        // update transform palette
         const { transformPalette } = splat;
-        transformPalette.beginUpdate();
         this.paletteMap.forEach((newIdx, oldIdx) => {
             transformPalette.getTransform(oldIdx, mat);
             mat.mul2(transform, mat);
             transformPalette.setTransform(newIdx, mat);
         });
-        transformPalette.endUpdate();
 
         await splat.updatePositions();
     }
 
     async undo() {
         const { splat, paletteMap } = this;
-        const indices = splat.splatData.getProp('transform') as Uint16Array;
-        const selectedIndices = this.indices;
+        const { instances } = splat;
+        const state = instances.flags;
 
+        // invert the palette map
         const inverseMap = new Map<number, number>();
         paletteMap.forEach((newIdx, oldIdx) => {
             inverseMap.set(newIdx, oldIdx);
         });
 
-        for (let i = 0; i < selectedIndices.length; ++i) {
-            const idx = selectedIndices[i];
-            indices[idx] = inverseMap.get(indices[idx]);
+        // restore the original transform indices
+        for (let i = 0; i < instances.count; ++i) {
+            if (state[i] === State.selected) {
+                instances.setTransformIndex(i, inverseMap.get(instances.transformIndex(i)));
+            }
         }
 
         splat.transformPalette.free(paletteMap.size);
@@ -258,7 +337,104 @@ class SplatsTransformOp {
         this.splat = null;
         this.transform = null;
         this.paletteMap = null;
-        this.indices = null;
+    }
+}
+
+const gradeA = createGradeTerms();
+const gradeB = createGradeTerms();
+const identityGrade = createGradeTerms();
+
+// op for grading a subset of individual splats. Mirrors SplatsTransformOp: one new
+// palette entry per distinct pre-edit index, so gaussians that already shared a
+// grade go on sharing one, and undo is a LIFO free plus an index restore.
+// A null `grade` resets the targets to the identity grade instead of composing.
+class SplatsColorOp {
+    name = 'splatsColor';
+
+    splat: Splat;
+    grade: GradeTerms;
+
+    // distinct pre-edit colour indices among the targets. The new indices aren't
+    // stored: the palette allocator is LIFO, so a redo's alloc hands back exactly
+    // the block undo freed.
+    private oldIndices: number[];
+    private paletteMap: Map<number, number>;
+
+    constructor(options: { splat: Splat, grade: GradeTerms | null }) {
+        this.splat = options.splat;
+        this.grade = options.grade;
+
+        const seen = new Set<number>();
+        this.forEachTarget(i => seen.add(options.splat.instances.colorIndex(i)));
+        this.oldIndices = [...seen];
+    }
+
+    // The colour panel targets the selection, and an empty selection means the
+    // whole layer. Locked gaussians are never a target, which matches
+    // selectedRanges(). Re-derived rather than captured because the edit history
+    // is strict LIFO: any later selection change has already been undone by the
+    // time this op's undo runs, so the target set is the same both ways.
+    private forEachTarget(fn: (i: number) => void) {
+        const { instances } = this.splat;
+        const { flags } = instances;
+        const all = instances.numSelected === 0;
+        for (let i = 0; i < instances.count; ++i) {
+            const f = flags[i];
+            if ((f & State.locked) === 0 && (all || (f & State.selected) !== 0)) {
+                fn(i);
+            }
+        }
+    }
+
+    do() {
+        const { splat, grade, oldIndices } = this;
+        const { instances, colorPalette } = splat;
+
+        const base = colorPalette.alloc(oldIndices.length);
+        const paletteMap = new Map<number, number>();
+        oldIndices.forEach((oldIdx, i) => paletteMap.set(oldIdx, base + i));
+        this.paletteMap = paletteMap;
+
+        this.forEachTarget((i) => {
+            instances.setColorIndex(i, paletteMap.get(instances.colorIndex(i)));
+        });
+
+        paletteMap.forEach((newIdx, oldIdx) => {
+            if (grade) {
+                colorPalette.getEntry(oldIdx, gradeA);
+                colorPalette.setEntry(newIdx, composeGrades(gradeA, grade, gradeB));
+            } else {
+                colorPalette.setEntry(newIdx, identityGrade);
+            }
+        });
+
+        splat.updateColors();
+    }
+
+    undo() {
+        const { splat, paletteMap } = this;
+        const { instances, colorPalette } = splat;
+
+        // invert the palette map
+        const inverseMap = new Map<number, number>();
+        paletteMap.forEach((newIdx, oldIdx) => {
+            inverseMap.set(newIdx, oldIdx);
+        });
+
+        this.forEachTarget((i) => {
+            instances.setColorIndex(i, inverseMap.get(instances.colorIndex(i)));
+        });
+
+        colorPalette.free(paletteMap.size);
+
+        splat.updateColors();
+    }
+
+    destroy() {
+        this.splat = null;
+        this.grade = null;
+        this.oldIndices = null;
+        this.paletteMap = null;
     }
 }
 
@@ -283,55 +459,97 @@ class PlacePivotOp {
     }
 }
 
-type ColorAdjustment = {
-    tintClr?: Color
-    temperature?: number,
-    saturation?: number,
-    brightness?: number,
-    blackPoint?: number,
-    whitePoint?: number,
-    transparency?: number
-};
-
-class SetSplatColorAdjustmentOp {
-    name: 'setSplatColor';
+// op for setting a splat's user-defined local frame (the origin and rotation
+// the transform gizmos and panel use in local coordinate space)
+class SetLocalFrameOp {
+    name = 'setLocalFrame';
     splat: Splat;
+    oldOrigin: Vec3;
+    oldFrame: Quat;
+    newOrigin: Vec3;
+    newFrame: Quat;
 
-    newState: ColorAdjustment;
-    oldState: ColorAdjustment;
-
-    constructor(options: { splat: Splat, oldState: ColorAdjustment, newState: ColorAdjustment }) {
-        const { splat, oldState, newState } = options;
-        this.splat = splat;
-        this.oldState = oldState;
-        this.newState = newState;
+    constructor(options: { splat: Splat, oldOrigin: Vec3, oldFrame: Quat, newOrigin: Vec3, newFrame: Quat }) {
+        this.splat = options.splat;
+        this.oldOrigin = options.oldOrigin;
+        this.oldFrame = options.oldFrame;
+        this.newOrigin = options.newOrigin;
+        this.newFrame = options.newFrame;
     }
 
     do() {
-        const { splat } = this;
-        const { tintClr, temperature, saturation, brightness, blackPoint, whitePoint, transparency } = this.newState;
-        if (tintClr) splat.tintClr = tintClr;
-        if (temperature !== null) splat.temperature = temperature;
-        if (saturation !== null) splat.saturation = saturation;
-        if (brightness !== null) splat.brightness = brightness;
-        if (blackPoint !== null) splat.blackPoint = blackPoint;
-        if (whitePoint !== null) splat.whitePoint = whitePoint;
-        if (transparency !== null) splat.transparency = transparency;
+        this.splat.setLocalFrame(this.newOrigin, this.newFrame);
     }
 
     undo() {
-        const { splat } = this;
-        const { tintClr, temperature, saturation, brightness, blackPoint, whitePoint, transparency } = this.oldState;
-        if (tintClr) splat.tintClr = tintClr;
-        if (temperature !== null) splat.temperature = temperature;
-        if (saturation !== null) splat.saturation = saturation;
-        if (brightness !== null) splat.brightness = brightness;
-        if (blackPoint !== null) splat.blackPoint = blackPoint;
-        if (whitePoint !== null) splat.whitePoint = whitePoint;
-        if (transparency !== null) splat.transparency = transparency;
+        this.splat.setLocalFrame(this.oldOrigin, this.oldFrame);
+    }
+
+    destroy() {
+        this.splat = null;
+        this.oldOrigin = null;
+        this.oldFrame = null;
+        this.newOrigin = null;
+        this.newFrame = null;
     }
 }
 
+type ShapeTransformState = {
+    position: Vec3;
+    rotation?: Quat;
+    lens?: Vec3;        // box lengths
+    radius?: number;    // sphere radius
+};
+
+// moves/rotates/resizes a box/sphere selection volume
+class ShapeTransformOp {
+    name = 'shapeTransform';
+    shape: BoxShape | SphereShape;
+    oldState: ShapeTransformState;
+    newState: ShapeTransformState;
+
+    constructor(options: { shape: BoxShape | SphereShape, oldState: ShapeTransformState, newState: ShapeTransformState }) {
+        this.shape = options.shape;
+        this.oldState = options.oldState;
+        this.newState = options.newState;
+    }
+
+    apply(state: ShapeTransformState) {
+        const { shape } = this;
+        shape.pivot.setPosition(state.position);
+        if (state.rotation) {
+            shape.pivot.setRotation(state.rotation);
+        }
+        if (shape instanceof BoxShape && state.lens) {
+            // the length setters refresh the bound with the new transform
+            shape.lenX = state.lens.x;
+            shape.lenY = state.lens.y;
+            shape.lenZ = state.lens.z;
+        } else if (shape instanceof SphereShape && state.radius !== undefined) {
+            // the radius setter refreshes the bound with the new transform
+            shape.radius = state.radius;
+        } else {
+            shape.moved();
+        }
+
+        // refresh the owning tool's ui. shape ops are purged from history when
+        // the tool deactivates, so the shape is normally in the scene here; the
+        // guard covers the brief window where an already-queued undo/redo runs
+        // after a synchronous deactivate.
+        shape.scene?.events.fire('shapeSelection.changed', shape);
+    }
+
+    do() {
+        this.apply(this.newState);
+    }
+
+    undo() {
+        this.apply(this.oldState);
+    }
+}
+
+// Snapshot-based undo/redo for animation track edits.
+// Captures the full track state before and after a mutation.
 class AnimTrackEditOp {
     name: string;
     track: AnimTrack;
@@ -351,81 +569,6 @@ class AnimTrackEditOp {
 
     undo() {
         this.track.restore(this.before);
-    }
-}
-
-class LightStateOp implements EditOp {
-    name = 'lightState';
-    light: LightRig;
-    prevEnabled: boolean;
-    prevIntensity: number;
-    nextEnabled: boolean;
-    nextIntensity: number;
-
-    constructor(options: { light: LightRig; prevEnabled: boolean; prevIntensity: number; nextEnabled: boolean; nextIntensity: number; }) {
-        const { light, prevEnabled, prevIntensity, nextEnabled, nextIntensity } = options;
-        this.light = light;
-        this.prevEnabled = !!prevEnabled;
-        this.prevIntensity = prevIntensity;
-        this.nextEnabled = !!nextEnabled;
-        this.nextIntensity = nextIntensity;
-    }
-
-    do() {
-        this.light.applyStateDirect(this.nextEnabled, this.nextIntensity);
-    }
-
-    undo() {
-        this.light.applyStateDirect(this.prevEnabled, this.prevIntensity);
-    }
-}
-
-class AmbientLightOp implements EditOp {
-    name = 'ambientLight';
-    scene: Scene;
-    prev: number;
-    next: number;
-
-    constructor(options: { scene: Scene; prev: number; next: number; }) {
-        this.scene = options.scene;
-        this.prev = options.prev;
-        this.next = options.next;
-    }
-
-    do() {
-        this.scene.applyAmbient(this.next);
-    }
-
-    undo() {
-        this.scene.applyAmbient(this.prev);
-    }
-}
-
-class CameraPresetReferenceImageOp implements EditOp {
-    name = 'cameraFrames.setPresetReferenceImage';
-    presetId: string;
-    prevReferenceImagePresetId: string;
-    nextReferenceImagePresetId: string;
-    applyLink: (presetId: string, referenceImagePresetId: string) => void;
-
-    constructor(options: {
-        presetId: string;
-        prevReferenceImagePresetId: string;
-        nextReferenceImagePresetId: string;
-        apply: (presetId: string, referenceImagePresetId: string) => void;
-    }) {
-        this.presetId = options.presetId;
-        this.prevReferenceImagePresetId = options.prevReferenceImagePresetId;
-        this.nextReferenceImagePresetId = options.nextReferenceImagePresetId;
-        this.applyLink = options.apply;
-    }
-
-    do() {
-        this.applyLink(this.presetId, this.nextReferenceImagePresetId);
-    }
-
-    undo() {
-        this.applyLink(this.presetId, this.prevReferenceImagePresetId);
     }
 }
 
@@ -462,67 +605,14 @@ class AddSplatOp {
 
     async do() {
         await this.scene.add(this.splat);
-        await this.scene.splatRenderLifecycle.waitForSorter();
-        this.scene.forceRender = true;
     }
 
-    async undo() {
+    undo() {
         this.scene.remove(this.splat);
-        await this.scene.splatRenderLifecycle.waitForSorter();
-        this.scene.forceRender = true;
     }
 
     destroy() {
         this.splat.destroy();
-    }
-}
-
-class SeparateSplatOp {
-    name = 'separateSplat';
-    scene: Scene;
-    splat: Splat;
-    remainder: Splat;
-    copy: Splat;
-
-    constructor(scene: Scene, splat: Splat, remainder: Splat, copy: Splat) {
-        this.scene = scene;
-        this.splat = splat;
-        this.remainder = remainder;
-        this.copy = copy;
-    }
-
-    private async swapOriginalRuntime() {
-        this.splat.remove();
-        this.splat.swapRuntimeDataWith(this.remainder);
-        await this.splat.add();
-        await this.scene.splatRenderLifecycle.waitForSorter();
-        this.scene.boundDirty = true;
-        this.scene.forceRender = true;
-    }
-
-    async do() {
-        await this.swapOriginalRuntime();
-        await this.scene.add(this.copy);
-        await this.scene.splatRenderLifecycle.waitForSorter();
-        this.scene.forceRender = true;
-    }
-
-    async undo() {
-        if (this.copy.scene === this.scene) {
-            this.scene.remove(this.copy);
-            await this.scene.splatRenderLifecycle.waitForSorter();
-        }
-        await this.swapOriginalRuntime();
-    }
-
-    destroy() {
-        if (!this.copy.scene) {
-            this.copy.destroy();
-        }
-        this.remainder.destroy();
-        this.splat = null;
-        this.remainder = null;
-        this.copy = null;
     }
 }
 
@@ -549,25 +639,24 @@ class SplatRenameOp {
 
 export {
     EditOp,
+    selectedRanges,
     SelectAllOp,
     SelectNoneOp,
     SelectInvertOp,
     SelectOp,
     HideSelectionOp,
     UnhideAllOp,
-    DeleteSelectionOp,
-    ResetOp,
+    RemoveInstancesOp,
+    RestoreMissingInstancesOp,
     EntityTransformOp,
+    SplatsColorOp,
     SplatsTransformOp,
     PlacePivotOp,
-    ColorAdjustment,
-    SetSplatColorAdjustmentOp,
+    SetLocalFrameOp,
+    ShapeTransformOp,
+    ShapeTransformState,
     AnimTrackEditOp,
-    LightStateOp,
-    AmbientLightOp,
-    CameraPresetReferenceImageOp,
     MultiOp,
     AddSplatOp,
-    SeparateSplatOp,
     SplatRenameOp
 };

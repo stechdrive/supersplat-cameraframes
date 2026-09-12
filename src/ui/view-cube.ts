@@ -105,24 +105,8 @@ class ViewCube extends Container {
 
         let cw = 0;
         let ch = 0;
-        let allowViewCube = true;
-
-        this.dom.addEventListener('pointerdown', (e) => {
-            if (!allowViewCube) {
-                e.preventDefault();
-                e.stopPropagation();
-            }
-        });
 
         this.update = (cameraMatrix: Mat4) => {
-            const allow = events.functions.has('cameraFrames.allowViewCube') ?
-                events.invoke('cameraFrames.allowViewCube') !== false :
-                true;
-            if (allow !== allowViewCube) {
-                allowViewCube = allow;
-                this.dom.classList.toggle('view-cube-disabled', !allowViewCube);
-                svg.style.pointerEvents = allowViewCube ? 'auto' : 'none';
-            }
             const w = this.dom.clientWidth;
             const h = this.dom.clientHeight;
 

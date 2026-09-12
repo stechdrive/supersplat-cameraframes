@@ -8,11 +8,13 @@ class Model extends Element {
     asset: Asset;
     container: ContainerResource;
     entity: Entity;
+    sourceBlob: Blob | null = null;
 
     private worldBoundStorage = new BoundingBox();
     private boundDirty = true;
     private _name: string;
     private _visible = true;
+    private disposed = false;
 
     private computeWorldBound(target: BoundingBox) {
         let hasBound = false;
@@ -57,6 +59,8 @@ class Model extends Element {
     }
 
     destroy() {
+        if (this.disposed) return;
+        this.disposed = true;
         super.destroy();
         this.entity.destroy();
         this.asset.registry.remove(this.asset);
@@ -65,6 +69,7 @@ class Model extends Element {
 
     add() {
         this.scene.contentRoot.addChild(this.entity);
+        this.setLayers([this.scene.worldLayer.id]);
         this.entity.enabled = this._visible;
         this.scene.boundDirty = true;
         this.scene.forceRender = true;
@@ -91,7 +96,7 @@ class Model extends Element {
         }
 
         this.markBoundDirty();
-        this.scene.events.fire('model.moved', this);
+        this.scene?.events.fire('model.moved', this);
     }
 
     get worldBound() {

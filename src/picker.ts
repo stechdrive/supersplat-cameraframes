@@ -6,13 +6,11 @@ import {
     BlendState,
     Color,
     GraphicsDevice,
-    RenderPass,
-    RenderTarget,
-    SHADER_DEPTH_PICK,
-    SHADER_PICK
+    RenderPassPicker,
+    RenderTarget
 } from 'playcanvas';
 
-import { ElementType } from './element';
+import type { Camera } from './camera';
 import { Scene } from './scene';
 import { Splat } from './splat';
 
@@ -54,97 +52,6 @@ const half2Float = (h: number): number => {
     return float32[0];
 };
 
-// Internal picker pass to avoid relying on non-exported engine APIs.
-class RenderPassPicker extends RenderPass {
-    private renderer: any;
-    private viewBindGroups: any[] = [];
-    private emptyWorldClusters: any = null;
-    private camera: any = null;
-    private scene: any = null;
-    private layers: any[] | null = null;
-    private mapping: Map<number, any> | null = null;
-    private depth = false;
-    blendState: BlendState = BlendState.NOBLEND;
-
-    constructor(device: GraphicsDevice, renderer: any) {
-        super(device);
-        this.renderer = renderer;
-    }
-
-    destroy() {
-        this.viewBindGroups.forEach((bg) => {
-            bg.defaultUniformBuffer.destroy();
-            bg.destroy();
-        });
-        this.viewBindGroups.length = 0;
-    }
-
-    update(camera: any, scene: any, layers: any[] | null, mapping: Map<number, any>, depth: boolean) {
-        this.camera = camera;
-        this.scene = scene;
-        this.layers = layers;
-        this.mapping = mapping;
-        this.depth = depth;
-        if (scene.clusteredLightingEnabled) {
-            this.emptyWorldClusters = this.renderer.worldClustersAllocator.empty;
-        }
-    }
-
-    execute() {
-        const device = this.device;
-        const { renderer, camera, scene, layers, mapping, renderTarget } = this;
-        if (!camera || !scene || !mapping) {
-            return;
-        }
-
-        const srcLayers = scene.layers.layerList;
-        const subLayerEnabled = scene.layers.subLayerEnabled;
-        const isTransparent = scene.layers.subLayerList;
-        const tempMeshInstances: any[] = [];
-        const lights: any = [[], [], []];
-
-        for (let i = 0; i < srcLayers.length; i++) {
-            const srcLayer = srcLayers[i];
-            if (layers && layers.indexOf(srcLayer) < 0) {
-                continue;
-            }
-            if (srcLayer.enabled && subLayerEnabled[i]) {
-                if (srcLayer.camerasSet.has(camera.camera)) {
-                    const transparent = isTransparent[i];
-                    if ((srcLayer as any)._clearDepthBuffer) {
-                        renderer.clear(camera.camera, false, true, false);
-                    }
-                    const meshInstances = srcLayer.meshInstances;
-                    for (let j = 0; j < meshInstances.length; j++) {
-                        const meshInstance = meshInstances[j];
-                        if (meshInstance.pick && meshInstance.transparent === transparent) {
-                            tempMeshInstances.push(meshInstance);
-                            mapping.set(meshInstance.id, meshInstance);
-                        }
-                    }
-                    if (tempMeshInstances.length > 0) {
-                        const clusteredLightingEnabled = scene.clusteredLightingEnabled;
-                        if (clusteredLightingEnabled) {
-                            const lightClusters = this.emptyWorldClusters;
-                            lightClusters.activate();
-                        }
-                        renderer.setCameraUniforms(camera.camera, renderTarget);
-                        if (device.supportsUniformBuffers) {
-                            renderer.initViewBindGroupFormat(clusteredLightingEnabled);
-                            renderer.setupViewUniformBuffers(this.viewBindGroups, renderer.viewUniformFormat, renderer.viewBindGroupFormat, null);
-                        }
-                        const shaderPass = this.depth ? SHADER_DEPTH_PICK : SHADER_PICK;
-                        renderer.renderForward(camera.camera, renderTarget, tempMeshInstances, lights, shaderPass, () => {
-                            device.setBlendState(this.blendState ?? BlendState.NOBLEND);
-                        });
-                        tempMeshInstances.length = 0;
-                    }
-                }
-            }
-        }
-    }
-}
-
 class Picker {
     private device: GraphicsDevice;
     private scene: Scene;
@@ -155,16 +62,18 @@ class Picker {
 
     // Render pass (shared for depth and ID picking)
     private renderPass: RenderPassPicker;
+    private worldPass: RenderPassPicker;
 
     // Blend state for depth accumulation
     private depthBlendState: BlendState;
 
-    constructor(scene: Scene) {
+    constructor(scene: Scene, private camera: Camera) {
         this.scene = scene;
         this.device = scene.graphicsDevice;
 
         // Create shared render pass for picking
         this.renderPass = new RenderPassPicker(this.device, this.scene.app.renderer);
+        this.worldPass = new RenderPassPicker(this.device, this.scene.app.renderer);
 
         // Blend state for depth accumulation:
         // RGB: additive depth accumulation (ONE, ONE_MINUS_SRC_ALPHA)
@@ -182,36 +91,62 @@ class Picker {
         this.idRenderTarget = idRT;
     }
 
+    private prepareWorldDepth(target: RenderTarget) {
+        // Use Engine's standard mesh picker to seed mesh depth, then clear only
+        // color for Gaussian IDs/transmittance. No material or engine patches.
+        this.worldPass.init(target);
+        this.worldPass.setClearDepth(1);
+        this.worldPass.setClearColor(idClearColor);
+        const mapping = new Map();
+        this.worldPass.update(this.camera.camera, this.scene.app.scene, [this.scene.worldLayer], mapping, false);
+        this.worldPass.render();
+        this.renderPass.depthStencilOps.clearDepth = false;
+        return mapping;
+    }
+
+    async readMesh(x: number, y: number) {
+        const mapping = this.prepareWorldDepth(this.idRenderTarget);
+        const encoded = await this.readId(x, y);
+        // Engine's mesh IDs use A:R:G:B; Gaussian IDs use little endian RGBA.
+        const id = (((encoded >>> 24) << 24) | ((encoded & 255) << 16) | (encoded & 0xff00) | ((encoded >>> 16) & 255)) >>> 0;
+        return { mesh: mapping.get(id) ?? null, id, count: mapping.size };
+    }
+
     // Prepare for ID picking by rendering the specified splat
-    prepareId(splat: Splat, mode: 'add' | 'remove' | 'set') {
+    prepareId(splat: Splat, mode: 'add' | 'remove' | 'set' | 'intersect') {
         if (!this.idRenderTarget) {
             return;
         }
 
-        const { splatLayer } = this.scene;
+        // the id pass draws the compact list through the sort, so it needs a
+        // current sorted projection: a stochastic frame leaves sortedIndices
+        // stale (old camera, old survivor set)
+        this.camera.projector.renderSortedForPick(this.camera);
 
-        // Hide non-selected elements
-        const splats = this.scene.getElementsByType(ElementType.splat);
-        splats.forEach((s: Splat) => {
-            s.entity.enabled = s === splat;
-        });
+        const { splatLayer } = this.camera;
+
+        // 'intersect' picks against the currently-selected set (same render as
+        // 'remove') so unselected splats can't occlude selected ones and skew it.
+        const pickOp = mode === 'intersect' ? 'remove' : mode;
+        const pickOpIndex = ['add', 'remove', 'set'].indexOf(pickOp);
 
         // Set picker uniforms
-        this.device.scope.resolve('pickOp').setValue(['add', 'remove', 'set'].indexOf(mode));
+        this.device.scope.resolve('pickOp').setValue(pickOpIndex);
         this.device.scope.resolve('pickMode').setValue(0);
+        this.camera.projector.preparePick(splat, pickOpIndex, false);
 
         // Render ID picking pass
         const emptyMap = new Map();
         this.renderPass.blendState = BlendState.NOBLEND;
         this.renderPass.init(this.idRenderTarget);
+        this.prepareWorldDepth(this.idRenderTarget);
         this.renderPass.setClearColor(idClearColor);
-        this.renderPass.update(this.scene.camera.camera, this.scene.app.scene, [splatLayer], emptyMap, false);
-        this.renderPass.render();
-
-        // Re-enable all splats
-        splats.forEach((s: Splat) => {
-            s.entity.enabled = true;
-        });
+        this.renderPass.update(this.camera.camera, this.scene.app.scene, [splatLayer], emptyMap, false);
+        try {
+            this.renderPass.render();
+        } finally {
+            this.camera.projector.finishPick();
+        }
     }
 
     // Read single splat ID at normalized screen position (after prepareId)
@@ -239,83 +174,69 @@ class Picker {
         const py = Math.floor(y * rt.height);
         const pw = Math.max(1, Math.ceil((x + width) * rt.width) - px);
         const ph = Math.max(1, Math.ceil((y + height) * rt.height) - py);
+        const result: number[] = new Array(pw * ph).fill(0xffffffff);
+        const x0 = Math.max(0, px);
+        const y0 = Math.max(0, py);
+        const readWidth = Math.min(rt.width, px + pw) - x0;
+        const readHeight = Math.min(rt.height, py + ph) - y0;
+        if (readWidth <= 0 || readHeight <= 0) return result;
 
-        // Flip Y for texture read on WebGL (texture origin is bottom-left)
-        const texY = this.device.isWebGL2 ? rt.height - py - ph : py;
-
-        // Read pixels using texture.read() API
-        const pixels = await colorBuffer.read(px, texY, pw, ph, {
+        // Read pixels using texture.read() API. The read must be immediate: the
+        // id pass is rendered synchronously by prepareId and nothing submits the
+        // shared command encoder before the caller awaits us, so a deferred read
+        // maps the staging buffer before the copy has run and returns zeros.
+        const pixels = await colorBuffer.read(x0, y0, readWidth, readHeight, {
             renderTarget: rt,
-            immediate: false
+            immediate: true
         });
 
-        const result: number[] = [];
-        for (let i = 0; i < pw * ph; i++) {
-            // Use >>> 0 to convert signed 32-bit to unsigned (so 0xffffffff instead of -1)
-            result.push(
-                (pixels[i * 4] |
-                (pixels[i * 4 + 1] << 8) |
-                (pixels[i * 4 + 2] << 16) |
-                (pixels[i * 4 + 3] << 24)) >>> 0
-            );
+        // Row 0 of the result is the top row of the requested rectangle.
+        for (let row = 0; row < readHeight; ++row) {
+            const src = row * readWidth;
+            for (let col = 0; col < readWidth; ++col) {
+                const i = (src + col) * 4;
+                // Use >>> 0 to convert signed 32-bit to unsigned (so 0xffffffff instead of -1)
+                result[(row + y0 - py) * pw + col + x0 - px] = (
+                    (pixels[i] |
+                    (pixels[i + 1] << 8) |
+                    (pixels[i + 2] << 16) |
+                    (pixels[i + 3] << 24)) >>> 0
+                );
+            }
         }
 
         return result;
     }
 
     // Prepare for depth picking by rendering the specified splat
-    prepareDepth(splat: Splat, layers?: any[] | null) {
+    prepareDepth(splat: Splat) {
         if (!this.depthRenderTarget) {
             return;
         }
 
         const { scene } = this;
-        const { app, camera, splatLayer } = scene;
+        const { app } = scene;
+        const { camera } = this;
+        const { splatLayer } = camera;
+        camera.projector.renderSortedForPick(camera);
         const emptyMap = new Map();
-
-        const renderLayers = (layers && layers.length > 0) ? layers : [splatLayer];
-
-        // Hide non-selected elements
-        const splats = scene.getElementsByType(ElementType.splat);
-        splats.forEach((s: Splat) => {
-            s.entity.enabled = s === splat;
-        });
 
         // Set depth estimation mode uniform
         this.device.scope.resolve('pickOp').setValue(2); // 'set' mode - don't skip any visible splats
         this.device.scope.resolve('pickMode').setValue(1);
+        camera.projector.preparePick(splat, 2, true);
 
         // Render scene with depth pass
         this.renderPass.blendState = this.depthBlendState;
         this.renderPass.init(this.depthRenderTarget);
+        this.prepareWorldDepth(this.depthRenderTarget);
         this.renderPass.setClearColor(depthClearColor);
-        this.renderPass.update(camera.camera, app.scene, renderLayers, emptyMap, false);
-        this.renderPass.render();
-
-        // Re-enable all splats
-        splats.forEach((s: Splat) => {
-            s.entity.enabled = true;
-        });
-    }
-
-    prepareVisibleDepth(layers?: any[] | null) {
-        if (!this.depthRenderTarget) {
-            return;
+        this.renderPass.update(camera.camera, app.scene, [splatLayer], emptyMap, false);
+        try {
+            this.renderPass.render();
+        } finally {
+            camera.projector.finishPick();
         }
-
-        const { scene } = this;
-        const { app, camera, splatLayer } = scene;
-        const emptyMap = new Map();
-        const renderLayers = (layers && layers.length > 0) ? layers : [splatLayer];
-
-        this.device.scope.resolve('pickOp').setValue(2);
-        this.device.scope.resolve('pickMode').setValue(1);
-
-        this.renderPass.blendState = this.depthBlendState;
-        this.renderPass.init(this.depthRenderTarget);
-        this.renderPass.setClearColor(depthClearColor);
-        this.renderPass.update(camera.camera, app.scene, renderLayers, emptyMap, false);
-        this.renderPass.render();
     }
 
     // Read normalized depth (0-1) at normalized screen position (0-1 range) (after prepareDepth)
@@ -327,21 +248,83 @@ class Picker {
         const rt = this.depthRenderTarget;
         const colorBuffer = rt.colorBuffer;
 
-        // Convert normalized coordinates to render target pixels
-        const px = Math.floor(x * rt.width);
-        const py = Math.floor(y * rt.height);
+        if (!Number.isFinite(x) || !Number.isFinite(y) || x < 0 || x > 1 || y < 0 || y > 1 || rt.width < 1 || rt.height < 1) {
+            return null;
+        }
 
-        // Flip Y for texture read on WebGL (texture origin is bottom-left)
-        const texY = this.device.isWebGL2 ? rt.height - py - 1 : py;
+        // Convert normalized coordinates to render target pixels
+        const px = Math.min(Math.floor(x * rt.width), rt.width - 1);
+        const py = Math.min(Math.floor(y * rt.height), rt.height - 1);
 
         // Read the pixel using Texture.read() which handles RGBA16F format
-        const pixels = await colorBuffer.read(px, texY, 1, 1, { renderTarget: rt });
+        const pixels = await colorBuffer.read(px, py, 1, 1, {
+            renderTarget: rt,
+            immediate: true
+        });
 
-        // Convert half-float values to floats
+        return this.decodeDepth(pixels, 0);
+    }
+
+    // Read normalized depth at scattered screen positions. Points are grouped
+    // into small tiles so a brush stroke needs a handful of readbacks instead
+    // of one readback per sample or one large read of its whole screen bound.
+    async readDepths(points: { x: number, y: number }[]): Promise<(number | null)[]> {
+        if (!this.depthRenderTarget) {
+            return new Array(points.length).fill(null);
+        }
+
+        const rt = this.depthRenderTarget;
+        const pixelsX = new Int32Array(points.length);
+        const pixelsY = new Int32Array(points.length);
+        const result: (number | null)[] = new Array(points.length).fill(null);
+        const tiles = new Map<string, { indices: number[], minX: number, minY: number, maxX: number, maxY: number }>();
+        const tileSize = 64;
+
+        for (let i = 0; i < points.length; ++i) {
+            const { x, y } = points[i];
+            if (!Number.isFinite(x) || !Number.isFinite(y) || x < 0 || x > 1 || y < 0 || y > 1 || rt.width < 1 || rt.height < 1) {
+                continue;
+            }
+
+            const px = Math.min(Math.floor(x * rt.width), rt.width - 1);
+            const py = Math.min(Math.floor(y * rt.height), rt.height - 1);
+            pixelsX[i] = px;
+            pixelsY[i] = py;
+            const key = `${Math.floor(px / tileSize)},${Math.floor(py / tileSize)}`;
+            const tile = tiles.get(key);
+            if (tile) {
+                tile.indices.push(i);
+                tile.minX = Math.min(tile.minX, px);
+                tile.minY = Math.min(tile.minY, py);
+                tile.maxX = Math.max(tile.maxX, px);
+                tile.maxY = Math.max(tile.maxY, py);
+            } else {
+                tiles.set(key, { indices: [i], minX: px, minY: py, maxX: px, maxY: py });
+            }
+        }
+
+        for (const tile of tiles.values()) {
+            const width = tile.maxX - tile.minX + 1;
+            const height = tile.maxY - tile.minY + 1;
+            const pixels = await rt.colorBuffer.read(tile.minX, tile.minY, width, height, {
+                renderTarget: rt,
+                immediate: true
+            });
+
+            for (const index of tile.indices) {
+                const offset = ((pixelsY[index] - tile.minY) * width + pixelsX[index] - tile.minX) * 4;
+                result[index] = this.decodeDepth(pixels, offset);
+            }
+        }
+
+        return result;
+    }
+
+    private decodeDepth(pixels: any, offset: number): number | null {
         // R channel: accumulated depth * alpha
         // A channel: transmittance (1 - alpha)
-        const r = half2Float(pixels[0]);
-        const transmittance = half2Float(pixels[3]);
+        const r = half2Float(pixels[offset]);
+        const transmittance = half2Float(pixels[offset + 3]);
         const alpha = 1 - transmittance;
 
         // Check alpha (transmittance close to 1 means nothing visible)
@@ -353,64 +336,10 @@ class Picker {
         return r / alpha;
     }
 
-    async readDepthMap(): Promise<Float32Array | null> {
-        if (!this.depthRenderTarget) {
-            return null;
-        }
-
-        const rt = this.depthRenderTarget;
-        const colorBuffer = rt.colorBuffer;
-        const width = rt.width;
-        const height = rt.height;
-        const pixels = await colorBuffer.read(0, 0, width, height, { renderTarget: rt });
-        const data = new Float32Array(width * height);
-
-        for (let y = 0; y < height; y++) {
-            const srcY = this.device.isWebGL2 ? (height - 1 - y) : y;
-            for (let x = 0; x < width; x++) {
-                const src = (srcY * width + x) * 4;
-                const r = half2Float(pixels[src + 0]);
-                const transmittance = half2Float(pixels[src + 3]);
-                const alpha = 1 - transmittance;
-                data[y * width + x] = alpha < 1e-6 ? Number.POSITIVE_INFINITY : (r / alpha);
-            }
-        }
-
-        return data;
-    }
-
-    async readDepthInfoMap(): Promise<{ depth: Float32Array; alpha: Uint8ClampedArray; } | null> {
-        if (!this.depthRenderTarget) {
-            return null;
-        }
-
-        const rt = this.depthRenderTarget;
-        const colorBuffer = rt.colorBuffer;
-        const width = rt.width;
-        const height = rt.height;
-        const pixels = await colorBuffer.read(0, 0, width, height, { renderTarget: rt });
-        const depth = new Float32Array(width * height);
-        const alpha = new Uint8ClampedArray(width * height);
-
-        for (let y = 0; y < height; y++) {
-            const srcY = this.device.isWebGL2 ? (height - 1 - y) : y;
-            for (let x = 0; x < width; x++) {
-                const src = (srcY * width + x) * 4;
-                const r = half2Float(pixels[src + 0]);
-                const transmittance = half2Float(pixels[src + 3]);
-                const visibleAlpha = Math.max(0, Math.min(1, 1 - transmittance));
-                const index = y * width + x;
-                depth[index] = visibleAlpha < 1e-6 ? Number.POSITIVE_INFINITY : (r / visibleAlpha);
-                alpha[index] = Math.max(0, Math.min(255, Math.round(visibleAlpha * 255)));
-            }
-        }
-
-        return { depth, alpha };
-    }
-
     // Clean up resources
     destroy() {
         this.renderPass?.destroy();
+        this.worldPass?.destroy();
     }
 }
 

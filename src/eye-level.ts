@@ -1,121 +1,73 @@
-import {
-    BLENDEQUATION_ADD,
-    BLENDMODE_ONE_MINUS_SRC_ALPHA,
-    BLENDMODE_SRC_ALPHA,
-    CULLFACE_NONE,
-    PROJECTION_ORTHOGRAPHIC,
-    SEMANTIC_POSITION,
-    BlendState,
-    CameraComponent,
-    DepthState,
-    Layer,
-    QuadRender,
-    ScopeSpace,
-    Shader,
-    ShaderUtils
-} from 'playcanvas';
+import { BLENDMODE_ONE, BLENDMODE_SRC_ALPHA, BLENDMODE_ONE_MINUS_SRC_ALPHA, BLENDEQUATION_ADD,
+    BlendState, CULLFACE_NONE, DepthState, Mat4, PROJECTION_ORTHOGRAPHIC, QuadRender, SEMANTIC_POSITION, ShaderUtils } from 'playcanvas';
 
-import {
-    createCameraProjectionData,
-    resolveCameraProjectionData,
-    type CameraProjectionData
-} from './camera-matrices';
-import { Element, ElementType } from './element';
-import { Serializer } from './serializer';
-import { vertexShader, fragmentShader } from './shaders/eye-level-shader';
+import { bindViews } from './cameras/bind-views';
+import type { Events } from './events';
+import type { Scene } from './scene';
 
-const resolve = (scope: ScopeSpace, values: Record<string, any>) => {
-    for (const key in values) {
-        scope.resolve(key).setValue(values[key]);
-    }
-};
-
-class EyeLevel extends Element {
-    shader: Shader;
-    quadRender: QuadRender;
-    private preRenderLayerHandler: ((camera: CameraComponent, layer: Layer, transparent: boolean) => void) | null = null;
-
-    visible = true;
-
-    constructor() {
-        super(ElementType.debug);
-    }
-
-    add() {
-        const { app } = this.scene;
-        const device = app.graphicsDevice;
-
-        this.shader = ShaderUtils.createShader(device, {
-            uniqueName: 'eye-level',
-            attributes: {
-                vertex_position: SEMANTIC_POSITION
-            },
-            vertexGLSL: vertexShader,
-            fragmentGLSL: fragmentShader
-        });
-
-        this.quadRender = new QuadRender(this.shader);
-
-        const blendState = new BlendState(
-            true,
-            BLENDEQUATION_ADD, BLENDMODE_SRC_ALPHA, BLENDMODE_ONE_MINUS_SRC_ALPHA,
-            BLENDEQUATION_ADD, BLENDMODE_SRC_ALPHA, BLENDMODE_ONE_MINUS_SRC_ALPHA
-        );
-
-        const cameraMatrices: CameraProjectionData = createCameraProjectionData();
-
-        this.preRenderLayerHandler = (cameraComponent: CameraComponent, layer: Layer, transparent: boolean) => {
-            const { scene } = this;
-            if (cameraComponent !== scene.camera.camera) {
-                return;
-            }
-            const targetLayer = scene.renderFlags.eyeLevelLayerOverride ?? scene.gizmoLayer;
-            const overlaysEnabled = scene.camera.renderOverlays || scene.renderFlags.forceEyeLevelOverlay;
-            // 見やすさを優先し、デフォルトではワールド描画の後段で必ず前面に載せる
-            if (!this.visible || transparent || layer !== targetLayer || !overlaysEnabled) {
-                return;
-            }
-
-            if (cameraComponent.projection === PROJECTION_ORTHOGRAPHIC) {
-                // Eye-level overlay fills the screen in orthographic projection.
-                return;
-            }
-            if (!resolveCameraProjectionData(cameraComponent, cameraMatrices, { fallbackToCurrentMatrices: true })) {
-                return;
-            }
-
-            device.setBlendState(blendState);
+// The horizon is a view overlay derived from the stock projection and world
+// rotation. It has no camera state or projection callback of its own.
+export const registerEyeLevel = (scene: Scene, events: Events) => {
+    let visible = true;
+    const device = scene.graphicsDevice;
+    const shader = ShaderUtils.createShader(device, {
+        uniqueName: 'camera-frames-eye-level',
+        attributes: { vertex_position: SEMANTIC_POSITION },
+        vertexWGSL: `
+            attribute vertex_position: vec2f;
+            uniform eyeInverseViewProjection: mat4x4f;
+            varying eyeNear: vec3f;
+            varying eyeFar: vec3f;
+            @vertex fn vertexMain(input: VertexInput) -> VertexOutput {
+                var output: VertexOutput;
+                let nearPoint = uniform.eyeInverseViewProjection * vec4f(input.vertex_position, -1.0, 1.0);
+                let farPoint = uniform.eyeInverseViewProjection * vec4f(input.vertex_position, 1.0, 1.0);
+                output.eyeNear = nearPoint.xyz / nearPoint.w;
+                output.eyeFar = farPoint.xyz / farPoint.w;
+                output.position = vec4f(input.vertex_position, 0.0, 1.0);
+                return output;
+            }`,
+        fragmentWGSL: `
+            varying eyeNear: vec3f;
+            varying eyeFar: vec3f;
+            @fragment fn fragmentMain(input: FragmentInput) -> FragmentOutput {
+                var output: FragmentOutput;
+                let y = normalize(input.eyeFar - input.eyeNear).y;
+                let width = max(fwidth(y), 0.000001);
+                let core = 1.0 - smoothstep(0.0, 1.2 * width, abs(y));
+                let glow = 1.0 - smoothstep(0.0, 4.0 * width, abs(y));
+                let alpha = 0.9 * max(core, glow * 0.35);
+                if (alpha <= 0.0) { discard; }
+                output.color = vec4f(1.0, 1.0, 1.0, alpha);
+                output.color1 = vec4f(0.0);
+                return output;
+            }`
+    });
+    const blend = new BlendState(true,
+        BLENDEQUATION_ADD, BLENDMODE_SRC_ALPHA, BLENDMODE_ONE_MINUS_SRC_ALPHA,
+        BLENDEQUATION_ADD, BLENDMODE_ONE, BLENDMODE_ONE_MINUS_SRC_ALPHA);
+    bindViews(scene, (camera) => {
+        const quad = new QuadRender(shader);
+        const inverse = new Mat4();
+        const handle = camera.camera.on('postRenderLayer', (layer, transparent) => {
+            if (!visible || transparent || layer !== camera.splatLayer || camera.camera.projection === PROJECTION_ORTHOGRAPHIC ||
+                !(camera.renderOverlays || camera.exportGrid)) return;
+            inverse.mul2(camera.camera.projectionMatrix, camera.camera.viewMatrix).invert();
+            device.scope.resolve('eyeInverseViewProjection').setValue(inverse.data);
+            device.setBlendState(blend);
             device.setCullMode(CULLFACE_NONE);
-            // 深度は現行シーンに影響させない（テストなし書き込みなし）
             device.setDepthState(DepthState.NODEPTH);
             device.setStencilState(null, null);
-
-            resolve(device.scope, {
-                matrix_viewProjectionInverse: cameraMatrices.invViewProjection.data,
-                uColor: [1, 1, 1, 0.9],
-                uLineWidthPx: 1.2,
-                uGlowWidthPx: 4.0,
-                uGlowAlpha: 0.35
-            });
-
-            this.quadRender.render();
+            quad.render();
+        });
+        return () => {
+            handle.off(); quad.destroy();
         };
-
-        this.scene.app.scene.on('prerender:layer', this.preRenderLayerHandler);
-    }
-
-    remove() {
-        this.shader?.destroy();
-        this.quadRender?.destroy();
-        if (this.preRenderLayerHandler) {
-            this.scene.app.scene.off('prerender:layer', this.preRenderLayerHandler);
-            this.preRenderLayerHandler = null;
-        }
-    }
-
-    serialize(serializer: Serializer): void {
-        serializer.pack(this.visible);
-    }
-}
-
-export { EyeLevel };
+    });
+    events.function('eyeLevel.visible', () => visible);
+    events.on('eyeLevel.setVisible', (value: boolean) => {
+        visible = !!value;
+        scene.forceRender = true;
+        events.fire('eyeLevel.visible', visible);
+    });
+};

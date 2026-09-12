@@ -1,9 +1,12 @@
 import { Container, Element, Label } from '@playcanvas/pcui';
 
+import { i18n } from './localization';
+
 type Direction = 'left' | 'right' | 'top' | 'bottom';
 
 type MenuItem = {
-    text?: string;
+    // a resolver (() => string) makes the row re-localize on language change
+    text?: string | (() => string);
     icon?: string | Element;
     extra?: string | Element;
     subMenu?: MenuPanel;
@@ -34,6 +37,9 @@ const arrange = (element: HTMLElement, target: HTMLElement, direction: Direction
             style.top = `${rect.top - parentRect.top}px`;
             break;
         case 'top':
+            style.left = `${rect.left - parentRect.left}px`;
+            style.top = 'auto';
+            style.bottom = `${parentRect.bottom - rect.top + padding}px`;
             break;
         case 'bottom':
             style.left = `${rect.left - parentRect.left}px`;
@@ -50,6 +56,14 @@ const createIcon = (icon: string | Element) => {
     return isString(icon) ?
         new Label({ class: 'menu-row-icon', text: icon && String.fromCodePoint(parseInt(icon as string, 16)) }) :
         icon;
+};
+
+// create the row text label; if `text` is a resolver, bind it so the row
+// re-localizes when the language changes (auto-unbinds on label destroy)
+const createTextLabel = (text: string | (() => string)) => {
+    const label = new Label({ class: 'menu-row-text' });
+    i18n.bindText(label, text);
+    return label;
 };
 
 // Detect if we're on a touch device
@@ -105,7 +119,7 @@ class MenuPanel extends Container {
                 case 'button': {
                     row = new Container({ class: 'menu-row' });
                     const icon = createIcon(menuItem.icon);
-                    const text = new Label({ class: 'menu-row-text', text: menuItem.text });
+                    const text = createTextLabel(menuItem.text);
                     const postscript = isString(menuItem.extra) ? new Label({ class: 'menu-row-postscript', text: menuItem.extra as string }) : menuItem.extra;
                     row.append(icon);
                     row.append(text);
@@ -117,7 +131,7 @@ class MenuPanel extends Container {
                 case 'menu': {
                     row = new Container({ class: 'menu-row' });
                     const icon = createIcon(menuItem.icon);
-                    const text = new Label({ class: 'menu-row-text', text: menuItem.text });
+                    const text = createTextLabel(menuItem.text);
                     const postscript = new Label({ class: 'menu-row-postscript', text: '\u232A' });
                     row.append(icon);
                     row.append(text);

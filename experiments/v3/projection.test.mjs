@@ -10,19 +10,18 @@ const loadFunctions = (path, names) => {
     const source = ts.createSourceFile(path, readFileSync(new URL(path, import.meta.url), 'utf8'), ts.ScriptTarget.Latest, true);
     const statements = names ? source.statements.filter(statement => ts.isVariableStatement(statement) &&
         statement.declarationList.declarations.some(declaration => names.includes(declaration.name.getText(source)))) : source.statements;
-    assert.ok(!names || statements.length === names.length, '基準となる現行関数が見つかりません');
+    assert.ok(!names || statements.length === names.length, '比較関数が見つかりません');
     const code = statements.map(statement => statement.getText(source)).join('\n');
     const js = ts.transpileModule(code, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
     const exports = {};
-    // 比較対象はリポ内の現行関数のみ。コピーした数式ではなく実装を実行する。
+    // 新実装と、移行直前の実装から抽出した固定fixtureを実行する。
     // eslint-disable-next-line no-new-func
     Function('exports', js)(exports);
     return exports;
 };
-const { resolveView } = loadFunctions('./src/render-view.ts');
+const { resolveView } = loadFunctions('../../src/cameras/render-view.ts');
 const { makePly } = loadFunctions('./src/fixtures.ts');
-const { computeEffectiveFrustum, syncCameraFrustum } = loadFunctions('../../src/camera-frames-camera.ts', ['computeEffectiveFrustum', 'syncCameraFrustum']);
-const { computeViewportMapping } = loadFunctions('../../src/camera-frames-viewport.ts', ['computeViewportMapping']);
+const { computeEffectiveFrustum, syncCameraFrustum, computeViewportMapping } = loadFunctions('./legacy-geometry.mjs');
 const close = (a, b, epsilon = 2e-6) => assert.ok(Math.abs(a - b) <= epsilon, `${a} != ${b}`);
 const shot = { id: 'test', position: [0, 0, 5], rotation: [0, 0, 0, 1], projection: 'perspective', fovY: 50, orthoHalfHeight: 2, near: 0.1, far: 100 };
 const frame = { width: 960, height: 640, scaleX: 1, scaleY: 1, anchorX: 0.5, anchorY: 0.5 };
@@ -48,7 +47,7 @@ const engineProjection = (view) => {
     return camera.projectionMatrix.clone();
 };
 
-test('現行の9アンカー・拡縮・透視/正射影とEngine 2.22の標準shiftを照合', () => {
+test('旧版の9アンカー・拡縮・透視/正射影と新view・Engine標準shiftを照合', () => {
     let cases = 0;
     for (const projection of ['perspective', 'ortho']) {
         for (const anchorX of [0, 0.5, 1]) {
@@ -86,7 +85,7 @@ test('現行の9アンカー・拡縮・透視/正射影とEngine 2.22の標準s
     assert.equal(cases, 162);
 });
 
-test('現行viewportのfit/zoom/pan/raw gateとpreviewの投影が一致する', () => {
+test('旧版viewportのfit/zoom/pan/raw gateと新previewの投影が一致する', () => {
     for (const zoom of [50, 100, 175]) {
         for (const dpr of [1, 1.25, 2]) {
             for (const projection of ['perspective', 'ortho']) {

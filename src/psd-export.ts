@@ -162,7 +162,12 @@ const drawLayerToContext = (
     tempCtx.drawImage(layer.canvas, left, top);
     tempCtx.globalCompositeOperation = 'destination-in';
     const maskBounds = mask.bounds;
-    tempCtx.drawImage(mask.canvas, maskBounds?.left ?? 0, maskBounds?.top ?? 0);
+    const alphaMask = document.createElement('canvas');
+    alphaMask.width = mask.canvas.width; alphaMask.height = mask.canvas.height;
+    const maskData = mask.canvas.getContext('2d').getImageData(0, 0, alphaMask.width, alphaMask.height);
+    for (let i = 0; i < maskData.data.length; i += 4) maskData.data[i + 3] = maskData.data[i];
+    alphaMask.getContext('2d').putImageData(maskData, 0, 0);
+    tempCtx.drawImage(alphaMask, maskBounds?.left ?? 0, maskBounds?.top ?? 0);
     tempCtx.globalCompositeOperation = 'source-over';
 
     const previousCompositeOperation = ctx.globalCompositeOperation;
@@ -187,8 +192,8 @@ const toPsdLayer = (layer: PsdOverlayLayer): Layer => {
     };
 };
 
-const exportPsd = (params: PsdExportParams) => {
-    const { basePixels, overlays, width, height, filename } = params;
+const createPsd = (params: PsdExportParams) => {
+    const { basePixels, overlays, width, height } = params;
     const underlays = params.underlays ?? [];
 
     const baseCanvas = basePixels ? canvasFromPixels(basePixels, width, height) : null;
@@ -260,8 +265,10 @@ const exportPsd = (params: PsdExportParams) => {
     };
 
     const buffer = writePsd(psd, { compress: false });
-    downloadBinary(buffer, filename);
+    return { buffer, compositeCanvas };
 };
 
-export { exportPsd };
+const exportPsd = (params: PsdExportParams) => downloadBinary(createPsd(params).buffer, params.filename);
+
+export { createPsd, exportPsd, canvasFromPixels };
 export type { PsdExportParams, PsdLayerBounds, PsdLayerMask, PsdOverlayLayer };

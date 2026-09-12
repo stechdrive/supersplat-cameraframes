@@ -1,5 +1,7 @@
-import { Entity, GraphicsDevice, TransformGizmo } from 'playcanvas';
+import { Entity, GraphicsDevice, ScaleGizmo, TransformGizmo } from 'playcanvas';
 
+import type { Camera } from '../camera';
+import { ShotCameraEntity } from '../cameras/shot-camera-entity';
 import { Events } from '../events';
 import { Pivot } from '../pivot';
 import { Scene } from '../scene';
@@ -38,8 +40,8 @@ class TransformTool {
 
         // reattach the gizmo to the pivot
         const reattach = () => {
-            const selectionSize = events.invoke('selection.size') as number;
-            if (!active || selectionSize === 0) {
+            const selection = events.invoke('selection');
+            if (!active || !selection || (gizmo instanceof ScaleGizmo && selection instanceof ShotCameraEntity)) {
                 if (gizmo.enabled) {
                     gizmo.detach();
                 }
@@ -54,26 +56,33 @@ class TransformTool {
 
         events.on('tool.coordSpace', (coordSpace: string) => {
             gizmo.coordSpace = coordSpace as 'local' | 'world';
+            // the gizmo only requests a redraw from within a frame, so with
+            // on-demand rendering the reorientation needs a forced frame
+            scene.forceRender = true;
         });
 
         // set the gizmo size to remain a constant size in screen space.
         // called in response to changes in canvas size
         const updateGizmoSize = () => {
-            const { camera, canvas } = scene;
-            const w = canvas.clientWidth;
-            const h = canvas.clientHeight;
-            if (!(w > 0 && h > 0)) {
-                return;
-            }
+            const { canvas } = scene;
+            const camera = scene.inputCamera;
             if (camera.ortho) {
-                gizmo.size = 1125 / h;
+                gizmo.size = 1125 / canvas.clientHeight;
             } else {
-                gizmo.size = 1200 / Math.max(w, h);
+                gizmo.size = 1200 / Math.max(canvas.clientWidth, canvas.clientHeight);
             }
         };
         updateGizmoSize();
         events.on('camera.resize', updateGizmoSize);
         events.on('camera.ortho', updateGizmoSize);
+        const setCamera = (camera: Camera) => {
+            if (dragging) return;
+            gizmo.camera = camera.inputCamera;
+            updateGizmoSize();
+            scene.forceRender = true;
+        };
+        events.on('cameraViews.input', setCamera);
+        events.on('cameraViews.changed', setCamera);
 
         this.activate = () => {
             active = true;

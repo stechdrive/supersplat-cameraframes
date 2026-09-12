@@ -19,6 +19,10 @@ const resolveDirectories = (entries: Array<FileSystemEntry>): Promise<Array<File
     const result: Array<FileSystemFileEntry> = [];
 
     entries.forEach((entry) => {
+        if (entry.name === '.DS_Store') {
+            return;
+        }
+
         if (entry.isFile) {
             result.push(entry as FileSystemFileEntry);
         } else if (entry.isDirectory) {
@@ -49,6 +53,23 @@ const resolveDirectories = (entries: Array<FileSystemEntry>): Promise<Array<File
     return Promise.all(promises).then((children: Array<Array<FileSystemFileEntry>>) => {
         return result.concat(...children);
     });
+};
+
+// collect the files under a dropped handle, named by their path relative to the
+// drop (so a dropped folder 'foo' yields 'foo/a.ply', matching resolveDirectories)
+const resolveHandles = async (handle: FileSystemHandle, prefix: string, result: Array<DroppedFile>) => {
+    if (handle.name === '.DS_Store') {
+        return;
+    }
+
+    if (handle.kind === 'file') {
+        const fileHandle = handle as FileSystemFileHandle;
+        result.push(new DroppedFile(prefix + handle.name, await fileHandle.getFile(), fileHandle));
+    } else {
+        for await (const child of (handle as FileSystemDirectoryHandle).values()) {
+            await resolveHandles(child, `${prefix}${handle.name}${path.delimiter}`, result);
+        }
+    }
 };
 
 const removeCommonPrefix = (urls: Array<DroppedFile>) => {
@@ -93,35 +114,33 @@ const CreateDropHandler = (target: HTMLElement, dropHandler: DropHandlerFunc) =>
     const drop = async (ev: DragEvent) => {
         ev.preventDefault();
 
-        const items = Array.from(ev.dataTransfer.items ?? []);
-        const filesList = Array.from(ev.dataTransfer.files ?? []);
+        const items = Array.from(ev.dataTransfer.items);
 
-        // handle single file drops so documents can propagate the filesystemfilehandle
-        if (items.length === 1) {
-            const item = items[0];
-            const entry = item.webkitGetAsEntry?.();
-            if (item.getAsFileSystemHandle && entry?.isFile) {
-                const handle = await item.getAsFileSystemHandle();
-                if (handle?.kind === 'file') {
-                    const fileHandle = handle as FileSystemFileHandle;
-                    const file = await fileHandle.getFile();
-                    const droppedFile = new DroppedFile(file.name, file, fileHandle);
-                    dropHandler([droppedFile], ev.shiftKey);
-                    return;
+        // Prefer file system handles where the browser provides them (Chromium):
+        // a document keeps its handle for later saves, and every imported file
+        // keeps one so a save can recognise a file the scene still reads from.
+        // The handles must be requested before the handler first yields, after
+        // which the items are no longer readable.
+        if (items.every(item => item.getAsFileSystemHandle)) {
+            const handles = await Promise.all(items.map(item => item.getAsFileSystemHandle()));
+            const files: Array<DroppedFile> = [];
+            for (const handle of handles) {
+                if (handle) {
+                    await resolveHandles(handle, '', files);
                 }
             }
-        }
 
-        // fallback: files only (some browsers don't populate dataTransfer.items)
-        if (items.length === 0 && filesList.length > 0) {
-            const files = filesList.map(file => new DroppedFile(file.name, file));
+            if (files.length > 1) {
+                removeCommonPrefix(files);
+            }
+
             dropHandler(files, ev.shiftKey);
             return;
         }
 
         // Map to entries first
         const entries = items
-        .map(item => item.webkitGetAsEntry?.())
+        .map(item => item.webkitGetAsEntry())
         .filter(v => v);
 
         // resolve directories to files

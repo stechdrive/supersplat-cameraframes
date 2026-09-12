@@ -1,13 +1,11 @@
 import { Events } from '../events';
-import { isCtrlLike, modifiers } from '../modifier-tracker';
+import { opFromModifiers } from '../select-op';
 
 class RectSelection {
     activate: () => void;
     deactivate: () => void;
 
     constructor(events: Events, parent: HTMLElement) {
-        const toNormalizedPoint = (x: number, y: number) => events.invoke('camera.cssToNormalized', x, y) as { x: number; y: number } | null;
-
         // create svg
         const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
         svg.classList.add('tool-svg', 'hidden');
@@ -67,54 +65,51 @@ class RectSelection {
         };
 
         const dragEnd = () => {
-            parent.releasePointerCapture(dragId);
+            // a touch that has lifted, or was cancelled, no longer holds the
+            // capture and releasing it throws
+            if (parent.hasPointerCapture(dragId)) {
+                parent.releasePointerCapture(dragId);
+            }
             dragId = undefined;
             svg.classList.add('hidden');
         };
+
+        // the pointer is captured, so a drag can leave the canvas
+        const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
 
         const pointerup = async (e: PointerEvent) => {
             if (e.pointerId === dragId) {
                 e.preventDefault();
                 e.stopPropagation();
-                const modState = modifiers.read(e);
-                const op = modState.shift ? 'add' : (isCtrlLike(modState) ? 'remove' : 'set');
 
-                const startPoint = toNormalizedPoint(start.x, start.y);
-                const endPoint = toNormalizedPoint(end.x, end.y);
-                if (!startPoint || !endPoint) {
-                    dragEnd();
-                    return;
-                }
+                const w = parent.clientWidth;
+                const h = parent.clientHeight;
 
                 if (dragMoved) {
                     // rect select - wait for selection to complete before hiding rect
-                    const startX = Math.min(startPoint.x, endPoint.x);
-                    const startY = Math.min(startPoint.y, endPoint.y);
-                    const endX = Math.max(startPoint.x, endPoint.x);
-                    const endY = Math.max(startPoint.y, endPoint.y);
-                    if (endX <= startX || endY <= startY) {
-                        return;
-                    }
                     await events.invoke(
                         'select.rect',
-                        op, {
-                            start: { x: startX, y: startY },
-                            end: { x: endX, y: endY }
+                        opFromModifiers(e), {
+                            start: { x: clamp01(Math.min(start.x, end.x) / w), y: clamp01(Math.min(start.y, end.y) / h) },
+                            end: { x: clamp01(Math.max(start.x, end.x) / w), y: clamp01(Math.max(start.y, end.y) / h) }
                         });
                 } else {
                     // pick - wait for selection to complete before hiding rect
-                    const point = toNormalizedPoint(e.offsetX, e.offsetY);
-                    if (!point) {
-                        dragEnd();
-                        return;
-                    }
                     await events.invoke(
                         'select.point',
-                        op,
-                        point
+                        opFromModifiers(e),
+                        { x: e.offsetX / parent.clientWidth, y: e.offsetY / parent.clientHeight }
                     );
                 }
 
+                dragEnd();
+            }
+        };
+
+        // a cancelled touch gets no pointerup, and a drag left open blocks
+        // every later one
+        const pointercancel = (e: PointerEvent) => {
+            if (e.pointerId === dragId) {
                 dragEnd();
             }
         };
@@ -124,6 +119,7 @@ class RectSelection {
             parent.addEventListener('pointerdown', pointerdown);
             parent.addEventListener('pointermove', pointermove);
             parent.addEventListener('pointerup', pointerup);
+            parent.addEventListener('pointercancel', pointercancel);
         };
 
         this.deactivate = () => {
@@ -134,6 +130,7 @@ class RectSelection {
             parent.removeEventListener('pointerdown', pointerdown);
             parent.removeEventListener('pointermove', pointermove);
             parent.removeEventListener('pointerup', pointerup);
+            parent.removeEventListener('pointercancel', pointercancel);
         };
     }
 

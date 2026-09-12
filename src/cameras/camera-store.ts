@@ -20,12 +20,35 @@ export type CameraRecord = {
     frames: ShotFrame[];
     referenceImagePresetId: string;
     referenceImageOverrides: Record<string, unknown>;
+    settings?: CameraSettings;
 };
+
+export type CameraSettings = {
+    mask: { enabled: boolean; opacity: number; scope: 'all' | 'selected' };
+    exportName: string;
+    exportFormat: 'png' | 'psd';
+    exportGridOverlay: boolean;
+    exportModelLayers: boolean;
+    exportSplatLayers: boolean;
+    exportReferenceImages: boolean;
+};
+
+export const defaultCameraSettings = (): CameraSettings => ({
+    mask: { enabled: false, opacity: 0.8, scope: 'all' },
+    exportName: 'cf-%cam',
+    exportFormat: 'png',
+    exportGridOverlay: false,
+    exportModelLayers: false,
+    exportSplatLayers: false,
+    exportReferenceImages: true
+});
 
 export type CameraDocument = {
     version: 1;
     cameras: CameraRecord[];
     outputCameraId: string | null;
+    exportTarget?: 'current' | 'all' | 'selected';
+    exportPresetIds?: string[];
 };
 
 export type CameraReference = { kind: 'viewport' } | { kind: 'shot'; cameraId: string };
@@ -61,10 +84,11 @@ export const createCamera = (id: string, name = 'Camera 1'): CameraRecord => ({
         near: 0.01,
         far: 10000
     },
-    composition: { width: 1920, height: 1080, scaleX: 1, scaleY: 1, anchorX: 0.5, anchorY: 0.5 },
-    frames: [{ id: 'A', pos: { x: 0.5, y: 0.5 }, scalePct: 100, scaleK: 1, baseSize: { w: 1920, h: 1080 }, order: 0 }],
-    referenceImagePresetId: '',
-    referenceImageOverrides: {}
+    composition: { width: 1754, height: 1240, scaleX: 1, scaleY: 1, anchorX: 0.5, anchorY: 0.5 },
+    frames: [{ id: 'A', pos: { x: 0.5, y: 0.5 }, scalePct: 100, scaleK: 1, baseSize: { w: 1536, h: 864 }, order: 0 }],
+    referenceImagePresetId: 'refpreset-blank',
+    referenceImageOverrides: {},
+    settings: defaultCameraSettings()
 });
 
 // Validate the entire candidate before replacing live state. Import and undo use
@@ -92,8 +116,15 @@ export const normalizeDocument = (input: CameraDocument): CameraDocument => {
         }
         record.referenceImagePresetId ??= '';
         record.referenceImageOverrides ??= {};
+        record.settings = { ...defaultCameraSettings(), ...record.settings };
+        const { mask } = record.settings;
+        if (!mask || !Number.isFinite(mask.opacity) || mask.opacity < 0 || mask.opacity > 1 || !['all', 'selected'].includes(mask.scope) ||
+            !['png', 'psd'].includes(record.settings.exportFormat) || typeof record.settings.exportName !== 'string') throw new Error('撮影出力の設定が不正です');
     }
     if (document.outputCameraId !== null && !ids.has(document.outputCameraId)) throw new Error('出力カメラが見つかりません');
+    document.exportTarget ??= 'current';
+    if (!['current', 'all', 'selected'].includes(document.exportTarget)) throw new Error('出力対象が不正です');
+    document.exportPresetIds = (document.exportPresetIds ?? []).filter(id => ids.has(id));
     return freeze(document);
 };
 

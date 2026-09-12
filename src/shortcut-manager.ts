@@ -14,9 +14,8 @@ const defaultShortcuts: Record<string, ShortcutBinding> = {
     'camera.toggleControlMode': { keys: ['v'] },
 
     // Show
-    'camera.toggleOverlay': { keys: ['Tab'] },
-    'camera.toggleMode': { keys: ['m'] },
     'grid.toggleVisible': { keys: ['g'] },
+    'camera.toggleShowInfo': { keys: ['i'] },
     'select.hide': { keys: ['h'] },
     'select.unhide': { keys: ['h'], shift: 'required' },
 
@@ -34,15 +33,22 @@ const defaultShortcuts: Record<string, ShortcutBinding> = {
     'select.none': { keys: ['a'], ctrl: 'required', shift: 'required', capture: true },
     'select.invert': { keys: ['i'], ctrl: 'required' },
     'select.delete': { keys: ['Delete', 'Backspace'] },
+    'selection.toggleUseDepth': { keys: ['n'] },
+    'selection.toggleFootprint': { keys: ['m'] },
+    'view.toggleEditView': { keys: ['Tab'] },
 
     // Tools
-    'tool.move': { keys: ['1'] },
-    'tool.rotate': { keys: ['2'] },
-    'tool.scale': { keys: ['3'] },
+    // 1/2/3 don't fire tool.move/rotate/scale directly: while a shape
+    // selection tool (box/sphere) is active they switch its gizmo mode
+    // instead of switching tools (see ToolManager)
+    'tool.moveShortcut': { keys: ['1'] },
+    'tool.rotateShortcut': { keys: ['2'] },
+    'tool.scaleShortcut': { keys: ['3'] },
     'tool.rectSelection': { keys: ['r'] },
     'tool.lassoSelection': { keys: ['l'] },
     'tool.polygonSelection': { keys: ['p'] },
     'tool.brushSelection': { keys: ['b'] },
+    'tool.sphereBrushSelection': { keys: ['b'], shift: 'required' },
     'tool.floodSelection': { keys: ['o'] },
     'tool.eyedropperSelection': { keys: ['e'], ctrl: 'required', capture: true },
     'tool.brushSelection.smaller': { keys: ['['], repeat: true },
@@ -51,10 +57,10 @@ const defaultShortcuts: Record<string, ShortcutBinding> = {
     'tool.toggleCoordSpace': { keys: ['c'], shift: 'required' },
 
     // Other
+    'doc.save': { codes: ['KeyS'], ctrl: 'required', capture: true },
+    'doc.savePackage': { codes: ['KeyS'], ctrl: 'required', shift: 'required', capture: true },
     'edit.undo': { keys: ['z'], ctrl: 'required', repeat: true, capture: true },
     'edit.redo': { keys: ['z'], ctrl: 'required', shift: 'required', repeat: true, capture: true },
-    'doc.save': { keys: ['s'], ctrl: 'required', capture: true },
-    'doc.savePackage': { keys: ['s'], ctrl: 'required', shift: 'required', capture: true },
     'dataPanel.toggle': { keys: ['d'], ctrl: 'required', capture: true },
     'timelinePanel.toggle': { keys: ['t'], ctrl: 'required', capture: true },
 

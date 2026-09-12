@@ -1,16 +1,19 @@
 import { Container, Element, Label } from '@playcanvas/pcui';
 
 import { Events } from '../events';
+import { requestNavigateHome } from '../iframe-api';
 import { recentFiles } from '../recent-files';
 import { ShortcutManager } from '../shortcut-manager';
-import { canUseWebGPU } from '../webgpu';
-import { localize } from './localization';
+import { i18n } from './localization';
 import { MenuPanel, MenuItem } from './menu-panel';
 import arrowSvg from './svg/arrow.svg';
 import collapseSvg from './svg/collapse.svg';
 import selectDelete from './svg/delete.svg';
+import editRedo from './svg/edit-redo.svg';
+import editUndo from './svg/edit-undo.svg';
 import sceneExport from './svg/export.svg';
 import sceneImport from './svg/import.svg';
+import logoSvg from './svg/logo.svg';
 import sceneNew from './svg/new.svg';
 import sceneOpen from './svg/open.svg';
 import scenePublish from './svg/publish.svg';
@@ -42,19 +45,13 @@ const getOpenRecentItems = async (events: Events) => {
     if (items.length > 0) {
         items.push({}); // separator
         items.push({
-            text: localize('menu.file.open-recent.clear'),
+            text: () => i18n.t('menu.file.open-recent.clear'),
             icon: createSvg(selectDelete),
             onSelect: () => recentFiles.clear()
         });
     }
 
     return items;
-};
-
-type DocStatus = {
-    name?: string | null;
-    stateDirty?: boolean;
-    packageDirty?: boolean;
 };
 
 class Menu extends Container {
@@ -66,10 +63,6 @@ class Menu extends Container {
 
         super(args);
 
-        const menuStrip = new Container({
-            id: 'menu-strip'
-        });
-
         const menubar = new Container({
             id: 'menu-bar'
         });
@@ -79,35 +72,38 @@ class Menu extends Container {
         });
 
         const scene = new Label({
-            text: localize('menu.file'),
             class: 'menu-option'
         });
+        i18n.bindText(scene, 'menu.file');
+
+        const edit = new Label({
+            class: 'menu-option'
+        });
+        i18n.bindText(edit, 'menu.edit');
 
         const render = new Label({
-            text: localize('menu.render'),
             class: 'menu-option'
         });
+        i18n.bindText(render, 'menu.render');
 
         const selection = new Label({
-            text: localize('menu.select'),
             class: 'menu-option'
         });
+        i18n.bindText(selection, 'menu.select');
 
         const help = new Label({
-            text: localize('menu.help'),
             class: 'menu-option'
         });
-
-        const setCollapsed = (collapsed: boolean) => {
-            document.body.classList[collapsed ? 'add' : 'remove']('collapsed');
-        };
+        i18n.bindText(help, 'menu.help');
 
         const toggleCollapsed = () => {
-            setCollapsed(!document.body.classList.contains('collapsed'));
+            document.body.classList.toggle('collapsed');
         };
 
-        // 起動時は折りたたみ状態で開始
-        setCollapsed(true);
+        // collapse menu on mobile
+        if (document.body.clientWidth < 600) {
+            toggleCollapsed();
+        }
 
         const collapse = createSvg(collapseSvg);
         collapse.dom.classList.add('menu-icon');
@@ -119,126 +115,104 @@ class Menu extends Container {
         arrow.dom.setAttribute('id', 'menu-arrow');
         arrow.dom.addEventListener('click', toggleCollapsed);
 
+        // SuperSplat home: leftmost, before File. Mark + wordmark; the
+        // wordmark hides when the menubar is collapsed.
+        const logo = createSvg(logoSvg);
+        logo.dom.setAttribute('id', 'menu-logo');
+
+        const wordmark = new Label({
+            id: 'menu-wordmark',
+            text: 'CAMERA FRAMES'
+        });
+
+        const home = new Container({
+            id: 'menu-home'
+        });
+        home.dom.setAttribute('role', 'link');
+        home.dom.setAttribute('tabindex', '0');
+        home.dom.setAttribute('aria-label', 'CAMERA FRAMES');
+        home.dom.setAttribute('title', 'CAMERA FRAMES');
+        home.dom.addEventListener('click', requestNavigateHome);
+        home.dom.addEventListener('keydown', (event: KeyboardEvent) => {
+            if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                requestNavigateHome();
+            }
+        });
+        home.append(logo);
+        home.append(wordmark);
+
         const buttonsContainer = new Container({
             id: 'menu-bar-options'
         });
+        buttonsContainer.append(home);
         buttonsContainer.append(scene);
+        buttonsContainer.append(edit);
         buttonsContainer.append(selection);
         buttonsContainer.append(render);
         buttonsContainer.append(help);
         buttonsContainer.append(collapse);
         buttonsContainer.append(arrow);
 
-        menubar.append(buttonsContainer);
-
-        const docChip = new Container({
-            id: 'doc-chip'
-        });
-
-        const docChipName = new Label({
-            id: 'doc-chip-name'
-        });
-
-        const docChipDirty = new Label({
-            id: 'doc-chip-dirty',
-            text: '*',
-            hidden: true
-        });
-
-        const docChipPackage = new Label({
-            id: 'doc-chip-package',
-            text: 'PKG',
-            hidden: true
-        });
-
-        docChip.append(docChipName);
-        docChip.append(docChipDirty);
-        docChip.append(docChipPackage);
-
-        const updateDocChip = (status?: DocStatus) => {
-            const resolvedStatus = status ?? (
-                events.functions.has('doc.status') ?
-                    events.invoke('doc.status') as DocStatus :
-                    null
-            );
-
-            const displayName = (typeof resolvedStatus?.name === 'string' && resolvedStatus.name.length > 0) ?
-                resolvedStatus.name :
-                localize('doc.status.untitled');
-            const hasStateDirty = resolvedStatus?.stateDirty === true;
-            const hasPackageDirty = resolvedStatus?.packageDirty === true;
-
-            docChipName.text = displayName;
-            docChipDirty.hidden = !hasStateDirty;
-            docChipPackage.hidden = !hasPackageDirty;
-
-            const titleLines = [displayName];
-            if (hasStateDirty) {
-                titleLines.push(localize('doc.status.tooltip.working-dirty'));
-            }
-            if (hasPackageDirty) {
-                titleLines.push(localize('doc.status.tooltip.package-dirty'));
-            }
-            docChip.dom.title = titleLines.join('\n');
+        const documentChip = new Label({ id: 'document-chip', text: '' });
+        const refreshDocument = () => {
+            const name = events.invokeOptional('doc.name');
+            const state = events.invokeOptional('doc.status');
+            documentChip.text = `${name ?? '無題'}${state?.dirty ? ' *' : ''}${state?.packageDirty ? ' PKG' : ''}`;
         };
+        events.on('doc.name', refreshDocument);
+        events.on('doc.status', refreshDocument);
+        buttonsContainer.append(documentChip);
 
-        events.on('doc.name', () => updateDocChip());
-        events.on('doc.statusChanged', (status: DocStatus) => updateDocChip(status));
-        events.on('app.bootstrapComplete', () => updateDocChip());
-        updateDocChip();
-
-        menuStrip.append(menubar);
-        menuStrip.append(docChip);
+        menubar.append(buttonsContainer);
 
         // Get the shortcut manager for displaying keyboard shortcuts
         const shortcutManager: ShortcutManager = events.invoke('shortcutManager');
-        const canExportWebGpuFormats = async () => {
-            if (events.invoke('scene.empty')) {
-                return false;
-            }
-            return await canUseWebGPU();
-        };
-        const hasProjectSplats = () => (((events.invokeOptional('scene.allSplats') as any[])?.length ?? 0) > 0);
 
         const exportMenuPanel = new MenuPanel([{
-            text: localize('menu.file.export.ply'),
+            text: 'PLY (.ply)',
             icon: createSvg(sceneExport),
             isEnabled: () => !events.invoke('scene.empty'),
             onSelect: () => events.invoke('scene.export', 'ply')
         }, {
-            text: localize('menu.file.export.splat'),
+            text: 'SOG (.sog)',
+            icon: createSvg(sceneExport),
+            isEnabled: () => !events.invoke('scene.empty'),
+            onSelect: () => events.invoke('scene.export', 'sog')
+        }, {
+            text: 'SPZ (.spz)',
+            icon: createSvg(sceneExport),
+            isEnabled: () => !events.invoke('scene.empty'),
+            onSelect: () => events.invoke('scene.export', 'spz')
+        }, {
+            text: 'Splat (.splat)',
             icon: createSvg(sceneExport),
             isEnabled: () => !events.invoke('scene.empty'),
             onSelect: () => events.invoke('scene.export', 'splat')
         }, {
-            text: localize('menu.file.export.sog'),
-            icon: createSvg(sceneExport),
-            isEnabled: canExportWebGpuFormats,
-            onSelect: () => events.invoke('scene.export', 'sog')
-        }, {
             // separator
         }, {
-            text: localize('menu.file.export.viewer', { ellipsis: true }),
+            text: () => i18n.t('menu.file.export.viewer', { ellipsis: true }),
             icon: createSvg(sceneExport),
-            isEnabled: canExportWebGpuFormats,
+            isEnabled: () => !events.invoke('scene.empty'),
             onSelect: () => events.invoke('scene.export', 'viewer')
         }]);
 
         const openRecentMenuPanel = new MenuPanel([]);
 
         const fileMenuPanel = new MenuPanel([{
-            text: localize('menu.file.new'),
+            text: () => i18n.t('menu.file.new'),
             icon: createSvg(sceneNew),
             isEnabled: () => !events.invoke('scene.empty'),
             onSelect: () => events.invoke('doc.new')
         }, {
-            text: localize('menu.file.open'),
+            text: () => i18n.t('menu.file.open'),
             icon: createSvg(sceneOpen),
             onSelect: async () => {
                 await events.invoke('doc.open');
             }
         }, {
-            text: localize('menu.file.open-recent'),
+            text: () => i18n.t('menu.file.open-recent'),
             icon: createSvg(sceneOpen),
             subMenu: openRecentMenuPanel,
             isEnabled: async () => {
@@ -255,181 +229,191 @@ class Menu extends Container {
         }, {
             // separator
         }, {
-            text: localize('menu.file.save'),
+            text: () => i18n.t('menu.file.save'),
             icon: createSvg(sceneSave),
-            extra: shortcutManager.formatShortcut('doc.save'),
-            isEnabled: () => true,
+            isEnabled: () => !events.invoke('scene.empty') && !events.invoke('doc.status').busy,
             onSelect: async () => await events.invoke('doc.save')
         }, {
-            text: localize('menu.file.save-package'),
+            text: () => i18n.t('doc.transition.save-package'),
             icon: createSvg(sceneSave),
-            extra: shortcutManager.formatShortcut('doc.savePackage'),
-            isEnabled: () => true,
+            isEnabled: () => !events.invoke('scene.empty') && !events.invoke('doc.status').busy,
             onSelect: async () => await events.invoke('doc.savePackage')
         }, {
-            text: localize('menu.file.save-package-as', { ellipsis: true }),
+            text: '別名でパッケージを保存…',
             icon: createSvg(sceneSave),
-            isEnabled: () => true,
-            onSelect: async () => await events.invoke('doc.savePackageAs')
+            isEnabled: () => !events.invoke('scene.empty'),
+            onSelect: async () => await events.invoke('doc.saveAs')
         }, {
-            text: localize('menu.file.save-package-sog-all', { ellipsis: true }),
-            icon: createSvg(sceneSave),
-            isEnabled: hasProjectSplats,
-            onSelect: async () => await events.invoke('doc.savePackageSogAll')
-        }, {
-            text: localize('menu.file.clear-working-state', { ellipsis: true }),
-            icon: createSvg(selectDelete),
-            isEnabled: async () => {
-                const stats = await events.invoke('doc.localWorkingStateStats') as {
-                    projectCount?: number;
-                } | null;
-                return (stats?.projectCount ?? 0) > 0;
-            },
+            text: () => i18n.t('menu.file.clear-working-state', { ellipsis: true }),
+            isEnabled: async () => !events.invoke('doc.status').busy && (await events.invoke('doc.localWorkingStateStats')).projectCount > 0,
             onSelect: async () => await events.invoke('doc.clearLocalWorkingState')
         }, {
             // separator
         }, {
-            text: localize('menu.file.import', { ellipsis: true }),
+            text: () => i18n.t('menu.file.import', { ellipsis: true }),
             icon: createSvg(sceneImport),
             onSelect: async () => {
                 await events.invoke('scene.import');
             }
         }, {
-            text: localize('menu.file.export'),
+            text: () => i18n.t('menu.file.export'),
             icon: createSvg(sceneExport),
             subMenu: exportMenuPanel
         }, {
-            text: localize('menu.file.publish', { ellipsis: true }),
+            text: () => i18n.t('menu.file.publish', { ellipsis: true }),
             icon: createSvg(scenePublish),
             isEnabled: () => !events.invoke('scene.empty'),
             onSelect: async () => await events.invoke('show.publishSettingsDialog')
         }]);
 
-        const hasActiveSplat = () => events.invokeOptional('selection.splatActive');
-        const hasSplatSelection = () => events.invoke('selection.splats');
+        // track undo/redo availability for menu item enablement
+        let canUndo = false;
+        let canRedo = false;
+        events.on('edit.canUndo', (value: boolean) => {
+            canUndo = value;
+        });
+        events.on('edit.canRedo', (value: boolean) => {
+            canRedo = value;
+        });
+
+        const editMenuPanel = new MenuPanel([{
+            text: () => i18n.t('menu.edit.undo'),
+            icon: createSvg(editUndo),
+            extra: shortcutManager.formatShortcut('edit.undo'),
+            isEnabled: () => canUndo,
+            onSelect: () => events.fire('edit.undo')
+        }, {
+            text: () => i18n.t('menu.edit.redo'),
+            icon: createSvg(editRedo),
+            extra: shortcutManager.formatShortcut('edit.redo'),
+            isEnabled: () => canRedo,
+            onSelect: () => events.fire('edit.redo')
+        }, {
+            // separator
+        }, {
+            text: () => i18n.t('menu.edit.duplicate'),
+            icon: createSvg(selectDuplicate),
+            isEnabled: () => events.invoke('selection.splats'),
+            onSelect: () => events.fire('edit.duplicate')
+        }, {
+            text: () => i18n.t('menu.edit.separate'),
+            icon: createSvg(selectSeparate),
+            isEnabled: () => events.invoke('selection.splats'),
+            onSelect: () => events.fire('edit.separate')
+        }]);
 
         const selectionMenuPanel = new MenuPanel([{
-            text: localize('menu.select.all'),
+            text: () => i18n.t('menu.select.all'),
             icon: createSvg(selectAll),
             extra: shortcutManager.formatShortcut('select.all'),
-            isEnabled: hasActiveSplat,
             onSelect: () => events.fire('select.all')
         }, {
-            text: localize('menu.select.none'),
+            text: () => i18n.t('menu.select.none'),
             icon: createSvg(selectNone),
             extra: shortcutManager.formatShortcut('select.none'),
-            isEnabled: hasActiveSplat,
             onSelect: () => events.fire('select.none')
         }, {
-            text: localize('menu.select.invert'),
+            text: () => i18n.t('menu.select.invert'),
             icon: createSvg(selectInverse),
             extra: shortcutManager.formatShortcut('select.invert'),
-            isEnabled: hasActiveSplat,
             onSelect: () => events.fire('select.invert')
         }, {
             // separator
         }, {
-            text: localize('menu.select.lock'),
+            text: () => i18n.t('menu.select.lock'),
             icon: createSvg(selectLock),
             extra: shortcutManager.formatShortcut('select.hide'),
-            isEnabled: hasSplatSelection,
+            isEnabled: () => events.invoke('selection.splats'),
             onSelect: () => events.fire('select.hide')
         }, {
-            text: localize('menu.select.unlock'),
+            text: () => i18n.t('menu.select.unlock'),
             icon: createSvg(selectUnlock),
             extra: shortcutManager.formatShortcut('select.unhide'),
-            isEnabled: hasActiveSplat,
             onSelect: () => events.fire('select.unhide')
         }, {
-            text: localize('menu.select.delete'),
+            text: () => i18n.t('menu.select.delete'),
             icon: createSvg(selectDelete),
             extra: shortcutManager.formatShortcut('select.delete'),
-            isEnabled: hasSplatSelection,
+            isEnabled: () => events.invoke('selection.splats'),
             onSelect: () => events.fire('select.delete')
         }, {
-            text: localize('menu.select.reset'),
-            isEnabled: hasActiveSplat,
+            text: () => i18n.t('menu.select.reset'),
             onSelect: () => events.fire('scene.reset')
-        }, {
-            // separator
-        }, {
-            text: localize('menu.select.duplicate'),
-            icon: createSvg(selectDuplicate),
-            isEnabled: hasSplatSelection,
-            onSelect: () => events.fire('select.duplicate')
-        }, {
-            text: localize('menu.select.separate'),
-            icon: createSvg(selectSeparate),
-            isEnabled: hasSplatSelection,
-            onSelect: () => events.fire('select.separate')
         }]);
 
         const renderMenuPanel = new MenuPanel([{
-            text: localize('menu.render.image', { ellipsis: true }),
+            text: () => i18n.t('menu.render.image', { ellipsis: true }),
             icon: createSvg(sceneExport),
-            isEnabled: () => false,
             onSelect: async () => await events.invoke('show.imageSettingsDialog')
         }, {
-            text: localize('menu.render.video', { ellipsis: true }),
+            text: () => i18n.t('menu.render.video', { ellipsis: true }),
             icon: createSvg(sceneExport),
-            isEnabled: () => false,
             onSelect: async () => await events.invoke('show.videoSettingsDialog')
         }]);
 
         const videoTutorialsMenuPanel = new MenuPanel([{
-            text: localize('menu.help.video-tutorials.basics'),
+            text: () => i18n.t('menu.help.video-tutorials.basics'),
             icon: 'E261',
             onSelect: () => window.open('https://youtu.be/MwzaEM2I55I', '_blank')?.focus()
         }, {
-            text: localize('menu.help.video-tutorials.in-depth'),
+            text: () => i18n.t('menu.help.video-tutorials.in-depth'),
             icon: 'E261',
             onSelect: () => window.open('https://youtu.be/J37rTieKgJ8', '_blank')?.focus()
+        }, {
+            text: () => i18n.t('menu.help.video-tutorials.deleting-floaters'),
+            icon: 'E261',
+            onSelect: () => window.open('https://youtu.be/8qaLfwkkSdU', '_blank')?.focus()
+        }, {
+            text: () => i18n.t('menu.help.video-tutorials.scaling'),
+            icon: 'E261',
+            onSelect: () => window.open('https://youtu.be/fRK1vVMg_EU', '_blank')?.focus()
         }]);
 
         const helpMenuPanel = new MenuPanel([{
-            text: localize('menu.help.video-tutorials'),
+            text: () => i18n.t('menu.help.video-tutorials'),
             icon: 'E261',
             subMenu: videoTutorialsMenuPanel
         }, {
-            text: localize('menu.help.user-guide'),
+            text: () => i18n.t('menu.help.user-guide'),
             icon: 'E232',
             onSelect: () => window.open('https://developer.playcanvas.com/user-manual/gaussian-splatting/editing/supersplat/', '_blank')?.focus()
         }, {
-            text: localize('menu.help.shortcuts'),
+            text: () => i18n.t('menu.help.shortcuts'),
             icon: 'E136',
             onSelect: () => events.fire('show.shortcuts')
         }, {
             // separator
         }, {
-            text: localize('menu.help.discord'),
+            text: () => i18n.t('menu.help.discord'),
             icon: 'E233',
             onSelect: () => window.open('https://discord.gg/T3pnhRTTAY', '_blank')?.focus()
         }, {
-            text: localize('menu.help.forum'),
+            text: () => i18n.t('menu.help.forum'),
             icon: 'E432',
             onSelect: () => window.open('https://forum.playcanvas.com', '_blank')?.focus()
         }, {
             // separator
         }, {
-            text: localize('menu.help.github-repo'),
+            text: () => i18n.t('menu.help.github-repo'),
             icon: 'E259',
             onSelect: () => window.open('https://github.com/playcanvas/supersplat', '_blank')?.focus()
         }, {
-            text: localize('menu.help.log-issue'),
+            text: () => i18n.t('menu.help.log-issue'),
             icon: 'E336',
             onSelect: () => window.open('https://github.com/playcanvas/supersplat/issues', '_blank')?.focus()
         }, {
             // separator
         }, {
-            text: localize('menu.help.about'),
+            text: () => i18n.t('menu.help.about'),
             icon: 'E138',
             onSelect: () => events.fire('show.about')
         }]);
 
-        this.append(menuStrip);
+        this.append(menubar);
         this.append(fileMenuPanel);
         this.append(openRecentMenuPanel);
         this.append(exportMenuPanel);
+        this.append(editMenuPanel);
         this.append(selectionMenuPanel);
         this.append(renderMenuPanel);
         this.append(videoTutorialsMenuPanel);
@@ -438,6 +422,9 @@ class Menu extends Container {
         const options: { dom: HTMLElement, menuPanel: MenuPanel }[] = [{
             dom: scene.dom,
             menuPanel: fileMenuPanel
+        }, {
+            dom: edit.dom,
+            menuPanel: editMenuPanel
         }, {
             dom: selection.dom,
             menuPanel: selectionMenuPanel

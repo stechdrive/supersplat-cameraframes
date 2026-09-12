@@ -4,6 +4,7 @@ import {
     BLENDMODE_ONE_MINUS_SRC_ALPHA,
     BLENDMODE_SRC_ALPHA,
     CULLFACE_FRONT,
+    SEMANTIC_POSITION,
     BlendState,
     BoundingBox,
     Entity,
@@ -37,8 +38,11 @@ class SphereShape extends Element {
     add() {
         const material = new ShaderMaterial({
             uniqueName: 'sphereShape',
-            vertexGLSL: vertexShader,
-            fragmentGLSL: fragmentShader
+            attributes: {
+                vertex_position: SEMANTIC_POSITION
+            },
+            vertexWGSL: vertexShader,
+            fragmentWGSL: fragmentShader
         });
         material.cull = CULLFACE_FRONT;
         material.blendState = new BlendState(
@@ -46,8 +50,6 @@ class SphereShape extends Element {
             BLENDEQUATION_ADD, BLENDMODE_SRC_ALPHA, BLENDMODE_ONE_MINUS_SRC_ALPHA,
             BLENDEQUATION_ADD, BLENDMODE_ONE, BLENDMODE_ONE_MINUS_SRC_ALPHA
         );
-        material.depthTest = true;
-        material.depthWrite = true;
         material.update();
 
         this.pivot.render.meshInstances[0].material = material;
@@ -75,32 +77,11 @@ class SphereShape extends Element {
     }
 
     onPreRender() {
-        const useDirectPass = this.scene.camera.isSelectionVolumeDirectPassActive();
-        const targetLayerId = useDirectPass ? this.scene.selectionVolumeLayer.id : this.scene.worldLayer.id;
-        if (this.pivot.render.layers.length !== 1 || this.pivot.render.layers[0] !== targetLayerId) {
-            this.pivot.render.layers = [targetLayerId];
-        }
-
         this.pivot.getWorldTransform().getTranslation(v);
         this.material.setParameter('sphere', [v.x, v.y, v.z, this.radius]);
 
         const device = this.scene.graphicsDevice;
-        const renderTarget = this.scene.camera.entity.camera.renderTarget;
-        let width = renderTarget?.width;
-        let height = renderTarget?.height;
-        if (!(width && height)) {
-            const targetSize = this.scene.camera.targetSize ?? this.scene.targetSize;
-            width = targetSize?.width ?? device.width;
-            height = targetSize?.height ?? device.height;
-        }
-        device.scope.resolve('targetSize').setValue([width, height]);
-
-        const selectionDepth = useDirectPass ? this.scene.camera.prepareSelectionVolumeDepth() : null;
-        this.material.setParameter('sceneDepthValid', selectionDepth ? 1 : 0);
-        this.material.setParameter('sceneDepthTexSize', selectionDepth ? [selectionDepth.width, selectionDepth.height] : [1, 1]);
-        if (selectionDepth?.texture) {
-            this.material.setParameter('sceneDepthTex', selectionDepth.texture);
-        }
+        device.scope.resolve('targetSize').setValue([device.width, device.height]);
     }
 
     moved() {
@@ -110,7 +91,11 @@ class SphereShape extends Element {
     updateBound() {
         bound.center.copy(this.pivot.getPosition());
         bound.halfExtents.set(this.radius, this.radius, this.radius);
-        this.scene.boundDirty = true;
+
+        // undo/redo can change the volume while it's not in the scene
+        if (this.scene) {
+            this.scene.boundDirty = true;
+        }
     }
 
     get worldBound(): BoundingBox | null {

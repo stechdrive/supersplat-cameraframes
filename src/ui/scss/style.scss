@@ -1,21 +1,26 @@
 @use 'pcui-theme-grey.scss';
+@use 'camera-views';
+@use 'camera-frames';
+@use 'camera-frames-help';
+@use 'reference-image';
+@use 'welcome-board';
+@use 'update-banner';
+@use 'mesh-list';
 @use 'colors.scss' as *;
 @use 'tooltips.scss';
 @use 'panel.scss';
 @use 'menu-panel.scss';
 @use 'menu.scss';
 @use 'scene-panel.scss';
-@use 'view-panel.scss';
+@use 'settings-panel.scss';
 @use 'color-panel.scss';
 @use 'splat-list.scss';
-@use 'mesh-list.scss';
 @use 'transform.scss';
 @use 'bottom-toolbar.scss';
 @use 'right-toolbar.scss';
 @use 'select-toolbar.scss';
 @use 'data-panel.scss';
 @use 'popup.scss';
-@use 'mode-toggle.scss';
 @use 'settings-dialog.scss';
 @use 'spinner.scss';
 @use 'progress.scss';
@@ -25,20 +30,16 @@
 @use 'timeline-panel.scss';
 @use 'status-bar.scss';
 @use 'tool.scss';
-@use 'update-banner.scss';
-@use 'welcome-board.scss';
-@use 'camera-frames.scss';
-@use 'camera-frames-help.scss';
-@use 'reference-image.scss';
 
 * {
     font-size: 12px;
     user-select: none;
-    overscroll-behavior: none;
 }
 
+// not on '*' - that breaks wheel scrolling over overflow:hidden elements (e.g. pcui labels)
 html {
     height: 100%;
+    overscroll-behavior: none;
 }
 
 body {
@@ -49,8 +50,7 @@ body {
     background-color: black;
     overflow: hidden;
     touch-action: none;
-    --camera-frames-help-offset-left: 0px;
-    --camera-frames-help-offset-right: 0px;
+    overscroll-behavior: none;
 }
 
 #app-container {
@@ -111,24 +111,129 @@ body {
     bottom: 20px;
     color: $text-primary;
     text-shadow: 1px 1px 4px black;
+
+    span {
+        color: $clr-hilight;
+    }
 }
 
-#cursor-label {
+#startup-error {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 40px;
+    background-color: $bcg-primary;
+    color: $text-primary;
+    font-size: 16px;
+    line-height: 1.5;
+    text-align: center;
+}
+
+#perf-overlay {
     position: absolute;
     left: 12px;
-    bottom: 12px;
-    color: $text-primary;
+    bottom: 66px;
+    pointer-events: none;
     text-shadow: 1px 1px 4px black;
+    font-family: ui-monospace, Menlo, Consolas, monospace;
 
-    padding: 8px;
-    border-radius: 4px;
-    border: 1px solid transparent;
+    .perf-row {
+        display: flex;
+        flex-direction: row;
+        align-items: center;
+        padding: 1px 0;
+        font-family: inherit;
+    }
 
-    cursor: pointer;
+    .perf-key {
+        margin: 0;
+        color: $clr-icon-hilight;
+        font-family: inherit;
+        font-weight: bold;
+        overflow: visible;
+    }
 
-    &:hover {
-        border: 1px solid $clr-hilight;
-        background-color: rgba(0, 0, 0, 0.25);
+    .perf-value {
+        margin: 0 0 0 8px;
+        color: $text-primary;
+        font-family: inherit;
+        font-variant-numeric: tabular-nums;
+        white-space: pre;
+        overflow: visible;
+    }
+
+    .perf-graph {
+        display: block;
+        margin: 4px 0 3px 0;
+        border-radius: 2px;
+        outline: 1px solid rgba(255, 255, 255, 0.15);
+    }
+
+    .perf-note {
+        margin: 0;
+        color: $text-secondary;
+        font-family: inherit;
+        font-variant-numeric: tabular-nums;
+        white-space: pre;
+        overflow: visible;
+    }
+}
+
+#camera-info-overlay {
+    position: absolute;
+    left: 12px;
+    bottom: 17px;
+    text-shadow: 1px 1px 4px black;
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+
+    .camera-info-row {
+        display: flex;
+        flex-direction: row;
+        align-items: center;
+        padding: 1px 0;
+        font-family: inherit;
+    }
+
+    .camera-info-key {
+        margin: 0;
+        color: $clr-icon-hilight;
+        font-family: inherit;
+        font-weight: bold;
+        overflow: visible;
+    }
+
+    .camera-info-value {
+        margin: 0 0 0 8px;
+        color: $text-primary;
+        font-family: inherit;
+        font-variant-numeric: tabular-nums;
+        overflow: visible;
+        cursor: text;
+        user-select: text;
+        padding: 0 4px;
+        border-radius: 4px;
+        border: 1px solid transparent;
+        outline: none;
+        transition: background-color 0.15s ease;
+
+        &:hover {
+            background-color: rgba(0, 0, 0, 0.25);
+        }
+
+        &:focus {
+            border-color: $clr-hilight;
+            background-color: rgba(0, 0, 0, 0.25);
+        }
+
+        &.flash-ok {
+            background-color: rgba(120, 220, 140, 0.35);
+        }
+
+        &.flash-bad {
+            background-color: rgba(220, 100, 100, 0.45);
+        }
     }
 }
 
@@ -139,20 +244,6 @@ body {
     right: 0px;
     top: 0px;
     pointer-events: none;
-
-    &.view-cube-disabled {
-        pointer-events: auto;
-        cursor: not-allowed;
-    }
-}
-
-#view-cube-svg {
-    pointer-events: auto;
-}
-
-#view-cube-container.view-cube-disabled #view-cube-svg {
-    pointer-events: none;
-    opacity: 0.35;
 }
 
 #mask-canvas {
@@ -168,6 +259,13 @@ body {
     padding: 0;
     margin: 0;
     flex-grow: 1;
+}
+
+#annotation-container {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
 }
 
 #tools-container {
@@ -203,7 +301,6 @@ body {
     width: 100%;
     height: 100%;
     pointer-events: none;
-    z-index: 20;
 }
 
 // placeholder

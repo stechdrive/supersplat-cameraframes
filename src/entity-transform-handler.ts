@@ -59,8 +59,8 @@ class EntityTransformHandler implements TransformHandler {
 
     placePivot() {
         // place initial pivot point
-        const origin = this.events.invoke('pivot.origin');
-        this.target.getPivot(origin === 'center' ? 'center' : 'boundCenter', false, transform);
+        if (this.target instanceof Splat) this.target.getPivot(transform);
+        else this.target.getPivot('center', false, transform);
         this.events.invoke('pivot').place(transform);
     }
 
@@ -103,7 +103,6 @@ class EntityTransformHandler implements TransformHandler {
             newt: transform.clone()
         });
 
-        this.target.scene.beginBoundPreview(this.target);
     }
 
     update(transform: Transform) {
@@ -115,18 +114,12 @@ class EntityTransformHandler implements TransformHandler {
         const r = quat;
         const s = mat.getScale();
 
-        if (this.target instanceof Splat) {
-            this.target.move(t, r, s, true);
-        } else {
-            this.target.move(t, r, s);
-        }
+        this.target.move(t, r, s);
         this.top.newt.set(t, r, s);
         this.pop.newt.copy(transform);
-        this.target.scene.updateBoundPreview(this.target);
     }
 
     end() {
-        this.target.scene.endBoundPreview(this.target);
 
         // if anything changed then register the op with undo/redo system
         const { oldt, newt } = this.top;
@@ -136,9 +129,6 @@ class EntityTransformHandler implements TransformHandler {
             this.events.fire('edit.add', new MultiOp([this.top, this.pop]));
         }
 
-        if (changed && this.target instanceof Splat) {
-            this.target.updatePositions('object-transform').catch(() => {});
-        }
 
         this.top = null;
         this.pop = null;

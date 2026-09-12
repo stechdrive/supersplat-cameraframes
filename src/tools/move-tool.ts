@@ -1,13 +1,12 @@
 import { TranslateGizmo } from 'playcanvas';
 
-import { createGizmoCamera } from './gizmo-camera-adapter';
 import { TransformTool } from './transform-tool';
 import { Events } from '../events';
 import { Scene } from '../scene';
 
 class MoveTool extends TransformTool {
     constructor(events: Events, scene: Scene) {
-        const gizmo = new TranslateGizmo(createGizmoCamera(scene.camera.camera, scene.camera), scene.gizmoLayer);
+        const gizmo = new TranslateGizmo(scene.inputCamera.inputCamera, scene.gizmoLayer);
 
         super(gizmo, events, scene);
     }

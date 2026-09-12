@@ -4,7 +4,7 @@
 
 // Browser file system
 export { BrowserFileSystem } from './browser-file-system';
-export { DeflateZipFileSystem } from './deflate-zip-file-system';
+export { pickWriteTarget, WriteTarget } from './pick-target';
 
 // Writer utilities
 export {

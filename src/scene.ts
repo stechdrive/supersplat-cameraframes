@@ -3,46 +3,32 @@ import {
     EVENT_PRERENDER_LAYER,
     LAYERID_DEPTH,
     SORTMODE_CUSTOM,
-    SORTMODE_NONE,
     BoundingBox,
     CameraComponent,
     Color,
     Entity,
-    Mat4,
     Layer,
     GraphicsDevice,
     MeshInstance,
-    Vec3
+    Vec3,
+    WireRenderer
 } from 'playcanvas';
 
 import { AssetLoader } from './asset-loader';
 import { Camera } from './camera';
 import { CameraPoseGizmos } from './camera-pose-gizmos';
+import { CommandQueue } from './command-queue';
 import { DataProcessor } from './data-processor';
-import { AmbientLightOp } from './edit-ops';
 import { Element, ElementType, ElementTypeList } from './element';
 import { Events } from './events';
-import { EyeLevel } from './eye-level';
 import { InfiniteGrid as Grid } from './infinite-grid';
-import { LightRig } from './light-rig';
-import { Model } from './model';
 import { Outline } from './outline';
 import { PCApp } from './pc-app';
+import { ProjectedSplatRenderer } from './projected-splat-renderer';
 import { SceneConfig } from './scene-config';
 import { SceneState } from './scene-state';
 import { Splat } from './splat';
-import { SplatOverlay } from './splat-overlay';
-import {
-    createSupersplatSplatRenderBackends,
-    type SplatRenderBackends,
-    type SplatRenderBackendCapabilities,
-    type SplatRenderDataBackend,
-    type SplatRenderDisplayBackend,
-    type SplatRenderBackend,
-    type SplatRenderLifecycleBackend,
-    type SplatRenderOverlayBackend,
-    type SplatRenderPickingBackend
-} from './splat-render-backend';
+import { SplatCenters } from './splat-centers';
 import { Underlay } from './underlay';
 
 // sort meshInstances by the aabb corner furthest from the camera
@@ -84,136 +70,152 @@ const specialSort = (instances: MeshInstance[], numInstances: number, cameraPos:
     instances.sort((a, b) => distances.get(b) - distances.get(a));
 };
 
+type ResolveMode = 'none' | 'old' | 'new';
+
+// rendered frames of timing history kept for the performance overlay. The
+// overlay plots all of them but summarises only the most recent second's worth,
+// so this is graph history rather than the averaging window.
+const FRAME_TIMING_WINDOW = 180;
+
 class Scene {
     events: Events;
     config: SceneConfig;
     canvas: HTMLCanvasElement;
     app: PCApp;
+    wire: WireRenderer;
     worldLayer: Layer;
     splatLayer: Layer;
-    backgroundLayer: Layer;
-    shadowLayer: Layer;
-    debugLayer: Layer;
-    exportOverlayLayer: Layer;
-    selectionVolumeLayer: Layer;
     overlayLayer: Layer;
+    centersLayer: Layer;
     gizmoLayer: Layer;
-    modelLightingLayer: Layer;
-    referenceBackLayer: Layer | null = null;
-    referenceFrontLayer: Layer | null = null;
-    ambientFillLights: Entity[] = [];
-    defaultAmbient = 0.5;
     sceneState = [new SceneState(), new SceneState()];
     elements: Element[] = [];
     boundStorage = new BoundingBox();
     boundDirty = true;
-    private boundPreviewActive = false;
-    private boundPreviewTarget: Element | null = null;
-    private boundPreviewTargets: { target: Element; base: BoundingBox; worldInv: Mat4; }[] = [];
-    private boundPreviewBase = new BoundingBox();
-    private boundPreviewTargetBase = new BoundingBox();
-    private boundPreviewTargetCurrent = new BoundingBox();
-    private boundPreviewCurrent = new BoundingBox();
-    private boundPreviewTargetsCombined = new BoundingBox();
-    private boundPreviewWorld = new Mat4();
-    private boundPreviewWorldInv = new Mat4();
-    private boundPreviewDelta = new Mat4();
-    private boundPreviewCorners = [
-        new Vec3(),
-        new Vec3(),
-        new Vec3(),
-        new Vec3(),
-        new Vec3(),
-        new Vec3(),
-        new Vec3(),
-        new Vec3()
-    ];
-    private boundPreviewMin = new Vec3();
-    private boundPreviewMax = new Vec3();
-    private boundPreviewTmp = new Vec3();
     forceRender = false;
-    pendingViewportRefresh = 0;
-    viewportRefreshInFlight = false;
+
+    // True while the user is dragging in the viewport. The element-state diff below
+    // only sees what elements serialize, so edits that live outside it - a
+    // per-gaussian transform (transform palette + instance list), a selection
+    // change - are indistinguishable from a settled scene. Rather than have each
+    // tool remember to report itself, this is driven from the pointer directly, so
+    // every tool is treated the same. It classifies frames only: it never forces a
+    // frame to render that wouldn't have.
+    forceInteracting = false;
+
+    // motion-adaptive stochastic rendering. While the scene is actively changing
+    // (camera orbit / edit) we draw the fast no-sort stochastic mode; when it
+    // settles we render a single clean sorted & blended frame. movingRender picks
+    // the mode for the current frame; pendingResolve marks that a clean settled
+    // frame is still owed after motion ends.
+    movingRender = false;
+    pendingResolve = false;
+
+    // 'auto' stochastic mode follows the timing of the last rendered sorted
+    // frame: engaged (stochastic-during-movement) while that frame's GPU span
+    // exceeded autoEngageMs, disengaged once a later sorted frame - at minimum
+    // the clean resolve frame on every settle - comes in under it, so hiding
+    // content or moving to a lighter view drops back to sorted. Stochastic
+    // frames say nothing about the cost of sorting, so they never update the
+    // decision: profiler reports resolve asynchronously, and frameModes
+    // records each profiled frame's mode by renderVersion so reports can be
+    // attributed (see onGpuReport). The threshold is tweakable from the
+    // console as `scene.autoEngageMs = 5` to exercise the switch on scenes
+    // that are not actually slow.
+    autoEngageMs = 60;
+    autoEngaged = false;
+    private autoSampling = false;
+    private frameModes = new Map<number, boolean>();
 
     lockedRenderMode = false;
     lockedRender = false;
 
-    renderFlags: {
-        forceGridOverlay: boolean;
-        forceEyeLevelOverlay: boolean;
-        eyeLevelLayerOverride: Layer | null;
-        gridLayerOverride: Layer | null;
-        hideBounds: boolean;
-        offscreenIncludeReferenceImage: boolean;
-        forceMergedSplatDisplay: boolean;
-    } = {
-            forceGridOverlay: false,
-            forceEyeLevelOverlay: false,
-            eyeLevelLayerOverride: null,
-            gridLayerOverride: null,
-            hideBounds: false,
-            offscreenIncludeReferenceImage: false,
-            forceMergedSplatDisplay: false
-        };
+    // viewport rendering is suspended while a document load applies its pieces:
+    // layers become visible before their saved transforms arrive and the camera
+    // pose is restored last, so intermediate frames would show a half-assembled
+    // scene. Set by doc.ts, which forces a render once the load completes.
+    suspendRender = false;
 
-    canvasResize: { width: number; height: number } | null = null;
+    // devtools switch for the stochastic resolve, set from the console as
+    // `scene.resolveMode = 'old'`. 'new' is the masked quad+bilinear filter that
+    // ships; 'old' is the original aligned 2x2 block average, held across the quad
+    // and unmasked so it filters the grid and overlays too; 'none' shows the raw
+    // 1 spp samples unfiltered. Only affects stochastic frames, so pair it with
+    // Stochastic Alpha = Enabled to compare without having to keep dragging.
+    private _resolveMode: ResolveMode = 'new';
+
+    canvasResize: {width: number; height: number} | null = null;
     targetSize = {
         width: 0,
         height: 0
     };
-    aspectViewport = {
-        enabled: false,
-        offsetX: 0,
-        offsetY: 0,
+
+    // rolling window of per-frame timings for the performance overlay, sampled
+    // only on frames that actually rendered so the window is never padded with
+    // frames that did not happen. gpu is the profiler's frame span
+    // (earliest pass begin to latest pass end); the engine reports the span
+    // rather than the sum of per-pass durations because pass intervals overlap
+    // on pipelined GPUs, which makes the sum grow with the pass count even
+    // while the GPU is idle. The timestamp readback is asynchronous, so the
+    // same value can be sampled on consecutive frames - harmless for the
+    // min/median/p95 the overlay derives from the window.
+    readonly frameTimings = {
+        gpu: [] as number[],
+        cpu: [] as number[],
         width: 0,
-        height: 0
+        height: 0,
+        stochastic: false,
+        gpuSupported: false
     };
 
+    private cpuFrameStart = 0;
+
     dataProcessor: DataProcessor;
+    projectedSplatRenderer: ProjectedSplatRenderer;
+    readonly splatRenderers = new Set<ProjectedSplatRenderer>();
     assetLoader: AssetLoader;
     camera: Camera;
+
+    // Only input-facing tools use this view. Rendering and persistence keep
+    // their explicit owners, and camera remains the independent viewport.
+    get inputCamera(): Camera {
+        return this.events.functions.get('cameraViews.activeCamera')?.() ?? this.camera;
+    }
     cameraPoseGizmos: CameraPoseGizmos;
-    splatOverlay: SplatOverlay;
+    splatCenters: SplatCenters;
     grid: Grid;
     outline: Outline;
     underlay: Underlay;
-    eyeLevel: EyeLevel;
-    renderSystem: SplatRenderBackend;
-    splatRenderLifecycle: SplatRenderLifecycleBackend;
-    splatRenderDisplay: SplatRenderDisplayBackend;
-    splatRenderData: SplatRenderDataBackend;
-    splatRenderPicking: SplatRenderPickingBackend;
-    splatRenderOverlay: SplatRenderOverlayBackend;
-    splatRenderCapabilities: SplatRenderBackendCapabilities;
+
+    // shared queue for serialising async splat work. exposed so subsystems that
+    // need to order their async work alongside edit-history operations can do so
+    // without going through edit-history directly.
+    commandQueue: CommandQueue;
 
     contentRoot: Entity;
     cameraRoot: Entity;
-    private pendingAmbientOp: AmbientLightOp | null = null;
-    private pendingAmbientFresh = false;
-    private pendingAmbientTimer: number | null = null;
-    private lightingHistoryCoalesceMs = 400;
-    private boundRecalcTimer: number | null = null;
-    private boundRecalcDebounceMs = 200;
 
     constructor(
         events: Events,
         config: SceneConfig,
         canvas: HTMLCanvasElement,
-        graphicsDevice: GraphicsDevice
+        graphicsDevice: GraphicsDevice,
+        commandQueue: CommandQueue
     ) {
         this.events = events;
         this.config = config;
         this.canvas = canvas;
+        this.commandQueue = commandQueue;
 
         // configure the playcanvas application. we render to an offscreen buffer so require
         // only the simplest of backbuffers.
         this.app = new PCApp(canvas, { graphicsDevice });
+        this.wire = new WireRenderer(this.app);
 
         // only render the scene when instructed
         this.app.autoRender = false;
         // @ts-ignore
         this.app._allowResize = false;
-        this.app.scene.clusteredLightingEnabled = false;
 
         // hack: disable lightmapper first bake until we expose option for this
         // @ts-ignore
@@ -226,44 +228,44 @@ class Scene {
         this.app.graphicsDevice.maxPixelRatio = window.devicePixelRatio;
 
         // configure application canvas
-        const observedTarget = window.document.getElementById('canvas-container') ?? canvas;
-        const updateCanvasResize = (entry?: ResizeObserverEntry | null) => {
-            if (entry?.devicePixelContentBoxSize) {
-                // on non-safari browsers, we are given the pixel-perfect canvas size
-                this.canvasResize = {
-                    width: entry.devicePixelContentBoxSize[0].inlineSize,
-                    height: entry.devicePixelContentBoxSize[0].blockSize
-                };
-            } else if (entry?.contentBoxSize?.length > 0) {
-                // on safari browsers we must calculate pixel size from CSS size ourselves
-                // and hope the browser performs the same calculation.
-                const pixelRatio = window.devicePixelRatio || 1;
-                this.canvasResize = {
-                    width: Math.ceil(entry.contentBoxSize[0].inlineSize * pixelRatio),
-                    height: Math.ceil(entry.contentBoxSize[0].blockSize * pixelRatio)
-                };
-            } else {
-                const rect = observedTarget.getBoundingClientRect();
-                const pixelRatio = window.devicePixelRatio || 1;
-                this.canvasResize = {
-                    width: Math.ceil(rect.width * pixelRatio),
-                    height: Math.ceil(rect.height * pixelRatio)
-                };
-            }
-            this.forceRender = true;
-        };
-
-        if (typeof ResizeObserver !== 'undefined') {
-            const observer = new ResizeObserver((entries: ResizeObserverEntry[]) => {
-                if (entries.length > 0) {
-                    updateCanvasResize(entries[0]);
+        const observer = new ResizeObserver((entries: ResizeObserverEntry[]) => {
+            if (entries.length > 0) {
+                const entry = entries[0];
+                if (entry) {
+                    if (entry.devicePixelContentBoxSize) {
+                        // on non-safari browsers, we are given the pixel-perfect canvas size
+                        this.canvasResize = {
+                            width: entry.devicePixelContentBoxSize[0].inlineSize,
+                            height: entry.devicePixelContentBoxSize[0].blockSize
+                        };
+                    } else if (entry.contentBoxSize.length > 0) {
+                        // on safari browsers we must calculate pixel size from CSS size ourselves
+                        // and hope the browser performs the same calculation.
+                        const pixelRatio = window.devicePixelRatio;
+                        this.canvasResize = {
+                            width: Math.ceil(entry.contentBoxSize[0].inlineSize * pixelRatio),
+                            height: Math.ceil(entry.contentBoxSize[0].blockSize * pixelRatio)
+                        };
+                    }
                 }
-            });
-            observer.observe(observedTarget);
-        } else {
-            updateCanvasResize();
-            window.addEventListener('resize', () => updateCanvasResize());
-        }
+                this.forceRender = true;
+            }
+        });
+
+        const canvasContainer = window.document.getElementById('canvas-container');
+        observer.observe(canvasContainer);
+
+        // Uniform "user is dragging" signal for every tool. canvasContainer is the
+        // common ancestor of the canvas (where the engine's gizmos listen) and of
+        // tools-container (where the 2d selection tools listen), and the capture
+        // phase sees the event before any of them - including through a
+        // setPointerCapture retarget. `buttons` keeps hovering out of it, so no
+        // per-tool drag state is needed.
+        canvasContainer.addEventListener('pointermove', (event: PointerEvent) => {
+            if (event.buttons !== 0) {
+                this.forceInteracting = true;
+            }
+        }, true);
 
         // configure depth layers to handle dynamic refraction
         const depthLayer = this.app.scene.layers.getLayerById(LAYERID_DEPTH);
@@ -274,6 +276,20 @@ class Scene {
         this.app.on('update', (deltaTime: number) => this.onUpdate(deltaTime));
         this.app.on('prerender', () => this.onPreRender());
         this.app.on('postrender', () => this.onPostRender());
+
+        this.frameTimings.gpuSupported = !!(this.app.graphicsDevice as any).supportsTimestampQuery;
+        events.function('scene.frameTimings', () => this.frameTimings);
+
+        // the profiler's report callback carries the renderVersion of the frame
+        // the timings belong to, but the engine discards it before the value
+        // lands in _frameTime. Wrap it so reports can be attributed to the mode
+        // the frame rendered with (see onGpuReport).
+        const profiler = this.app.graphicsDevice.gpuProfiler as any;
+        const originalReport = profiler.report.bind(profiler);
+        profiler.report = (renderVersion: number, timings: number[] | null, frameTime?: number) => {
+            originalReport(renderVersion, timings, frameTime);
+            this.onGpuReport(renderVersion, timings, frameTime);
+        };
 
         // force render on device restored
         this.app.graphicsDevice.on('devicerestored', () => {
@@ -291,59 +307,7 @@ class Scene {
 
         // get the world layer
         this.worldLayer = this.app.scene.layers.getLayerByName('World');
-
-        // background layer
-        this.backgroundLayer = new Layer({
-            enabled: true,
-            name: 'Background Layer',
-            opaqueSortMode: SORTMODE_NONE,
-            transparentSortMode: SORTMODE_NONE
-        });
-
-        // shadow layer
-        // this layer contains shadow caster scene mesh instances, shadow-casting
-        // virtual light, shadow catching plane geometry and the main camera.
-        this.shadowLayer = new Layer({
-            name: 'Shadow Layer'
-        });
-
-        // model lighting layer (models専用ディレクショナルライト用)
-        this.modelLightingLayer = new Layer({
-            name: 'Model Lighting',
-            enabled: true
-        });
-
-        this.exportOverlayLayer = new Layer({
-            enabled: false,
-            name: 'Export Overlay',
-            clearDepthBuffer: false,
-            opaqueSortMode: SORTMODE_NONE,
-            transparentSortMode: SORTMODE_NONE
-        });
-
-        // debug layer
-        this.debugLayer = new Layer({
-            enabled: true,
-            name: 'Debug Layer',
-            opaqueSortMode: SORTMODE_NONE,
-            transparentSortMode: SORTMODE_NONE
-        });
-
-        this.selectionVolumeLayer = new Layer({
-            enabled: true,
-            name: 'Selection Volume',
-            clearDepthBuffer: false,
-            opaqueSortMode: SORTMODE_NONE,
-            transparentSortMode: SORTMODE_NONE
-        });
-
-        // overlay layer
-        this.overlayLayer = new Layer({
-            name: 'Overlay',
-            clearDepthBuffer: false,
-            opaqueSortMode: SORTMODE_NONE,
-            transparentSortMode: SORTMODE_NONE
-        });
+        this.wire.layer = this.worldLayer;
 
         // splat layer - dedicated layer for splat rendering with MRT
         this.splatLayer = new Layer({
@@ -353,40 +317,36 @@ class Scene {
         });
         this.splatLayer.customCalculateSortValues = specialSort;
 
-        // gizmo layer
+        // tool overlay layer - drawn after the splats (e.g. ghost passes of the
+        // measure/orient tool overlays, which show through occluding gaussians)
+        this.overlayLayer = new Layer({ name: 'ToolOverlay' });
+
+        // splat centers - depth tested and written against a cleared buffer, so
+        // overlapping centers resolve nearest-first and the gaussians never
+        // occlude them. Its own layer because the gizmo shapes share the gizmo
+        // layer's depth buffer, and some of them write a constant fragment depth
+        // (see the engine's gizmo unlitShader) which no ordering can reconcile
+        // with real per-center depth
+        this.centersLayer = new Layer({
+            name: 'Centers',
+            clearDepthBuffer: true
+        });
+
+        // gizmo layer - clear scene depth before drawing gizmos so they remain visible
         this.gizmoLayer = new Layer({
             name: 'Gizmo',
             clearDepthBuffer: true,
-            opaqueSortMode: SORTMODE_NONE,
-            transparentSortMode: SORTMODE_NONE
+            clearStencilBuffer: true
         });
 
-        const worldLayer = this.worldLayer;
-        this.insertLayerBefore(this.backgroundLayer, worldLayer);
-        this.insertLayerBefore(this.shadowLayer, worldLayer);
-        this.insertLayerBefore(this.modelLightingLayer, worldLayer);
-        this.insertLayerBefore(this.debugLayer, worldLayer);
-        this.insertLayerBefore(this.exportOverlayLayer, worldLayer);
-        // NOTE: Overlay/Gizmo は World(Transparent=gsplat) の後ろに来る必要がある。
-        // Gizmo(clearDepthBuffer) が World の透明パス直前に入ると、GLB の深度が消えて見えなくなる。
-        this.insertLayerAfter(this.splatLayer, worldLayer);
-        this.insertLayerAfter(this.selectionVolumeLayer, this.splatLayer);
-        this.insertLayerAfter(this.overlayLayer, this.selectionVolumeLayer);
-        this.insertLayerAfter(this.gizmoLayer, this.overlayLayer);
+        const layers = this.app.scene.layers;
+        layers.push(this.splatLayer);
+        layers.push(this.overlayLayer);
+        layers.push(this.centersLayer);
+        layers.push(this.gizmoLayer);
 
-        // Ambient fallback (環境マップ未設定時の視認性確保)
-        this.app.scene.ambientLight.set(0.5, 0.5, 0.5);
-        this.defaultAmbient = this.app.scene.ambientLight.r ?? this.defaultAmbient;
-        events.on('lighting.setAmbient', (value: number) => {
-            this.setAmbient(value, true);
-        });
-        events.function('lighting.ambient', () => this.app.scene.ambientLight.r ?? 0.3);
-        events.function('lighting.commitPending', () => this.commitPendingAmbient());
-        events.function('scene.reorderElement', (element: Element, direction: 'up' | 'down') => {
-            return this.reorderElement(element, direction);
-        });
-        events.on('edit.apply', this.onEditApplied, this);
-
+        this.projectedSplatRenderer = new ProjectedSplatRenderer(this);
+        this.splatRenderers.add(this.projectedSplatRenderer);
         this.dataProcessor = new DataProcessor(this.app.graphicsDevice);
         this.assetLoader = new AssetLoader(this.app, events);
 
@@ -397,40 +357,18 @@ class Scene {
         this.cameraRoot = new Entity('cameraRoot');
         this.app.root.addChild(this.cameraRoot);
 
-        // 環境光補助ライト（contentRoot 作成後に生成）
-        this.createAmbientFillLights();
-
-        const renderBackends: SplatRenderBackends = createSupersplatSplatRenderBackends(this);
-        this.renderSystem = renderBackends.combined;
-        this.splatRenderLifecycle = renderBackends.lifecycle;
-        this.splatRenderDisplay = renderBackends.display;
-        this.splatRenderData = renderBackends.data;
-        this.splatRenderPicking = renderBackends.picking;
-        this.splatRenderOverlay = renderBackends.overlay;
-        this.splatRenderCapabilities = renderBackends.capabilities;
-
         // create elements
         this.camera = new Camera();
         this.add(this.camera);
-        const camLayers = this.camera.entity.camera.layers;
-        if (this.modelLightingLayer && !camLayers.includes(this.modelLightingLayer.id)) {
-            this.camera.entity.camera.layers = camLayers.concat([this.modelLightingLayer.id]);
-        }
 
         this.cameraPoseGizmos = new CameraPoseGizmos();
         this.add(this.cameraPoseGizmos);
 
-        this.splatOverlay = new SplatOverlay();
-        this.add(this.splatOverlay);
+        this.splatCenters = new SplatCenters();
+        this.add(this.splatCenters);
 
         this.grid = new Grid();
         this.add(this.grid);
-
-        this.eyeLevel = new EyeLevel();
-        this.add(this.eyeLevel);
-
-        const lightRig = new LightRig([this.modelLightingLayer.id]);
-        this.add(lightRig);
 
         this.outline = new Outline();
         this.add(this.outline);
@@ -438,444 +376,68 @@ class Scene {
         this.add(this.underlay);
     }
 
-    insertLayerBefore(layer: Layer, target: Layer | string | null | undefined) {
-        if (!layer) return;
-        const layers = this.app.scene.layers;
-        const targetLayer = typeof target === 'string' ? layers.getLayerByName(target) : target;
-        const idx = targetLayer ? layers.getOpaqueIndex(targetLayer) : -1;
-        const insertIndex = idx >= 0 ? idx : layers.layerList.length;
-        layers.insert(layer, insertIndex);
-    }
-
-    insertLayerAfter(layer: Layer, target: Layer | string | null | undefined) {
-        if (!layer) return;
-        const layers = this.app.scene.layers;
-        const targetLayer = typeof target === 'string' ? layers.getLayerByName(target) : target;
-        // Insert after the *whole* target layer (opaque + transparent). Using the opaque index can
-        // split the target layer and/or place the new layer before the target's transparent pass.
-        // That can break depth ordering (e.g. clearing depth before World transparent splats).
-        const transparentIdx = targetLayer ? layers.getTransparentIndex(targetLayer) : -1;
-        const opaqueIdx = targetLayer ? layers.getOpaqueIndex(targetLayer) : -1;
-        const baseIdx = transparentIdx >= 0 ? transparentIdx : opaqueIdx;
-        const insertIndex = baseIdx >= 0 ? baseIdx + 1 : layers.layerList.length;
-        layers.insert(layer, insertIndex);
-    }
-
-    private createAmbientFillLights() {
-        // contentRoot が未初期化の場合は何もしない
-        if (!this.contentRoot) {
-            return;
-        }
-
-        // 既存をクリーンアップ
-        this.ambientFillLights.forEach((light) => {
-            light.destroy();
-        });
-        this.ambientFillLights.length = 0;
-
-        const targetLayers = this.modelLightingLayer ? [this.modelLightingLayer.id] : undefined;
-        const makeLight = (name: string, angles: { x: number; y: number; z: number; }, intensity: number) => {
-            const ent = new Entity(name);
-            ent.addComponent('light', {
-                type: 'directional',
-                castShadows: false,
-                color: new Color(1, 1, 1),
-                intensity
-            });
-            if (targetLayers) {
-                ent.light.layers = targetLayers.slice();
-            }
-            ent.setEulerAngles(angles.x, angles.y, angles.z);
-            this.contentRoot.addChild(ent);
-            return ent;
-        };
-
-        const base = this.app.scene.ambientLight.r ?? 0.5;
-        // 上下から弱く当てる「なんちゃってヘミスフィア」
-        this.ambientFillLights = [
-            makeLight('ambientFillUp', { x: -60, y: 30, z: 0 }, base * 0.5),
-            makeLight('ambientFillDown', { x: 60, y: -30, z: 0 }, base * 0.5)
-        ];
-    }
-
-    applyAmbient(value: number) {
-        const v = Math.max(0, value ?? 0);
-        this.app.scene.ambientLight.set(v, v, v);
-        const fill = Math.max(0, v * 0.5);
-        this.ambientFillLights.forEach((light) => {
-            light.light.intensity = fill;
-        });
-        this.forceRender = true;
-        this.events.fire('lighting.ambientChanged', v);
-    }
-
-    setAmbient(value: number, recordHistory = false) {
-        const v = Math.max(0, value ?? 0);
-        const prev = this.app.scene.ambientLight.r ?? 0;
-        if (recordHistory) {
-            this.recordAmbientChange(prev, v);
-        } else {
-            this.applyAmbient(v);
-        }
-    }
-
-    private recordAmbientChange(prev: number, next: number) {
-        if (Math.abs(prev - next) < 1e-6) {
-            this.applyAmbient(next);
-            return;
-        }
-        if (!this.pendingAmbientOp) {
-            const op = new AmbientLightOp({
-                scene: this,
-                prev,
-                next
-            });
-            this.pendingAmbientOp = op;
-            this.pendingAmbientFresh = true;
-            this.events.fire('edit.add', op);
-        } else {
-            this.pendingAmbientOp.next = next;
-            this.applyAmbient(next);
-        }
-        this.scheduleAmbientReset();
-    }
-
-    private scheduleAmbientReset() {
-        if (this.pendingAmbientTimer !== null) {
-            window.clearTimeout(this.pendingAmbientTimer);
-        }
-        this.pendingAmbientTimer = window.setTimeout(() => {
-            this.clearPendingAmbientOp();
-        }, this.lightingHistoryCoalesceMs);
-    }
-
-    private clearPendingAmbientOp() {
-        if (this.pendingAmbientTimer !== null) {
-            window.clearTimeout(this.pendingAmbientTimer);
-            this.pendingAmbientTimer = null;
-        }
-        this.pendingAmbientOp = null;
-        this.pendingAmbientFresh = false;
-    }
-
-    private commitPendingAmbient() {
-        this.clearPendingAmbientOp();
-    }
-
-    private onEditApplied(op: any) {
-        if (!this.pendingAmbientOp) {
-            return;
-        }
-        if (op === this.pendingAmbientOp) {
-            if (this.pendingAmbientFresh) {
-                this.pendingAmbientFresh = false;
-                return;
-            }
-        }
-        this.clearPendingAmbientOp();
-    }
-
     start() {
         // start the app
         this.app.start();
     }
 
-    // 初期レイアウトが確定する前に描画されることがあるため、モデル読み込み後に「リサイズ＋再描画」を複数フレーム分遅延実行する
-    scheduleViewportRefresh() {
-        // postrender 後にダブル rAF で実行する。複数フレーム続けて実施し、初期計算の取りこぼしを防ぐ。
-        this.pendingViewportRefresh = Math.max(this.pendingViewportRefresh, 3);
-        this.forceRender = true; // 少なくとも1フレームは描画させて postrender を踏む
-    }
-
-    scheduleBoundRecalc() {
-        if (this.boundRecalcTimer !== null) {
-            window.clearTimeout(this.boundRecalcTimer);
-        }
-        this.boundDirty = false;
-        this.boundRecalcTimer = window.setTimeout(() => {
-            this.boundRecalcTimer = null;
-            this.boundDirty = true;
-            this.forceRender = true;
-        }, this.boundRecalcDebounceMs);
-    }
-
-    beginBoundPreview(target: Element) {
-        const entity = this.getBoundPreviewEntity(target);
-        if (!entity) {
-            return;
-        }
-
-        const targetBound = target.worldBound;
-        if (!targetBound) {
-            return;
-        }
-        const baseBound = this.bound;
-
-        this.boundPreviewActive = true;
-        this.boundPreviewTarget = target;
-        this.boundPreviewTargets = [];
-        this.boundPreviewBase.copy(baseBound);
-        this.boundPreviewTargetBase.copy(targetBound);
-        this.boundPreviewWorld.copy(entity.getWorldTransform());
-        this.boundPreviewWorldInv.copy(this.boundPreviewWorld).invert();
-        this.setBoundPreviewCorners(this.boundPreviewTargetBase);
-        this.updateBoundPreview(target);
-    }
-
-    beginBoundPreviewMulti(targets: Element[]) {
-        if (!targets || targets.length === 0) {
-            return false;
-        }
-
-        const entries: { target: Element; base: BoundingBox; worldInv: Mat4; }[] = [];
-        targets.forEach((target) => {
-            const entity = this.getBoundPreviewEntity(target);
-            const targetBound = target.worldBound;
-            if (!entity || !targetBound) {
-                return;
-            }
-            const base = new BoundingBox();
-            base.copy(targetBound);
-            const worldInv = new Mat4();
-            worldInv.copy(entity.getWorldTransform()).invert();
-            entries.push({ target, base, worldInv });
-        });
-
-        if (entries.length === 0) {
-            return false;
-        }
-
-        this.boundPreviewActive = true;
-        this.boundPreviewTarget = null;
-        this.boundPreviewTargets = entries;
-        this.boundPreviewBase.copy(this.bound);
-        this.updateBoundPreviewMulti();
-        return true;
-    }
-
-    updateBoundPreview(target: Element) {
-        if (!this.boundPreviewActive || this.boundPreviewTarget !== target) {
-            return;
-        }
-
-        const entity = this.getBoundPreviewEntity(target);
-        if (!entity) {
-            return;
-        }
-
-        this.boundPreviewDelta.mul2(entity.getWorldTransform(), this.boundPreviewWorldInv);
-        this.updateBoundPreviewFromDelta(this.boundPreviewDelta);
-    }
-
-    updateBoundPreviewMulti() {
-        if (!this.boundPreviewActive || this.boundPreviewTargets.length === 0) {
-            return;
-        }
-
-        let hasTarget = false;
-        const combined = this.boundPreviewTargetsCombined;
-
-        this.boundPreviewTargets.forEach((entry) => {
-            const entity = this.getBoundPreviewEntity(entry.target);
-            if (!entity) {
-                return;
-            }
-            this.boundPreviewDelta.mul2(entity.getWorldTransform(), entry.worldInv);
-            this.updateBoundPreviewTargetFromDelta(entry.base, this.boundPreviewDelta, this.boundPreviewTargetCurrent);
-            if (!hasTarget) {
-                combined.copy(this.boundPreviewTargetCurrent);
-                hasTarget = true;
-            } else {
-                combined.add(this.boundPreviewTargetCurrent);
-            }
-        });
-
-        if (!hasTarget) {
-            return;
-        }
-
-        this.boundPreviewCurrent.copy(this.boundPreviewBase);
-        this.boundPreviewCurrent.add(combined);
-        this.applyBoundPreviewPadding();
-    }
-
-    updateBoundPreviewWithDelta(target: Element, delta: Mat4) {
-        if (!this.boundPreviewActive || this.boundPreviewTarget !== target) {
-            return;
-        }
-        this.updateBoundPreviewFromDelta(delta);
-    }
-
-    endBoundPreview(target: Element) {
-        if (!this.boundPreviewActive || this.boundPreviewTarget !== target) {
-            return;
-        }
-
-        this.boundPreviewActive = false;
-        this.boundPreviewTarget = null;
-        this.boundPreviewTargets = [];
-        this.boundStorage.copy(this.boundPreviewCurrent);
-        this.scheduleBoundRecalc();
-    }
-
-    endBoundPreviewMulti() {
-        if (!this.boundPreviewActive || this.boundPreviewTargets.length === 0) {
-            return;
-        }
-
-        this.boundPreviewActive = false;
-        this.boundPreviewTarget = null;
-        this.boundPreviewTargets = [];
-        this.boundStorage.copy(this.boundPreviewCurrent);
-        this.scheduleBoundRecalc();
-    }
-
-    private getBoundPreviewEntity(target: Element) {
-        if (target instanceof Splat || target instanceof Model || target instanceof LightRig) {
-            return target.entity;
-        }
-        return null;
-    }
-
-    private setBoundPreviewCorners(bound: BoundingBox) {
-        const center = bound.center;
-        const half = bound.halfExtents;
-        const minX = center.x - half.x;
-        const minY = center.y - half.y;
-        const minZ = center.z - half.z;
-        const maxX = center.x + half.x;
-        const maxY = center.y + half.y;
-        const maxZ = center.z + half.z;
-        const corners = this.boundPreviewCorners;
-        corners[0].set(minX, minY, minZ);
-        corners[1].set(maxX, minY, minZ);
-        corners[2].set(minX, maxY, minZ);
-        corners[3].set(maxX, maxY, minZ);
-        corners[4].set(minX, minY, maxZ);
-        corners[5].set(maxX, minY, maxZ);
-        corners[6].set(minX, maxY, maxZ);
-        corners[7].set(maxX, maxY, maxZ);
-    }
-
-    private updateBoundPreviewFromDelta(delta: Mat4) {
-        this.updateBoundPreviewTargetFromDelta(this.boundPreviewTargetBase, delta, this.boundPreviewTargetCurrent);
-        this.boundPreviewCurrent.copy(this.boundPreviewBase);
-        this.boundPreviewCurrent.add(this.boundPreviewTargetCurrent);
-        this.applyBoundPreviewPadding();
-    }
-
-    private updateBoundPreviewTargetFromDelta(base: BoundingBox, delta: Mat4, result: BoundingBox) {
-        const min = this.boundPreviewMin;
-        const max = this.boundPreviewMax;
-        const tmp = this.boundPreviewTmp;
-        min.set(Infinity, Infinity, Infinity);
-        max.set(-Infinity, -Infinity, -Infinity);
-
-        this.setBoundPreviewCorners(base);
-        this.boundPreviewCorners.forEach((corner) => {
-            delta.transformPoint(corner, tmp);
-            min.x = Math.min(min.x, tmp.x);
-            min.y = Math.min(min.y, tmp.y);
-            min.z = Math.min(min.z, tmp.z);
-            max.x = Math.max(max.x, tmp.x);
-            max.y = Math.max(max.y, tmp.y);
-            max.z = Math.max(max.z, tmp.z);
-        });
-
-        result.setMinMax(min, max);
-    }
-
-    private applyBoundPreviewPadding() {
-        const pad = Math.max(1e-3, this.boundPreviewCurrent.halfExtents.length() * 0.02);
-        this.boundPreviewCurrent.halfExtents.x += pad;
-        this.boundPreviewCurrent.halfExtents.y += pad;
-        this.boundPreviewCurrent.halfExtents.z += pad;
-        this.forceRender = true;
-    }
-
     clear() {
         const splats = this.getElementsByType(ElementType.splat);
         splats.forEach((splat) => {
-            this.remove(splat);
             (splat as Splat).destroy();
         });
-        const models = this.getElementsByType(ElementType.model) as Model[];
-        models.forEach((model) => {
-            this.remove(model);
-            model.destroy();
-        });
     }
 
-    docSerializeLighting() {
-        const lights = this.getElementsByType(ElementType.other)
-        .filter((element): element is LightRig => element instanceof LightRig)
-        .map(light => light.docSerialize());
+    // elements removed while their add() was still awaiting element.add().
+    // Element lifecycles aren't cancellation safe (a Splat's add awaits a
+    // bounds readback and then dereferences its scene), so the removal is
+    // deferred until the add settles instead of pulling the scene out from
+    // under it
+    private pendingRemovals = new Set<Element>();
 
-        return {
-            ambient: this.app.scene.ambientLight.r ?? this.defaultAmbient,
-            lights
-        };
-    }
-
-    docDeserializeLighting(doc: any) {
-        const ambient = (typeof doc?.ambient === 'number' && isFinite(doc.ambient)) ? doc.ambient : this.defaultAmbient;
-        this.applyAmbient(ambient);
-
-        const lights = Array.isArray(doc?.lights) ? doc.lights : [];
-        const rigs = this.getElementsByType(ElementType.other)
-        .filter((element): element is LightRig => element instanceof LightRig);
-
-        if (lights.length === 0) {
-            // データが無い場合は既定状態を適用するだけ
-            rigs.forEach((rig) => {
-                rig.resetDirection();
-                rig.applyStateDirect(rig.visible, rig.intensity);
-            });
+    // add a scene element
+    async add(element: Element) {
+        if (element.scene === this && this.pendingRemovals.has(element)) {
+            // re-added while the earlier add is still in flight: cancel the
+            // deferred removal and let that add register it
+            this.pendingRemovals.delete(element);
             return;
         }
 
-        rigs.forEach((rig, i) => {
-            const payload = lights[Math.min(i, lights.length - 1)];
-            if (payload) {
-                rig.docDeserialize(payload);
-            }
-        });
-    }
-
-    // add a scene element
-    async add(element: Element, options?: { insertAtTop?: boolean; }) {
         if (!element.scene) {
             // add the new element
             element.scene = this;
             await element.add();
-            if (options?.insertAtTop) {
-                const insertIndex = this.elements.findIndex(e => e.type === element.type);
-                if (insertIndex >= 0) {
-                    this.elements.splice(insertIndex, 0, element);
-                } else {
-                    this.elements.push(element);
-                }
-            } else {
-                this.elements.push(element);
+
+            // removed while adding: it was never registered or announced, so
+            // just tear it down
+            if (this.pendingRemovals.delete(element)) {
+                element.remove();
+                element.scene = null;
+                return;
             }
+
+            this.elements.push(element);
 
             // notify all elements of scene addition
             this.forEachElement(e => e !== element && e.onAdded(element));
 
             // notify listeners
             this.events.fire('scene.elementAdded', element);
-
-            // 新規追加時は境界とクリップ計算をやり直す
-            this.boundDirty = true;
-            this.forceRender = true;
         }
     }
 
     // remove an element from the scene
     remove(element: Element) {
         if (element.scene === this) {
-            // remove from list
-            this.elements.splice(this.elements.indexOf(element), 1);
+            // not registered yet: add() is still awaiting element.add(), so
+            // defer the removal to its continuation (see pendingRemovals)
+            const index = this.elements.indexOf(element);
+            if (index === -1) {
+                this.pendingRemovals.add(element);
+                return;
+            }
+            this.elements.splice(index, 1);
 
             // notify listeners
             this.events.fire('scene.elementRemoved', element);
@@ -890,9 +452,6 @@ class Scene {
 
     // get the scene bound
     get bound() {
-        if (this.boundPreviewActive) {
-            return this.boundPreviewCurrent;
-        }
         if (this.boundDirty) {
             let valid = false;
             this.forEachElement((e) => {
@@ -918,40 +477,18 @@ class Scene {
         return this.elements.filter(e => e.type === elementType);
     }
 
-    reorderElement(element: Element, direction: 'up' | 'down') {
-        if (!(element instanceof Element)) {
-            return false;
-        }
-
-        if (element.type !== ElementType.splat && element.type !== ElementType.model) {
-            return false;
-        }
-
-        const ordered = this.getElementsByType(element.type);
-        const fromIndex = ordered.indexOf(element);
-        if (fromIndex === -1) {
-            return false;
-        }
-
-        const toIndex = direction === 'up' ? fromIndex - 1 : fromIndex + 1;
-        if (toIndex < 0 || toIndex >= ordered.length) {
-            return false;
-        }
-
-        const target = ordered[toIndex];
-        const currentIndex = this.elements.indexOf(element);
-        const targetIndex = this.elements.indexOf(target);
-        if (currentIndex === -1 || targetIndex === -1) {
-            return false;
-        }
-
-        [this.elements[currentIndex], this.elements[targetIndex]] = [this.elements[targetIndex], this.elements[currentIndex]];
-        this.events.fire('scene.elementReordered', element, direction, fromIndex, toIndex);
-        return true;
-    }
-
     get graphicsDevice() {
         return this.app.graphicsDevice;
+    }
+
+    set resolveMode(value: ResolveMode) {
+        this._resolveMode = value;
+        // repaint so setting this from the console takes effect immediately
+        this.forceRender = true;
+    }
+
+    get resolveMode() {
+        return this._resolveMode;
     }
 
     private forEachElement(action: (e: Element) => void) {
@@ -959,6 +496,14 @@ class Scene {
     }
 
     private onUpdate(deltaTime: number) {
+        this.cpuFrameStart = performance.now();
+
+        if (this.canvasResize) {
+            this.canvas.width = this.canvasResize.width;
+            this.canvas.height = this.canvasResize.height;
+            this.canvasResize = null;
+        }
+
         // allow elements to update
         this.forEachElement(e => e.onUpdate(deltaTime));
 
@@ -978,14 +523,62 @@ class Scene {
         // generate the set of all element types that changed
         const all = new Set([...result.added, ...result.removed, ...result.moved, ...result.changed]);
 
+        // the performance overlay only advances on frames that render, so keep
+        // rendering while it is on. It deliberately does not count as
+        // interaction: settled frames stay on the sorted path, which is what
+        // makes the two render modes comparable by starting and stopping a drag.
+        const profiling = !!this.events.invoke('view.perfOverlay');
+
         // compare with previously serialized
-        if (this.lockedRenderMode) {
+        const changed = this.forceRender || profiling || all.size > 0;
+        const interacting = this.forceInteracting || all.size > 0;
+        const stochastic = this.events.invoke('view.stochastic');
+
+        // 'movement' takes the fast no-sort stochastic path only while actively
+        // interacting, so settled frames get the clean sorted & blended one;
+        // 'enabled' stays stochastic even once the scene settles. 'auto' acts
+        // like 'movement' while the last sorted frame's GPU span exceeded
+        // autoEngageMs and like 'disabled' otherwise (updated per report in
+        // onGpuReport); without timestamp-query support it can never measure,
+        // so it falls back to 'movement' rather than leave heavy scenes janky.
+        // Locked-mode captures always use the sorted path.
+        const auto = stochastic === 'auto';
+        this.autoSampling = auto && this.frameTimings.gpuSupported;
+        const adaptive = stochastic === 'movement' ||
+            (auto && (this.autoEngaged || !this.frameTimings.gpuSupported));
+        this.movingRender = !this.lockedRenderMode &&
+            (stochastic === 'enabled' || (adaptive && interacting));
+
+        // timestamp queries cost a per-frame staging-buffer map and a resolve,
+        // so run the profiler only while something consumes it: the
+        // frame-timings overlay or auto-mode sampling. Locked-mode frames are
+        // never timed: reports resolve asynchronously, so a slow
+        // high-resolution capture span could otherwise land in _frameTime
+        // after unlock and be mistaken for an editor frame (disabling also
+        // zeroes the report, so nothing stale survives the capture).
+        this.app.graphicsDevice.gpuProfiler.enabled =
+            (profiling || this.autoSampling) && !this.lockedRenderMode;
+
+        if (this.suspendRender) {
+            this.app.renderNextFrame = false;
+        } else if (this.lockedRenderMode) {
             this.app.renderNextFrame = this.lockedRender;
             this.lockedRender = false;
         } else if (!this.app.renderNextFrame) {
-            this.app.renderNextFrame = this.forceRender || all.size > 0;
+            if (changed) {
+                this.app.renderNextFrame = true;
+                // motion in 'movement' mode owes one clean sorted frame on settle
+                if (interacting) {
+                    this.pendingResolve = adaptive;
+                }
+            } else if (this.pendingResolve) {
+                // scene just settled → render the single clean resolve frame
+                this.pendingResolve = false;
+                this.app.renderNextFrame = true;
+            }
         }
         this.forceRender = false;
+        this.forceInteracting = false;
 
         // raise per-type update events
         ElementTypeList.forEach((type) => {
@@ -999,78 +592,20 @@ class Scene {
     }
 
     private onPreRender() {
-        if (this.canvasResize) {
-            this.canvas.width = this.canvasResize.width;
-            this.canvas.height = this.canvasResize.height;
-            this.canvasResize = null;
-        }
-
-        // update render target size
+        // update render target size (config.camera.pixelScale divides the
+        // backbuffer size; the final blit upscales the result to fill the screen)
         this.targetSize.width = Math.ceil(this.app.graphicsDevice.width / this.config.camera.pixelScale);
         this.targetSize.height = Math.ceil(this.app.graphicsDevice.height / this.config.camera.pixelScale);
 
-        // aspect lock (camera frames) - letterbox/pillarbox to keep composition
-        // ※ v3: フラスタム拡張方式により Rect 適用は不要だが、情報は取得可能
-        const aspectInfo = this.events.invoke('cameraFrames.aspectLock') as {
-            aspect: number;
-            logicalW?: number;
-            logicalH?: number;
-            rectNorm?: { x: number; y: number; w: number; h: number; };
-            rectPx?: { x: number; y: number; w: number; h: number; };
-        } | null;
-
-        const targetSize = this.camera.targetSize;
-        const devW = targetSize?.width ?? this.app.graphicsDevice.width;
-        const devH = targetSize?.height ?? this.app.graphicsDevice.height;
-
-        // v3: フラスタム拡張を行うため、Rect と Scissor は常に全画面にリセットする
-        const rect = this.camera.entity.camera.rect;
-        rect.x = 0;
-        rect.y = 0;
-        rect.z = 1;
-        rect.w = 1;
-
-        const scissor = this.camera.entity.camera.scissorRect;
-        if (scissor) {
-            scissor.x = 0;
-            scissor.y = 0;
-            scissor.z = 1;
-            scissor.w = 1;
-        }
-
-        // FOV制御
-        const cam = this.camera.entity.camera;
-        const hasAspectLock = !!(aspectInfo && aspectInfo.aspect > 0 && isFinite(aspectInfo.aspect));
-        const lockedAspect = this.camera.getLockedAspectRatio ? this.camera.getLockedAspectRatio() : null;
-        const aspectForFov = lockedAspect ?? (hasAspectLock ? aspectInfo.aspect : (devH > 0 ? devW / devH : null));
-
-        if (this.camera.lockFraming) {
-            // CAMERA FRAMES 有効時は Horizontal デフォルトを強制 (アスペクト比による自動反転を防止)
-            if (this.camera.lockFovAxis === 'vertical') {
-                cam.horizontalFov = false;
-            } else if (this.camera.lockFovAxis === 'horizontal') {
-                cam.horizontalFov = true;
-            } else {
-                cam.horizontalFov = true;
-            }
-        } else {
-            // 通常時: 画面アスペクトに合わせて自動切り替え
-            cam.horizontalFov = devW > devH;
-        }
-
-        this.aspectViewport = {
-            enabled: false,
-            offsetX: 0,
-            offsetY: 0,
-            width: devW,
-            height: devH
-        };
-
-        this.splatRenderLifecycle.onPreRender();
-
+        this.events.fire('views.prepare');
         this.forEachElement(e => e.onPreRender());
 
-        this.events.fire('prerender', this.camera.worldTransform);
+        for (const element of this.getElementsByType(ElementType.camera)) {
+            const camera = element as Camera;
+            if (camera.active) camera.projector.render(camera);
+        }
+
+        this.events.fire('prerender', this.camera.displayTransform);
 
         // debug - display scene bound
         if (this.config.debug.showBound) {
@@ -1080,24 +615,20 @@ class Scene {
                     const splat = e as Splat;
 
                     const local = splat.localBound;
-                    this.app.drawWireAlignedBox(
-                        local.getMin(),
-                        local.getMax(),
-                        Color.RED,
-                        true,
-                        undefined,
-                        splat.entity.getWorldTransform());
+                    this.wire.color = Color.RED;
+                    this.wire.transform = splat.entity.getWorldTransform();
+                    this.wire.boxMinMax(local.getMin(), local.getMax());
 
                     const world = splat.worldBound;
-                    this.app.drawWireAlignedBox(
-                        world.getMin(),
-                        world.getMax(),
-                        Color.GREEN);
+                    this.wire.color = Color.GREEN;
+                    this.wire.transform = null;
+                    this.wire.boxMinMax(world.getMin(), world.getMax());
                 }
             });
 
             // draw scene bound
-            this.app.drawWireAlignedBox(this.bound.getMin(), this.bound.getMax(), Color.BLUE);
+            this.wire.color = Color.BLUE;
+            this.wire.boxMinMax(this.bound.getMin(), this.bound.getMax());
         }
     }
 
@@ -1106,44 +637,48 @@ class Scene {
 
         this.events.fire('postrender');
 
-        // モデル読込直後の初期レイアウトずれを補正するため、postrender 後に限定してリサイズ/再計算を行う
-        if (this.pendingViewportRefresh > 0 && !this.viewportRefreshInFlight) {
-            const runs = this.pendingViewportRefresh;
-            this.pendingViewportRefresh = 0;
-            this.viewportRefreshInFlight = true;
-            const runOnce = (remaining: number) => {
-                // ダブル rAF: レイアウト/デバイスサイズが確定した後に実行
-                requestAnimationFrame(() => {
-                    requestAnimationFrame(() => {
-                        const container = window.document.getElementById('canvas-container');
-                        const pixelRatio = window.devicePixelRatio || 1;
-                        let width = this.canvas?.width ?? this.app.graphicsDevice.width;
-                        let height = this.canvas?.height ?? this.app.graphicsDevice.height;
+        const gpuTime = (this.app.graphicsDevice.gpuProfiler as any)?._frameTime ?? 0;
 
-                        if (container) {
-                            const rect = container.getBoundingClientRect();
-                            const measuredW = Math.ceil(rect.width * pixelRatio);
-                            const measuredH = Math.ceil(rect.height * pixelRatio);
-                            if (measuredW > 0 && measuredH > 0) {
-                                width = measuredW;
-                                height = measuredH;
-                                this.canvasResize = { width, height };
-                            }
-                        }
+        // record the mode this frame rendered with, keyed by its renderVersion,
+        // so the frame's asynchronously resolving profiler report can be
+        // attributed in onGpuReport. Only profiled frames get reports (this
+        // also excludes locked-mode frames, which are never timed - see
+        // onUpdate), so only those are recorded.
+        const device = this.app.graphicsDevice as any;
+        if (device.gpuProfiler._enabled) {
+            this.frameModes.set(device.renderVersion, this.movingRender);
+        }
 
-                        this.events.fire('camera.resize', { width, height });
-                        this.events.fire('cameraFrames.forceRefreshViewport');
-                        this.forceRender = true;
+        const timings = this.frameTimings;
+        timings.gpu.push(gpuTime);
+        timings.cpu.push(performance.now() - this.cpuFrameStart);
+        if (timings.gpu.length > FRAME_TIMING_WINDOW) {
+            timings.gpu.shift();
+            timings.cpu.shift();
+        }
+        timings.width = this.targetSize.width;
+        timings.height = this.targetSize.height;
+        timings.stochastic = this.movingRender;
+    }
 
-                        if (remaining > 1) {
-                            runOnce(remaining - 1);
-                        } else {
-                            this.viewportRefreshInFlight = false;
-                        }
-                    });
-                });
-            };
-            runOnce(runs);
+    // handle an asynchronously resolved gpu timing report. Only sorted frames
+    // measure the cost 'auto' mode trades away, so only their spans update the
+    // engage decision; stochastic-frame reports are ignored. timings is null
+    // when the backend discards a frame (e.g. a disjoint timer event).
+    private onGpuReport(renderVersion: number, timings: number[] | null, frameTime?: number) {
+        const moving = this.frameModes.get(renderVersion);
+
+        // reports resolve in order, so drop this frame's entry and any older
+        // ones a discarded report left behind
+        this.frameModes.forEach((_, version) => {
+            if (version <= renderVersion) {
+                this.frameModes.delete(version);
+            }
+        });
+
+        if (moving === false && timings && timings.length > 0) {
+            const gpuTime = frameTime ?? timings.reduce((sum, t) => sum + t, 0);
+            this.autoEngaged = gpuTime > this.autoEngageMs;
         }
     }
 }

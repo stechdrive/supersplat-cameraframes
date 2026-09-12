@@ -1,171 +1,86 @@
-import { GraphNode, Material } from 'playcanvas';
+import { GraphNode } from 'playcanvas';
 
-import { Element, ElementType } from './element';
-import { Events } from './events';
+import type { EditHistory } from './edit-history';
+import { ElementType, type Element } from './element';
+import type { Events } from './events';
+import { LightRig } from './light-rig';
 import { Model } from './model';
-import { Scene } from './scene';
+import type { Scene } from './scene';
 
-class MeshManager {
-    private events: Events;
-    private models = new Set<Model>();
-    private nodeToModel = new Map<GraphNode, Model>();
-    private modelNodes = new Map<Model, Set<GraphNode>>();
-    private modelLightingLayerId: number | null;
-    private worldLayerId: number | null;
-
-    constructor(events: Events, scene: Scene) {
-        this.events = events;
-        const worldLayer = scene.app.scene.layers.getLayerByName('World');
-        this.worldLayerId = worldLayer ? worldLayer.id : null;
-        this.modelLightingLayerId = scene.modelLightingLayer?.id ?? null;
-
-        events.on('scene.elementAdded', (element: Element) => {
-            if (element.type === ElementType.model) {
-                this.register(element as Model);
-            }
-        });
-
-        events.on('scene.elementRemoved', (element: Element) => {
-            if (element.type === ElementType.model) {
-                this.unregister(element as Model);
-            }
-        });
-
-        events.on('mesh.select', (model: Model | null) => {
-            if (model && !this.models.has(model)) {
-                return;
-            }
-            events.fire('selection', model);
-        });
-
-        events.on('mesh.rename', (model: Model, name: string) => {
-            if (this.models.has(model)) {
-                model.name = name;
-            }
-        });
-
-        events.on('mesh.setVisible', (model: Model, visible: boolean) => {
-            if (this.models.has(model)) {
-                model.visible = visible;
-            }
-        });
-
-        events.on('mesh.remove', (model: Model) => {
-            if (this.models.has(model)) {
-                model.destroy();
-            }
-        });
-
-        events.function('mesh.list', () => {
-            return scene.getElementsByType(ElementType.model)
-            .filter((element): element is Model => element instanceof Model && this.models.has(element));
-        });
-
-        events.function('mesh.fromGraphNode', (node: GraphNode | null) => {
-            return this.findFromGraphNode(node);
-        });
-
-        // 既存シーンにモデルが後から追加される場合も拾う
-        scene.getElementsByType(ElementType.model).forEach((element) => {
-            this.register(element as Model);
-        });
-    }
-
-    private register(model: Model) {
-        if (this.models.has(model)) {
-            return;
+export const registerModels = async (scene: Scene, events: Events, history: EditHistory) => {
+    const models = () => scene.getElementsByType(ElementType.model) as Model[];
+    const light = new LightRig([scene.worldLayer.id]);
+    await scene.add(light);
+    scene.app.scene.ambientLight.set(0.5, 0.5, 0.5);
+    const applyAmbient = (value: number) => {
+        scene.app.scene.ambientLight.set(value, value, value);
+        scene.forceRender = true;
+        events.fire('lighting.ambientChanged', value);
+    };
+    events.function('lighting.ambient', () => scene.app.scene.ambientLight.r);
+    events.on('lighting.setAmbient', (value: number) => {
+        if (!Number.isFinite(value)) return;
+        const before = scene.app.scene.ambientLight.r;
+        const after = Math.max(0, value);
+        if (before !== after) history.add({ name: 'ambient', do: () => applyAmbient(after), undo: () => applyAmbient(before) });
+    });
+    events.function('docSerialize.lighting', () => ({ ambient: scene.app.scene.ambientLight.r, lights: [light.docSerialize()] }));
+    events.function('docDeserialize.lighting', (state: { ambient?: number; lights?: any[] }) => {
+        applyAmbient(state?.ambient ?? 0.5);
+        light.docDeserialize(state?.lights?.[0] ?? { enabled: true, intensity: 1.2, transform: { rotation: [-0.2391176, 0.3696438, 0.0990458, 0.8923991] } });
+    });
+    events.on('app.ready', () => events.fire('lighting.ambientChanged', scene.app.scene.ambientLight.r));
+    events.function('mesh.list', models);
+    events.function('mesh.fromGraphNode', (node: GraphNode) => models().find(model => model.nodes.includes(node)) ?? null);
+    events.on('mesh.select', (model: Model) => events.fire('selection', model));
+    events.on('mesh.rename', (model: Model, value: string) => {
+        const before = model.name;
+        if (value.trim()) {
+            history.add({ name: 'modelRename',
+                do: () => {
+                    model.name = value.trim();
+                },
+                undo: () => {
+                    model.name = before;
+                } });
         }
-
-        this.models.add(model);
-        this.applyLayers(model);
-        this.applyDepthWriteFix(model);
-        const nodes = new Set<GraphNode>();
-        const collect = (node: GraphNode) => {
-            nodes.add(node);
-            this.nodeToModel.set(node, model);
-            node?.children?.forEach((child: GraphNode) => collect(child));
+    });
+    events.on('mesh.setVisible', (model: Model, value: boolean) => {
+        const before = model.visible;
+        history.add({ name: 'modelVisible',
+            do: () => {
+                model.visible = value;
+            },
+            undo: () => {
+                model.visible = before;
+            } });
+    });
+    events.on('mesh.remove', (model: Model) => {
+        history.add({ name: 'modelRemove',
+            do: () => {
+                scene.remove(model);
+            },
+            undo: async () => {
+                await scene.add(model);
+            },
+            destroy: () => {
+                if (!model.scene) model.destroy();
+            } });
+    });
+    events.on('scene.clear', () => models().forEach(model => model.destroy()));
+    events.function('scene.reorderElement', (element: Element, direction: 'up' | 'down') => {
+        const ordered = scene.elements.filter(item => item.type === element.type);
+        const other = ordered[ordered.indexOf(element) + (direction === 'up' ? -1 : 1)];
+        if (!other) return;
+        const swap = () => {
+            const a = scene.elements.indexOf(element);
+            const b = scene.elements.indexOf(other);
+            if (a < 0 || b < 0) return;
+            [scene.elements[a], scene.elements[b]] = [scene.elements[b], scene.elements[a]];
+            events.fire('scene.elementReordered', element);
+            scene.forceRender = true;
         };
-        collect(model.entity);
-        this.modelNodes.set(model, nodes);
-    }
-
-    private applyLayers(model: Model) {
-        const layers: number[] = [];
-
-        // モデル描画はライト付き1パスに統一し、上書き・二重描画を防ぐ
-        if (this.modelLightingLayerId !== null) {
-            layers.push(this.modelLightingLayerId);
-        } else {
-            if (Array.isArray((model.entity as any)?.render?.layers)) {
-                layers.push(...(model.entity as any).render.layers);
-            } else if (this.worldLayerId !== null) {
-                layers.push(this.worldLayerId);
-            }
-        }
-
-        model.setLayers(layers);
-    }
-
-    private applyDepthWriteFix(model: Model) {
-        // GLB が透明マテリアルの場合、depthWrite が無効だと gsplat(PLY) が常に上に重なり
-        // 「PLYを非表示にしないとGLBが見えない」状態になりやすい。
-        // ここでは透明マテリアルに限り depthWrite を有効化し、深度統合を安定させる。
-        const changed = new Set<Material>();
-
-        const visit = (node: GraphNode) => {
-            const entity = node as any;
-            const meshInstances = entity?.render?.meshInstances as { material?: Material }[] | undefined;
-            if (meshInstances && meshInstances.length > 0) {
-                meshInstances.forEach((meshInstance) => {
-                    const material = meshInstance.material;
-                    if (!material) {
-                        return;
-                    }
-                    if (material.transparent && !material.depthWrite) {
-                        material.depthTest = true;
-                        material.depthWrite = true;
-                        changed.add(material);
-                    }
-                });
-            }
-            node?.children?.forEach((child: GraphNode) => visit(child));
-        };
-
-        visit(model.entity);
-
-        changed.forEach((material) => {
-            material.update();
-        });
-    }
-
-    private unregister(model: Model) {
-        if (!this.models.has(model)) {
-            return;
-        }
-
-        this.models.delete(model);
-        const nodes = this.modelNodes.get(model);
-        if (nodes) {
-            nodes.forEach((node) => {
-                if (this.nodeToModel.get(node) === model) {
-                    this.nodeToModel.delete(node);
-                }
-            });
-        }
-        this.modelNodes.delete(model);
-    }
-
-    private findFromGraphNode(node: GraphNode | null): Model | null {
-        let current: GraphNode | null = node;
-        while (current) {
-            const model = this.nodeToModel.get(current);
-            if (model) {
-                return model;
-            }
-            current = current.parent;
-        }
-        return null;
-    }
-}
-
-export { MeshManager };
+        return history.add({ name: 'reorder', do: swap, undo: swap });
+    });
+    return light;
+};

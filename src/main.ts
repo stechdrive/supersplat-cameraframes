@@ -1,20 +1,24 @@
-import { WebPCodec } from '@playcanvas/splat-transform';
+import { WebPCodec, WorkerQueue } from '@playcanvas/splat-transform';
 import { Color, createGraphicsDevice } from 'playcanvas';
 
-import { registerCameraFrames } from './camera-frames';
-import { CameraFramesHistory } from './camera-frames-history';
-import { registerCameraHistory } from './camera-history';
+import { registerAppLifecycle } from './app-lifecycle';
 import { registerCameraPosesEvents } from './camera-poses';
 import { registerCameraSave } from './camera-save';
+import { CameraEditor } from './cameras/camera-editor';
+import { CameraViews } from './cameras/camera-views';
+import { FrameOverlay } from './cameras/frame-overlay';
+import { registerShotCameraEntities } from './cameras/shot-camera-entity';
+import { registerShotExport } from './cameras/shot-export';
+import { CommandQueue } from './command-queue';
 import { registerDocEvents } from './doc';
 import { EditHistory } from './edit-history';
 import { registerEditorEvents } from './editor';
 import { Events } from './events';
+import { registerEyeLevel } from './eye-level';
 import { initFileHandler } from './file-handler';
-import { preferredGpuPowerPreference } from './gpu-preference';
 import { registerIframeApi } from './iframe-api';
-import { MeshManager } from './mesh-manager';
-import { registerPlySequenceEvents } from './ply-sequence';
+import { registerModels } from './mesh-manager';
+import { registerPreferences } from './preferences';
 import { registerPublishEvents } from './publish';
 import { registerReferenceImages } from './reference-images-controller';
 import { ReferenceImagesHistory } from './reference-images-history';
@@ -22,6 +26,7 @@ import { registerRenderEvents } from './render';
 import { Scene } from './scene';
 import { getSceneConfig } from './scene-config';
 import { registerSelectionEvents } from './selection';
+import { registerSequenceEvents } from './sequence';
 import { ShortcutManager } from './shortcut-manager';
 import { registerTimelineEvents } from './timeline';
 import { BoxSelection } from './tools/box-selection';
@@ -31,16 +36,20 @@ import { FloodSelection } from './tools/flood-selection';
 import { LassoSelection } from './tools/lasso-selection';
 import { MeasureTool } from './tools/measure-tool';
 import { MoveTool } from './tools/move-tool';
+import { OrientTool } from './tools/orient-tool';
 import { PolygonSelection } from './tools/polygon-selection';
 import { RectSelection } from './tools/rect-selection';
 import { RotateTool } from './tools/rotate-tool';
 import { ScaleTool } from './tools/scale-tool';
+import { SphereBrushSelection } from './tools/sphere-brush-selection';
 import { SphereSelection } from './tools/sphere-selection';
 import { ToolManager } from './tools/tool-manager';
 import { registerTrackManagerEvents } from './track-manager';
 import { registerTransformHandlerEvents } from './transform-handler';
+import { BoundDimensionsOverlay } from './ui/bound-dimensions-overlay';
 import { EditorUI } from './ui/editor';
-import { localizeInit } from './ui/localization';
+import { i18n } from './ui/localization';
+import { registerSelectCursor } from './ui/select-cursor';
 
 declare global {
     interface LaunchParams {
@@ -56,7 +65,7 @@ declare global {
 }
 
 const getURLArgs = () => {
-    // extract settings from command line in non-prod builds only
+    // extract settings overrides from the url query parameters
     const config = {};
 
     const apply = (key: string, value: string) => {
@@ -81,75 +90,6 @@ const getURLArgs = () => {
     return config;
 };
 
-const registerServiceWorkerUpdateBanner = (events: Events) => {
-    if (!('serviceWorker' in navigator)) {
-        return;
-    }
-
-    let activeRegistration: ServiceWorkerRegistration | null = null;
-    let lastNotifiedScript: string | null = null;
-
-    const reloadForUpdate = () => {
-        const waiting = activeRegistration?.waiting ?? null;
-        if (waiting) {
-            waiting.postMessage({ type: 'SKIP_WAITING' });
-        }
-        window.location.reload();
-    };
-
-    const showBanner = (scriptUrl?: string) => {
-        if (scriptUrl && scriptUrl === lastNotifiedScript) {
-            return;
-        }
-        if (scriptUrl) {
-            lastNotifiedScript = scriptUrl;
-        }
-        events.invoke('updateBanner.show', {
-            onReload: reloadForUpdate,
-            onDismiss: () => {
-                events.invoke('updateBanner.hide');
-            }
-        });
-    };
-
-    const attachToRegistration = (registration: ServiceWorkerRegistration | null) => {
-        if (!registration) {
-            return;
-        }
-        activeRegistration = registration;
-
-        if (registration.waiting && navigator.serviceWorker.controller) {
-            showBanner(registration.waiting.scriptURL);
-        }
-
-        registration.addEventListener('updatefound', () => {
-            const installing = registration.installing;
-            if (!installing) {
-                return;
-            }
-            installing.addEventListener('statechange', () => {
-                if (installing.state === 'installed' && navigator.serviceWorker.controller) {
-                    showBanner(installing.scriptURL);
-                }
-            });
-        });
-    };
-
-    navigator.serviceWorker.ready
-    .then(registration => attachToRegistration(registration))
-    .catch(() => {});
-
-    navigator.serviceWorker.getRegistration()
-    .then(registration => attachToRegistration(registration ?? null))
-    .catch(() => {});
-
-    document.addEventListener('visibilitychange', () => {
-        if (document.visibilityState === 'visible') {
-            activeRegistration?.update().catch(() => {});
-        }
-    });
-};
-
 const main = async () => {
     // root events object
     const events = new Events();
@@ -157,21 +97,34 @@ const main = async () => {
     // url
     const url = new URL(window.location.href);
 
-    // edit history
-    const editHistory = new EditHistory(events);
+    // shared command queue for all async splat work (GPU readbacks + history mutations).
+    // every consumer that needs ordering relative to other commands enqueues here.
+    const commandQueue = new CommandQueue();
+
+    // edit history (uses the shared queue internally)
+    const editHistory = new EditHistory(events, commandQueue);
+
+    // expose the queue as an event for any module that needs to serialise async work
+    // alongside history mutations.
+    events.function('queue', (fn: () => Promise<void> | void) => commandQueue.enqueue(fn));
 
     // init localization
-    await localizeInit();
+    await i18n.init();
 
     // Configure WebP WASM for SOG format (used for both reading and writing)
     WebPCodec.wasmUrl = new URL('static/lib/webp/webp.wasm', document.baseURI).toString();
+
+    // Run SOG writing inline rather than in worker threads. We don't ship
+    // splat-transform's worker.mjs, so leaving the pool enabled makes it try to
+    // spawn a worker that 404s; under SOG's parallel task load it then hangs
+    // instead of falling back, producing an empty export.
+    WorkerQueue.maxWorkers = 0;
 
     // register events that only need the events object (before UI is created)
     registerTimelineEvents(events);
     registerCameraPosesEvents(events);
     registerTrackManagerEvents(events);
     registerTransformHandlerEvents(events);
-    registerPlySequenceEvents(events);
     registerPublishEvents(events);
     registerIframeApi(events);
 
@@ -181,20 +134,21 @@ const main = async () => {
 
     // editor ui
     const editorUI = new EditorUI(events);
-    registerServiceWorkerUpdateBanner(events);
 
     // create the graphics device
     const graphicsDevice = await createGraphicsDevice(editorUI.canvas, {
-        deviceTypes: ['webgl2'],
+        deviceTypes: ['webgpu'],
         antialias: false,
         depth: false,
         stencil: false,
         xrCompatible: false,
-        powerPreference: preferredGpuPowerPreference
+        powerPreference: 'high-performance'
     });
 
+    const urlArgs = getURLArgs();
+
     const overrides = [
-        getURLArgs()
+        urlArgs
     ];
 
     // resolve scene config
@@ -205,10 +159,9 @@ const main = async () => {
         events,
         sceneConfig,
         editorUI.canvas,
-        graphicsDevice
+        graphicsDevice,
+        commandQueue
     );
-    const meshManager = new MeshManager(events, scene);
-    events.function('mesh.manager', () => meshManager);
 
     // colors
     const bgClr = new Color();
@@ -293,69 +246,67 @@ const main = async () => {
 
     const mask = {
         canvas: maskCanvas,
-        context: maskContext
+        context: maskContext,
+        // set while an async selection is still consuming the canvas; brush
+        // strokes must not start (and clear it) until then
+        busy: false
     };
 
     // tool manager
     const toolManager = new ToolManager(events);
     toolManager.register('rectSelection', new RectSelection(events, editorUI.toolsContainer.dom));
     toolManager.register('brushSelection', new BrushSelection(events, editorUI.toolsContainer.dom, mask));
+    toolManager.register('sphereBrushSelection', new SphereBrushSelection(events, editorUI.toolsContainer.dom, mask));
     toolManager.register('floodSelection', new FloodSelection(events, editorUI.toolsContainer.dom, mask, editorUI.canvasContainer));
     toolManager.register('polygonSelection', new PolygonSelection(events, editorUI.toolsContainer.dom, mask));
     toolManager.register('lassoSelection', new LassoSelection(events, editorUI.toolsContainer.dom, mask));
-    toolManager.register('sphereSelection', new SphereSelection(events, scene, editorUI.canvasContainer));
-    toolManager.register('boxSelection', new BoxSelection(events, scene, editorUI.canvasContainer));
+    toolManager.register('sphereSelection', new SphereSelection(events, scene, editorUI.canvasContainer, editorUI.tooltips));
+    toolManager.register('boxSelection', new BoxSelection(events, scene, editorUI.canvasContainer, editorUI.tooltips));
     toolManager.register('eyedropperSelection', new EyedropperSelection(events, editorUI.toolsContainer.dom, editorUI.canvasContainer));
     toolManager.register('move', new MoveTool(events, scene));
     toolManager.register('rotate', new RotateTool(events, scene));
     toolManager.register('scale', new ScaleTool(events, scene));
-    toolManager.register('measure', new MeasureTool(events, scene, editorUI.toolsContainer.dom, editorUI.canvasContainer));
+    toolManager.register('measure', new MeasureTool(events, scene, editorUI.canvasContainer, editorUI.annotationContainer.dom));
+    toolManager.register('orient', new OrientTool(events, scene, editorUI.toolsContainer.dom, editorUI.canvasContainer, editorUI.annotationContainer.dom));
+
+    const boundDimensionsOverlay = new BoundDimensionsOverlay(events, scene, editorUI.canvasContainer, editorUI.annotationContainer.dom);
 
     editorUI.toolsContainer.dom.appendChild(maskCanvas);
 
+    // show the active selection op (add/remove/intersect) at the cursor
+    registerSelectCursor(events, editorUI.toolsContainer.dom);
+
     window.scene = scene;
 
-    registerCameraHistory(events, scene.camera);
-
+    // register events that need scene or other dependencies
     registerEditorEvents(events, editHistory, scene);
     registerSelectionEvents(events, scene);
-    const cameraFramesController = registerCameraFrames(events, scene, editorUI.canvasContainer.dom);
-    const cameraFramesHistory = new CameraFramesHistory(
-        events,
-        () => cameraFramesController.snapshot(),
-        snapshot => cameraFramesController.applySnapshot(snapshot)
-    );
-    cameraFramesController.setHistory(cameraFramesHistory);
-    registerCameraSave(events, scene, cameraFramesController, cameraFramesHistory);
-    const referenceImagesController = registerReferenceImages(events, scene);
-    const referenceImagesHistory = new ReferenceImagesHistory(
-        events,
-        () => referenceImagesController.snapshotFull(),
-        snapshot => referenceImagesController.applySnapshotFull(snapshot)
-    );
-    referenceImagesController.setHistory(referenceImagesHistory);
+    registerSequenceEvents(events, scene);
     registerDocEvents(scene, events);
     registerRenderEvents(scene, events);
     initFileHandler(scene, events, editorUI.appContainer.dom);
 
-    events.fire('app.ready');
-
-    // wait until the first safe render before forcing FPV navigation and camera frames
-    const fpvReadyHandle = events.on('postrender', () => {
-        fpvReadyHandle.off();
-        if (events.functions.has('cameraHistory.suppress')) {
-            events.invoke('cameraHistory.suppress', () => {
-                events.fire('camera.setNavMode', 'fpv', { source: 'bootstrap' });
-            });
-        } else {
-            events.fire('camera.setNavMode', 'fpv', { source: 'bootstrap' });
-        }
-        events.fire('cameraFrames.setEnabled', true);
-        events.fire('app.bootstrapComplete');
-    });
+    // apply stored user preferences and start capturing changes to them.
+    // registered after the boot-time initialization events above so they are
+    // never captured as user changes.
+    registerPreferences(events, sceneConfig, urlArgs);
 
     // load async models
+    const cameraViews = await CameraViews.create(scene, events, editHistory);
+    registerEyeLevel(scene, events);
+    await registerModels(scene, events, editHistory);
+    const cameraEditor = new CameraEditor(cameraViews, scene, events, editHistory);
+    events.function('cameraEditor', () => cameraEditor);
+    registerShotCameraEntities(scene, events, cameraEditor);
+    const frameOverlay = new FrameOverlay(cameraEditor, scene, editorUI.canvasContainer.dom);
+    events.function('cameraFrames.overlay', () => frameOverlay);
+    const referenceImages = registerReferenceImages(events, scene);
+    referenceImages.setHistory(new ReferenceImagesHistory(events, () => referenceImages.snapshotFull(), snapshot => referenceImages.applySnapshotFull(snapshot)));
+    registerCameraSave(events, cameraEditor);
+    registerShotExport(scene, events, cameraEditor);
+    registerAppLifecycle(events);
     scene.start();
+    events.fire('app.ready');
 
     // handle load params
     const loadList = url.searchParams.getAll('load');
@@ -379,7 +330,8 @@ const main = async () => {
             for (const file of launchParams.files) {
                 await events.invoke('import', [{
                     filename: file.name,
-                    contents: await file.getFile()
+                    contents: await file.getFile(),
+                    handle: file
                 }]);
             }
         });

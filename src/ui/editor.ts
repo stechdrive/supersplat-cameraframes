@@ -1,19 +1,24 @@
 import { Container, Label } from '@playcanvas/pcui';
-import { Mat4, path, Vec3 } from 'playcanvas';
+import { Mat4 } from 'playcanvas';
 
+import { AppearancePanel } from './appearance-panel';
 import { DataPanel } from './data-panel';
 import { Events } from '../events';
+import { ExportSettings } from '../export-settings';
+import type { BlobReadSource } from '../io';
 import { AboutPopup } from './about-popup';
 import { BottomToolbar } from './bottom-toolbar';
 import { CameraFramesHelpPanel } from './camera-frames-help-panel';
 import { CameraFramesPanel } from './camera-frames-panel';
-import { ColorPanel } from './color-panel';
-import { ExportPopup } from './export-popup';
+import { CameraInfoOverlay } from './camera-info-overlay';
 import { ImageSettingsDialog } from './image-settings-dialog';
-import { localize, localizeInit } from './localization';
 import { MainCameraPropsPanel } from './main-camera-props-panel';
+import { cameraFramesVersion } from '../camera-frames-version';
+import { ExportPopup } from './export-popup';
+import { i18n } from './localization';
 import { Menu } from './menu';
-import { ModeToggle } from './mode-toggle';
+import { OverlaysPanel } from './overlays-panel';
+import { PerfOverlay } from './perf-overlay';
 import logo from './playcanvas-logo.png';
 import { Popup, ShowOptions } from './popup';
 import { Progress } from './progress';
@@ -21,32 +26,28 @@ import { PublishSettingsDialog } from './publish-settings-dialog';
 import { ReferenceImagePanel } from './reference-image-panel';
 import { RightToolbar } from './right-toolbar';
 import { ScenePanel } from './scene-panel';
+import { SettingsPanel } from './settings-panel';
 import { ShortcutsPopup } from './shortcuts-popup';
 import { Spinner } from './spinner';
 import { StatusBar } from './status-bar';
 import { TimelinePanel } from './timeline-panel';
 import { Tooltips } from './tooltips';
-import { UpdateBanner, type UpdateBannerOptions } from './update-banner';
 import { VideoSettingsDialog } from './video-settings-dialog';
 import { ViewCube } from './view-cube';
-import { ViewPanel } from './view-panel';
-import { WelcomeBoard } from './welcome-board';
 import { version } from '../../package.json';
 
 // ts compiler and vscode find this type, but eslint does not
 type FilePickerAcceptType = unknown;
 
-const removeExtension = (filename: string) => {
-    return filename.substring(0, filename.length - path.getExtension(filename).length);
-};
-
 class EditorUI {
     appContainer: Container;
     topContainer: Container;
     canvasContainer: Container;
+    annotationContainer: Container;
     toolsContainer: Container;
     canvas: HTMLCanvasElement;
     popup: Popup;
+    tooltips: Tooltips;
 
     constructor(events: Events) {
         // favicon
@@ -82,38 +83,21 @@ class EditorUI {
         // app label
         const appLabel = new Label({
             id: 'app-label',
-            text: `SUPERSPLAT v${version}`
+            text: 'CAMERA FRAMES '
         });
-
-        // cursor label
-        const cursorLabel = new Label({
-            id: 'cursor-label'
-        });
-
-        let fullprecision = '';
-
-        events.on('camera.focalPointPicked', (details: { position: Vec3 }) => {
-            cursorLabel.text = `${details.position.x.toFixed(2)}, ${details.position.y.toFixed(2)}, ${details.position.z.toFixed(2)}`;
-            fullprecision = `${details.position.x}, ${details.position.y}, ${details.position.z}`;
-        });
-
-        ['pointerdown', 'pointerup', 'pointermove', 'wheel', 'dblclick'].forEach((eventName) => {
-            cursorLabel.dom.addEventListener(eventName, (event: Event) => event.stopPropagation());
-        });
-
-        cursorLabel.dom.addEventListener('pointerdown', () => {
-            navigator.clipboard.writeText(fullprecision);
-
-            const orig = cursorLabel.text;
-            cursorLabel.text = localize('cursor.copied');
-            setTimeout(() => {
-                cursorLabel.text = orig;
-            }, 1000);
-        });
+        const versionSpan = document.createElement('span');
+        versionSpan.textContent = `${cameraFramesVersion} / SuperSplat ${version}`;
+        appLabel.dom.appendChild(versionSpan);
 
         // canvas container
         const canvasContainer = new Container({
             id: 'canvas-container'
+        });
+
+        // world-space annotations paint above the canvas but below all editor
+        // chrome, so panels and toolbars naturally occlude them
+        const annotationContainer = new Container({
+            id: 'annotation-container'
         });
 
         // tools container
@@ -127,32 +111,46 @@ class EditorUI {
 
         // bottom toolbar
         const scenePanel = new ScenePanel(events, tooltips);
-        const viewPanel = new ViewPanel(events, tooltips);
-        const colorPanel = new ColorPanel(events, tooltips);
-        const referenceImagePanel = new ReferenceImagePanel(events);
+        const settingsPanel = new SettingsPanel(events, tooltips);
+        const appearancePanel = new AppearancePanel(events, tooltips);
+        const overlaysPanel = new OverlaysPanel(events, tooltips);
+        const bottomToolbar = new BottomToolbar(events, tooltips);
+        const rightToolbar = new RightToolbar(events, tooltips);
+        const menu = new Menu(events);
+        const cameraInfoOverlay = new CameraInfoOverlay(events, tooltips);
+        const perfOverlay = new PerfOverlay(events);
+
+        canvasContainer.dom.appendChild(canvas);
+        canvasContainer.append(annotationContainer);
+        canvasContainer.append(appLabel);
+        canvasContainer.append(cameraInfoOverlay);
+        canvasContainer.append(perfOverlay);
+        canvasContainer.append(toolsContainer);
+        canvasContainer.append(scenePanel);
+        canvasContainer.append(bottomToolbar);
+        canvasContainer.append(rightToolbar);
+        canvasContainer.append(menu);
         const cameraFramesPanel = new CameraFramesPanel(events);
         const mainCameraPropsPanel = new MainCameraPropsPanel(events);
         const cameraFramesHelpPanel = new CameraFramesHelpPanel(events);
-        const bottomToolbar = new BottomToolbar(events, tooltips);
-        const rightToolbar = new RightToolbar(events, tooltips);
-        const modeToggle = new ModeToggle(events, tooltips);
-        const menu = new Menu(events);
-
-        canvasContainer.dom.appendChild(canvas);
-        canvasContainer.append(appLabel);
-        canvasContainer.append(cursorLabel);
-        canvasContainer.append(toolsContainer);
-        canvasContainer.append(scenePanel);
-        canvasContainer.append(viewPanel);
-        canvasContainer.append(colorPanel);
         canvasContainer.append(cameraFramesPanel);
         canvasContainer.append(mainCameraPropsPanel);
         canvasContainer.append(cameraFramesHelpPanel);
-        canvasContainer.append(referenceImagePanel);
-        canvasContainer.append(bottomToolbar);
-        canvasContainer.append(rightToolbar);
-        canvasContainer.append(modeToggle);
-        canvasContainer.append(menu);
+        canvasContainer.append(new ReferenceImagePanel(events));
+        const setFramesVisible = (visible: boolean) => {
+            cameraFramesPanel.hidden = !visible;
+            events.fire('cameraFramesPanel.visible', visible);
+        };
+        events.function('cameraFramesPanel.visible', () => !cameraFramesPanel.hidden);
+        events.on('cameraFramesPanel.toggle', () => setFramesVisible(cameraFramesPanel.hidden));
+        events.on('cameraFramesPanel.setVisible', setFramesVisible);
+        setFramesVisible(true);
+
+        // the option popups come after the toolbars so their select dropdowns,
+        // which can extend past the panel bounds, paint above them
+        canvasContainer.append(settingsPanel);
+        canvasContainer.append(appearancePanel);
+        canvasContainer.append(overlaysPanel);
 
         // view axes container
         const viewCube = new ViewCube(events);
@@ -167,7 +165,7 @@ class EditorUI {
         });
 
         const timelinePanel = new TimelinePanel(events, tooltips);
-        const dataPanel = new DataPanel(events);
+        const dataPanel = new DataPanel(events, tooltips);
         const statusBar = new StatusBar(events, tooltips);
 
         timelinePanel.hidden = true;
@@ -184,8 +182,6 @@ class EditorUI {
         });
 
         editorContainer.append(mainContainer);
-
-        tooltips.register(cursorLabel, localize('cursor.click-to-copy'), 'top');
 
         // message popup
         const popup = new Popup(tooltips);
@@ -205,9 +201,7 @@ class EditorUI {
         // video settings
         const videoSettingsDialog = new VideoSettingsDialog(events);
 
-        // update banner
-        const updateBanner = new UpdateBanner();
-        const welcomeBoard = new WelcomeBoard();
+        // about popup
         const aboutPopup = new AboutPopup();
 
         topContainer.append(popup);
@@ -217,28 +211,45 @@ class EditorUI {
         topContainer.append(videoSettingsDialog);
         topContainer.append(shortcutsPopup);
         topContainer.append(aboutPopup);
-        topContainer.append(welcomeBoard);
+
         appContainer.append(editorContainer);
         appContainer.append(topContainer);
-        appContainer.append(updateBanner);
         appContainer.append(tooltipsContainer);
 
         this.appContainer = appContainer;
         this.topContainer = topContainer;
         this.canvasContainer = canvasContainer;
+        this.annotationContainer = annotationContainer;
         this.toolsContainer = toolsContainer;
         this.canvas = canvas;
         this.popup = popup;
+        this.tooltips = tooltips;
 
         document.body.appendChild(appContainer.dom);
         document.body.setAttribute('tabIndex', '-1');
+
+        // don't let pointer-clicked buttons keep focus (which would swallow
+        // control keys like Space from the global shortcuts). keyboard
+        // activation (e.detail === 0) keeps focus for tab navigation, and
+        // modals keep focus inside so their shortcut blocking stays intact
+        document.addEventListener('click', (e) => {
+            if (e.detail === 0) return;
+            const button = (e.target as Element)?.closest?.('button');
+            if (button && button === document.activeElement && !button.closest('.blocks-shortcuts')) {
+                button.blur();
+            }
+        });
 
         events.on('show.shortcuts', () => {
             shortcutsPopup.hidden = false;
         });
 
-        events.function('show.exportPopup', (exportType, splatNames: [string], showFilenameEdit: boolean) => {
-            return exportPopup.show(exportType, splatNames, showFilenameEdit);
+        events.function('show.exportPopup', (exportType, splatNames: string[], settings?: ExportSettings) => {
+            return exportPopup.show(exportType, splatNames, settings);
+        });
+
+        events.function('show.savePopup', (filename: string, directory?: FileSystemDirectoryHandle, source?: BlobReadSource) => {
+            return exportPopup.show('ssproj', [filename], { directory }, source);
         });
 
         events.function('show.publishSettingsDialog', async () => {
@@ -247,8 +258,8 @@ class EditorUI {
             if (!userStatus) {
                 await events.invoke('showPopup', {
                     type: 'error',
-                    header: localize('popup.error'),
-                    message: localize('popup.publish.please-log-in')
+                    header: i18n.t('popup.error'),
+                    message: i18n.t('popup.publish.please-log-in')
                 });
                 return false;
             }
@@ -266,7 +277,48 @@ class EditorUI {
             const imageSettings = await imageSettingsDialog.show();
 
             if (imageSettings) {
-                await events.invoke('render.image', imageSettings);
+                try {
+                    let writable;
+                    let fileHandle: FileSystemFileHandle | undefined;
+
+                    const imageFileTypes: Record<string, { description: string, accept: Record<`${string}/${string}`, `.${string}`[]>, extension: string }> = {
+                        png: { description: 'PNG Image', accept: { 'image/png': ['.png'] }, extension: '.png' },
+                        jpeg: { description: 'JPEG Image', accept: { 'image/jpeg': ['.jpg', '.jpeg'] }, extension: '.jpg' },
+                        webp: { description: 'WebP Image', accept: { 'image/webp': ['.webp'] }, extension: '.webp' }
+                    };
+                    const imageFileType = imageFileTypes[imageSettings.format];
+
+                    if (window.showSaveFilePicker) {
+                        fileHandle = await window.showSaveFilePicker({
+                            id: 'SuperSplatImageFileExport',
+                            types: [{
+                                description: imageFileType.description,
+                                accept: imageFileType.accept
+                            }],
+                            suggestedName: `${events.invoke('render.baseFilename')}${imageFileType.extension}`
+                        });
+
+                        writable = await fileHandle.createWritable();
+                    }
+
+                    const result = await events.invoke('render.image', imageSettings, writable);
+
+                    // if the render failed, remove the empty file left on disk
+                    if (result === false && fileHandle?.remove) {
+                        await fileHandle.remove();
+                    }
+                } catch (error) {
+                    if (error instanceof DOMException && error.name === 'AbortError') {
+                        // user cancelled save dialog
+                        return;
+                    }
+
+                    await events.invoke('showPopup', {
+                        type: 'error',
+                        header: i18n.t('panel.render.failed'),
+                        message: `'${error.message ?? error}'`
+                    });
+                }
             }
         });
 
@@ -276,8 +328,6 @@ class EditorUI {
             if (videoSettings) {
 
                 try {
-                    const docName = events.invoke('doc.name');
-
                     // Determine file extension and mime type based on format
                     let fileExtension: string;
                     let filePickerTypes: FilePickerAcceptType[];
@@ -317,7 +367,7 @@ class EditorUI {
                         }];
                     }
 
-                    const suggested = `${removeExtension(docName ?? 'supersplat')}${fileExtension}`;
+                    const suggested = `${events.invoke('render.baseFilename')}${fileExtension}`;
 
                     let writable;
                     let fileHandle: FileSystemFileHandle | undefined;
@@ -346,28 +396,11 @@ class EditorUI {
 
                     await events.invoke('showPopup', {
                         type: 'error',
-                        header: 'Failed to render video',
+                        header: i18n.t('panel.render.failed'),
                         message: `'${error.message ?? error}'`
                     });
                 }
             }
-        });
-
-        events.function('updateBanner.show', (options?: UpdateBannerOptions) => {
-            updateBanner.show(options);
-        });
-        events.function('updateBanner.hide', () => {
-            updateBanner.hide();
-        });
-
-        events.function('welcomeBoard.show', () => {
-            welcomeBoard.show();
-        });
-        events.function('welcomeBoard.hide', () => {
-            welcomeBoard.hide();
-        });
-        events.on('app.ready', () => {
-            welcomeBoard.show();
         });
 
         events.on('show.about', () => {
@@ -378,46 +411,24 @@ class EditorUI {
             return this.popup.show(options);
         });
 
-        // camera frames panel visibility
-        const setCameraFramesVisible = (visible: boolean) => {
-            const newHidden = !visible;
-            if (cameraFramesPanel.hidden !== newHidden) {
-                cameraFramesPanel.hidden = newHidden;
-            }
-            events.fire('cameraFramesPanel.visible', visible);
-        };
-
-        events.function('cameraFramesPanel.visible', () => {
-            return !cameraFramesPanel.hidden;
-        });
-
-        events.on('cameraFramesPanel.toggle', () => {
-            setCameraFramesVisible(cameraFramesPanel.hidden);
-        });
-
-        events.on('cameraFramesPanel.setVisible', (visible: boolean) => {
-            setCameraFramesVisible(visible);
-        });
-        setCameraFramesVisible(true);
-
         // spinner with reference counting to handle nested operations
         const spinner = new Spinner();
         topContainer.append(spinner);
 
         let spinnerCount = 0;
-        let progressVisible = false;
-        const refreshSpinnerVisibility = () => {
-            spinner.hidden = spinnerCount === 0 || progressVisible;
-        };
 
         events.on('startSpinner', () => {
             spinnerCount++;
-            refreshSpinnerVisibility();
+            if (spinnerCount === 1) {
+                spinner.hidden = false;
+            }
         });
 
         events.on('stopSpinner', () => {
             spinnerCount = Math.max(0, spinnerCount - 1);
-            refreshSpinnerVisibility();
+            if (spinnerCount === 0) {
+                spinner.hidden = true;
+            }
         });
 
         // progress
@@ -427,8 +438,6 @@ class EditorUI {
         topContainer.append(progress);
 
         events.on('progressStart', (header: string, cancellable?: boolean) => {
-            progressVisible = true;
-            refreshSpinnerVisibility();
             progress.hidden = false;
             progress.setHeader(header);
             progress.setText('');
@@ -447,11 +456,9 @@ class EditorUI {
         });
 
         events.on('progressEnd', () => {
-            progressVisible = false;
             progress.hidden = true;
             progress.showCancelButton(false);
             progress.onCancel = null;
-            refreshSpinnerVisibility();
         });
 
         // initialize canvas to correct size before creating graphics device etc

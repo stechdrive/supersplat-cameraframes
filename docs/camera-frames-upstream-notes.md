@@ -1,9 +1,19 @@
 # CAMERA_FRAMES Upstream Notes
 
-最終更新: 2026-09-12
+最終更新: 2026-09-13
 
 このメモは、`camera-frames` への upstream 追従で **見落とすと壊れやすい点** を短く残すためのもの。  
 現在の trunk 状態そのものは [docs/render-backend-transition-status.md](/D:/GitHub/supersplat-cameraframes/docs/render-backend-transition-status.md) を参照。
+
+## v3.1.2の製品移行（codex/v3-migration）
+
+対象は `v3.1.2 / 0911f786db652a7700068fe6ccdfe32e24269e1d`。旧trunkの注意事項と区別して、[移行計画](refactor-v3-migration-plan.md)と[実装の検証記録](refactor-v3-migration-results.md)を参照する。
+
+- 採用: resource/instanceの分離、viewごとのGPU投影・sort、3.1.2のfootprint半径修正、native v1の保存とsource再接続、標準Engine GLB描画。
+- 変形: 本家Camera/描画/選択へviewとtargetの明示的な受渡し、GLB深度を使うpicker、製品データ・作業保存の追加。撮影姿勢はCameraStoreのposition/Quaternionから導出し、フレーム拡張は標準projectionOffsetへ変換する。
+- 撤去: 旧merged/unified renderer、旧カメラ退避・復元、Engineのshader chunk差し替え、独自projection callback。独自機能の挙動を新しい境界へ移してから旧経路を除去する。
+- 維持: 撮影/フレーム/下絵/GLBの製品UI、PNGとPSD、旧ssproj/sscam読込、作業保存とパッケージ保存。本家のカメラ経路アニメーションはビューポートを対象とし、永続的な撮影カメラの姿勢と分ける。
+- 依存の変形: ESLint 10はimportプラグインのpeer互換性により9.39.4を維持。Engine 2.22.1のパッケージ自体には変更を加えない。
 
 ## v3.0.0 隔離実証（2026-09-12）
 

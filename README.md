@@ -2,6 +2,10 @@
 
 ![CAMERA FRAMES screenshot](./static/images/screenshot-cameraframes.jpg)
 
+このブランチはSuperSplat 3.1.2 / WebGPUへの移行版です。撮影カメラはposition/Quaternionと永続IDで管理し、独立したビューポートとの分割表示に対応します。[移行計画](docs/refactor-v3-migration-plan.md)と[検証結果・制約](docs/refactor-v3-migration-results.md)を参照してください。公開アプリへの反映は別途行います。
+
+ローカル起動は `npm ci` → `npm run build` → `npm run serve`。実WebGPUの検証ページは `npm run build:validation` → `npm run serve:validation` で生成し、`http://127.0.0.1:3341/` から実行します。検証後に `npm run build` を行うと通常の入口へ戻ります。
+
 ## English
 
 CAMERA FRAMES is a production-oriented fork of [PlayCanvas SuperSplat](https://github.com/playcanvas/supersplat), built for creating background layouts and layout sheets for Japanese animation.

@@ -1,10 +1,10 @@
 import { Container, ContainerArgs, Label, NumericInput, VectorInput } from '@playcanvas/pcui';
 import { Quat, Vec3 } from 'playcanvas';
 
+import { ShotCameraEntity } from '../cameras/shot-camera-entity';
 import { Events } from '../events';
-import { localize } from './localization';
+import { i18n } from './localization';
 import { Pivot } from '../pivot';
-import { registerNumericInputHistory } from './register-numeric-input-history';
 
 const v = new Vec3();
 
@@ -23,9 +23,9 @@ class Transform extends Container {
         });
 
         const positionLabel = new Label({
-            class: 'transform-label',
-            text: localize('panel.scene-manager.transform.position')
+            class: 'transform-label'
         });
+        i18n.bindText(positionLabel, 'panel.scene.transform.position');
 
         const positionVector = new VectorInput({
             class: 'transform-expand',
@@ -45,9 +45,9 @@ class Transform extends Container {
         });
 
         const rotationLabel = new Label({
-            class: 'transform-label',
-            text: localize('panel.scene-manager.transform.rotation')
+            class: 'transform-label'
         });
+        i18n.bindText(rotationLabel, 'panel.scene.transform.rotation');
 
         const rotationVector = new VectorInput({
             class: 'transform-expand',
@@ -67,12 +67,12 @@ class Transform extends Container {
         });
 
         const scaleLabel = new Label({
-            class: 'transform-label',
-            text: localize('panel.scene-manager.transform.scale')
+            class: 'transform-label'
         });
+        i18n.bindText(scaleLabel, 'panel.scene.transform.scale');
 
         const scaleInput = new NumericInput({
-            class: 'transform-expand',
+            class: ['transform-expand', 'transform-scale'],
             precision: 3,
             value: 1,
             min: 0.001,
@@ -93,16 +93,10 @@ class Transform extends Container {
 
         let uiUpdating = false;
         let mouseUpdating = false;
-        let keyboardUpdating = false;
-        let exportBusy = events.functions.has('cameraFrames.exportBusy') ? !!events.invoke('cameraFrames.exportBusy') : false;
-        let hasSelection = false;
 
-        const updateEnabledState = () => {
-            const enabled = hasSelection && !exportBusy;
-            positionVector.enabled = rotationVector.enabled = scaleInput.enabled = enabled;
-        };
-
-        // update UI with pivot
+        // the panel shows the pivot in world coordinates. with a user-defined
+        // local frame set (see Splat.getPivot), the pivot is that frame, so
+        // zeroing the values aligns the frame with the world origin and axes
         const updateUI = (pivot: Pivot) => {
             uiUpdating = true;
             const transform = pivot.transform;
@@ -127,33 +121,11 @@ class Transform extends Container {
             pivot.moveTRS(new Vec3(p[0], p[1], p[2]), q, new Vec3(s, s, s));
         };
 
-        const beginKeyboardUpdate = () => {
-            if (exportBusy || uiUpdating || mouseUpdating || keyboardUpdating) {
-                return;
-            }
-            if (!events.invoke('selection')) {
-                return;
-            }
-            const pivot = events.invoke('pivot') as Pivot;
-            keyboardUpdating = true;
-            pivot.start();
-        };
-
-        const commitKeyboardUpdate = () => {
-            if (!keyboardUpdating) {
-                return;
-            }
-            const pivot = events.invoke('pivot') as Pivot;
-            updatePivot(pivot);
-            keyboardUpdating = false;
-            pivot.end();
-        };
-
         // handle a change in the UI state
         const change = () => {
-            if (!uiUpdating && !exportBusy) {
+            if (!uiUpdating) {
                 const pivot = events.invoke('pivot') as Pivot;
-                if (mouseUpdating || keyboardUpdating) {
+                if (mouseUpdating) {
                     updatePivot(pivot);
                 } else {
                     pivot.start();
@@ -164,42 +136,19 @@ class Transform extends Container {
         };
 
         const mousedown = () => {
-            if (exportBusy) {
-                return;
-            }
             mouseUpdating = true;
             const pivot = events.invoke('pivot') as Pivot;
             pivot.start();
         };
 
         const mouseup = () => {
-            if (exportBusy) {
-                mouseUpdating = false;
-                keyboardUpdating = false;
-                return;
-            }
             const pivot = events.invoke('pivot') as Pivot;
             updatePivot(pivot);
             mouseUpdating = false;
             pivot.end();
         };
 
-        const transformInputs = [positionVector.inputs, rotationVector.inputs, scaleInput].flat();
-        transformInputs.forEach((input) => {
-            registerNumericInputHistory({
-                events,
-                input,
-                label: 'scene.transform',
-                canBegin: () => !exportBusy && !uiUpdating && !mouseUpdating && !!events.invoke('selection'),
-                historyBeginEvent: null,
-                historyCommitEvent: null,
-                beginOnFocus: false,
-                beginOnPointer: false,
-                beginOnSliderDrag: false,
-                flushCameraHistory: false,
-                onBegin: beginKeyboardUpdate,
-                onCommit: commitKeyboardUpdate
-            });
+        [positionVector.inputs, rotationVector.inputs, scaleInput].flat().forEach((input) => {
             input.on('change', change);
             input.on('slider:mousedown', mousedown);
             input.on('slider:mouseup', mouseup);
@@ -207,20 +156,8 @@ class Transform extends Container {
 
         // toggle ui availability based on selection
         events.on('selection.changed', (selection) => {
-            hasSelection = !!selection;
-            updateEnabledState();
-        });
-        events.on('cameraFrames.exportBusyChanged', (value: boolean) => {
-            exportBusy = !!value;
-            if (exportBusy) {
-                if (mouseUpdating || keyboardUpdating) {
-                    const pivot = events.invoke('pivot') as Pivot;
-                    pivot.end();
-                }
-                mouseUpdating = false;
-                keyboardUpdating = false;
-            }
-            updateEnabledState();
+            positionVector.enabled = rotationVector.enabled = scaleInput.enabled = !!selection;
+            if (selection instanceof ShotCameraEntity) scaleInput.enabled = false;
         });
 
         events.on('pivot.placed', (pivot: Pivot) => {
@@ -228,7 +165,7 @@ class Transform extends Container {
         });
 
         events.on('pivot.moved', (pivot: Pivot) => {
-            if (!mouseUpdating && !keyboardUpdating) {
+            if (!mouseUpdating) {
                 updateUI(pivot);
             }
         });
@@ -236,8 +173,6 @@ class Transform extends Container {
         events.on('pivot.ended', (pivot: Pivot) => {
             updateUI(pivot);
         });
-
-        updateEnabledState();
     }
 }
 

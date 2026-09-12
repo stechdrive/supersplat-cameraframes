@@ -1,5 +1,5 @@
 import { Events } from '../events';
-import { isCtrlLike, modifiers } from '../modifier-tracker';
+import { opFromModifiers } from '../select-op';
 
 type Point = { x: number, y: number };
 
@@ -23,14 +23,6 @@ class LassoSelection {
         let currentPoint: Point = null;
         let lastPointTime = 0;
 
-        const getLocalPoint = (e: PointerEvent) => {
-            const rect = parent.getBoundingClientRect();
-            return {
-                x: Math.max(0, Math.min(parent.clientWidth, e.clientX - rect.left)),
-                y: Math.max(0, Math.min(parent.clientHeight, e.clientY - rect.top))
-            };
-        };
-
         const dist = (a: Point, b: Point) => {
             return Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2);
         };
@@ -47,7 +39,7 @@ class LassoSelection {
         let dragId: number | undefined;
 
         const update = (e: PointerEvent) => {
-            currentPoint = getLocalPoint(e);
+            currentPoint = { x: e.offsetX, y: e.offsetY };
 
             const distance = points.length === 0 ? 0 : dist(currentPoint, points[points.length - 1]);
             const millis = Date.now() - lastPointTime;
@@ -76,8 +68,6 @@ class LassoSelection {
             context.beginPath();
             context.fillStyle = '#f60';
             context.beginPath();
-            const modState = modifiers.read(e);
-            const op = modState.shift ? 'add' : (isCtrlLike(modState) ? 'remove' : 'set');
             points.forEach((p, idx) => {
                 if (idx === 0) {
                     context.moveTo(p.x, p.y);
@@ -91,7 +81,7 @@ class LassoSelection {
             // wait for selection to complete
             await events.invoke(
                 'select.byMask',
-                op,
+                opFromModifiers(e),
                 canvas,
                 context
             );
@@ -119,7 +109,11 @@ class LassoSelection {
         };
 
         const dragEnd = () => {
-            parent.releasePointerCapture(dragId);
+            // a touch that has lifted, or was cancelled, no longer holds the
+            // capture and releasing it throws
+            if (parent.hasPointerCapture(dragId)) {
+                parent.releasePointerCapture(dragId);
+            }
             dragId = undefined;
         };
 
@@ -138,12 +132,23 @@ class LassoSelection {
             }
         };
 
+        // a cancelled touch gets no pointerup, and a drag left open blocks
+        // every later one
+        const pointercancel = (e: PointerEvent) => {
+            if (e.pointerId === dragId) {
+                dragEnd();
+                points = [];
+                paint();
+            }
+        };
+
         this.activate = () => {
             svg.classList.remove('hidden');
             parent.style.display = 'block';
             parent.addEventListener('pointerdown', pointerdown);
             parent.addEventListener('pointermove', pointermove);
             parent.addEventListener('pointerup', pointerup);
+            parent.addEventListener('pointercancel', pointercancel);
         };
 
         this.deactivate = () => {
@@ -156,6 +161,7 @@ class LassoSelection {
             parent.removeEventListener('pointerdown', pointerdown);
             parent.removeEventListener('pointermove', pointermove);
             parent.removeEventListener('pointerup', pointerup);
+            parent.removeEventListener('pointercancel', pointercancel);
         };
     }
 }

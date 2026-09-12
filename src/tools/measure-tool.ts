@@ -1,14 +1,17 @@
-import { Container, Label, NumericInput } from '@playcanvas/pcui';
+import { Button, Container, Label, NumericInput } from '@playcanvas/pcui';
 import { Entity, Mat4, Quat, TranslateGizmo, Vec3 } from 'playcanvas';
 
-import { createGizmoCamera } from './gizmo-camera-adapter';
 import { EntityTransformOp } from '../edit-ops';
 import { Events } from '../events';
-import { hitTestGizmo } from '../gizmo-hit';
 import { Scene } from '../scene';
 import { Splat } from '../splat';
+import { ToolOverlay, OverlayWriter } from '../tool-overlay';
 import { Transform } from '../transform';
-import { localize } from '../ui/localization';
+import { DimensionLabels } from '../ui/dimension-labels';
+import { i18n } from '../ui/localization';
+
+// pointer movement below this many pixels still counts as a click
+const CLICK_TOLERANCE = 4;
 
 const mat = new Mat4();
 const mat1 = new Mat4();
@@ -17,6 +20,8 @@ const mat3 = new Mat4();
 const p = new Vec3();
 const p0 = new Vec3();
 const p1 = new Vec3();
+const bmin = new Vec3();
+const bmax = new Vec3();
 const r = new Quat();
 const s = new Vec3();
 
@@ -30,49 +35,20 @@ class MeasureTransformHandler {
 class MeasureTool {
     activate: () => void;
     deactivate: () => void;
+    getFocus: () => { position: Vec3, radius: number } | null;
 
-    constructor(events: Events, scene: Scene, parent: HTMLElement, canvasContainer: Container) {
-        // create svg
-        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-        svg.classList.add('tool-svg', 'hidden');
-        svg.id = 'measure-tool-svg';
-        parent.appendChild(svg);
-
-        const ns = svg.namespaceURI;
-
-        // create defs node
-        const defs = document.createElementNS(ns, 'defs');
-
-        // create line element
-        const line = document.createElementNS(ns, 'line') as SVGLineElement;
-        line.id = 'measure-line';
-        defs.appendChild(line);
-
-        const lineBottom = document.createElementNS(ns, 'use') as SVGUseElement;
-        lineBottom.id = 'measure-line-bottom';
-        lineBottom.setAttribute('href', '#measure-line');
-
-        const lineTop = document.createElementNS(ns, 'use') as SVGUseElement;
-        lineTop.id = 'measure-line-top';
-        lineTop.setAttribute('href', '#measure-line');
-
-        // create line ends
-        const lineStart = document.createElementNS(ns, 'circle') as SVGCircleElement;
-        lineStart.id = 'measure-line-start';
-
-        const lineEnd = document.createElementNS(ns, 'circle') as SVGCircleElement;
-        lineEnd.id = 'measure-line-end';
-
-        svg.appendChild(defs);
-        svg.appendChild(lineBottom);
-        svg.appendChild(lineTop);
-        svg.appendChild(lineStart);
-        svg.appendChild(lineEnd);
+    constructor(events: Events, scene: Scene, canvasContainer: Container, annotationParent: HTMLElement) {
+        // the length label along the measured line (shown when 'show
+        // dimensions' is enabled); the points and line render in the scene
+        // via the shared tool overlay
+        const dimLabels = new DimensionLabels(scene, canvasContainer.dom, annotationParent, 'measure-tool-svg', 1);
 
         // ui
-        const lengthLabel = new Label({
-            text: localize('measure.length')
-        });
+        const hintLabel = new Label({ class: 'select-toolbar-label' });
+        i18n.bindText(hintLabel, 'measure.hint');
+
+        const lengthLabel = new Label({ class: 'select-toolbar-label' });
+        i18n.bindText(lengthLabel, 'measure.length');
 
         const lengthInput = new NumericInput({
             width: 90,
@@ -83,8 +59,11 @@ class MeasureTool {
         });
         let suppressUI = 0;
 
+        const clearButton = new Button({ class: 'select-toolbar-button', enabled: false });
+        i18n.bindText(clearButton, 'measure.clear');
+
         const selectToolbar = new Container({
-            class: 'select-toolbar',
+            class: ['select-toolbar', 'select-toolbar-tool'],
             hidden: true
         });
 
@@ -92,24 +71,21 @@ class MeasureTool {
             e.stopPropagation();
         });
 
+        selectToolbar.append(hintLabel);
         selectToolbar.append(lengthLabel);
         selectToolbar.append(lengthInput);
+        selectToolbar.append(clearButton);
         canvasContainer.append(selectToolbar);
 
-        const gizmo = new TranslateGizmo(createGizmoCamera(scene.camera.camera, scene.camera), scene.gizmoLayer);
+        const gizmo = new TranslateGizmo(scene.inputCamera.inputCamera, scene.gizmoLayer);
+        events.on('cameraViews.input', () => {
+            gizmo.camera = scene.inputCamera.inputCamera;
+        });
         const entity = new Entity('measureGizmoPivot');
         const transformHandler = new MeasureTransformHandler();
 
         let active = false;
         let splat: Splat;
-
-        const isPointerLocked = () => {
-            return document.pointerLockElement === canvasContainer.dom;
-        };
-
-        const getCameraFramesOverlay = () => {
-            return document.getElementById('camera-frames-overlay') as HTMLCanvasElement | null;
-        };
 
         // get world space point
         const getPoint = (index: number, result: Vec3) => {
@@ -118,7 +94,27 @@ class MeasureTool {
 
         const getPoint2d = (index: number, result: Vec3) => {
             getPoint(index, result);
-            scene.camera.worldToScreenCss(result, result);
+            scene.inputCamera.worldToScreen(result, result);
+            result.x *= canvasContainer.dom.clientWidth;
+            result.y *= canvasContainer.dom.clientHeight;
+        };
+
+        // the measurement points and line render in the scene via the shared
+        // tool overlay (occluded by gaussians, with a faint ghost showing through)
+        const overlay = new ToolOverlay();
+        overlay.provider = (writer: OverlayWriter) => {
+            if (!active || !splat) {
+                return;
+            }
+            const count = splat.measurePoints.length;
+            const pts = [p0, p1];
+            for (let i = 0; i < count; i++) {
+                getPoint(i, pts[i]);
+                writer.dot(pts[i]);
+            }
+            if (count === 2) {
+                writer.segment(p0, p1);
+            }
         };
 
         const updateVisuals = () => {
@@ -144,7 +140,18 @@ class MeasureTool {
             } else {
                 lengthInput.enabled = false;
             }
+
+            clearButton.enabled = !!splat && splat.measurePoints.length > 0;
         };
+
+        clearButton.on('click', () => {
+            if (splat) {
+                splat.measurePoints.length = 0;
+                splat.measureSelection = -1;
+                updateVisuals();
+                scene.forceRender = true;
+            }
+        });
 
         gizmo.on('render:update', () => {
             scene.forceRender = true;
@@ -162,27 +169,12 @@ class MeasureTool {
             events.invoke('pivot').end();
         });
 
-        events.on('selection.changed', (selection) => {
-            const nextSplat = selection instanceof Splat ? selection : null;
-            splat = nextSplat;
-            if (!active) {
-                return;
-            }
-            if (!nextSplat) {
+        events.on('selection.changed', (selection: Splat) => {
+            splat = selection instanceof Splat ? selection : null;
+            if (active) {
+                // for now we always deactivate the tool so the current transform handler remains in place
                 events.fire('tool.deactivate');
-                return;
             }
-            updateVisuals();
-            queueMicrotask(() => {
-                if (!active || splat !== nextSplat) {
-                    return;
-                }
-                events.fire('transformHandler.push', transformHandler);
-            });
-        });
-
-        events.on('pivot.started', () => {
-
         });
 
         events.on('pivot.moved', () => {
@@ -299,332 +291,169 @@ class MeasureTool {
             return e.pointerType === 'mouse' ? e.button === 0 : e.isPrimary;
         };
 
-        type PointerInfo = {
-            cssX: number;
-            cssY: number;
-            targetX: number | null;
-            targetY: number | null;
-            cssToTargetScaleX: number | null;
-            cssToTargetScaleY: number | null;
-            clientX: number;
-            clientY: number;
-        };
-
         let clicked = false;
-        let activePointerId: number | null = null;
-        let pointerDownValid = false;
-        let pointerDownInfo: PointerInfo | null = null;
-        let lastPointer: { x: number; y: number } | null = null;
-        let pointerMoveDistance = 0;
-        const clickMoveThreshold = 3;
-
-        const getCanvasRect = () => {
-            const rect = scene.canvas.getBoundingClientRect();
-            if (rect.width <= 0 || rect.height <= 0) {
-                return null;
-            }
-            return rect;
-        };
-
-        const getPointerLockCenter = (rect: DOMRect) => {
-            const frustum = scene.camera.getCustomFrustum();
-            if (!frustum) {
-                return { x: rect.width * 0.5, y: rect.height * 0.5 };
-            }
-            const dx = frustum.right - frustum.left;
-            const dy = frustum.top - frustum.bottom;
-            let xNdc = 0;
-            let yNdc = 0;
-            if (typeof dx === 'number' && isFinite(dx) && Math.abs(dx) > 1e-6) {
-                xNdc = -(frustum.right + frustum.left) / dx;
-            }
-            if (typeof dy === 'number' && isFinite(dy) && Math.abs(dy) > 1e-6) {
-                yNdc = -(frustum.top + frustum.bottom) / dy;
-            }
-            if (!isFinite(xNdc)) xNdc = 0;
-            if (!isFinite(yNdc)) yNdc = 0;
-            const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
-            return {
-                x: clamp((xNdc * 0.5 + 0.5) * rect.width, 0, rect.width - 1),
-                y: clamp((0.5 - yNdc * 0.5) * rect.height, 0, rect.height - 1)
-            };
-        };
-
-        const getPointerInfo = (event: PointerEvent): PointerInfo | null => {
-            const rect = getCanvasRect();
-            if (!rect) {
-                return null;
-            }
-            const w = scene.canvas.clientWidth;
-            const h = scene.canvas.clientHeight;
-            if (!(w > 0 && h > 0)) {
-                return null;
-            }
-            const targetSize = scene.camera.targetSize ?? scene.targetSize;
-            const cssToTargetScaleX = targetSize && targetSize.width > 0 ? targetSize.width / rect.width : null;
-            const cssToTargetScaleY = targetSize && targetSize.height > 0 ? targetSize.height / rect.height : null;
-            const buildInfo = (cssX: number, cssY: number, clientX: number, clientY: number) => {
-                const targetX = cssToTargetScaleX !== null ? cssX * cssToTargetScaleX : null;
-                const targetY = cssToTargetScaleY !== null ? cssY * cssToTargetScaleY : null;
-                return {
-                    cssX,
-                    cssY,
-                    targetX,
-                    targetY,
-                    cssToTargetScaleX,
-                    cssToTargetScaleY,
-                    clientX,
-                    clientY
-                };
-            };
-            if (isPointerLocked()) {
-                const center = getPointerLockCenter(rect);
-                const cssX = center.x;
-                const cssY = center.y;
-                return buildInfo(cssX, cssY, rect.left + cssX, rect.top + cssY);
-            }
-            const cssX = event.clientX - rect.left;
-            const cssY = event.clientY - rect.top;
-            if (!Number.isFinite(cssX) || !Number.isFinite(cssY) || cssX < 0 || cssY < 0 || cssX > rect.width || cssY > rect.height) {
-                return null;
-            }
-            return buildInfo(cssX, cssY, event.clientX, event.clientY);
-        };
-
-        const isCanvasPointerDown = (event: PointerEvent) => {
-            const overlay = getCameraFramesOverlay();
-            if (typeof event.composedPath === 'function') {
-                const path = event.composedPath();
-                if (overlay && path.includes(overlay)) {
-                    return false;
-                }
-                if (path.includes(scene.canvas)) {
-                    return true;
-                }
-                if (isPointerLocked() && path.includes(canvasContainer.dom)) {
-                    return true;
-                }
-                return path.includes(svg) || path.includes(parent);
-            }
-            if (overlay && event.target === overlay) {
-                return false;
-            }
-            if (event.target === scene.canvas) {
-                return true;
-            }
-            if (isPointerLocked() && event.target === canvasContainer.dom) {
-                return true;
-            }
-            return parent.contains(event.target as Node);
-        };
+        let clickX = 0;
+        let clickY = 0;
 
         const pointerdown = (e: PointerEvent) => {
-            if (activePointerId !== null) {
-                return;
+            if (!clicked && isPrimary(e)) {
+                clicked = true;
+                clickX = e.offsetX;
+                clickY = e.offsetY;
             }
-            if (!isPrimary(e)) {
-                return;
-            }
-            clicked = false;
-            pointerDownValid = false;
-            if (!isCanvasPointerDown(e)) {
-                return;
-            }
-            const pointer = getPointerInfo(e);
-            if (!pointer) {
-                return;
-            }
-            if (hitTestGizmo(scene, pointer.clientX, pointer.clientY)) {
-                return;
-            }
-            activePointerId = e.pointerId;
-            clicked = true;
-            pointerDownValid = true;
-            pointerDownInfo = pointer;
-            lastPointer = { x: pointer.cssX, y: pointer.cssY };
-            pointerMoveDistance = 0;
         };
 
         const pointermove = (e: PointerEvent) => {
-            if (e.pointerId !== activePointerId) {
-                return;
-            }
-            let moved = 0;
-            if (isPointerLocked()) {
-                moved = Math.abs(e.movementX) + Math.abs(e.movementY);
-            } else {
-                const pointer = getPointerInfo(e);
-                if (pointer && lastPointer) {
-                    moved = Math.hypot(pointer.cssX - lastPointer.x, pointer.cssY - lastPointer.y);
-                    lastPointer = { x: pointer.cssX, y: pointer.cssY };
-                }
-            }
-            if (moved > 0) {
-                pointerMoveDistance += moved;
-            }
-            if (pointerMoveDistance > clickMoveThreshold) {
+            // forgive small jitter between down and up; only a real drag cancels the click
+            if (clicked && Math.hypot(e.offsetX - clickX, e.offsetY - clickY) > CLICK_TOLERANCE) {
                 clicked = false;
             }
         };
 
         const pointerup = async (e: PointerEvent) => {
-            if (e.pointerId !== activePointerId) {
-                return;
-            }
-            const shouldProcess = pointerDownValid && clicked && isPrimary(e);
-            activePointerId = null;
-            clicked = false;
-            pointerDownValid = false;
-            const pointerDown = pointerDownInfo;
-            pointerDownInfo = null;
-            lastPointer = null;
-            pointerMoveDistance = 0;
-            if (!shouldProcess || !splat) {
-                return;
-            }
-            const pointerUp = getPointerInfo(e);
-            const pointer = (isPointerLocked() && pointerDown) ? pointerDown : (pointerUp ?? pointerDown);
-            if (!pointer) {
-                return;
-            }
+            if (splat && clicked && isPrimary(e)) {
+                clicked = false;
 
-            let closestIdx = -1;
+                let closestIdx = -1;
 
-            // check for intersection with existing point
-            for (let i = 0; i < splat.measurePoints.length; i++) {
-                getPoint2d(i, p);
+                // check for intersection with existing point
+                const cameraPos = scene.inputCamera.mainCamera.getPosition();
+                const cameraFwd = scene.inputCamera.mainCamera.forward;
+                for (let i = 0; i < splat.measurePoints.length; i++) {
+                    // ignore points behind the camera (their projection is mirrored)
+                    getPoint(i, p);
+                    if (p.sub(cameraPos).dot(cameraFwd) <= 0) {
+                        continue;
+                    }
 
-                if (Math.abs(p.x - pointer.cssX) < 8 && Math.abs(p.y - pointer.cssY) < 8) {
-                    closestIdx = i;
-                    break;
-                }
-            }
+                    getPoint2d(i, p);
 
-            if (closestIdx >= 0) {
-                splat.measureSelection = closestIdx;
-                updateVisuals();
-                e.preventDefault();
-                e.stopPropagation();
-                return;
-            }
-
-            if (splat.measurePoints.length < 2) {
-                const result = await scene.camera.intersectCss(pointer.cssX, pointer.cssY);
-                if (result) {
-                    mat.invert(splat.worldTransform);
-                    mat.transformPoint(result.position, p);
-                    splat.measureSelection = splat.measurePoints.length;
-                    splat.measurePoints.push(p.clone());
-                    updateVisuals();
-                    e.preventDefault();
-                    e.stopPropagation();
-                }
-            }
-        };
-
-        const pointercancel = (e: PointerEvent) => {
-            if (e.pointerId !== activePointerId) {
-                return;
-            }
-            activePointerId = null;
-            clicked = false;
-            pointerDownValid = false;
-            pointerDownInfo = null;
-            lastPointer = null;
-            pointerMoveDistance = 0;
-        };
-
-        events.on('postrender', () => {
-            if (active && splat) {
-                line.setAttribute('visibility', splat.measurePoints.length > 1 ? 'visible' : 'hidden');
-
-                for (let i = 0; i < 2; i++) {
-                    if (i < splat.measurePoints.length) {
-                        getPoint2d(i, p);
-
-                        const x = p.x.toString();
-                        const y = p.y.toString();
-
-                        if (i === 0) {
-                            line.setAttribute('x1', x);
-                            line.setAttribute('y1', y);
-                            lineStart.setAttribute('cx', x);
-                            lineStart.setAttribute('cy', y);
-
-                            lineStart.setAttribute('visibility', 'visible');
-                        } else if (i === 1) {
-                            line.setAttribute('x2', x);
-                            line.setAttribute('y2', y);
-                            lineEnd.setAttribute('cx', x);
-                            lineEnd.setAttribute('cy', y);
-                            lineEnd.setAttribute('visibility', 'visible');
-                        }
-                    } else {
-                        if (i === 0) {
-                            lineStart.setAttribute('visibility', 'hidden');
-                        } else {
-                            lineEnd.setAttribute('visibility', 'hidden');
-                        }
+                    if (Math.abs(p.x - clickX) < 8 && Math.abs(p.y - clickY) < 8) {
+                        closestIdx = i;
+                        break;
                     }
                 }
-            } else {
-                line.setAttribute('visibility', 'hidden');
-                lineStart.setAttribute('visibility', 'hidden');
-                lineEnd.setAttribute('visibility', 'hidden');
+
+                if (closestIdx >= 0) {
+                    splat.measureSelection = closestIdx;
+                    updateVisuals();
+                    return;
+                }
+
+                // place at the pointer-down position: that is where the user aimed
+                if (splat.measurePoints.length < 2) {
+                    const target = splat;
+                    const result = await scene.inputCamera.intersect(clickX / canvasContainer.dom.clientWidth, clickY / canvasContainer.dom.clientHeight);
+                    // another click may have landed a point while the pick was in flight
+                    if (result && active && splat === target && splat.measurePoints.length < 2) {
+                        mat.invert(splat.worldTransform);
+                        mat.transformPoint(result.position, p);
+                        splat.measureSelection = splat.measurePoints.length;
+                        splat.measurePoints.push(p.clone());
+                        updateVisuals();
+                    }
+                }
+
+                e.preventDefault();
+                e.stopPropagation();
+            }
+        };
+
+        // length label along the measured line
+        events.on('postrender', () => {
+            // the svg is hidden while the tool is inactive, so skip the work
+            if (!active || !splat) {
+                return;
+            }
+
+            if (splat.measurePoints.length !== 2 || !events.invoke('camera.boundDimensions')) {
+                dimLabels.hideLabel(0);
+                return;
+            }
+
+            getPoint(0, p0);
+            getPoint(1, p1);
+            dimLabels.setLabel(0, p0, p1);
+        });
+
+        // re-render so the label reacts to the setting while the tool is active
+        events.on('camera.boundDimensions', () => {
+            if (active) {
+                scene.forceRender = true;
             }
         });
 
         const updateGizmoSize = () => {
-            const { camera, canvas } = scene;
-            const w = canvas.clientWidth;
-            const h = canvas.clientHeight;
-            if (!(w > 0 && h > 0)) {
-                return;
-            }
+            const { canvas } = scene;
+            const camera = scene.inputCamera;
             if (camera.ortho) {
-                gizmo.size = 1125 / h;
+                gizmo.size = 1125 / canvas.clientHeight;
             } else {
-                gizmo.size = 1200 / Math.max(w, h);
+                gizmo.size = 1200 / Math.max(canvas.clientWidth, canvas.clientHeight);
             }
         };
         updateGizmoSize();
         events.on('camera.resize', updateGizmoSize);
         events.on('camera.ortho', updateGizmoSize);
 
+        // frame the placed points instead of the selection ('f' shortcut)
+        this.getFocus = () => {
+            const count = splat ? splat.measurePoints.length : 0;
+            if (count === 0) {
+                return null;
+            }
+
+            // the points' world aabb, framed like the selection bound: its
+            // center at half its diagonal
+            getPoint(0, bmin);
+            bmax.copy(bmin);
+            for (let i = 1; i < count; i++) {
+                getPoint(i, p);
+                bmin.min(p);
+                bmax.max(p);
+            }
+            const position = new Vec3().add2(bmin, bmax).mulScalar(0.5);
+            let radius = bmax.sub(bmin).length() * 0.5;
+
+            // a lone point has no extent: center it and keep the current zoom
+            if (radius === 0) {
+                radius = scene.inputCamera.distance * scene.inputCamera.sceneRadius;
+            }
+
+            return { position, radius };
+        };
+
         this.activate = () => {
             active = true;
             updateVisuals();
-            canvasContainer.dom.addEventListener('pointerdown', pointerdown, true);
-            canvasContainer.dom.addEventListener('pointermove', pointermove, true);
+            canvasContainer.dom.addEventListener('pointerdown', pointerdown);
+            canvasContainer.dom.addEventListener('pointermove', pointermove);
             canvasContainer.dom.addEventListener('pointerup', pointerup, true);
-            canvasContainer.dom.addEventListener('pointercancel', pointercancel, true);
             selectToolbar.hidden = false;
-            parent.style.display = 'block';
-            parent.classList.add('noevents');
-            svg.classList.remove('hidden');
+            dimLabels.show();
 
             events.fire('transformHandler.push', transformHandler);
+
+            scene.add(overlay);
+
+            scene.forceRender = true;
         };
 
         this.deactivate = () => {
             active = false;
+
+            scene.remove(overlay);
+
             updateVisuals();
-            activePointerId = null;
-            clicked = false;
-            pointerDownValid = false;
-            pointerDownInfo = null;
-            lastPointer = null;
-            pointerMoveDistance = 0;
-            canvasContainer.dom.removeEventListener('pointerdown', pointerdown, true);
-            canvasContainer.dom.removeEventListener('pointermove', pointermove, true);
+            canvasContainer.dom.removeEventListener('pointerdown', pointerdown);
+            canvasContainer.dom.removeEventListener('pointermove', pointermove);
             canvasContainer.dom.removeEventListener('pointerup', pointerup, true);
-            canvasContainer.dom.removeEventListener('pointercancel', pointercancel, true);
             selectToolbar.hidden = true;
-            parent.style.display = 'none';
-            parent.classList.remove('noevents');
-            svg.classList.add('hidden');
+            dimLabels.hide();
 
             events.fire('transformHandler.pop');
+
+            scene.forceRender = true;
         };
     }
 }

@@ -1,5 +1,4 @@
 type Color = { r: number, g: number, b: number, a: number };
-type SplatRenderBackendMode = 'merged' | 'unified-display' | 'auto';
 
 const DEFAULT_BG_CLR: Color = { r: 0, g: 0, b: 0, a: 1 };
 const DEFAULT_SELECTED_CLR: Color = { r: 1, g: 1, b: 0, a: 1 };
@@ -15,16 +14,17 @@ const sceneConfig = {
     camera: {
         pixelScale: 1,
         multisample: false,
-        fov: 75,
+        fov: 85,
         exposure: 1.0,
         toneMapping: 'linear',
         overlay: false
     },
     show: {
         grid: true,
-        eyeLevel: true,
         bound: true,
+        boundDimensions: false,
         cameraPoses: false,
+        cameraInfo: false,
         shBands: 3
     },
     controls: {
@@ -37,20 +37,10 @@ const sceneConfig = {
         initialElev: -10,
         initialZoom: 1.0,
         orbitSensitivity: 0.3,
-        zoomSensitivity: 0.4,
-        navMode: 'orbit',
-        fpvSpeed: 1,
-        fpvWheelSpeed: 0.5,
-        fpvLookSensitivity: 0.002
-    },
-    renderBackend: {
-        mode: 'unified-display' as SplatRenderBackendMode,
-        debugState: false,
-        unifiedCulling: false
+        zoomSensitivity: 0.4
     },
     debug: {
-        showBound: false,
-        logClipPlanes: false
+        showBound: false
     }
 };
 
@@ -179,4 +169,3 @@ const getSceneConfig = (overrides: any[]) => {
 };
 
 export { SceneConfig, getSceneConfig };
-export type { SplatRenderBackendMode };

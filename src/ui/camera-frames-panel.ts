@@ -1681,7 +1681,7 @@ class CameraFramesPanel extends Panel {
             const sortedFrames = state.frames.slice().sort((a, b) => a.order - b.order);
             sortedFrames.forEach((frame) => {
                 const scalePct = Math.round(frame.scalePct);
-                const text = `${frame.id} (${formatInteger(frame.baseSize.w * frame.scaleK * rbScale.kx)} x ${formatInteger(frame.baseSize.h * frame.scaleK * rbScale.ky)} px @${scalePct}%)`;
+                const text = `${frame.id} (${formatInteger(frame.baseSize.w * frame.scaleK)} x ${formatInteger(frame.baseSize.h * frame.scaleK)} px @${scalePct}%)`;
                 const classes = ['list-item'];
                 const isSelected = !!frame.selected;
                 if (isSelected) {

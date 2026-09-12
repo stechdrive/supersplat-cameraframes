@@ -2,7 +2,7 @@ import { Container, Label } from '@playcanvas/pcui';
 
 import { Events } from '../events';
 import { ShortcutManager } from '../shortcut-manager';
-import { localize } from './localization';
+import { i18n } from './localization';
 
 // Popup display configuration - maps shortcuts to categories and locale keys
 // This is separate from the shortcut bindings themselves (separation of concerns)
@@ -45,9 +45,9 @@ const popupConfig: Record<string, CategoryConfig> = {
     show: {
         localeKey: 'popup.shortcuts.show',
         shortcuts: [
-            { id: 'camera.toggleOverlay', localeKey: 'popup.shortcuts.toggle-splat-overlay' },
-            { id: 'camera.toggleMode', localeKey: 'popup.shortcuts.toggle-overlay-mode' },
             { id: 'grid.toggleVisible', localeKey: 'popup.shortcuts.toggle-grid' },
+            { id: 'view.toggleEditView', localeKey: 'popup.shortcuts.toggle-edit-view' },
+            { id: 'camera.toggleShowInfo', localeKey: 'popup.shortcuts.toggle-camera-info' },
             { id: 'select.hide', localeKey: 'popup.shortcuts.lock-selected-splats' },
             { id: 'select.unhide', localeKey: 'popup.shortcuts.unlock-all-splats' }
         ]
@@ -58,30 +58,38 @@ const popupConfig: Record<string, CategoryConfig> = {
             { id: 'select.all', localeKey: 'popup.shortcuts.select-all' },
             { id: 'select.none', localeKey: 'popup.shortcuts.deselect-all' },
             { id: 'select.invert', localeKey: 'popup.shortcuts.invert-selection' },
-            { id: 'select.delete', localeKey: 'popup.shortcuts.delete-selected-splats' }
+            { id: 'select.delete', localeKey: 'popup.shortcuts.delete-selected-splats' },
+            { id: 'selection.toggleUseDepth', localeKey: 'popup.shortcuts.toggle-depth' },
+            { id: 'selection.toggleFootprint', localeKey: 'popup.shortcuts.toggle-footprint' }
         ],
         hints: [
             { displayKey: 'Shift', localeKey: 'popup.shortcuts.add-to-selection' },
-            { displayKey: 'Ctrl', localeKey: 'popup.shortcuts.remove-from-selection' }
+            { displayKey: 'Ctrl', localeKey: 'popup.shortcuts.remove-from-selection' },
+            { displayKey: 'Shift + Ctrl', localeKey: 'popup.shortcuts.intersect-selection' }
         ]
     },
     tools: {
         localeKey: 'popup.shortcuts.tools',
         shortcuts: [
-            { id: 'tool.move', localeKey: 'popup.shortcuts.move' },
-            { id: 'tool.rotate', localeKey: 'popup.shortcuts.rotate' },
-            { id: 'tool.scale', localeKey: 'popup.shortcuts.scale' },
-            { id: 'tool.rectSelection', localeKey: 'popup.shortcuts.rect-selection' },
+            { id: 'tool.moveShortcut', localeKey: 'popup.shortcuts.move' },
+            { id: 'tool.rotateShortcut', localeKey: 'popup.shortcuts.rotate' },
+            { id: 'tool.scaleShortcut', localeKey: 'popup.shortcuts.scale' },
+            { id: 'tool.rectSelection', localeKey: 'popup.shortcuts.rectangle-selection' },
             { id: 'tool.lassoSelection', localeKey: 'popup.shortcuts.lasso-selection' },
             { id: 'tool.polygonSelection', localeKey: 'popup.shortcuts.polygon-selection' },
             { id: 'tool.brushSelection', localeKey: 'popup.shortcuts.brush-selection' },
+            { id: 'tool.sphereBrushSelection', localeKey: 'popup.shortcuts.sphere-brush-selection' },
             { id: 'tool.floodSelection', localeKey: 'popup.shortcuts.flood-selection' },
             { id: 'tool.eyedropperSelection', localeKey: 'popup.shortcuts.eyedropper-selection' },
             { id: 'tool.deactivate', localeKey: 'popup.shortcuts.deactivate-tool' },
             { id: 'tool.toggleCoordSpace', localeKey: 'popup.shortcuts.toggle-gizmo-coordinate-space' }
         ],
         hints: [
-            { displayKey: '[ ]', localeKey: 'popup.shortcuts.brush-size' }
+            { displayKey: '[ ]', localeKey: 'popup.shortcuts.brush-size' },
+            { displayKey: 'Alt + Wheel', localeKey: 'popup.shortcuts.brush-size' },
+            { displayKey: 'Enter', localeKey: 'popup.shortcuts.close-polygon' },
+            { displayKey: 'Backspace', localeKey: 'popup.shortcuts.remove-last-polygon-point' },
+            { displayKey: 'Backspace', localeKey: 'popup.shortcuts.remove-tool-point' }
         ]
     },
     playback: {
@@ -94,6 +102,10 @@ const popupConfig: Record<string, CategoryConfig> = {
             { id: 'timeline.nextKey', localeKey: 'popup.shortcuts.next-key' },
             { id: 'track.addKey', localeKey: 'popup.shortcuts.add-key' },
             { id: 'track.removeKey', localeKey: 'popup.shortcuts.remove-key' }
+        ],
+        hints: [
+            { displayKey: 'Ctrl + Click', localeKey: 'popup.shortcuts.stamp-key' },
+            { displayKey: 'Shift + Drag', localeKey: 'popup.shortcuts.copy-key' }
         ]
     },
     other: {
@@ -101,8 +113,6 @@ const popupConfig: Record<string, CategoryConfig> = {
         shortcuts: [
             { id: 'edit.undo', localeKey: 'popup.shortcuts.undo' },
             { id: 'edit.redo', localeKey: 'popup.shortcuts.redo' },
-            { id: 'doc.save', localeKey: 'popup.shortcuts.save' },
-            { id: 'doc.savePackage', localeKey: 'popup.shortcuts.save-package' },
             { id: 'dataPanel.toggle', localeKey: 'popup.shortcuts.toggle-data-panel' },
             { id: 'timelinePanel.toggle', localeKey: 'popup.shortcuts.toggle-timeline-panel' }
         ]
@@ -117,6 +127,7 @@ class ShortcutsPopup extends Container {
         args = {
             ...args,
             id: 'shortcuts-popup',
+            class: 'blocks-shortcuts',
             hidden: true,
             tabIndex: -1
         };
@@ -147,9 +158,9 @@ class ShortcutsPopup extends Container {
 
         // Header
         const header = new Label({
-            id: 'header',
-            text: localize('popup.shortcuts.title').toUpperCase()
+            id: 'header'
         });
+        i18n.bindText(header, () => i18n.t('popup.shortcuts.title').toUpperCase());
 
         // Content
         const content = new Container({
@@ -166,9 +177,9 @@ class ShortcutsPopup extends Container {
 
             // Add category header
             const headerLabel = new Label({
-                class: 'shortcut-header-label',
-                text: localize(config.localeKey)
+                class: 'shortcut-header-label'
             });
+            i18n.bindText(headerLabel, config.localeKey);
 
             const headerEntry = new Container({
                 class: 'shortcut-header'
@@ -188,9 +199,9 @@ class ShortcutsPopup extends Container {
                 });
 
                 const action = new Label({
-                    class: 'shortcut-action',
-                    text: localize(item.localeKey)
+                    class: 'shortcut-action'
                 });
+                i18n.bindText(action, item.localeKey);
 
                 const entry = new Container({
                     class: 'shortcut-entry'
@@ -210,9 +221,9 @@ class ShortcutsPopup extends Container {
                     });
 
                     const action = new Label({
-                        class: 'shortcut-action',
-                        text: localize(hint.localeKey)
+                        class: 'shortcut-action'
                     });
+                    i18n.bindText(action, hint.localeKey);
 
                     const entry = new Container({
                         class: 'shortcut-entry'

@@ -1,6 +1,7 @@
 import { readPsd, type Layer } from 'ag-psd';
 import { Texture } from 'playcanvas';
 
+import type { CameraRecord } from './cameras/camera-store';
 import { Events } from './events';
 import { ReferenceImageAssets } from './reference-image-assets';
 import { DEFAULT_REFERENCE_IMAGE_FILENAME, normalizeReferenceImageFilename } from './reference-image-filename';
@@ -1223,6 +1224,7 @@ class ReferenceImagesController {
         this.events.function('referenceImages.renderExportLayers', async (width: number, height: number, options?: { applyOpacity?: boolean; }) => {
             return await this.renderExportLayers(width, height, options);
         });
+        this.events.function('referenceImages.renderCameraLayers', (camera: CameraRecord, width: number, height: number) => this.renderCameraLayers(camera, width, height));
 
         this.events.function('docSerialize.referenceImages', () => this.serializeDoc());
         this.events.function('docDeserialize.referenceImages', async (docState: any, blobs: Map<string, Blob>) => {
@@ -1669,10 +1671,8 @@ class ReferenceImagesController {
     }
 
     private getRenderTargetSize() {
-        const rt = this.scene.camera.entity.camera.renderTarget;
-        if (rt && rt.width > 0 && rt.height > 0) {
-            return { w: rt.width, h: rt.height };
-        }
+        const camera = this.events.invoke('cameraViews').shot;
+        if (camera?.targetSize) return { w: camera.targetSize.width, h: camera.targetSize.height };
         const device = this.scene.app.graphicsDevice;
         return { w: device.width, h: device.height };
     }
@@ -1719,10 +1719,6 @@ class ReferenceImagesController {
     }
 
     private updateRenderer() {
-        if (this.scene.camera.suppressFinalBlit && !this.scene.renderFlags.offscreenIncludeReferenceImage) {
-            this.renderer.clearParams();
-            return;
-        }
         if (!this.state.masterVisible) {
             this.renderer.clearParams();
             return;
@@ -2539,6 +2535,44 @@ class ReferenceImagesController {
             if (layer) {
                 layers.push(layer);
             }
+        }
+        return layers;
+    }
+
+    private async renderCameraLayers(camera: CameraRecord, width: number, height: number): Promise<ReferenceImagesExportLayer[]> {
+        // Export derives placement from the requested camera, even when that
+        // camera is not displayed. No preview gate or active-preset swap.
+        const preset = this.fullState.presets.find(preset => preset.id === camera.referenceImagePresetId);
+        if (!preset) return [];
+        const override = camera.referenceImageOverrides[preset.id] as ReferenceImagePresetOverride | undefined;
+        const base = preset.baseRenderBox ?? { w: width, h: height };
+        const anchor = { ax: camera.composition.anchorX, ay: camera.composition.anchorY };
+        const correction = override?.renderBoxCorrection ?? { x: 0, y: 0 };
+        const items = preset.items.map(item => ({ ...item, ...override?.items?.[item.id] }))
+        .filter(item => item.includeInRender)
+        .sort((a, b) => (a.group === b.group ? a.order - b.order : a.group === 'back' ? -1 : 1));
+        const layers: ReferenceImagesExportLayer[] = [];
+        for (const item of items) {
+            const source = this.fullState.assets.find(asset => asset.id === item.assetId)?.source;
+            const blob = this.assets.getBlob(item.assetId);
+            if (!source || !blob) throw new Error(`${item.name}の下絵元データがありません`);
+            const image = await this.getExportWorkCanvas(item.assetId, source, blob);
+            const offset = this.applyRenderBoxOffsetCorrection(item.offsetPx, item.anchor, base, { w: width, h: height }, anchor, correction);
+            const w = source.appliedSize.w * item.scalePct / 100;
+            const h = source.appliedSize.h * item.scalePct / 100;
+            const pixelPerfect = Math.abs(item.scalePct - 100) < 1e-3;
+            const x = (width - w) * item.anchor.ax - offset.x;
+            const y = (height - h) * item.anchor.ay - offset.y;
+            const x0 = pixelPerfect ? Math.round(x) : x;
+            const y0 = pixelPerfect ? Math.round(y) : y;
+            const bounds = this.trimExportCanvas({ outW: width, outH: height, x0, y0, w, h });
+            if (!bounds) continue;
+            const canvas = document.createElement('canvas');
+            canvas.width = bounds.right - bounds.left; canvas.height = bounds.bottom - bounds.top;
+            const ctx = canvas.getContext('2d');
+            ctx.imageSmoothingEnabled = !pixelPerfect;
+            ctx.drawImage(image, x0 - bounds.left, y0 - bounds.top, w, h);
+            layers.push({ group: item.group, name: item.name, opacity: item.opacity, canvas, bounds });
         }
         return layers;
     }

@@ -7,21 +7,17 @@ import {
     FUNC_LESSEQUAL,
     SEMANTIC_POSITION,
     BlendState,
+    Camera,
     DepthState,
-    CameraComponent,
     Layer,
     QuadRender,
     ScopeSpace,
     Shader,
     ShaderUtils,
-    Vec3
+    Mat4
 } from 'playcanvas';
 
-import {
-    createCameraProjectionData,
-    resolveCameraProjectionData,
-    type CameraProjectionData
-} from './camera-matrices';
+import { bindViews } from './cameras/bind-views';
 import { Element, ElementType } from './element';
 import { Serializer } from './serializer';
 import { vertexShader, fragmentShader } from './shaders/infinite-grid-shader';
@@ -32,14 +28,24 @@ const resolve = (scope: ScopeSpace, values: any) => {
     }
 };
 
+type GridPlane = 'xz' | 'xy' | 'yz';
+
+// map plane name to the shader's plane bit (0: x (yz), 1: y (xz), 2: z (xy))
+const planeIndices = { yz: 0, xz: 1, xy: 2 };
+
+const planeMask = (planes: GridPlane[]) => planes.reduce((mask, plane) => mask | (1 << planeIndices[plane]), 0);
+
 class InfiniteGrid extends Element {
     shader: Shader;
     quadRender: QuadRender;
     blendState = new BlendState(false);
     depthState = new DepthState(FUNC_LESSEQUAL, true);
-    private preRenderLayerHandler: ((camera: CameraComponent, layer: Layer, transparent: boolean) => void) | null = null;
 
     visible = true;
+    private releaseViews: () => void;
+    // the planes drawn, any combination. Planes the camera views edge-on
+    // produce no intersections and simply don't show
+    planes: GridPlane[] = ['xz'];
 
     constructor() {
         super(ElementType.debug);
@@ -53,82 +59,74 @@ class InfiniteGrid extends Element {
             attributes: {
                 vertex_position: SEMANTIC_POSITION
             },
-            vertexGLSL: vertexShader,
-            fragmentGLSL: fragmentShader
+            vertexWGSL: vertexShader,
+            fragmentWGSL: fragmentShader
         });
 
-        this.quadRender = new QuadRender(this.shader);
+        this.releaseViews = bindViews(this.scene, (camera) => {
+            const quadRender = new QuadRender(this.shader);
 
-        const blendState = new BlendState(
-            true,
-            BLENDEQUATION_ADD, BLENDMODE_SRC_ALPHA, BLENDMODE_ONE_MINUS_SRC_ALPHA,
-            BLENDEQUATION_ADD, BLENDMODE_ONE, BLENDMODE_ONE_MINUS_SRC_ALPHA
-        );
+            const blendState = new BlendState(
+                true,
+                BLENDEQUATION_ADD, BLENDMODE_SRC_ALPHA, BLENDMODE_ONE_MINUS_SRC_ALPHA,
+                BLENDEQUATION_ADD, BLENDMODE_ONE, BLENDMODE_ONE_MINUS_SRC_ALPHA
+            );
 
-        const view_position = [0, 0, 0];
-        const cameraMatrices: CameraProjectionData = createCameraProjectionData();
-        let plane;
+            const shaderProjection = new Mat4();
+            const viewProjectionMatrix = new Mat4();
+            const viewPosition = [0, 0, 0];
+            const viewportSize = [0, 0];
 
-        this.preRenderLayerHandler = (cameraComponent: CameraComponent, layer: Layer, transparent: boolean) => {
-            const { scene } = this;
-            if (cameraComponent !== scene.camera.camera) {
-                return;
-            }
-            const overlaysEnabled = scene.camera.renderOverlays || scene.renderFlags.forceGridOverlay;
-            const targetLayer = scene.renderFlags.gridLayerOverride ?? scene.debugLayer;
-            if (this.visible && layer === targetLayer && !transparent && overlaysEnabled) {
-                const { camera } = scene;
+            const handle = camera.camera.on('preRenderLayer', (layer: Layer, transparent: boolean) => {
+                const { scene } = this;
+                if (this.visible && this.planes.length > 0 && layer === camera.worldLayer && !transparent && (camera.renderOverlays || camera.exportGrid)) {
 
-                device.setBlendState(blendState);
-                device.setCullMode(CULLFACE_NONE);
-                device.setDepthState(this.depthState);
-                device.setStencilState(null, null);
 
-                // select the correctly plane in orthographic mode
-                if (camera.ortho) {
-                    const cmp = (a: Vec3, b: Vec3) => 1.0 - Math.abs(a.dot(b)) < 1e-03;
-                    const z = camera.worldTransform.getZ();
-                    plane = cmp(z, Vec3.RIGHT) ? 0 : (cmp(z, Vec3.BACK) ? 2 : 1);
-                } else {
-                    // default is xz plane
-                    plane = 1;
+                    device.setBlendState(blendState);
+                    device.setCullMode(CULLFACE_NONE);
+                    device.setDepthState(DepthState.WRITEDEPTH);
+                    device.setStencilState(null, null);
+
+                    // the shader writes fragDepth from this matrix: apply the same
+                    // clip-z transform the engine applies for meshes (and the splat
+                    // renderer applies), so all depth shares one convention
+                    viewProjectionMatrix.mul2(
+                        Camera.applyShaderProjectionTransform(camera.camera.projectionMatrix, shaderProjection, false, device.isWebGPU),
+                        camera.camera.viewMatrix
+                    );
+
+                    const p = camera.position;
+                    viewPosition[0] = p.x;
+                    viewPosition[1] = p.y;
+                    viewPosition[2] = p.z;
+                    viewportSize[0] = camera.targetSize.width;
+                    viewportSize[1] = camera.targetSize.height;
+
+                    resolve(device.scope, {
+                        planeMask: planeMask(this.planes),
+                        matrix_viewProjection: viewProjectionMatrix.data,
+                        grid_view_position: viewPosition,
+                        grid_viewport_size: viewportSize
+                    });
+
+                    quadRender.render();
                 }
-
-                const p = camera.position;
-                view_position[0] = p.x;
-                view_position[1] = p.y;
-                view_position[2] = p.z;
-
-                if (!resolveCameraProjectionData(cameraComponent, cameraMatrices, { fallbackToCurrentMatrices: true })) {
-                    return;
-                }
-
-                resolve(device.scope, {
-                    plane,
-                    view_position,
-                    matrix_viewProjection: cameraMatrices.viewProjection.data,
-                    matrix_viewProjectionInverse: cameraMatrices.invViewProjection.data
-                });
-
-                this.quadRender.render();
-            }
-        };
-
-        this.scene.app.scene.on('prerender:layer', this.preRenderLayerHandler);
+            });
+            return () => {
+                handle.off(); quadRender.destroy();
+            };
+        });
     }
 
     remove() {
         this.shader.destroy();
-        this.quadRender.destroy();
-        if (this.preRenderLayerHandler) {
-            this.scene.app.scene.off('prerender:layer', this.preRenderLayerHandler);
-            this.preRenderLayerHandler = null;
-        }
+        this.releaseViews?.();
     }
 
     serialize(serializer: Serializer): void {
-        serializer.pack(this.visible);
+        serializer.pack(this.visible, planeMask(this.planes));
     }
 }
 
 export { InfiniteGrid };
+export type { GridPlane };

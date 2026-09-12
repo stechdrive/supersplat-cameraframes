@@ -110,7 +110,7 @@ class MultiEntityTransformHandler implements TransformHandler {
             return;
         }
 
-        const origin = this.events.invoke('pivot.origin');
+        const origin = 'boundCenter';
         const active = this.pickActiveTarget();
         const coordSpace = this.events.functions.has('tool.coordSpace') ?
             (this.events.invoke('tool.coordSpace') as 'local' | 'world') :
@@ -188,8 +188,7 @@ class MultiEntityTransformHandler implements TransformHandler {
         });
 
         const scene = this.targets[0]?.scene;
-        this.previewActive = !!scene?.beginBoundPreviewMulti?.(this.targets);
-        if (!this.previewActive && scene) {
+        if (scene) {
             scene.boundDirty = true;
         }
     }
@@ -205,21 +204,14 @@ class MultiEntityTransformHandler implements TransformHandler {
             const r = quat;
             const s = mat2.getScale();
 
-            if (entry.target instanceof Splat) {
-                entry.target.move(t, r, s, true);
-            } else {
-                entry.target.move(t, r, s);
-            }
+            entry.target.move(t, r, s);
 
             entry.op.newt.set(t, r, s);
         });
 
         this.pop?.newt.copy(transform);
 
-        if (this.previewActive) {
-            const scene = this.targets[0]?.scene;
-            scene?.updateBoundPreviewMulti?.();
-        } else if (this.targets[0]?.scene) {
+        if (this.targets[0]?.scene) {
             this.targets[0].scene.boundDirty = true;
         }
     }
@@ -235,16 +227,9 @@ class MultiEntityTransformHandler implements TransformHandler {
         const scene = this.targets[0]?.scene;
         if (changed) {
             this.events.fire('edit.add', new MultiOp([...ops, this.pop]));
-            this.entries.forEach((entry) => {
-                if (entry.target instanceof Splat && !entry.op.oldt.equals(entry.op.newt)) {
-                    entry.target.updatePositions('object-transform').catch(() => {});
-                }
-            });
         }
 
-        if (this.previewActive && scene) {
-            scene.endBoundPreviewMulti?.();
-        } else if (scene) {
+        if (scene) {
             scene.boundDirty = true;
         }
 

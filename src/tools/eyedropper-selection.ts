@@ -1,10 +1,11 @@
 import { Container, NumericInput } from '@playcanvas/pcui';
 
 import { Events } from '../events';
-
-type PointerOp = 'set' | 'add' | 'remove';
+import { opFromModifiers } from '../select-op';
 
 type NormalizedPoint = { x: number, y: number };
+
+const clamp01 = (value: number) => Math.min(1, Math.max(0, value));
 
 class EyedropperSelection {
     activate: () => void;
@@ -35,19 +36,14 @@ class EyedropperSelection {
         selectToolbar.append(thresholdInput);
         canvasContainer.append(selectToolbar);
 
-        const getPointerOp = (event: PointerEvent): PointerOp => {
-            if (event.shiftKey) {
-                return 'add';
-            }
-            if (event.ctrlKey) {
-                return 'remove';
-            }
-            return 'set';
-        };
-        // Convert pointer event to normalized coordinates within the camera target
+        // Convert pointer event to normalized coordinates within the parent element
         const toNormalizedPoint = (event: PointerEvent): NormalizedPoint => {
-            const point = events.invoke('camera.cssToNormalized', event.offsetX, event.offsetY) as NormalizedPoint | null;
-            return point ?? { x: 0, y: 0 };
+            const width = parent.clientWidth || 1;
+            const height = parent.clientHeight || 1;
+            return {
+                x: clamp01(event.offsetX / width),
+                y: clamp01(event.offsetY / height)
+            };
         };
 
         const resetPointer = () => {
@@ -58,7 +54,7 @@ class EyedropperSelection {
         };
 
         thresholdInput.on('change', () => {
-            threshold = Math.min(1, Math.max(0, thresholdInput.value ?? threshold));
+            threshold = clamp01(thresholdInput.value ?? threshold);
         });
 
         const pointerdown = (event: PointerEvent) => {
@@ -84,7 +80,7 @@ class EyedropperSelection {
 
                 await events.invoke(
                     'select.colorMatch',
-                    getPointerOp(event),
+                    opFromModifiers(event),
                     toNormalizedPoint(event),
                     threshold
                 );

@@ -45,6 +45,10 @@ class CameraAnimTrack implements AnimTrack {
             this.rebuildSpline();
         });
 
+        events.on('timeline.loop', () => {
+            this.rebuildSpline();
+        });
+
         // Clear track when scene is cleared
         events.on('scene.clear', () => {
             this.clear();
@@ -168,7 +172,7 @@ class CameraAnimTrack implements AnimTrack {
     }
 
     /**
-     * Add a pose directly (used for deserialization and legacy import).
+     * Add a pose directly (used for deserialization).
      */
     addPose(pose: Pose): void {
         if (pose.frame === undefined) {
@@ -190,7 +194,7 @@ class CameraAnimTrack implements AnimTrack {
     }
 
     /**
-     * Get all poses (used for serialization and legacy consumers).
+     * Get all poses (used for serialization).
      */
     getPoses(): readonly Pose[] {
         return this.poses;
@@ -200,9 +204,13 @@ class CameraAnimTrack implements AnimTrack {
      * Load poses from serialized data.
      */
     loadPoses(posesData: Pose[]): void {
+        const defaultFov = this.events.invoke('camera.fov');
         this.poses.length = 0;
         posesData.forEach((pose) => {
-            this.poses.push(pose);
+            this.poses.push({
+                ...pose,
+                fov: pose.fov ?? defaultFov
+            });
         });
         this.rebuildSpline();
         this.events.fire('track.keysLoaded');
@@ -211,6 +219,7 @@ class CameraAnimTrack implements AnimTrack {
     private rebuildSpline(): void {
         const duration = this.events.invoke('timeline.frames');
         const smoothness = this.events.invoke('timeline.smoothness');
+        const loop = this.events.invoke('timeline.loop');
 
         const orderedPoses = this.poses.slice()
         .filter(a => a.frame < duration)
@@ -226,7 +235,11 @@ class CameraAnimTrack implements AnimTrack {
         }
 
         if (orderedPoses.length > 1) {
-            const spline = CubicSpline.fromPointsLooping(duration, times, points, smoothness);
+            // when not looping the spline clamps, holding the first/last pose
+            // beyond the outer keys instead of wrapping the end into the start
+            const spline = loop ?
+                CubicSpline.fromPointsLooping(duration, times, points, smoothness) :
+                CubicSpline.fromPoints(times, points, smoothness);
             const result: number[] = [];
             const pose = { position: new Vec3(), target: new Vec3(), fov: 0 };
 
@@ -235,6 +248,14 @@ class CameraAnimTrack implements AnimTrack {
                 pose.position.set(result[0], result[1], result[2]);
                 pose.target.set(result[3], result[4], result[5]);
                 pose.fov = result[6];
+                this.events.fire('camera.setPose', pose, 0);
+            };
+        } else if (orderedPoses.length === 1) {
+            // a single key can't form a spline; hold its pose at every frame
+            const p = orderedPoses[0];
+            const pose = { position: p.position.clone(), target: p.target.clone(), fov: p.fov };
+
+            this.onTimelineChange = () => {
                 this.events.fire('camera.setPose', pose, 0);
             };
         } else {
@@ -259,14 +280,13 @@ const registerCameraPosesEvents = (events: Events) => {
         return track;
     });
 
-    // Legacy support: expose poses
+    // expose poses
     events.function('camera.poses', () => {
         return track.getPoses();
     });
 
-    // Legacy support: add pose directly
-    events.on('camera.addPose', (pose: Pose) => {
-        track.addPose(pose);
+    events.on('camera.loadPoses', (poses: Pose[]) => {
+        track.loadPoses(poses);
     });
 
     // Serialization

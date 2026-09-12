@@ -1,7 +1,8 @@
 import { Color, Entity, Quat, Vec3 } from 'playcanvas';
 
-import { EntityTransformOp, LightStateOp } from './edit-ops';
+import { EntityTransformOp } from './edit-ops';
 import { Element, ElementType } from './element';
+import { LightStateOp } from './light-state-op';
 import { Serializer } from './serializer';
 import { Transform } from './transform';
 

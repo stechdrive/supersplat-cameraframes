@@ -10,14 +10,7 @@ import { TransformHandler } from './transform-handler';
 
 const mat = new Mat4();
 const mat2 = new Mat4();
-const mat3 = new Mat4();
 const transform = new Transform();
-const blockedMask = State.locked | State.deleted | State.hidden;
-const selectedActive = (state: number) => (state & State.selected) !== 0 && (state & blockedMask) === 0;
-const centerUpdateIntervalMs = 100;
-const translationUpdateRatio = 0.01;
-const rotationUpdateThresholdDeg = 2;
-const scaleUpdateThreshold = 0.01;
 
 class SplatsTransformHandler implements TransformHandler {
     events: Events;
@@ -28,11 +21,6 @@ class SplatsTransformHandler implements TransformHandler {
 
     transform = new Mat4();
     paletteMap = new Map<number, number>();
-    selectedCount = 0;
-    selectionRadius = 0;
-    lastCenterUpdateTime = 0;
-    lastCenterUpdateTransform = new Transform();
-    selectedIndices = new Uint32Array(0);
 
     constructor(events: Events) {
         this.events = events;
@@ -55,19 +43,19 @@ class SplatsTransformHandler implements TransformHandler {
             }
         });
 
-        events.on('selection.changed', (selection) => {
-            if (this.splat && selection === this.splat) {
+        events.on('selection.changed', (splat) => {
+            if (this.splat && splat === this.splat) {
                 this.placePivot();
             }
         });
 
-        events.on('pivot.origin', (mode: 'center' | 'boundCenter') => {
-            if (this.splat) {
+        events.on('splat.localFrame', (splat: Splat) => {
+            if (this.splat === splat) {
                 this.placePivot();
             }
         });
 
-        events.on('camera.focalPointPicked', (details: { splat?: Splat, position: Vec3 }) => {
+        events.on('camera.focalPointPicked', (details: { splat: Splat, position: Vec3 }) => {
             if (this.splat && ['move', 'rotate', 'scale'].includes(this.events.invoke('tool.active'))) {
                 const pivot = events.invoke('pivot') as Pivot;
                 const oldt = pivot.transform.clone();
@@ -79,14 +67,12 @@ class SplatsTransformHandler implements TransformHandler {
     }
 
     placePivot() {
-        const origin = this.events.invoke('pivot.origin');
-        this.splat.getPivot(origin === 'center' ? 'center' : 'boundCenter', true, transform);
+        this.splat.getPivot(transform);
         this.events.invoke('pivot').place(transform);
     }
 
     activate() {
-        const selection = this.events.invoke('selection');
-        this.splat = selection instanceof Splat ? selection : null;
+        this.splat = this.events.invoke('selection') as Splat;
         if (this.splat) {
             this.placePivot();
         }
@@ -114,19 +100,15 @@ class SplatsTransformHandler implements TransformHandler {
         this.pivotStart.copy(transform);
 
         // allocate a new transform for the current selection
-        const state = splat.splatData.getProp('state') as Uint8Array;
-        const indices = splat.splatData.getProp('transform') as Uint16Array;
+        const { instances } = splat;
+        const state = instances.flags;
 
         const { paletteMap } = this;
         paletteMap.clear();
 
-        let selectedCount = 0;
-        const selectedIndices: number[] = [];
-        for (let i = 0; i < state.length; ++i) {
-            if (selectedActive(state[i])) {
-                selectedCount++;
-                selectedIndices.push(i);
-                const oldIdx = indices[i];
+        for (let i = 0; i < instances.count; ++i) {
+            if (state[i] === State.selected) {
+                const oldIdx = instances.transformIndex(i);
                 let newIdx;
                 if (!paletteMap.has(oldIdx)) {
                     newIdx = transformPalette.alloc();
@@ -135,32 +117,21 @@ class SplatsTransformHandler implements TransformHandler {
                     newIdx = paletteMap.get(oldIdx);
                 }
 
-                indices[i] = newIdx;
+                instances.setTransformIndex(i, newIdx);
             }
         }
 
+        instances.flush();
+
         // initialize transforms
-        transformPalette.beginUpdate();
         this.paletteMap.forEach((newIdx, oldIdx) => {
             transformPalette.getTransform(oldIdx, mat);
             transformPalette.setTransform(newIdx, mat);
         });
-        transformPalette.endUpdate();
-
-        splat.scene.splatRenderDisplay.updateTransformIndices(splat, indices);
-        splat.scene.splatRenderDisplay.updateTransform(splat, true);
-
-        this.selectedCount = selectedCount;
-        this.selectedIndices = new Uint32Array(selectedIndices);
-        this.selectionRadius = selectedCount > 0 ? splat.selectionBound.halfExtents.length() : 0;
-        this.lastCenterUpdateTime = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
-        this.lastCenterUpdateTransform.copy(transform);
 
         splat.selectionAlpha = 0;
         splat.scene.outline.enabled = false;
         splat.scene.underlay.enabled = false;
-
-        splat.scene.beginBoundPreview(splat);
     }
 
     update(transform: Transform) {
@@ -173,68 +144,27 @@ class SplatsTransformHandler implements TransformHandler {
 
         // update the transform palette
         const { transformPalette } = this.splat;
-        transformPalette.beginUpdate();
         this.paletteMap.forEach((newIdx, oldIdx) => {
             transformPalette.getTransform(oldIdx, mat2);
             mat2.mul2(mat, mat2);
             transformPalette.setTransform(newIdx, mat2);
         });
-        transformPalette.endUpdate();
 
-        this.splat.scene.splatRenderDisplay.updateTransform(this.splat, true);
-
-        const world = this.splat.entity.getWorldTransform();
-        mat2.copy(world).invert();
-        mat3.mul2(world, this.transform);
-        mat3.mul2(mat3, mat2);
-        this.splat.scene.updateBoundPreviewWithDelta(this.splat, mat3);
-
-        const now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
-        const lastTransform = this.lastCenterUpdateTransform;
-        const dx = transform.position.x - lastTransform.position.x;
-        const dy = transform.position.y - lastTransform.position.y;
-        const dz = transform.position.z - lastTransform.position.z;
-        const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
-        const translationThreshold = this.selectionRadius * translationUpdateRatio;
-        const movedEnough = translationThreshold > 0 ? distance >= translationThreshold : distance > 0;
-
-        let dot = Math.abs(transform.rotation.dot(lastTransform.rotation));
-        dot = Math.min(1, dot);
-        const rotationDelta = (2 * Math.acos(dot)) * (180 / Math.PI);
-        const rotatedEnough = rotationDelta >= rotationUpdateThresholdDeg;
-
-        const scale = transform.scale;
-        const lastScale = lastTransform.scale;
-        const scaleChanged =
-            Math.abs(scale.x - lastScale.x) / Math.max(Math.abs(lastScale.x), 1e-6) >= scaleUpdateThreshold ||
-            Math.abs(scale.y - lastScale.y) / Math.max(Math.abs(lastScale.y), 1e-6) >= scaleUpdateThreshold ||
-            Math.abs(scale.z - lastScale.z) / Math.max(Math.abs(lastScale.z), 1e-6) >= scaleUpdateThreshold;
-
-        if (now - this.lastCenterUpdateTime >= centerUpdateIntervalMs || movedEnough || rotatedEnough || scaleChanged) {
-            this.splat.updatePositionsForIndices(this.selectedIndices);
-            this.lastCenterUpdateTime = now;
-            this.lastCenterUpdateTransform.copy(transform);
-        }
+        // route through the shared queue so overlapping drag ticks don't race
+        // on CalcBound's shared render targets / readback buffers. fire-and-
+        // forget is fine: the final bound is recomputed when end() awaits
+        // updatePositions -> updateSorting -> updateLocalBounds.
+        this.events.invoke('queue', () => this.splat.updateLocalBounds());
     }
 
     async end() {
         const { splat, transform, paletteMap } = this;
 
-        splat.scene.endBoundPreview(splat);
-
-        // TODO: consider moving this to update() function above so splats are sorted correctly
-        // for render during drag (which is slower).
-        await splat.updatePositions();
-        splat.selectionAlpha = 1;
-        splat.scene.outline.enabled = true;
-        splat.scene.underlay.enabled = true;
-
-        // create op for splat transform
+        // create op for splat transform (already applied to GPU during update())
         const top = new SplatsTransformOp({
             splat,
             transform: transform.clone(),
-            paletteMap: new Map(paletteMap),
-            indices: new Uint32Array(this.selectedIndices)
+            paletteMap: new Map(paletteMap)
         });
 
         // create op for pivot placement
@@ -243,8 +173,22 @@ class SplatsTransformHandler implements TransformHandler {
         const newt = pivot.transform.clone();
         const pop = new PlacePivotOp({ pivot, newt, oldt });
 
-        // add the editop without applying it
+        // record the editop on the shared command queue BEFORE awaiting any async work.
+        // events.fire synchronously enqueues the add, so any subsequent undo/redo
+        // (e.g. user pressing Ctrl+Z while updatePositions is still resolving) is
+        // guaranteed to land AFTER this op on the queue — which means the undo will
+        // revert this transform operation rather than the prior selection op.
         this.events.fire('edit.add', new MultiOp([top, pop]), true);
+
+        // enqueue the GPU readback onto the same shared queue so any subsequent
+        // undo/redo waits for it to finish before mutating the positions the projector sorts from.
+        // TODO: consider moving this to update() function above so splats are sorted correctly
+        // for render during drag (which is slower).
+        await this.events.invoke('queue', () => splat.updatePositions());
+
+        splat.selectionAlpha = 1;
+        splat.scene.outline.enabled = true;
+        splat.scene.underlay.enabled = true;
     }
 }
 

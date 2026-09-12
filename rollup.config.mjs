@@ -71,7 +71,7 @@ const onwarn = (warning, warn) => {
 };
 
 const application = {
-    input: 'src/index.ts',
+    input: process.env.VALIDATE_V3 === '1' ? 'tests/browser/index.ts' : 'src/index.ts',
     output: {
         dir: 'dist',
         format: 'esm',
@@ -152,35 +152,4 @@ const serviceWorker = {
     cache: false
 };
 
-const sogSerializeWorker = {
-    input: 'src/sog-serialize.worker.ts',
-    output: {
-        dir: 'dist',
-        format: 'esm',
-        sourcemap: true
-    },
-    onwarn,
-    plugins: [
-        alias({
-            entries: {
-                'playcanvas': ENGINE_DIR,
-                '@playcanvas/pcui': PCUI_DIR
-            }
-        }),
-        commonjs(),
-        typescript({
-            tsconfig: './tsconfig.json'
-        }),
-        resolve(),
-        json(),
-        BUILD_TYPE !== 'debug' && terser()
-    ],
-    treeshake: 'smallest',
-    cache: false
-};
-
-export default [
-    application,
-    serviceWorker,
-    sogSerializeWorker
-];
+export default [application, serviceWorker];

@@ -1,11 +1,11 @@
 import { Events } from '../events';
-import { isCtrlLike, modifiers } from '../modifier-tracker';
+import { opFromModifiers } from '../select-op';
 
 class BrushSelection {
     activate: () => void;
     deactivate: () => void;
 
-    constructor(events: Events, parent: HTMLElement, mask: { canvas: HTMLCanvasElement, context: CanvasRenderingContext2D }) {
+    constructor(events: Events, parent: HTMLElement, mask: { canvas: HTMLCanvasElement, context: CanvasRenderingContext2D, busy: boolean }) {
         // create svg
         const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
         svg.classList.add('tool-svg', 'hidden');
@@ -25,18 +25,18 @@ class BrushSelection {
         const prev = { x: 0, y: 0 };
         let dragId: number | undefined;
 
-        const getLocalPoint = (e: PointerEvent) => {
-            const rect = parent.getBoundingClientRect();
-            return {
-                x: Math.max(0, Math.min(parent.clientWidth, e.clientX - rect.left)),
-                y: Math.max(0, Math.min(parent.clientHeight, e.clientY - rect.top))
-            };
-        };
+        // track the pointer while the tool is inactive too (the tools overlay is
+        // hidden then), so activation places the cursor at the mouse rather than
+        // wherever the previous stroke ended
+        const pointer = { x: 0, y: 0 };
+        window.addEventListener('pointermove', (e: PointerEvent) => {
+            pointer.x = e.clientX;
+            pointer.y = e.clientY;
+        }, { capture: true, passive: true });
 
         const update = (e: PointerEvent) => {
-            const point = getLocalPoint(e);
-            const x = point.x;
-            const y = point.y;
+            const x = e.offsetX;
+            const y = e.offsetY;
 
             circle.setAttribute('cx', x.toString());
             circle.setAttribute('cy', y.toString());
@@ -60,6 +60,12 @@ class BrushSelection {
                 e.preventDefault();
                 e.stopPropagation();
 
+                // a stroke attempted while the previous selection is still
+                // pending is swallowed rather than left to orbit the camera
+                if (mask.busy) {
+                    return;
+                }
+
                 dragId = e.pointerId;
                 parent.setPointerCapture(dragId);
 
@@ -75,9 +81,8 @@ class BrushSelection {
                 // display it
                 canvas.style.display = 'inline';
 
-                const point = getLocalPoint(e);
-                prev.x = point.x;
-                prev.y = point.y;
+                prev.x = e.offsetX;
+                prev.y = e.offsetY;
 
                 update(e);
             }
@@ -93,7 +98,11 @@ class BrushSelection {
         };
 
         const dragEnd = () => {
-            parent.releasePointerCapture(dragId);
+            // a touch that has lifted, or was cancelled, no longer holds the
+            // capture and releasing it throws
+            if (parent.hasPointerCapture(dragId)) {
+                parent.releasePointerCapture(dragId);
+            }
             dragId = undefined;
             canvas.style.display = 'none';
         };
@@ -102,23 +111,35 @@ class BrushSelection {
             if (e.pointerId === dragId) {
                 e.preventDefault();
                 e.stopPropagation();
-                const modState = modifiers.read(e);
-                const op = modState.shift ? 'add' : (isCtrlLike(modState) ? 'remove' : 'set');
 
                 dragEnd();
 
-                await events.invoke(
-                    'select.byMask',
-                    op,
-                    canvas,
-                    context
-                );
+                // block new strokes until the async selection has consumed the
+                // shared mask canvas
+                mask.busy = true;
+                try {
+                    await events.invoke(
+                        'select.byMask',
+                        opFromModifiers(e),
+                        canvas,
+                        context
+                    );
+                } finally {
+                    mask.busy = false;
+                }
+            }
+        };
+
+        // a cancelled touch gets no pointerup, and a drag left open blocks
+        // every later one
+        const pointercancel = (e: PointerEvent) => {
+            if (e.pointerId === dragId) {
+                dragEnd();
             }
         };
 
         const wheel = (e: WheelEvent) => {
-            const modState = modifiers.read(e);
-            if (modState.alt || modState.meta) {
+            if (e.altKey || e.metaKey) {
                 const { deltaX, deltaY } = e;
                 events.fire((Math.abs(deltaX) > Math.abs(deltaY) ? deltaX : deltaY) > 0 ? 'tool.brushSelection.smaller' : 'tool.brushSelection.bigger');
                 e.preventDefault();
@@ -129,9 +150,13 @@ class BrushSelection {
         this.activate = () => {
             svg.classList.remove('hidden');
             parent.style.display = 'block';
+            const rect = parent.getBoundingClientRect();
+            circle.setAttribute('cx', (pointer.x - rect.left).toString());
+            circle.setAttribute('cy', (pointer.y - rect.top).toString());
             parent.addEventListener('pointerdown', pointerdown);
             parent.addEventListener('pointermove', pointermove);
             parent.addEventListener('pointerup', pointerup);
+            parent.addEventListener('pointercancel', pointercancel);
             parent.addEventListener('wheel', wheel);
         };
 
@@ -145,6 +170,7 @@ class BrushSelection {
             parent.removeEventListener('pointerdown', pointerdown);
             parent.removeEventListener('pointermove', pointermove);
             parent.removeEventListener('pointerup', pointerup);
+            parent.removeEventListener('pointercancel', pointercancel);
             parent.removeEventListener('wheel', wheel);
         };
 

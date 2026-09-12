@@ -3,10 +3,10 @@ name: CI
 on:
   workflow_dispatch:
   push:
-    branches: [ main ]
+    branches: [ main, camera-frames ]
     paths-ignore: ['README.md', 'LICENSE']
   pull_request:
-    branches: [ main ]
+    branches: [ main, camera-frames ]
     paths-ignore: ['README.md', 'LICENSE']
 
 concurrency:
@@ -22,7 +22,7 @@ jobs:
 
     strategy:
       matrix:
-        node-version: [18.x]
+        node-version: [24.x]
 
     steps:
     - name: Checkout code
@@ -48,7 +48,7 @@ jobs:
 
     strategy:
       matrix:
-        node-version: [18.x]
+        node-version: [24.x]
 
     steps:
     - name: Checkout code
@@ -65,3 +65,9 @@ jobs:
 
     - name: Lint
       run: npm run lint
+
+    - name: Typecheck
+      run: npm run typecheck
+
+    - name: Test
+      run: npm test

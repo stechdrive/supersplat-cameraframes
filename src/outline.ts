@@ -1,9 +1,9 @@
 import {
     BlendState,
-    CameraComponent,
     Layer
 } from 'playcanvas';
 
+import { bindViews } from './cameras/bind-views';
 import { Element, ElementType } from './element';
 import { vertexShader, fragmentShader } from './shaders/outline-shader';
 import { ShaderQuad, SimpleRenderPass } from './utils/simple-render-pass';
@@ -12,7 +12,7 @@ class Outline extends Element {
     shaderQuad: ShaderQuad;
     renderPass: SimpleRenderPass;
     enabled = true;
-    private preRenderLayerHandler: ((camera: CameraComponent, layer: Layer, transparent: boolean) => void) | null = null;
+    private releaseViews: () => void;
 
     constructor() {
         super(ElementType.other);
@@ -21,51 +21,44 @@ class Outline extends Element {
     add() {
         const device = this.scene.app.graphicsDevice;
 
-        this.shaderQuad = new ShaderQuad(device, vertexShader, fragmentShader, 'apply-outline');
-        this.renderPass = new SimpleRenderPass(device, this.shaderQuad, {
-            blendState: BlendState.ALPHABLEND
-        });
-
-        const clr = [1, 1, 1, 1];
-
-        const { camera, events } = this.scene;
-
-        this.preRenderLayerHandler = (cameraComponent: CameraComponent, layer: Layer, transparent: boolean) => {
-            if (cameraComponent !== camera.camera) {
-                return;
-            }
-            // only apply when outline mode is enabled
-            if (!this.enabled || !events.invoke('view.outlineSelection')) {
-                return;
-            }
-
-            // apply at the start of the gizmo layer
-            if (layer !== this.scene.gizmoLayer || transparent) {
-                return;
-            }
-
-            events.invoke('selectedClr').toArray(clr);
-
-            this.renderPass.execute({
-                srcTexture: camera.workTarget.colorBuffer,
-                alphaCutoff: events.invokeOptional('camera.mode') === 'rings' ? 0.0 : 0.4,
-                clr
+        const { events } = this.scene;
+        this.releaseViews = bindViews(this.scene, (camera) => {
+            const shaderQuad = new ShaderQuad(device, vertexShader, fragmentShader, 'apply-outline');
+            const renderPass = new SimpleRenderPass(device, shaderQuad, {
+                blendState: BlendState.ALPHABLEND
             });
-        };
 
-        this.scene.app.scene.on('prerender:layer', this.preRenderLayerHandler);
+            const clr = [1, 1, 1, 1];
+
+
+            const handle = camera.camera.on('postRenderLayer', (layer: Layer, transparent: boolean) => {
+            // only apply when outline mode is enabled
+                const outlineSelection = events.invoke('view.outlineSelection') || !!events.invoke('colorPanel.pending');
+                if (!this.enabled || !outlineSelection) {
+                    return;
+                }
+
+                // apply at the end of the gizmo layer (after overlay renders)
+                if (layer !== this.scene.gizmoLayer || !transparent) {
+                    return;
+                }
+
+                events.invoke('selectedClr').toArray(clr);
+
+                renderPass.execute({
+                    srcTexture: camera.workTarget.colorBuffer,
+                    alphaCutoff: 0.8,
+                    clr
+                });
+            });
+            return () => {
+                handle.off(); renderPass.destroy(); shaderQuad.destroy();
+            };
+        });
     }
 
     remove() {
-        // event listeners are cleaned up when camera is destroyed
-        if (this.preRenderLayerHandler) {
-            this.scene.app.scene.off('prerender:layer', this.preRenderLayerHandler);
-            this.preRenderLayerHandler = null;
-        }
-    }
-
-    onPreRender() {
-        // no longer need to manage a separate camera
+        this.releaseViews?.();
     }
 }
 

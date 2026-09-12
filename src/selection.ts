@@ -1,3 +1,4 @@
+import { ShotCameraEntity } from './cameras/shot-camera-entity';
 import { Element, ElementType } from './element';
 import { Events } from './events';
 import { LightRig } from './light-rig';
@@ -6,12 +7,12 @@ import { Scene } from './scene';
 import { Splat } from './splat';
 
 const registerSelectionEvents = (events: Events, scene: Scene) => {
-    type Selectable = Splat | Model | LightRig;
+    type Selectable = Splat | Model | LightRig | ShotCameraEntity;
     let selection: Selectable = null;
     let selectionList: Selectable[] = [];
 
     const isSelectable = (element: Element | null): element is Selectable => {
-        return element instanceof Splat || element instanceof Model || element instanceof LightRig;
+        return element instanceof Splat || element instanceof Model || element instanceof LightRig || element instanceof ShotCameraEntity;
     };
 
     const isVisible = (element: Selectable) => {
@@ -49,6 +50,7 @@ const registerSelectionEvents = (events: Events, scene: Scene) => {
     const normalizeSelection = (list: Selectable[], active: Selectable | null) => {
         const nextList = sanitizeList(list);
         let nextActive = active && isSelectable(active) && isVisible(active) ? active : null;
+        if (nextActive instanceof ShotCameraEntity) return { list: [nextActive], active: nextActive };
 
         const lightRig = nextActive instanceof LightRig ? nextActive : nextList.find(item => item instanceof LightRig);
         if (lightRig) {

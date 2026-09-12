@@ -3,6 +3,7 @@ import { Container, Element as PCUIElement, Label, NumericInput } from '@playcan
 import { Element as SceneElement } from '../element';
 import { Events } from '../events';
 import { LightRig } from '../light-rig';
+import { ColorPanel } from './color-panel';
 import { localize } from './localization';
 import { MeshList } from './mesh-list';
 import { registerNumericInputHistory } from './register-numeric-input-history';
@@ -120,6 +121,7 @@ class ScenePanel extends Container {
 
         const splatList = new SplatList(events);
         const meshList = new MeshList(events);
+        const colorPanel = new ColorPanel(events);
 
         const splatListContainer = new Container({
             class: 'splat-list-container'
@@ -344,6 +346,7 @@ class ScenePanel extends Container {
         this.append(intensityRow);
         this.append(transformHeader);
         this.append(new Transform(events));
+        this.append(colorPanel);
         this.append(new PCUIElement({
             class: 'panel-header',
             height: 20

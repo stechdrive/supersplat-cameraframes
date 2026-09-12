@@ -2,8 +2,13 @@ import { Container, Element, Label } from '@playcanvas/pcui';
 
 type Direction = 'left' | 'right' | 'top' | 'bottom';
 
+// Tooltip text may be a static string or a resolver. A resolver is evaluated
+// each time the tooltip is shown, so localized tooltips always reflect the
+// current language without any language-change listener.
+type TooltipText = string | (() => string);
+
 class Tooltips extends Container {
-    register: (target: Element, text: string, direction?: Direction) => void;
+    register: (target: Element, text: TooltipText, direction?: Direction) => void;
     unregister: (target: Element) => void;
     destroy: () => void;
 
@@ -26,9 +31,13 @@ class Tooltips extends Container {
         const style = this.dom.style;
         let timer: number = 0;
 
-        this.register = (target: Element, textString: string, direction: Direction = 'bottom') => {
+        this.register = (target: Element, textString: TooltipText, direction: Direction = 'bottom') => {
 
             const activate = () => {
+                // the target may have been destroyed while the show timer ran
+                if (!target.dom) {
+                    return;
+                }
                 const rect = target.dom.getBoundingClientRect();
                 const midx = Math.floor((rect.left + rect.right) * 0.5);
                 const midy = Math.floor((rect.top + rect.bottom) * 0.5);
@@ -56,8 +65,10 @@ class Tooltips extends Container {
                         break;
                 }
 
-                text.text = textString;
-                style.display = 'inline';
+                text.text = typeof textString === 'function' ? textString() : textString;
+                // inline-block so max-width / wrapping in SCSS apply (inline
+                // would stay one long line).
+                style.display = 'inline-block';
 
                 // clamp to viewport so tooltip doesn't go off-screen
                 const tooltipRect = this.dom.getBoundingClientRect();
@@ -85,7 +96,7 @@ class Tooltips extends Container {
             const enter = () => {
                 cancelTimer();
 
-                if (style.display === 'inline') {
+                if (style.display === 'inline-block') {
                     activate();
                 } else {
                     startTimer(() => activate());
@@ -95,7 +106,7 @@ class Tooltips extends Container {
             const leave = () => {
                 cancelTimer();
 
-                if (style.display === 'inline') {
+                if (style.display === 'inline-block') {
                     startTimer(() => {
                         style.display = 'none';
                     });
@@ -109,14 +120,16 @@ class Tooltips extends Container {
                 this.unregister(target);
             });
 
-            targets.set(target, { enter, leave });
+            // keep our own dom reference: pcui nulls target.dom before firing
+            // 'destroy', so unregister cannot read it from the target
+            targets.set(target, { dom: target.dom, enter, leave });
         };
 
         this.unregister = (target: Element) => {
             const value = targets.get(target);
             if (value) {
-                target.dom.removeEventListener('pointerenter', value.enter);
-                target.dom.removeEventListener('pointerleave', value.leave);
+                value.dom.removeEventListener('pointerenter', value.enter);
+                value.dom.removeEventListener('pointerleave', value.leave);
                 targets.delete(target);
             }
         };
