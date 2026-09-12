@@ -1,8 +1,9 @@
 const buildInfo = {
-    version: 'v2.21.14-1776588945'
+    version: 'v3.0.0-1789250515'
 };
 
-const cacheName = `superSplat-cFrames-${buildInfo.version}`;
+const cachePrefix = 'superSplat-cFrames-';
+const cacheName = `${cachePrefix}${buildInfo.version}`;
 const scopeUrl = new URL(self.location.href);
 const withVersion = (path) => `${path}?v=${buildInfo.version}`;
 const toAbsoluteUrl = (path) => new URL(path, scopeUrl).toString();
@@ -37,7 +38,9 @@ const staticAssets = [
     './static/locales/zh-CN.json',
     './static/env/VertebraeHDRI_v1_512.png'
 ];
-const cacheUrls = [...versionedAssets, ...staticAssets];
+// Locale requests must match the application build even while an older worker
+// controls the first navigation after an update.
+const cacheUrls = [...versionedAssets, ...staticAssets.map(path => (path.startsWith('./static/locales/') ? withVersion(path) : path))];
 const absoluteCacheUrls = cacheUrls.map(url => toAbsoluteUrl(url));
 const cacheFirstTargets = new Set(absoluteCacheUrls);
 const navigationFallbackUrl = toAbsoluteUrl(withVersion('./index.html'));
@@ -50,7 +53,7 @@ self.addEventListener('activate', (event) => {
     console.log(`activating ${cacheName}`);
     event.waitUntil((async () => {
         const names = await caches.keys();
-        const deletions = names.filter(name => name !== cacheName).map(name => caches.delete(name));
+        const deletions = names.filter(name => name.startsWith(cachePrefix) && name !== cacheName).map(name => caches.delete(name));
         await Promise.all(deletions);
         await self.clients.claim();
     })());
