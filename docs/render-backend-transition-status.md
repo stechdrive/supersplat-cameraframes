@@ -1,5 +1,7 @@
 # Render Backend Transition Status
 
+この文書は2026-03-21時点の旧WebGL2実装の記録です。v3の現在の構成は[移行検証記録](refactor-v3-migration-results.md)、公開版の基準と依存関係は[v3.0.0公開記録](release-v3.0.0.md)を参照してください。
+
 最終更新: 2026-03-21  
 対象 trunk: `camera-frames`  
 現在の CAMERA_FRAMES 版: `v2.21.14`

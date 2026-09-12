@@ -77,7 +77,6 @@ const sourceDigest = async (splat: Splat) => {
 main().then(() => {
     const scene = window.scene;
     const events = scene.events;
-    events.invoke('welcomeBoard.hide');
     const views = events.invoke('cameraViews') as CameraViews;
     const errors: string[] = [];
     (scene.graphicsDevice as any).wgpu.addEventListener('uncapturederror', (event: any) => {

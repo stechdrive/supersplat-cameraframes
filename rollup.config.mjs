@@ -11,7 +11,7 @@ import typescript from '@rollup/plugin-typescript';
 import autoprefixer from 'autoprefixer';
 import postcss from 'postcss';
 import scss from 'rollup-plugin-scss';
-import sass from 'sass';
+import * as sass from 'sass';
 
 import copyAndWatch from './copy-and-watch.mjs';
 
@@ -56,7 +56,7 @@ const buildInfoContent = `export const buildInfo = {
 writeFileSync('src/build-info.ts', buildInfoContent);
 console.log(`Generated src/build-info.ts with version: ${buildVersion}`);
 
-const isAgPsdPath = (id) => typeof id === 'string' && id.includes('/node_modules/ag-psd/');
+const isAgPsdPath = (id) => typeof id === 'string' && id.replaceAll('\\', '/').includes('/node_modules/ag-psd/');
 const onwarn = (warning, warn) => {
     if (warning?.code === 'CIRCULAR_DEPENDENCY') {
         const ids = warning.ids ?? warning.cycle ?? [];
@@ -114,7 +114,8 @@ const application = {
         json(),
         scss({
             sourceMap: true,
-            runtime: sass,
+            sass,
+            failOnError: true,
             processor: (css) => {
                 return postcss([autoprefixer])
                     .process(css, { from: undefined })

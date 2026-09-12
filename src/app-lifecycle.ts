@@ -1,14 +1,9 @@
 import type { Events } from './events';
 import { UpdateBanner } from './ui/update-banner';
-import { WelcomeBoard } from './ui/welcome-board';
 
 export const registerAppLifecycle = (events: Events) => {
-    const welcome = new WelcomeBoard();
     const banner = new UpdateBanner();
-    document.getElementById('top-container').appendChild(welcome.dom);
     document.getElementById('app-container').appendChild(banner.dom);
-    events.function('welcomeBoard.show', () => welcome.show());
-    events.function('welcomeBoard.hide', () => welcome.hide());
     events.function('updateBanner.show', options => banner.show(options));
     events.function('updateBanner.hide', () => banner.hide());
     if (!('serviceWorker' in navigator)) return;

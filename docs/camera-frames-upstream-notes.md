@@ -3,7 +3,7 @@
 最終更新: 2026-09-13
 
 このメモは、`camera-frames` への upstream 追従で **見落とすと壊れやすい点** を短く残すためのもの。  
-現在の trunk 状態そのものは [docs/render-backend-transition-status.md](/D:/GitHub/supersplat-cameraframes/docs/render-backend-transition-status.md) を参照。
+v3の現在の構成と公開基準は[移行検証記録](refactor-v3-migration-results.md)と[本家・依存監査](release-v3.0.0.md)を参照。[旧rendererの記録](render-backend-transition-status.md)はWebGL2時代の保守資料として残す。
 
 ## v3.1.2の製品移行（codex/v3-migration）
 
@@ -13,7 +13,9 @@
 - 変形: 本家Camera/描画/選択へviewとtargetの明示的な受渡し、GLB深度を使うpicker、製品データ・作業保存の追加。撮影姿勢はCameraStoreのposition/Quaternionから導出し、フレーム拡張は標準projectionOffsetへ変換する。
 - 撤去: 旧merged/unified renderer、旧カメラ退避・復元、Engineのshader chunk差し替え、独自projection callback。独自機能の挙動を新しい境界へ移してから旧経路を除去する。
 - 維持: 撮影/フレーム/下絵/GLBの製品UI、PNGとPSD、旧ssproj/sscam読込、作業保存とパッケージ保存。本家のカメラ経路アニメーションはビューポートを対象とし、永続的な撮影カメラの姿勢と分ける。
-- 依存の変形: ESLint 10はimportプラグインのpeer互換性により9.39.4を維持。Engine 2.22.1のパッケージ自体には変更を加えない。
+- 依存の変形: ESLint 10はimport/jsdocプラグインのpeer互換性により9.39.4を維持。公開前監査でEngineを2.22.2の材質・shadow修正へ更新。Engineパッケージ自体には変更を加えない。
+- 2026-09-13再確認: 本家mainと最新releaseは引き続き0911f78/v3.1.2。3.0.1の上書き保護、3.1.0〜3.1.1の保存/出力フォルダ選択、3.1.2のfootprint修正を含む。本家ホームボタン(d001a58)は製品名へ変形して採用。
+- 公開前の追加取り込み: Actions checkout/setup-node v7、locale checker。本家キーと日本語は完全照合し、他7言語の既存製品拡張193キーだけを明示した英語fallback一覧で扱う。未翻訳を架空の翻訳で埋めず、新たな欠落・古いキー・順序違反を検出する。
 
 ## v3.0.0 隔離実証（2026-09-12）
 

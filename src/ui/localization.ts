@@ -2,6 +2,8 @@ import i18next from 'i18next';
 import LanguageDetector from 'i18next-browser-languagedetector';
 import Backend from 'i18next-http-backend';
 
+import { buildInfo } from '../build-info';
+
 interface LocalizeOptions {
     ellipsis?: boolean;
     // any other values are forwarded to i18next as {{placeholder}} interpolation data
@@ -68,7 +70,7 @@ class Localization {
                 caches: []
             },
             backend: {
-                loadPath: './static/locales/{{lng}}.json'
+                loadPath: `./static/locales/{{lng}}.json?v=${buildInfo.version}`
             },
             supportedLngs: this.languages.map(l => l.code),
             fallbackLng: 'en',
