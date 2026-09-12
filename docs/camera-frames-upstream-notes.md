@@ -1,9 +1,20 @@
 # CAMERA_FRAMES Upstream Notes
 
-最終更新: 2026-03-20
+最終更新: 2026-09-12
 
 このメモは、`camera-frames` への upstream 追従で **見落とすと壊れやすい点** を短く残すためのもの。  
 現在の trunk 状態そのものは [docs/render-backend-transition-status.md](/D:/GitHub/supersplat-cameraframes/docs/render-backend-transition-status.md) を参照。
+
+## v3.0.0 隔離実証（2026-09-12）
+
+`677b3d21ea2168d671c02113ab19654f70c1df30` から `codex/v3-first-proof` を作成し、本家 `v3.0.0 / 12398f7f6997bd59bdd82876fd90fc87a6ec6f68` を固定して実証した。現行アプリへ一括mergeしていない。[実証結果](refactor-v3-first-proof.md)、[再現手順](../experiments/v3/README.md)。
+
+- 使用: 本家のresource/instances、ProjectedSplatRenderer、GPU picker、編集history、version 1保存。
+- 変形: cameraへの確定view注入、offscreen投影寸法の `camera.targetSize` 参照、独立alpha pass、実証用doc拡張、起動・検証入口。`experiments/v3/setup.mjs` が固定コミットの接続箇所を確認して適用する。
+- 保留: 全UI/locale/ツールの本統合、旧形式import、参照画像、断面、複雑なGLB/PSD、大容量・PWA更新。まず最小条件の成立を確認するため。
+- 検査上の変更: 本家ESLint 10とimport pluginの例外を避けるため、親lockfileのESLint 9で実証ソースを検査する。runtime依存の基準は変えない。
+
+以下のWebGL2 / unified-display / mergedの注意は旧実装の保守記録。承認されたv3移行で旧renderer構造や独自projection callbackを維持する要求として扱わず、挙動と保存互換を基準に再評価する。
 
 ## 基本方針
 

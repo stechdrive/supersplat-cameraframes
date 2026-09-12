@@ -24,6 +24,11 @@
         "develop": "cross-env BUILD_TYPE=debug concurrently --kill-others \"npm run watch\" \"npm run serve\"",
         "develop:auto-launch": "concurrently --kill-others \"xdg-open 'http://localhost:3000/'\" \"npm run watch\" \"npm run serve\"",
         "lint": "eslint src",
+        "setup:v3": "node experiments/v3/setup.mjs",
+        "build:v3": "node experiments/v3/run.mjs build",
+        "lint:v3": "node experiments/v3/run.mjs lint",
+        "test:v3": "node --test experiments/v3/projection.test.mjs",
+        "serve:v3": "node experiments/v3/serve.mjs",
         "deploy": "cross-env BASE_HREF=/supersplat-cameraframes/ npm run build && gh-pages -d dist -b gh-pages -t"
     },
     "devDependencies": {

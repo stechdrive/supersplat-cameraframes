@@ -1,0 +1,222 @@
+{
+  "reports": [
+    {
+      "status": "passed",
+      "label": "legacy-merged",
+      "version": "2.17.0",
+      "date": "2026-09-12T13:25:37.058Z",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36",
+      "deviceType": "webgl2",
+      "width": 320,
+      "height": 240,
+      "splats": 2,
+      "cameraPosition": [
+        0,
+        0,
+        5
+      ],
+      "projection": [
+        1.6083801984786987,
+        0,
+        0,
+        0,
+        0,
+        2.1445069313049316,
+        0,
+        0,
+        0,
+        0,
+        -1.041332483291626,
+        -1,
+        0,
+        0,
+        -0.25913065671920776,
+        0
+      ],
+      "readyForCaptureMs": 315.6000000014901,
+      "cpu": {
+        "median": 0.6999999955296516,
+        "p95": 1
+      },
+      "gpu": {
+        "median": 0.011647999999999999,
+        "p95": 0.019903999999999998
+      },
+      "adapter": "ANGLE (NVIDIA, NVIDIA GeForce RTX 5080 (0x00002C02) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+      "backend": "merged",
+      "note": "4 Gaussianの小素材。CPUはupdate完了後からpostrenderまで。性能優劣の判定には使わない。"
+    },
+    {
+      "status": "passed",
+      "label": "legacy-unified",
+      "version": "2.17.0",
+      "date": "2026-09-12T13:25:13.424Z",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36",
+      "deviceType": "webgl2",
+      "width": 320,
+      "height": 240,
+      "splats": 2,
+      "cameraPosition": [
+        0,
+        0,
+        5
+      ],
+      "projection": [
+        1.6083801984786987,
+        0,
+        0,
+        0,
+        0,
+        2.1445069313049316,
+        0,
+        0,
+        0,
+        0,
+        -3.938809394836426,
+        -1,
+        0,
+        0,
+        -18.42462730407715,
+        0
+      ],
+      "readyForCaptureMs": 355.09999999403954,
+      "cpu": {
+        "median": 0.7000000029802322,
+        "p95": 0.9000000059604645
+      },
+      "gpu": {
+        "median": 0.010048,
+        "p95": 2.591968
+      },
+      "adapter": "ANGLE (NVIDIA, NVIDIA GeForce RTX 5080 (0x00002C02) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+      "backend": "unified-display",
+      "note": "4 Gaussianの小素材。CPUはupdate完了後からpostrenderまで。性能優劣の判定には使わない。"
+    },
+    {
+      "status": "passed",
+      "label": "upstream",
+      "version": "2.22.0",
+      "date": "2026-09-12T13:25:50.042Z",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36",
+      "deviceType": "webgpu",
+      "width": 320,
+      "height": 240,
+      "splats": 2,
+      "cameraPosition": [
+        0,
+        0,
+        5
+      ],
+      "projection": [
+        1.6083801984786987,
+        0,
+        0,
+        0,
+        0,
+        2.1445069313049316,
+        0,
+        0,
+        0,
+        0,
+        -1.37954843044281,
+        -1,
+        0,
+        0,
+        -2.3795485496520996,
+        0
+      ],
+      "readyForCaptureMs": 226.09999999403954,
+      "cpu": {
+        "median": 0.8999999985098839,
+        "p95": 1.3999999985098839
+      },
+      "gpu": {
+        "median": 0.065536,
+        "p95": 0.131072
+      },
+      "adapter": {
+        "vendor": "nvidia",
+        "architecture": "blackwell",
+        "device": "",
+        "description": ""
+      },
+      "backend": "ProjectedSplatRenderer",
+      "note": "4 Gaussianの小素材。CPUはupdate完了後からpostrenderまで。性能優劣の判定には使わない。"
+    },
+    {
+      "status": "passed",
+      "label": "proof",
+      "version": "2.22.0",
+      "date": "2026-09-12T13:26:08.025Z",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36",
+      "deviceType": "webgpu",
+      "width": 320,
+      "height": 240,
+      "splats": 2,
+      "cameraPosition": [
+        0,
+        0,
+        5
+      ],
+      "projection": [
+        1.6083801984786987,
+        0,
+        0,
+        0,
+        0,
+        2.1445069313049316,
+        0,
+        0,
+        0,
+        0,
+        -1.0020020008087158,
+        -1,
+        0,
+        0,
+        -0.20020020008087158,
+        0
+      ],
+      "readyForCaptureMs": 192,
+      "cpu": {
+        "median": 0.7999999970197678,
+        "p95": 1.1000000014901161
+      },
+      "gpu": {
+        "median": 0.065536,
+        "p95": 0.131072
+      },
+      "adapter": {
+        "vendor": "nvidia",
+        "architecture": "blackwell",
+        "device": "",
+        "description": ""
+      },
+      "backend": "ProjectedSplatRenderer",
+      "note": "4 Gaussianの小素材。CPUはupdate完了後からpostrenderまで。性能優劣の判定には使わない。"
+    }
+  ],
+  "comparisons": [
+    {
+      "from": "legacy-merged",
+      "to": "proof",
+      "max": 99,
+      "mean": 0.5920963541666666,
+      "meanNonTransparent": 3.621038381907947
+    },
+    {
+      "from": "legacy-unified",
+      "to": "proof",
+      "max": 8,
+      "mean": 0.3084993489583333,
+      "meanNonTransparent": 1.8866658703615224
+    },
+    {
+      "from": "upstream",
+      "to": "proof",
+      "max": 0,
+      "mean": 0,
+      "meanNonTransparent": 0
+    }
+  ],
+  "note": "同じ合成4 Gaussian、320x240、SH0、linear。clip面は各カメラの実測projectionに記録。速度優劣や大容量性能の根拠にはしない。"
+}

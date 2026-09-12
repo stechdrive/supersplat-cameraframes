@@ -1,0 +1,39 @@
+name: v3 proof
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [camera-frames]
+    paths:
+      - 'experiments/v3/**'
+      - 'package*.json'
+      - 'src/camera-frames-camera.ts'
+      - 'src/camera-frames-viewport.ts'
+      - '.github/workflows/v3-proof.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: npm
+      - name: 現行版の依存を準備
+        run: npm ci
+      - name: 固定した本家コミットを取得
+        run: git fetch --no-tags https://github.com/playcanvas/supersplat.git 12398f7f6997bd59bdd82876fd90fc87a6ec6f68
+      - name: 隔離した実証環境を準備
+        run: npm run setup:v3
+      - name: 固定した本家の依存を準備
+        run: npm ci --prefix .v3-proof/upstream --ignore-scripts
+      - run: npm run lint
+      - run: npm run lint:v3
+      - run: npm run test:v3
+      - run: npm run build:v3
+      # WebGPUの画像・PSD・保存テストは、実GPUのChromeで別途実行する。

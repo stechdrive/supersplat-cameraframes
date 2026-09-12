@@ -1,0 +1,128 @@
+{
+  "status": "passed",
+  "date": "2026-09-12T13:11:21.381Z",
+  "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36",
+  "engineVersion": "2.22.0",
+  "results": [
+    {
+      "name": "複数Splatの左右で逆転する深度順",
+      "detail": {
+        "orderErrors": [
+          {
+            "max": 0.5176470588235276,
+            "mean": 0.19313725490196276
+          },
+          {
+            "max": 0.7450980392156907,
+            "mean": 0.3303921568627448
+          }
+        ],
+        "loadMs": 44.099999994039536
+      }
+    },
+    {
+      "name": "右側フレーム拡張とpreview/output",
+      "detail": {
+        "expansionError": {
+          "max": 1,
+          "mean": 0.0027278645833333334
+        },
+        "previewError": {
+          "max": 1,
+          "mean": 0.005451388888888889
+        }
+      }
+    },
+    {
+      "name": "値0・真上/真下・roll・FOV/sceneRadius・カメラ切替",
+      "detail": true
+    },
+    {
+      "name": "最新viewのGPU pick・選択Undo/Redo・共有resourceの片側編集",
+      "detail": {
+        "pickId": 1
+      }
+    },
+    {
+      "name": "GLB深度を保持したalpha・元画像とPSDマスクの分離",
+      "detail": {
+        "compositeError": {
+          "max": 2,
+          "mean": 0.02658203125
+        },
+        "backAlpha": 0,
+        "frontAlpha": 166,
+        "psdSourceError": 0,
+        "psdMaskError": 0
+      }
+    },
+    {
+      "name": "本家v1保存・共有resourceとinstance・撮影構図/GLB/編集状態の再読込",
+      "detail": {
+        "bytes": 4622,
+        "resources": 2,
+        "reloadError": {
+          "max": 0,
+          "mean": 0
+        }
+      }
+    },
+    {
+      "name": "画面描画と同じviewのoffscreen出力",
+      "detail": {
+        "size": {
+          "width": 1445,
+          "height": 1794
+        },
+        "screenError": {
+          "max": 0,
+          "mean": 0
+        }
+      }
+    },
+    {
+      "name": "WebGPUエラーなし",
+      "detail": {
+        "adapter": {
+          "vendor": "nvidia",
+          "architecture": "blackwell",
+          "device": "",
+          "description": ""
+        },
+        "engineVersion": "2.22.0"
+      }
+    }
+  ],
+  "gpuErrors": [],
+  "smallFixtureTimings": {
+    "cpu": {
+      "median": 1,
+      "p95": 1.6000000014901161
+    },
+    "gpu": {
+      "median": 0.131072,
+      "p95": 0.196608
+    },
+    "gpuSupported": true,
+    "width": 1445,
+    "height": 1794,
+    "stats": {
+      "placements": 3,
+      "projectedSplats": 768,
+      "sourceBytes": 128,
+      "editingBytes": 60,
+      "cacheBytes": 15680,
+      "keyBytes": 6144,
+      "estimatedRadixBytes": 9216,
+      "totalTransientBytes": 31040,
+      "totalSplatGpuBytes": 31228,
+      "submissionCpuMs": 0.10000000149011612,
+      "gpuFrameMs": 0.131072
+    }
+  },
+  "limitations": [
+    "単純な不透明GLB 1個・MSAA 1・sorted描画",
+    "PSDはGLBマスク素材。全シーンの汎用レイヤー再合成は未実証",
+    "旧ssproj/sscam/timeline互換・断面・大容量・実素材性能・PWA更新は未実証"
+  ]
+}
