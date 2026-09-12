@@ -37,6 +37,7 @@
 
 - 更新したlockfileで`npm ci --ignore-scripts`が成功。`npm audit`は0件。
 - lint、locale lint、typecheck、Nodeテスト21件、旧投影照合4件が成功。
+- GitHubの最初のCIでは、未生成の`build-info.ts`をlintが解決できなかった。生成前の型契約を`build-info.d.ts`に分け、生成済みファイルを削除したローカル環境でもlint・typecheck・テストが通るように修正。
 - Engine 2.22.2の実Chrome/WebGPUで合成シーン16項目が成功。二つのビュー、選択、GLB深度、フレーム拡張、PNG/PSD、作業保存、パッケージ上書き・Undo・再読込を含む。WebGPU validation errorは0。削除した案内を試験側が呼んでいた参照も除去し、新規console errorがないことを確認。
 - 通常の公開用ビルド`v3.0.0-1789250007`で更新試験を実施。旧公開版`v2.21.14-1776588945`のService Workerとキャッシュを残したまま、最初の新版起動で案内の撤去・日本語UI・新版キャッシュへの置換を確認。他アプリを模したキャッシュは保持した。
 - 続けて同じローカル配信の接続を切断し、HTML/JS/CSS/翻訳がキャッシュから読み込まれ、ビュー操作まで初期化されることを確認。これは実ChromeでのService Worker更新試験であり、OSにインストールしたPWAウィンドウやショートカットの更新試験とは区別する。
