@@ -109,6 +109,8 @@ Windowsのこの環境では、隔離先のビルド書き込みにsandboxのEPE
 
 ## 次の統合単位
 
+実証後に追加された複数カメラ・分割ビューと保守方針は [カメラとviewの移行設計](refactor-v3-camera-and-views.md) を参照。単一viewへの依存を本統合で広げないよう、次の隔離実証に2ペインを含める。
+
 この結果から、v3のresource/instances・renderer・編集history・picker・v1保存を整合する単位として取り込み、今回のview adapterと撮影カメラを接続する方向で進められる。最初に全UIを作り直す必要はない。
 
 次のbatchの合格条件には、旧 `version=0 / schemaVersion=4` の最小import adapterと既存ファイルfixtureによる往復確認を含める。今回の独自拡張をそのまま最終保存形式にせず、resource共有と旧データの所有権を照合して仕様を確定する。
